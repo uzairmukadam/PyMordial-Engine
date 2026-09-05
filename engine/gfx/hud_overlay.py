@@ -74,6 +74,7 @@ class HudOverlay:
         panel_width: int = 350,
         panel_height: int = 420,
         title: str = "PYMORDIAL ENGINE — PHASE 2",
+        shortcuts: list[tuple[str, str]] | None = None,
     ) -> None:
         self.ctx = ctx
         self.screen_width = screen_width
@@ -121,7 +122,7 @@ class HudOverlay:
         self.title_surf = self.font_title.render(title, True, (56, 189, 248))
         self.controls_header_surf = self.font_bold.render("CONTROLS & SHORTCUTS", True, (203, 213, 225))
 
-        shortcuts = [
+        default_shortcuts = [
             ("[L-Drag / WASD]", "Orbit 3D Camera"),
             ("[Wheel / Q, E]", "Zoom Camera In / Out"),
             ("[SPACE]", "Spawn 8 PBR Spheres"),
@@ -132,12 +133,13 @@ class HudOverlay:
             ("[C]", "Clear Dynamic Spheres"),
             ("[ESC]", "Exit Engine"),
         ]
+        active_shortcuts = shortcuts if shortcuts is not None else default_shortcuts
         self.cached_shortcut_surfs = [
             (
                 self.font_bold.render(f"{key:<18}", True, (56, 189, 248)),
                 self.font.render(desc, True, (148, 163, 184)),
             )
-            for key, desc in shortcuts
+            for key, desc in active_shortcuts
         ]
 
     def update_screen_size(self, width: int, height: int) -> None:
@@ -159,6 +161,7 @@ class HudOverlay:
         status_time: float = 0.0,
         panel_x: int = 16,
         panel_y: int = 16,
+        extra_lines: list[tuple[str, tuple[int, int, int]]] | None = None,
     ) -> None:
         """Draws the HUD panel to the screen."""
         self.surface.fill((0, 0, 0, 0))
@@ -197,7 +200,14 @@ class HudOverlay:
 
         sun_text = f"Sun: {sun_angle:4.2f} rad   | Tonemap: {tonemap_mode}"
         self.surface.blit(self.font.render(sun_text, True, (148, 163, 184)), (14, y_offset))
-        y_offset += line_height + 4
+        y_offset += line_height
+
+        if extra_lines:
+            for text, color in extra_lines:
+                self.surface.blit(self.font_bold.render(text, True, color), (14, y_offset))
+                y_offset += line_height
+
+        y_offset += 4
 
         # Divider
         pygame.draw.line(

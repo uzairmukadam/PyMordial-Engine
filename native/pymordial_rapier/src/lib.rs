@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use rapier3d::prelude::*;
+use rapier3d::control::*;
 
 #[pyclass]
 pub struct PyRapierWorld {
@@ -19,6 +20,8 @@ pub struct PyRapierWorld {
     event_handler: (),
     // Keep track of handle mapping: entity_id -> RigidBodyHandle
     handles: std::collections::HashMap<u32, RigidBodyHandle>,
+    // Character controllers: entity_id -> (KinematicCharacterController, SharedShape)
+    character_controllers: std::collections::HashMap<u32, (KinematicCharacterController, SharedShape)>,
 }
 
 #[pymethods]
@@ -42,6 +45,7 @@ impl PyRapierWorld {
             physics_hooks: (),
             event_handler: (),
             handles: std::collections::HashMap::new(),
+            character_controllers: std::collections::HashMap::new(),
         }
     }
 
@@ -136,6 +140,7 @@ impl PyRapierWorld {
 
     /// Remove an entity's rigid body
     pub fn remove_rigid_body(&mut self, entity_id: u32) -> bool {
+        self.character_controllers.remove(&entity_id);
         if let Some(handle) = self.handles.remove(&entity_id) {
             self.rigid_body_set.remove(
                 handle,
@@ -211,7 +216,7 @@ impl PyRapierWorld {
     /// Direct zero-copy transform sync straight into a contiguous NumPy float32 buffer
     pub fn sync_transforms_direct(
         &self,
-        py: Python<'_>,
+        _py: Python<'_>,
         entity_ids: Vec<u32>,
         dense_indices: Vec<u32>,
         target_buffer: &Bound<'_, pyo3::types::PyAny>,
@@ -249,7 +254,7 @@ impl PyRapierWorld {
 
     /// Raycast query: returns (hit_entity_id, hit_distance, normal_x, normal_y, normal_z) if hit
     pub fn cast_ray(
-        &self,
+        &mut self,
         origin_x: f32,
         origin_y: f32,
         origin_z: f32,
@@ -259,6 +264,7 @@ impl PyRapierWorld {
         max_toi: f32,
         solid: bool,
     ) -> Option<(u32, f32, f32, f32, f32)> {
+        self.query_pipeline.update(&self.collider_set);
         let ray = Ray::new(
             point![origin_x, origin_y, origin_z],
             vector![dir_x, dir_y, dir_z],
@@ -284,6 +290,127 @@ impl PyRapierWorld {
             return Some((0, hit.time_of_impact, hit.normal.x, hit.normal.y, hit.normal.z));
         }
         None
+    }
+
+    /// Creates a Kinematic Character Controller with capsule collider for an entity
+    #[pyo3(signature = (
+        entity_id,
+        half_height=0.5,
+        radius=0.4,
+        max_slope_deg=45.0,
+        step_height=0.3,
+        snap_to_ground=0.2,
+        x=0.0,
+        y=0.0,
+        z=0.0,
+    ))]
+    pub fn create_character_controller(
+        &mut self,
+        entity_id: u32,
+        half_height: f32,
+        radius: f32,
+        max_slope_deg: f32,
+        step_height: f32,
+        snap_to_ground: f32,
+        x: f32,
+        y: f32,
+        z: f32,
+    ) -> PyResult<()> {
+        let max_slope_rad = max_slope_deg.to_radians();
+        let kcc = KinematicCharacterController {
+            up: Vector::y_axis(),
+            offset: CharacterLength::Absolute(0.02),
+            slide: true,
+            autostep: Some(CharacterAutostep {
+                max_height: CharacterLength::Absolute(step_height),
+                min_width: CharacterLength::Absolute(0.2),
+                include_dynamic_bodies: false,
+            }),
+            max_slope_climb_angle: max_slope_rad,
+            min_slope_slide_angle: max_slope_rad,
+            snap_to_ground: if snap_to_ground > 0.0 {
+                Some(CharacterLength::Absolute(snap_to_ground))
+            } else {
+                None
+            },
+            ..Default::default()
+        };
+
+        // Create kinematic position-based rigid body
+        let rb = RigidBodyBuilder::kinematic_position_based()
+            .translation(vector![x, y, z])
+            .build();
+        let handle = self.rigid_body_set.insert(rb);
+        self.handles.insert(entity_id, handle);
+
+        // Attach capsule collider
+        let collider = ColliderBuilder::capsule_y(half_height, radius).build();
+        self.collider_set.insert_with_parent(collider, handle, &mut self.rigid_body_set);
+
+        // Store controller with shared capsule shape for sweep queries
+        let shape = SharedShape::capsule_y(half_height, radius);
+        self.character_controllers.insert(entity_id, (kcc, shape));
+
+        Ok(())
+    }
+
+    /// Moves a character entity using the Kinematic Character Controller.
+    /// Returns: (effective_dx, effective_dy, effective_dz, is_grounded, is_sliding)
+    pub fn move_character(
+        &mut self,
+        entity_id: u32,
+        desired_dx: f32,
+        desired_dy: f32,
+        desired_dz: f32,
+        dt: f32,
+    ) -> PyResult<(f32, f32, f32, bool, bool)> {
+        let (kcc, shape) = self.character_controllers.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no character controller", entity_id))
+        })?.clone();
+
+        let handle = *self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+
+        let current_pos = *self.rigid_body_set.get(handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?.position();
+
+        let desired_translation = vector![desired_dx, desired_dy, desired_dz];
+
+        // Exclude the character's own body from obstacle queries
+        let filter = QueryFilter::default().exclude_rigid_body(handle);
+
+        // Ensure query pipeline has latest collider transforms
+        self.query_pipeline.update(&self.collider_set);
+
+        // Perform character shape sweep query against spatial query pipeline
+        let movement = kcc.move_shape(
+            dt,
+            &self.rigid_body_set,
+            &self.collider_set,
+            &self.query_pipeline,
+            shape.as_ref(),
+            &current_pos,
+            desired_translation,
+            filter,
+            |_collision| {},
+        );
+
+        // Apply effective translation directly to rigid body position
+        let new_translation = current_pos.translation.vector + movement.translation;
+        if let Some(rb) = self.rigid_body_set.get_mut(handle) {
+            rb.set_next_kinematic_translation(new_translation);
+            rb.set_translation(new_translation, true);
+        }
+
+        Ok((
+            movement.translation.x,
+            movement.translation.y,
+            movement.translation.z,
+            movement.grounded,
+            movement.is_sliding_down_slope,
+        ))
     }
 }
 

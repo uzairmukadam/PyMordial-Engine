@@ -11,7 +11,7 @@ from engine.core.math_utils import matrix_perspective, matrix_look_at, mat4_mul,
 from engine.gfx.context import RenderContext
 from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.frame_context import FrameContext
-from engine.gfx.mega_buffer import MegaBuffer
+from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
 from engine.gfx.mdi import MultiDrawIndirect
 from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
@@ -57,6 +57,7 @@ class RenderPipeline:
         "_sun_v",
         "_cube_alloc",
         "_sphere_alloc",
+        "_capsule_alloc",
         "_csm_cascade_idx_uniform",
         "_u_pcf_samples",
         "_u_sscs_enabled",
@@ -159,6 +160,7 @@ class RenderPipeline:
         # Pre-cache mesh allocations and shader uniforms to eliminate per-frame dictionary lookups
         self._cube_alloc = self.mega_buffer.allocations["cube"]
         self._sphere_alloc = self.mega_buffer.allocations["sphere"]
+        self._capsule_alloc = self.mega_buffer.allocations["capsule"]
         self._csm_cascade_idx_uniform = self.csm_prog.get("u_CascadeIndex", None)
         self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
         self._u_sscs_enabled = self.resolve_prog.get("u_SSCS_Enabled", None)
@@ -200,6 +202,7 @@ class RenderPipeline:
         sun_dir: tuple[float, float, float] = (0.35, -0.85, 0.40),
         sun_lux: float = 4.0,
         fovy_deg: float = 60.0,
+        draw_batches: list[tuple[MeshAllocation | str, int, int]] | None = None,
     ) -> None:
         """Executes full 4-pass deferred render pipeline."""
         active_count = ecs.active_count
@@ -265,11 +268,21 @@ class RenderPipeline:
 
         # Prepare MDI batch commands (zero-allocation cached handles)
         self.mdi.begin_frame()
-        # Batch 1: Ground Box (Entity 0)
-        self.mdi.add_command(self._cube_alloc, instance_count=1, base_instance=0)
-        # Batch 2: Instanced PBR Spheres (Entities 1 .. active_count - 1)
-        if active_count > 1:
-            self.mdi.add_command(self._sphere_alloc, instance_count=active_count - 1, base_instance=1)
+        if draw_batches is not None:
+            for mesh_item, count, base_inst in draw_batches:
+                if count > 0:
+                    alloc = (
+                        self.mega_buffer.allocations[mesh_item]
+                        if isinstance(mesh_item, str)
+                        else mesh_item
+                    )
+                    self.mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+        else:
+            # Batch 1: Ground Box (Entity 0)
+            self.mdi.add_command(self._cube_alloc, instance_count=1, base_instance=0)
+            # Batch 2: Instanced PBR Spheres (Entities 1 .. active_count - 1)
+            if active_count > 1:
+                self.mdi.add_command(self._sphere_alloc, instance_count=active_count - 1, base_instance=1)
 
         # ---- PASS 1: Cascaded Shadow Maps Pass ----
         self.csm.fbo.use()

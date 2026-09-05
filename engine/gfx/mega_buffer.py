@@ -46,6 +46,7 @@ class MegaBuffer:
         self._add_cube_primitive()
         self._add_sphere_primitive()
         self._add_plane_primitive()
+        self._add_capsule_primitive()
         self._bake_buffers()
 
     def _add_mesh(
@@ -217,6 +218,68 @@ class MegaBuffer:
                 k2 += 1
 
         self._add_mesh("sphere", verts, np.array(indices, dtype=np.uint32))
+
+    def _add_capsule_primitive(
+        self,
+        radius: float = 0.4,
+        half_height: float = 0.5,
+        sectors: int = 24,
+        stacks: int = 8,
+    ) -> None:
+        """Generates a Y-aligned unit capsule primitive (total height 1.8m, radius 0.4m)."""
+        verts_list = []
+        indices = []
+
+        total_rings = stacks * 2 + 1
+        for i in range(total_rings):
+            if i <= stacks:
+                # Bottom hemisphere: angle from -pi/2 to 0
+                phi = -math.pi * 0.5 + (i / stacks) * (math.pi * 0.5)
+                y_offset = -half_height
+            else:
+                # Top hemisphere: angle from 0 to pi/2
+                phi = ((i - stacks) / stacks) * (math.pi * 0.5)
+                y_offset = half_height
+
+            ring_radius = radius * math.cos(phi)
+            ring_y = y_offset + radius * math.sin(phi)
+            ny = math.sin(phi)
+
+            for j in range(sectors + 1):
+                theta = j * 2.0 * math.pi / sectors
+                nx = math.cos(theta) * math.cos(phi)
+                nz = math.sin(theta) * math.cos(phi)
+
+                n_len = math.sqrt(nx * nx + ny * ny + nz * nz)
+                if n_len > 1e-6:
+                    nx /= n_len
+                    ny /= n_len
+                    nz /= n_len
+
+                x = ring_radius * math.cos(theta)
+                z = ring_radius * math.sin(theta)
+                y = ring_y
+
+                u = j / sectors
+                v = i / (stacks * 2)
+
+                tx = -math.sin(theta)
+                ty = 0.0
+                tz = math.cos(theta)
+
+                verts_list.extend([x, y, z, nx, ny, nz, u, v, tx, ty, tz, 1.0])
+
+        for i in range(total_rings - 1):
+            k1 = i * (sectors + 1)
+            k2 = k1 + sectors + 1
+            for j in range(sectors):
+                indices.extend([k1, k1 + 1, k2])
+                indices.extend([k1 + 1, k2 + 1, k2])
+                k1 += 1
+                k2 += 1
+
+        verts = np.array(verts_list, dtype=np.float32).reshape(-1, 12)
+        self._add_mesh("capsule", verts, np.array(indices, dtype=np.uint32))
 
     def destroy(self) -> None:
         if self.vbo:

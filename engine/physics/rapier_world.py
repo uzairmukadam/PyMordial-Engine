@@ -50,6 +50,24 @@ class PhysicsManager:
         if entity_id not in self._tracked_entities:
             self._tracked_entities.append(entity_id)
 
+    def set_transform(
+        self,
+        entity_id: int,
+        position: tuple[float, float, float] | np.ndarray,
+        rotation: tuple[float, float, float, float] | np.ndarray = (0.0, 0.0, 0.0, 1.0),
+    ) -> None:
+        """Sets an entity's rigid body transform."""
+        self.world.set_transform(
+            entity_id,
+            float(position[0]),
+            float(position[1]),
+            float(position[2]),
+            float(rotation[0]),
+            float(rotation[1]),
+            float(rotation[2]),
+            float(rotation[3]),
+        )
+
     def attach_box_collider(
         self,
         entity_id: int,
@@ -67,6 +85,51 @@ class PhysicsManager:
     def attach_capsule_collider(self, entity_id: int, half_height: float, radius: float) -> None:
         """Attaches a capsule collider (Y-axis aligned) to an entity's rigid body."""
         self.world.attach_capsule_collider(entity_id, half_height, radius)
+
+    def create_character_controller(
+        self,
+        entity_id: int,
+        half_height: float = 0.5,
+        radius: float = 0.4,
+        max_slope_deg: float = 45.0,
+        step_height: float = 0.3,
+        snap_to_ground: float = 0.2,
+        position: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    ) -> None:
+        """Creates a kinematic character controller with capsule collider for an entity."""
+        self.world.create_character_controller(
+            entity_id,
+            float(half_height),
+            float(radius),
+            float(max_slope_deg),
+            float(step_height),
+            float(snap_to_ground),
+            float(position[0]),
+            float(position[1]),
+            float(position[2]),
+        )
+        if entity_id not in self._tracked_entities:
+            self._tracked_entities.append(entity_id)
+
+    def move_character(
+        self,
+        entity_id: int,
+        desired_translation: tuple[float, float, float] | np.ndarray,
+        dt: float,
+    ) -> tuple[tuple[float, float, float], bool, bool]:
+        """Moves character via native sweep & slide.
+
+        Returns:
+            ((effective_dx, effective_dy, effective_dz), is_grounded, is_sliding)
+        """
+        dx, dy, dz, grounded, sliding = self.world.move_character(
+            entity_id,
+            float(desired_translation[0]),
+            float(desired_translation[1]),
+            float(desired_translation[2]),
+            float(dt),
+        )
+        return (dx, dy, dz), grounded, sliding
 
     def remove_body(self, entity_id: int) -> bool:
         """Removes a rigid body and its colliders from simulation."""
