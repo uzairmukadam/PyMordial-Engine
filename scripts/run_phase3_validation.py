@@ -39,6 +39,7 @@ from engine.gfx import (  # noqa: E402
     get_quality_preset,
     HudOverlay,
 )
+from engine.gfx.mega_buffer import MeshAllocation  # noqa: E402
 
 
 def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
@@ -363,6 +364,19 @@ def main():
 
     loop.on_fixed_update = fixed_update
 
+    # Pre-cache mesh allocations for zero-overhead MDI batch rendering
+    alloc_cube = pipeline.mega_buffer.allocations["cube"]
+    alloc_capsule = pipeline.mega_buffer.allocations["capsule"]
+    alloc_sphere = pipeline.mega_buffer.allocations["sphere"]
+
+    num_cubes = len(cube_ids)
+    # Pre-allocated MDI batch specification (zero allocations in hot loop)
+    draw_batches: list[tuple[MeshAllocation, int, int]] = [
+        (alloc_cube, num_cubes, 0),
+        (alloc_capsule, 1, num_cubes),
+        (alloc_sphere, len(sphere_ids), num_cubes + 1),
+    ]
+
     clock = pygame.time.Clock()
     running = True
     frame_idx = 0
@@ -507,17 +521,13 @@ def main():
         sun_z = math.sin(sun_angle) * 0.6 + 0.2
         sun_dir = (sun_x, -0.85, sun_z)
 
-        # Setup MDI draw batches:
+        # Setup MDI draw batches (cached MeshAllocation objects, zero list creation in hot loop):
         # Batch 1: Static Cubes (Entities 0 .. len(cube_ids) - 1)
         # Batch 2: Character Capsule (Entity char_id)
         # Batch 3: Dynamic Spheres (Entities char_id + 1 .. active_count - 1)
-        num_cubes = len(cube_ids)
         num_spheres = len(sphere_ids)
-        draw_batches = [
-            ("cube", num_cubes, 0),
-            ("capsule", 1, num_cubes),
-            ("sphere", num_spheres, num_cubes + 1),
-        ]
+        if draw_batches[2][1] != num_spheres:
+            draw_batches[2] = (alloc_sphere, num_spheres, num_cubes + 1)
 
         # Render ModernGL 4.5 Core 3D frame
         pipeline.render_frame(

@@ -71,7 +71,6 @@ class CharacterMotor:
         "ecs",
         "config",
         "state",
-        "_desired_move",
     )
 
     def __init__(
@@ -87,7 +86,6 @@ class CharacterMotor:
         self.ecs = ecs
         self.config = config if config is not None else CharacterMotorConfig()
         self.state = CharacterMotorState()
-        self._desired_move = np.zeros(3, dtype=np.float32)
 
         # Register native kinematic character controller in Rapier world
         self.physics.create_character_controller(
@@ -103,14 +101,15 @@ class CharacterMotor:
         # Initialize ECS RigidBodyState position
         dense_idx = self.ecs.pool.get_dense_index(self.entity_id)
         if dense_idx >= 0:
+            rbs = self.ecs.rigid_body_state
             for buf_idx in (0, 1):
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 0] = initial_position[0]
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 1] = initial_position[1]
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 2] = initial_position[2]
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 3] = 0.0
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 4] = 0.0
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 5] = 0.0
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 6] = 1.0
+                rbs[buf_idx, dense_idx, 0] = initial_position[0]
+                rbs[buf_idx, dense_idx, 1] = initial_position[1]
+                rbs[buf_idx, dense_idx, 2] = initial_position[2]
+                rbs[buf_idx, dense_idx, 3] = 0.0
+                rbs[buf_idx, dense_idx, 4] = 0.0
+                rbs[buf_idx, dense_idx, 5] = 0.0
+                rbs[buf_idx, dense_idx, 6] = 1.0
 
     def set_position(
         self,
@@ -118,16 +117,22 @@ class CharacterMotor:
         reset_velocity: bool = True,
     ) -> None:
         """Teleports the character to a target world position."""
-        pos = (float(position[0]), float(position[1]), float(position[2]))
+        px, py, pz = float(position[0]), float(position[1]), float(position[2])
         # Update Rapier rigid body
-        self.physics.set_transform(self.entity_id, pos, (0.0, 0.0, 0.0, 1.0))
+        self.physics.set_transform(self.entity_id, (px, py, pz), (0.0, 0.0, 0.0, 1.0))
 
         # Update ECS RigidBodyState for both buffers (to prevent interpolation smear)
         dense_idx = self.ecs.pool.get_dense_index(self.entity_id)
         if dense_idx >= 0:
+            rbs = self.ecs.rigid_body_state
             for buf_idx in (0, 1):
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 0:3] = pos
-                self.ecs.rigid_body_state[buf_idx, dense_idx, 3:7] = (0.0, 0.0, 0.0, 1.0)
+                rbs[buf_idx, dense_idx, 0] = px
+                rbs[buf_idx, dense_idx, 1] = py
+                rbs[buf_idx, dense_idx, 2] = pz
+                rbs[buf_idx, dense_idx, 3] = 0.0
+                rbs[buf_idx, dense_idx, 4] = 0.0
+                rbs[buf_idx, dense_idx, 5] = 0.0
+                rbs[buf_idx, dense_idx, 6] = 1.0
             self.ecs.recompute_matrix(dense_idx)
 
         if reset_velocity:
@@ -263,14 +268,14 @@ class CharacterMotor:
 
         dense_idx = self.ecs.pool.get_dense_index(self.entity_id)
         if dense_idx >= 0:
-            curr_physics = self.ecs.rigid_body_state[1, dense_idx]
-            curr_physics[0] = pos_x
-            curr_physics[1] = pos_y
-            curr_physics[2] = pos_z
+            rbs = self.ecs.rigid_body_state
+            rbs[1, dense_idx, 0] = pos_x
+            rbs[1, dense_idx, 1] = pos_y
+            rbs[1, dense_idx, 2] = pos_z
 
             # Rotation quaternion facing yaw direction
             half_yaw = math.radians(state.yaw_deg) * 0.5
-            curr_physics[3] = 0.0
-            curr_physics[4] = math.sin(half_yaw)
-            curr_physics[5] = 0.0
-            curr_physics[6] = math.cos(half_yaw)
+            rbs[1, dense_idx, 3] = 0.0
+            rbs[1, dense_idx, 4] = math.sin(half_yaw)
+            rbs[1, dense_idx, 5] = 0.0
+            rbs[1, dense_idx, 6] = math.cos(half_yaw)
