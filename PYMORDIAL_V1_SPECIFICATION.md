@@ -457,23 +457,30 @@ PyMordial-Engine/
 │  • Build Kinematic Capsule Character Controller with grounding and slope.   │
 │                                                                             │
 │  Phase 4: Offline Asset Cooker & Virtual File System (VFS)                  │
-│  • Build `cooker.py` CLI tool: `.gltf`/`.glb` -> 32-byte `.pm_mesh`.        │
-│  • Implement BC7/BC5 texture compression pipeline -> `.pm_tex`.             │
-│  • Build `.pak` archive reader with memory-mapped streaming.                │
+│  • Build `cooker.py` CLI tool: `.gltf`/`.glb`/`.obj` -> 32-byte `.pm_mesh`.  │
+│  • Implement texture cooking pipeline with mipmaps -> `.pm_tex`.             │
+│  • Build `.pak` archive reader with memory-mapped zero-copy streaming.       │
 │                                                                             │
-│  Phase 5: C++ Native Plugin ABI (`pymordial.h`)                             │
+│  Phase 5: High-End Graphics & Visual Fidelity                               │
+│  • Anti-Aliasing: FXAA & TAA (temporal reprojection via velocity buffer).    │
+│  • Ambient Occlusion: SSAO / GTAO with bilateral depth-aware blur.          │
+│  • Environment Lighting: HDR Skybox & IBL cubemaps (split-sum PBR).          │
+│  • Local Lights: Clustered 3D Frustum Point & Spot lights in SSBO.          │
+│  • Screen-Space Reflections (SSR) with roughness attenuation.               │
+│                                                                             │
+│  Phase 6: C++ Native Plugin ABI (`pymordial.h`)                             │
 │  • Build header-only `pymordial.h` using `pybind11`.                        │
 │  • Create `plugin_host.py` dynamic library loader (.so / .dll).             │
 │  • Test sample C++ plugin modifying `WorldTransforms` via SIMD.             │
 │                                                                             │
-│  Phase 6: Standalone ImGui Docking Editor & 3D Gizmos                       │
+│  Phase 7: Standalone ImGui Docking Editor & 3D Gizmos                       │
 │  • Implement ImGui docking window with dark slate theme.                    │
 │  • Embed offscreen ModernGL FBO Viewport widget (`imgui.image`).            │
 │  • Build 6-DOF Fly/Orbit camera and 3D Transform Gizmos (W, E, R).          │
 │  • Build Scene Outliner, Component Inspector, and Content Browser.          │
 │  • Implement Play-In-Editor (PIE) with zero-reload memcpy state snapshots.  │
 │                                                                             │
-│  Phase 7: Packaging, Freezing & Standalone Release                          │
+│  Phase 8: Packaging, Freezing & Standalone Release                          │
 │  • Build standalone game bootloader in `runtime/boot.py`.                   │
 │  • Configure PyInstaller / Nuitka standalone release compilation script.    │
 │                                                                             │

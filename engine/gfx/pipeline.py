@@ -16,6 +16,7 @@ from engine.gfx.mdi import MultiDrawIndirect
 from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.post_process import PostProcessPipeline
+from engine.assets.resource_cache import ResourceCache
 
 
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
@@ -39,6 +40,7 @@ class RenderPipeline:
         "g_buffer",
         "csm",
         "post_process",
+        "resources",
         "ssbo_transforms",
         "ssbo_materials",
         "gbuffer_prog",
@@ -70,10 +72,12 @@ class RenderPipeline:
         self,
         ctx_wrapper: RenderContext,
         config: RenderConfig | None = None,
+        resources: ResourceCache | None = None,
     ) -> None:
         self.ctx_wrapper = ctx_wrapper
         self.ctx = ctx_wrapper.ctx
         self.config = config if config is not None else ctx_wrapper.config
+        self.resources = resources if resources is not None else ResourceCache()
 
         # 1. Initialize UBO 0 (std140 binding 0)
         self.frame_context = FrameContext(self.ctx)
@@ -192,6 +196,23 @@ class RenderPipeline:
         self.ctx_wrapper.height = height
         self.g_buffer.resize(width, height)
         self.post_process.resize(width, height)
+
+    def load_cooked_mesh(self, name: str, vpath: str) -> MeshAllocation:
+        """Loads a cooked .pm_mesh from VFS and registers it into the MegaBuffer."""
+        cached = self.resources.get_gpu_mesh(name)
+        if cached is not None:
+            return cached
+        mesh = self.resources.load_mesh(vpath)
+        alloc = self.mega_buffer.add_pm_mesh(name, mesh)
+        self.resources.register_gpu_mesh(name, alloc)
+        # Re-bind VAOs to match new MegaBuffer allocations
+        self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
+        self.gbuffer_vao = self.mega_buffer.get_vao(self.gbuffer_prog)
+        return alloc
+
+    def load_cooked_texture(self, vpath: str) -> moderngl.Texture:
+        """Loads and uploads a cooked .pm_tex from VFS into a GPU Texture handle."""
+        return self.resources.load_gpu_texture(vpath, self.ctx)
 
     def render_frame(
         self,
@@ -339,6 +360,7 @@ class RenderPipeline:
         return self.post_process.output_texture_id
 
     def destroy(self) -> None:
+        self.resources.close()
         self.frame_context.destroy()
         self.mega_buffer.destroy()
         self.mdi.destroy()

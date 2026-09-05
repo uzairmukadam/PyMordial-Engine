@@ -3,8 +3,12 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import math
+from typing import TYPE_CHECKING
 import numpy as np
 import moderngl
+
+if TYPE_CHECKING:
+    from engine.assets.mesh_format import PMMesh
 
 
 @dataclass(slots=True)
@@ -52,9 +56,25 @@ class MegaBuffer:
     def _add_mesh(
         self,
         name: str,
-        vertices: np.ndarray,  # (V, 12) float32 [pos:3, norm:3, uv:2, tangent:4]
+        vertices: np.ndarray,  # Either (V,) VERTEX_DTYPE or (V, 12) float32
         indices: np.ndarray,   # (I,) uint32
     ) -> MeshAllocation:
+        from engine.assets.mesh_format import VERTEX_DTYPE
+
+        # Normalize to 32-byte cache-aligned VERTEX_DTYPE
+        if vertices.dtype != VERTEX_DTYPE:
+            if vertices.dtype == np.float32 and vertices.ndim == 2 and vertices.shape[1] == 12:
+                v_out = np.zeros(len(vertices), dtype=VERTEX_DTYPE)
+                v_out["position"] = vertices[:, 0:3]
+                v_out["normal"] = np.hstack(
+                    [vertices[:, 3:6], np.ones((len(vertices), 1), dtype=np.float32)]
+                ).astype(np.float16)
+                v_out["uv"] = vertices[:, 6:8].astype(np.float16)
+                v_out["tangent"] = vertices[:, 8:12].astype(np.float16)
+                vertices = v_out
+            else:
+                raise ValueError(f"Unsupported vertex array format: {vertices.dtype}, shape: {vertices.shape}")
+
         alloc = MeshAllocation(
             first_index=self.total_indices,
             index_count=len(indices),
@@ -62,7 +82,7 @@ class MegaBuffer:
             vertex_count=len(vertices),
         )
         self.allocations[name] = alloc
-        self.vertex_data.append(vertices.astype(np.float32))
+        self.vertex_data.append(vertices)
         # Offset mesh-local indices by base_vertex into global Mega-IBO space
         global_indices = (indices + self.total_vertices).astype(np.uint32)
         self.index_data.append(global_indices)
@@ -70,6 +90,19 @@ class MegaBuffer:
         self.total_vertices += len(vertices)
         self.total_indices += len(indices)
         return alloc
+
+    def add_pm_mesh(self, name: str, mesh: PMMesh, auto_bake: bool = True) -> MeshAllocation:
+        """Registers a cooked 32-byte PMMesh into the Mega-Buffer."""
+        if name in self.allocations:
+            return self.allocations[name]
+        alloc = self._add_mesh(name, mesh.vertices, mesh.indices)
+        if auto_bake and self.vbo is not None:
+            self.bake()
+        return alloc
+
+    def bake(self) -> None:
+        """Concatenates all mesh arrays and reallocates GPU Mega-VBO/IBO."""
+        self._bake_buffers()
 
     def _bake_buffers(self) -> None:
         """Concatenates all mesh arrays and allocates single GPU Mega-VBO/IBO."""
@@ -82,19 +115,25 @@ class MegaBuffer:
         assert all_verts.flags["C_CONTIGUOUS"]
         assert all_indices.flags["C_CONTIGUOUS"]
 
+        if self.vbo is not None:
+            self.vbo.release()
+        if self.ibo is not None:
+            self.ibo.release()
+
         self.vbo = self.ctx.buffer(all_verts.tobytes())
         self.ibo = self.ctx.buffer(all_indices.tobytes())
 
     def get_vao(self, program: moderngl.Program) -> moderngl.VertexArray:
-        """Binds Mega-Buffer into a VertexArray dynamically matching active attributes in program."""
+        """Binds Mega-Buffer into a VertexArray matching active attributes in program (32-byte layout)."""
         if self.vbo is None or self.ibo is None:
             raise RuntimeError("MegaBuffer has not been baked.")
 
+        # 32-byte layout: Position (12B float32), Normal (8B float16), UV (4B float16), Tangent (8B float16)
         spec = [
-            ("in_position", "3f", 12),
-            ("in_normal", "3f", 12),
-            ("in_uv", "2f", 8),
-            ("in_tangent", "4f", 16),
+            ("in_position", "3f4", 12),
+            ("in_normal", "4f2", 8),
+            ("in_uv", "2f2", 4),
+            ("in_tangent", "4f2", 8),
         ]
         fmt_parts = []
         attribs = []
