@@ -3,8 +3,7 @@
 import os
 import pytest
 
-# Ensure headless execution for SDL/Pygame if running in headless environments
-os.environ["SDL_VIDEODRIVER"] = "dummy"
+# Ensure audio driver does not block in test environments
 os.environ["SDL_AUDIODRIVER"] = "dummy"
 
 from engine.core.ecs import EntityManager

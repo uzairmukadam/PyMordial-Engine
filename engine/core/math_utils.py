@@ -279,3 +279,16 @@ def matrix_perspective(
         mat[14] = -(2.0 * far * near) / (far - near)
 
     return mat
+
+
+def mat4_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Multiplies two column-major 4x4 matrices and returns a column-major 4x4 matrix."""
+    a_mat = a.reshape((4, 4), order="F")
+    b_mat = b.reshape((4, 4), order="F")
+    return (a_mat @ b_mat).flatten(order="F").astype(np.float32)
+
+
+def mat4_inv(m: np.ndarray) -> np.ndarray:
+    """Computes the inverse of a column-major 4x4 matrix and returns a column-major 4x4 matrix."""
+    m_mat = m.reshape((4, 4), order="F")
+    return np.linalg.inv(m_mat).flatten(order="F").astype(np.float32)
