@@ -1,6 +1,5 @@
 """Unit tests for Rapier3D physics stepping, ECS sync, and raycasting."""
 
-import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager

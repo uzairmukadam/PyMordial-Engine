@@ -86,7 +86,12 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
 }
 
 // Cascaded Shadow Map Evaluation (CSM)
-float CalculateCSMShadow(vec3 world_pos, float view_depth) {
+float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
+    float NdotL = dot(N, L);
+    if (NdotL <= 0.0) {
+        return 0.0;
+    }
+
     int cascade = 0;
     for (int i = 0; i < u_CascadeCount - 1; ++i) {
         if (view_depth > u_CascadeSplits[i]) {
@@ -94,7 +99,12 @@ float CalculateCSMShadow(vec3 world_pos, float view_depth) {
         }
     }
 
-    vec4 light_space_pos = u_LightViewProjection[cascade] * vec4(world_pos, 1.0);
+    float cos_theta = clamp(NdotL, 0.0, 1.0);
+    // Normal-offset bias prevents self-shadow acne on curved surfaces (spheres/characters)
+    float normal_offset = 0.02 * (1.0 - cos_theta);
+    vec3 biased_pos = world_pos + N * normal_offset;
+
+    vec4 light_space_pos = u_LightViewProjection[cascade] * vec4(biased_pos, 1.0);
     vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
 
@@ -107,14 +117,22 @@ float CalculateCSMShadow(vec3 world_pos, float view_depth) {
     vec2 uv = proj_coords.xy * 0.5 + atlas_offset;
 
     float current_depth = proj_coords.z;
-    float bias = max(0.003 * (1.0 - dot(vec3(0.0, 1.0, 0.0), -u_SunDirection_Intensity.xyz)), 0.0008);
+    // Slope-scaled depth bias based on true surface normal
+    float bias = max(0.003 * (1.0 - cos_theta), 0.0008);
 
     float shadow = 0.0;
     float filter_radius = 0.0008;
 
-    int samples = max(u_PCF_Samples, 4);
+    // Dither Poisson disc rotation using screen-space coordinates
+    float angle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+    float s = sin(angle);
+    float c = cos(angle);
+    mat2 rot = mat2(c, -s, s, c);
+
+    int samples = clamp(u_PCF_Samples, 4, 16);
     for (int i = 0; i < samples; ++i) {
-        vec2 sample_uv = uv + POISSON_16[i] * filter_radius;
+        vec2 offset = rot * POISSON_16[i] * filter_radius;
+        vec2 sample_uv = uv + offset;
         float pcf_depth = texture(u_ShadowAtlas, sample_uv).r;
         shadow += (current_depth - bias <= pcf_depth) ? 1.0 : 0.0;
     }
@@ -211,14 +229,20 @@ void main() {
     vec3 radiance = u_SunColor_Ambient.rgb * u_SunDirection_Intensity.w;
 
     // Shadow evaluation: CSM + Screen-Space Contact Shadows
-    float csm_shadow = CalculateCSMShadow(world_pos.xyz, -view_pos.z);
+    float csm_shadow = CalculateCSMShadow(world_pos.xyz, N, L, -view_pos.z);
     float sscs_shadow = CalculateSSCS(world_pos.xyz, L, -view_pos.z);
     float shadow = min(csm_shadow, sscs_shadow);
 
     vec3 direct_light = (kD * albedo / PI + specular) * radiance * NdotL * shadow;
 
-    // Ambient Lighting
-    vec3 ambient = u_SunColor_Ambient.w * albedo * ao;
+    // Hemispheric Sky & Ground Bounce Ambient Lighting
+    vec3 sky_ambient = vec3(0.20, 0.28, 0.42) * (u_SunColor_Ambient.w * 3.0);
+    vec3 ground_ambient = vec3(0.25, 0.28, 0.25) * (u_SunColor_Ambient.w * 2.0);
+    vec3 hemisphere_light = mix(ground_ambient, sky_ambient, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
+
+    vec3 ambient_diffuse = hemisphere_light * albedo * (vec3(1.0) - kS) * (1.0 - metallic) * ao;
+    vec3 ambient_specular = hemisphere_light * F0 * ao * (1.0 - roughness * 0.5);
+    vec3 ambient = ambient_diffuse + ambient_specular;
 
     // Volumetric Atmospheric Fog in-scattering
     float dist = length(world_pos.xyz - u_CameraPos_Time.xyz);

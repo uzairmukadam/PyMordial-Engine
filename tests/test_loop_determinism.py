@@ -1,11 +1,9 @@
 """Unit tests for fixed-accumulator loop determinism and sub-frame interpolation."""
 
 import numpy as np
-import pytest
 
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop
-from engine.core.math_utils import quat_from_euler, quat_identity
 
 
 class TestLoopDeterminism:
@@ -71,3 +69,18 @@ class TestLoopDeterminism:
         # Interpolate at alpha = 0.25
         ecs.interpolate_render_transforms(alpha=0.25)
         np.testing.assert_allclose(mat[12:15], [2.5, 5.0, 7.5])
+
+    def test_subframe_nlerp_preserves_scales(self):
+        ecs = EntityManager(max_entities=100)
+        ent = ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(30.0, 0.5, 20.0))
+        dense_idx = ecs.pool.get_dense_index(ent)
+
+        # Interpolate at sub-frame alpha
+        ecs.interpolate_render_transforms(alpha=0.75)
+        mat = ecs.world_transforms[dense_idx]
+
+        # Verify scale is preserved on diagonal elements
+        np.testing.assert_allclose(mat[0], 30.0, atol=1e-5)
+        np.testing.assert_allclose(mat[5], 0.5, atol=1e-5)
+        np.testing.assert_allclose(mat[10], 20.0, atol=1e-5)
+        np.testing.assert_allclose(mat[12:15], [0.0, -1.0, 0.0], atol=1e-5)

@@ -7,7 +7,6 @@ directly over the ModernGL framebuffer using zero-VBO screen-space quad renderin
 
 from __future__ import annotations
 import time
-from typing import Optional
 import pygame
 import moderngl
 
@@ -47,6 +46,26 @@ void main() {
 class HudOverlay:
     """Renders a sleek HUD telemetry and controls overlay on the screen."""
 
+    __slots__ = (
+        "ctx",
+        "screen_width",
+        "screen_height",
+        "panel_width",
+        "panel_height",
+        "font",
+        "font_bold",
+        "font_title",
+        "surface",
+        "texture",
+        "prog",
+        "vao",
+        "title_surf",
+        "controls_header_surf",
+        "cached_shortcut_surfs",
+        "_u_screen_size",
+        "_u_rect",
+    )
+
     def __init__(
         self,
         ctx: moderngl.Context,
@@ -54,6 +73,7 @@ class HudOverlay:
         screen_height: int,
         panel_width: int = 350,
         panel_height: int = 420,
+        title: str = "PYMORDIAL ENGINE — PHASE 2",
     ) -> None:
         self.ctx = ctx
         self.screen_width = screen_width
@@ -94,6 +114,31 @@ class HudOverlay:
 
         # Cached uniform locations
         self.prog["u_Texture"].value = 0
+        self._u_screen_size = self.prog["u_ScreenSize"]
+        self._u_rect = self.prog["u_Rect"]
+
+        # Pre-render static UI surfaces once to avoid per-frame text rasterization
+        self.title_surf = self.font_title.render(title, True, (56, 189, 248))
+        self.controls_header_surf = self.font_bold.render("CONTROLS & SHORTCUTS", True, (203, 213, 225))
+
+        shortcuts = [
+            ("[L-Drag / WASD]", "Orbit 3D Camera"),
+            ("[Wheel / Q, E]", "Zoom Camera In / Out"),
+            ("[SPACE]", "Spawn 8 PBR Spheres"),
+            ("[1 .. 5]", "Quality Presets (Low -> Cine)"),
+            ("[T]", "Toggle Tonemap Mode"),
+            ("[L]", "Rotate Sun Direction"),
+            ("[P] / [R]", "PIE Snapshot / Restore"),
+            ("[C]", "Clear Dynamic Spheres"),
+            ("[ESC]", "Exit Engine"),
+        ]
+        self.cached_shortcut_surfs = [
+            (
+                self.font_bold.render(f"{key:<18}", True, (56, 189, 248)),
+                self.font.render(desc, True, (148, 163, 184)),
+            )
+            for key, desc in shortcuts
+        ]
 
     def update_screen_size(self, width: int, height: int) -> None:
         self.screen_width = width
@@ -128,12 +173,11 @@ class HudOverlay:
         y_offset = 12
         line_height = 17
 
-        # 1. Header Title
-        title_surf = self.font_title.render("PYMORDIAL ENGINE — PHASE 2", True, (56, 189, 248))
-        self.surface.blit(title_surf, (14, y_offset))
+        # 1. Header Title (Pre-rendered)
+        self.surface.blit(self.title_surf, (14, y_offset))
         y_offset += 24
 
-        # 2. Performance Telemetry
+        # 2. Performance Telemetry (Dynamic)
         fps_color = (74, 222, 128) if fps >= 55.0 else ((250, 204, 21) if fps >= 30.0 else (248, 113, 113))
         fps_text = f"FPS: {fps:5.1f}   ({frame_time_ms:5.2f} ms)"
         self.surface.blit(self.font_bold.render(fps_text, True, fps_color), (14, y_offset))
@@ -165,26 +209,11 @@ class HudOverlay:
         )
         y_offset += 8
 
-        # 3. Controls Cheatsheet
-        controls_header = self.font_bold.render("CONTROLS & SHORTCUTS", True, (203, 213, 225))
-        self.surface.blit(controls_header, (14, y_offset))
+        # 3. Controls Cheatsheet (Pre-rendered)
+        self.surface.blit(self.controls_header_surf, (14, y_offset))
         y_offset += line_height
 
-        shortcuts = [
-            ("[L-Drag / WASD]", "Orbit 3D Camera"),
-            ("[Wheel / Q, E]", "Zoom Camera In / Out"),
-            ("[SPACE]", "Spawn 8 PBR Spheres"),
-            ("[1 .. 5]", "Quality Presets (Low -> Cine)"),
-            ("[T]", "Toggle Tonemap Mode"),
-            ("[L]", "Rotate Sun Direction"),
-            ("[P] / [R]", "PIE Snapshot / Restore"),
-            ("[C]", "Clear Dynamic Spheres"),
-            ("[ESC]", "Exit Engine"),
-        ]
-
-        for key, desc in shortcuts:
-            k_surf = self.font_bold.render(f"{key:<18}", True, (56, 189, 248))
-            d_surf = self.font.render(desc, True, (148, 163, 184))
+        for k_surf, d_surf in self.cached_shortcut_surfs:
             self.surface.blit(k_surf, (14, y_offset))
             self.surface.blit(d_surf, (150, y_offset))
             y_offset += line_height
@@ -208,9 +237,9 @@ class HudOverlay:
         raw_bytes = pygame.image.tobytes(self.surface, "RGBA")
         self.texture.write(raw_bytes)
 
-        # Render quad overlay
-        self.prog["u_ScreenSize"].value = (float(self.screen_width), float(self.screen_height))
-        self.prog["u_Rect"].value = (
+        # Render quad overlay via pre-cached uniform handles
+        self._u_screen_size.value = (float(self.screen_width), float(self.screen_height))
+        self._u_rect.value = (
             float(panel_x),
             float(panel_y),
             float(self.panel_width),

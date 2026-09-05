@@ -1,9 +1,8 @@
 """Unit tests for flat contiguous memory tables and EntityPool."""
 
 import numpy as np
-import pytest
 
-from engine.core.ecs import EntityManager, TransformProxy
+from engine.core.ecs import EntityManager
 from engine.core.entity_pool import EntityPool
 
 
@@ -23,7 +22,8 @@ class TestEntityPool:
         assert entity_pool.get_dense_index(id2) == 2
 
     def test_swap_and_pop_removal(self, entity_pool: EntityPool):
-        ids = [entity_pool.allocate() for _ in range(5)]  # [0, 1, 2, 3, 4]
+        for _ in range(5):
+            entity_pool.allocate()  # [0, 1, 2, 3, 4]
         assert entity_pool.active_count == 5
 
         # Remove middle entity (ID 2, dense index 2)
@@ -70,9 +70,9 @@ class TestEntityManagerMemory:
         assert ecs.scales.shape == (1000, 3)
 
     def test_entity_creation_and_destruction(self, ecs: EntityManager):
-        e0 = ecs.create_entity(position=(1.0, 2.0, 3.0), color=(1.0, 0.0, 0.0))
+        ecs.create_entity(position=(1.0, 2.0, 3.0), color=(1.0, 0.0, 0.0))
         e1 = ecs.create_entity(position=(4.0, 5.0, 6.0), color=(0.0, 1.0, 0.0))
-        e2 = ecs.create_entity(position=(7.0, 8.0, 9.0), color=(0.0, 0.0, 1.0))
+        ecs.create_entity(position=(7.0, 8.0, 9.0), color=(0.0, 0.0, 1.0))
 
         assert ecs.active_count == 3
         # Check initial positions in current physics buffer
@@ -109,7 +109,7 @@ class TestEntityManagerMemory:
 
     def test_instant_pie_snapshot_and_restore(self, ecs: EntityManager):
         e0 = ecs.create_entity(position=(1.0, 2.0, 3.0))
-        e1 = ecs.create_entity(position=(4.0, 5.0, 6.0))
+        ecs.create_entity(position=(4.0, 5.0, 6.0))
 
         # Take pre-simulation snapshot
         snapshot = ecs.snapshot_memory()

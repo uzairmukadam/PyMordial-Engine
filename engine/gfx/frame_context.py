@@ -4,6 +4,7 @@ Maintains a single std140 uniform buffer bound to binding 0 across all shaders.
 """
 
 from __future__ import annotations
+import math
 import numpy as np
 import moderngl
 
@@ -66,10 +67,11 @@ class FrameContext:
         buf[87] = 0.0  # Jitter Y
 
         # 88..91: Sun Direction & Lux
-        sun_dir_norm = np.asarray(sun_dir, dtype=np.float32)
-        n = np.linalg.norm(sun_dir_norm)
-        sun_dir_norm = sun_dir_norm / (n if n > 1e-6 else 1.0)
-        buf[88:91] = sun_dir_norm
+        sx, sy, sz = float(sun_dir[0]), float(sun_dir[1]), float(sun_dir[2])
+        inv_n = 1.0 / (math.sqrt(sx * sx + sy * sy + sz * sz) + 1e-6)
+        buf[88] = sx * inv_n
+        buf[89] = sy * inv_n
+        buf[90] = sz * inv_n
         buf[91] = sun_lux
 
         # 92..95: Sun Color & Ambient Factor

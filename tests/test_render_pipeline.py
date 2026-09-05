@@ -119,4 +119,93 @@ class TestRenderPipelineHeadless:
 
         assert hud.texture is not None
         hud.destroy()
-        render_ctx.destroy()
+
+    def test_matrix_scratchpad_in_place(self):
+        from engine.core.math_utils import matrix_look_at, matrix_perspective, mat4_mul, mat4_inv
+        import math
+
+        eye = (0.0, 5.0, 10.0)
+        target = (0.0, 0.0, 0.0)
+
+        # Look-At matrix
+        mat_alloc = matrix_look_at(eye, target)
+        out_buf = np.zeros(16, dtype=np.float32)
+        res = matrix_look_at(eye, target, out=out_buf)
+        assert res is out_buf
+        np.testing.assert_allclose(out_buf, mat_alloc, atol=1e-6)
+
+        # Perspective matrix
+        proj_alloc = matrix_perspective(math.radians(60.0), 16.0 / 9.0, near=0.1, far=100.0, reverse_z=True)
+        proj_out = np.zeros(16, dtype=np.float32)
+        res_p = matrix_perspective(math.radians(60.0), 16.0 / 9.0, near=0.1, far=100.0, reverse_z=True, out=proj_out)
+        assert res_p is proj_out
+        np.testing.assert_allclose(proj_out, proj_alloc, atol=1e-6)
+
+        # Matrix Multiply
+        vp_alloc = mat4_mul(proj_alloc, mat_alloc)
+        vp_out = np.zeros(16, dtype=np.float32)
+        res_vp = mat4_mul(proj_alloc, mat_alloc, out=vp_out)
+        assert res_vp is vp_out
+        np.testing.assert_allclose(vp_out, vp_alloc, atol=1e-6)
+
+        # Matrix Inverse
+        inv_alloc = mat4_inv(mat_alloc)
+        inv_out = np.zeros(16, dtype=np.float32)
+        res_inv = mat4_inv(mat_alloc, out=inv_out)
+        assert res_inv is inv_out
+        np.testing.assert_allclose(inv_out, inv_alloc, atol=1e-5)
+
+    def test_csm_shadow_normal_offset_bias(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(
+            position=(0.0, -1.0, 0.0),
+            scale=(20.0, 0.5, 20.0),
+            color=(0.4, 0.4, 0.4),
+        )
+        ecs.create_entity(
+            position=(0.0, 0.0, 0.0),
+            scale=(1.0, 1.0, 1.0),
+            color=(0.95, 0.75, 0.25),
+            roughness=0.3,
+            metallic=0.5,
+        )
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 0.0, 3.0),
+            camera_target=(0.0, 0.0, 0.0),
+            time_elapsed=0.5,
+            sun_dir=(0.5, -0.5, 0.5),
+            sun_lux=4.0,
+        )
+        data = pipeline.post_process.final_texture.read()
+        assert len(data) == 320 * 240 * 4
+        pipeline.destroy()
+
+    def test_pipeline_dynamic_resize_and_preset_reconfig(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(position=(0.0, 0.0, 0.0))
+
+        # Dynamic resize
+        pipeline.resize(400, 300)
+        assert pipeline.g_buffer.width == 400
+        assert pipeline.g_buffer.height == 300
+        assert pipeline.post_process.width == 400
+        assert pipeline.post_process.height == 300
+
+        # Dynamic quality preset change
+        low_config = get_quality_preset(GraphicsQuality.LOW)
+        pipeline.apply_config(low_config)
+        assert pipeline.config.shadow_resolution == low_config.shadow_resolution
+        assert pipeline.csm.atlas_size == low_config.shadow_resolution
+
+        # Render frame with new dimensions and configuration
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+        )
+        data = pipeline.post_process.final_texture.read()
+        assert len(data) == 400 * 300 * 4
+        pipeline.destroy()

@@ -9,7 +9,7 @@ import moderngl
 from engine.core.ecs import EntityManager
 from engine.core.math_utils import matrix_perspective, matrix_look_at, mat4_mul, mat4_inv
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import RenderConfig, get_quality_preset, GraphicsQuality
+from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.frame_context import FrameContext
 from engine.gfx.mega_buffer import MegaBuffer
 from engine.gfx.mdi import MultiDrawIndirect
@@ -47,6 +47,22 @@ class RenderPipeline:
         "resolve_vao",
         "gbuffer_vao",
         "csm_vao",
+        "_view_mat",
+        "_proj_mat",
+        "_vp_mat",
+        "_inv_proj",
+        "_inv_view",
+        "_cam_pos",
+        "_cam_fwd",
+        "_sun_v",
+        "_cube_alloc",
+        "_sphere_alloc",
+        "_csm_cascade_idx_uniform",
+        "_u_pcf_samples",
+        "_u_sscs_enabled",
+        "_u_sscs_steps",
+        "_u_sscs_thickness",
+        "_u_cascade_count",
     )
 
     def __init__(
@@ -90,6 +106,16 @@ class RenderPipeline:
         self.ssbo_materials = self.ctx.buffer(reserve=max_entities * 8 * 4)
         self.ssbo_materials.bind_to_storage_buffer(binding=2)
 
+        # Pre-allocated scratch buffers for zero-allocation frame rendering
+        self._view_mat = np.zeros(16, dtype=np.float32)
+        self._proj_mat = np.zeros(16, dtype=np.float32)
+        self._vp_mat = np.zeros(16, dtype=np.float32)
+        self._inv_proj = np.zeros(16, dtype=np.float32)
+        self._inv_view = np.zeros(16, dtype=np.float32)
+        self._cam_pos = np.zeros(3, dtype=np.float32)
+        self._cam_fwd = np.zeros(3, dtype=np.float32)
+        self._sun_v = np.zeros(3, dtype=np.float32)
+
         # 6. Compile Shaders
         quad_vert = _load_shader("fullscreen_quad.vert")
         gbuffer_vert = _load_shader("gbuffer.vert")
@@ -99,40 +125,71 @@ class RenderPipeline:
         resolve_frag = _load_shader("deferred_resolve.frag")
         post_frag = _load_shader("post_process.frag")
 
+        # Compile MDI G-Buffer program
         self.gbuffer_prog = self.ctx.program(
             vertex_shader=gbuffer_vert,
             fragment_shader=gbuffer_frag,
         )
+        self.gbuffer_vao = self.mega_buffer.get_vao(self.gbuffer_prog)
+
+        # Compile CSM Depth pass program
         self.csm_prog = self.ctx.program(
             vertex_shader=csm_vert,
             fragment_shader=csm_frag,
         )
+        self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
+
+        # Compile Consolidated Lighting & Fog Resolve pass
         self.resolve_prog = self.ctx.program(
             vertex_shader=quad_vert,
             fragment_shader=resolve_frag,
         )
-
-        # Vertex Arrays
-        self.gbuffer_vao = self.mega_buffer.get_vao(self.gbuffer_prog)
-        self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
         self.resolve_vao = self.ctx.vertex_array(self.resolve_prog, [])
 
-        # 7. Initialize Post-Processing
+        # Texture unit binding points for resolve pass
+        if "u_GBufferAlbedo" in self.resolve_prog:
+            self.resolve_prog["u_GBufferAlbedo"].value = 0
+        if "u_GBufferNormal" in self.resolve_prog:
+            self.resolve_prog["u_GBufferNormal"].value = 1
+        if "u_GBufferDepth" in self.resolve_prog:
+            self.resolve_prog["u_GBufferDepth"].value = 2
+        if "u_ShadowAtlas" in self.resolve_prog:
+            self.resolve_prog["u_ShadowAtlas"].value = 3
+
+        # Pre-cache mesh allocations and shader uniforms to eliminate per-frame dictionary lookups
+        self._cube_alloc = self.mega_buffer.allocations["cube"]
+        self._sphere_alloc = self.mega_buffer.allocations["sphere"]
+        self._csm_cascade_idx_uniform = self.csm_prog.get("u_CascadeIndex", None)
+        self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
+        self._u_sscs_enabled = self.resolve_prog.get("u_SSCS_Enabled", None)
+        self._u_sscs_steps = self.resolve_prog.get("u_SSCS_Steps", None)
+        self._u_sscs_thickness = self.resolve_prog.get("u_SSCS_Thickness", None)
+        self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
+
+        # 7. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
             self.ctx,
             self.ctx_wrapper.width,
             self.ctx_wrapper.height,
             self.config,
-            post_process_glsl=post_frag,
-            quad_vert_glsl=quad_vert,
+            post_frag,
+            quad_vert,
         )
 
     def apply_config(self, new_config: RenderConfig) -> None:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
+        self.csm.resize_atlas(new_config.shadow_resolution)
         self.post_process.config = new_config
         self.ctx_wrapper.config = new_config
         self.ctx_wrapper.ctx.depth_func = ">" if new_config.reverse_z else "<"
+
+    def resize(self, width: int, height: int) -> None:
+        """Resizes MRT G-Buffer and Post-Process framebuffers on window resize."""
+        self.ctx_wrapper.width = width
+        self.ctx_wrapper.height = height
+        self.g_buffer.resize(width, height)
+        self.post_process.resize(width, height)
 
     def render_frame(
         self,
@@ -152,43 +209,50 @@ class RenderPipeline:
         w, h = self.ctx_wrapper.width, self.ctx_wrapper.height
         aspect = w / (h if h > 0 else 1)
 
-        # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
-        transforms_bytes = ecs.get_active_transforms_view().tobytes()
-        self.ssbo_transforms.write(transforms_bytes)
-
-        materials_bytes = ecs.get_active_materials_view().tobytes()
-        self.ssbo_materials.write(materials_bytes)
+        # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables (Zero-allocation direct view)
+        self.ssbo_transforms.write(ecs.get_active_transforms_view())
+        self.ssbo_materials.write(ecs.get_active_materials_view())
 
         # 2. Camera Matrices (Reversed-Z)
-        cam_p = np.asarray(camera_pos, dtype=np.float32)
-        cam_t = np.asarray(camera_target, dtype=np.float32)
-        view_mat = matrix_look_at(cam_p, cam_t, up=(0.0, 1.0, 0.0))
-        proj_mat = matrix_perspective(
+        self._cam_pos[0] = float(camera_pos[0])
+        self._cam_pos[1] = float(camera_pos[1])
+        self._cam_pos[2] = float(camera_pos[2])
+
+        matrix_look_at(camera_pos, camera_target, up=(0.0, 1.0, 0.0), out=self._view_mat)
+        matrix_perspective(
             math.radians(fovy_deg),
             aspect,
             near=0.1,
             far=self.config.shadow_distance * 2.0,
             reverse_z=self.config.reverse_z,
+            out=self._proj_mat,
         )
-        vp_mat = mat4_mul(proj_mat, view_mat)
-        inv_proj = mat4_inv(proj_mat)
-        inv_view = mat4_inv(view_mat)
+        mat4_mul(self._proj_mat, self._view_mat, out=self._vp_mat)
+        mat4_inv(self._proj_mat, out=self._inv_proj)
+        mat4_inv(self._view_mat, out=self._inv_view)
 
-        cam_fwd = cam_t - cam_p
-        cam_fwd /= (np.linalg.norm(cam_fwd) + 1e-6)
+        fx = float(camera_target[0] - camera_pos[0])
+        fy = float(camera_target[1] - camera_pos[1])
+        fz = float(camera_target[2] - camera_pos[2])
+        inv_fwd_len = 1.0 / (math.sqrt(fx * fx + fy * fy + fz * fz) + 1e-6)
+        self._cam_fwd[0] = fx * inv_fwd_len
+        self._cam_fwd[1] = fy * inv_fwd_len
+        self._cam_fwd[2] = fz * inv_fwd_len
 
         # 3. Cascaded Shadow Maps Matrices
-        sun_v = np.asarray(sun_dir, dtype=np.float32)
-        csm_matrices = self.csm.compute_cascade_matrices(cam_p, cam_fwd, sun_v)
+        self._sun_v[0] = float(sun_dir[0])
+        self._sun_v[1] = float(sun_dir[1])
+        self._sun_v[2] = float(sun_dir[2])
+        csm_matrices = self.csm.compute_cascade_matrices(self._cam_pos, self._cam_fwd, self._sun_v)
 
         # 4. Upload to UBO 0
         self.frame_context.update(
-            view_mat=view_mat,
-            proj_mat=proj_mat,
-            view_proj_mat=vp_mat,
-            inv_proj_mat=inv_proj,
-            inv_view_mat=inv_view,
-            camera_pos=cam_p,
+            view_mat=self._view_mat,
+            proj_mat=self._proj_mat,
+            view_proj_mat=self._vp_mat,
+            inv_proj_mat=self._inv_proj,
+            inv_view_mat=self._inv_view,
+            camera_pos=self._cam_pos,
             time_elapsed=time_elapsed,
             screen_size=(float(w), float(h)),
             sun_dir=sun_dir,
@@ -199,17 +263,13 @@ class RenderPipeline:
             fog_height_falloff=self.config.fog_height_falloff,
         )
 
-        # Prepare MDI batch commands
-        cube_alloc = self.mega_buffer.allocations["cube"]
-        plane_alloc = self.mega_buffer.allocations["plane"]
-        sphere_alloc = self.mega_buffer.allocations["sphere"]
-
+        # Prepare MDI batch commands (zero-allocation cached handles)
         self.mdi.begin_frame()
         # Batch 1: Ground Box (Entity 0)
-        self.mdi.add_command(cube_alloc, instance_count=1, base_instance=0)
+        self.mdi.add_command(self._cube_alloc, instance_count=1, base_instance=0)
         # Batch 2: Instanced PBR Spheres (Entities 1 .. active_count - 1)
         if active_count > 1:
-            self.mdi.add_command(sphere_alloc, instance_count=active_count - 1, base_instance=1)
+            self.mdi.add_command(self._sphere_alloc, instance_count=active_count - 1, base_instance=1)
 
         # ---- PASS 1: Cascaded Shadow Maps Pass ----
         self.csm.fbo.use()
@@ -219,8 +279,8 @@ class RenderPipeline:
 
         for c in range(self.config.csm_cascades):
             self.csm.begin_cascade(c)
-            if "u_CascadeIndex" in self.csm_prog:
-                self.csm_prog["u_CascadeIndex"].value = c
+            if self._csm_cascade_idx_uniform is not None:
+                self._csm_cascade_idx_uniform.value = c
             self.mdi.submit(self.csm_vao, self.csm_prog)
 
         # ---- PASS 2: G-Buffer Pass (Reversed-Z) ----
@@ -239,17 +299,17 @@ class RenderPipeline:
         self.g_buffer.bind_textures(base_unit=0)
         self.csm.depth_texture.use(location=3)
 
-        # Configure resolve uniforms
-        if "u_PCF_Samples" in self.resolve_prog:
-            self.resolve_prog["u_PCF_Samples"].value = self.config.pcf_samples
-        if "u_SSCS_Enabled" in self.resolve_prog:
-            self.resolve_prog["u_SSCS_Enabled"].value = 1 if self.config.sscs_enabled else 0
-        if "u_SSCS_Steps" in self.resolve_prog:
-            self.resolve_prog["u_SSCS_Steps"].value = self.config.sscs_steps
-        if "u_SSCS_Thickness" in self.resolve_prog:
-            self.resolve_prog["u_SSCS_Thickness"].value = self.config.sscs_thickness
-        if "u_CascadeCount" in self.resolve_prog:
-            self.resolve_prog["u_CascadeCount"].value = self.config.csm_cascades
+        # Configure resolve uniforms (via pre-cached handles)
+        if self._u_pcf_samples is not None:
+            self._u_pcf_samples.value = self.config.pcf_samples
+        if self._u_sscs_enabled is not None:
+            self._u_sscs_enabled.value = 1 if self.config.sscs_enabled else 0
+        if self._u_sscs_steps is not None:
+            self._u_sscs_steps.value = self.config.sscs_steps
+        if self._u_sscs_thickness is not None:
+            self._u_sscs_thickness.value = self.config.sscs_thickness
+        if self._u_cascade_count is not None:
+            self._u_cascade_count.value = self.config.csm_cascades
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 

@@ -135,6 +135,7 @@ def batch_nlerp_and_compose_mat4(
     alpha: float,
     out_matrices: np.ndarray,  # (N, 16) float32 output buffer
     count: int,
+    scales: np.ndarray | None = None,  # (N, 3) [sx, sy, sz]
 ) -> None:
     """Batch NLERP sub-frame interpolation and direct composition into WorldTransforms.
 
@@ -178,23 +179,46 @@ def batch_nlerp_and_compose_mat4(
     wy = w * y2
     wz = w * z2
 
-    # Column 0
-    out_matrices[:count, 0] = 1.0 - (yy + zz)
-    out_matrices[:count, 1] = xy + wz
-    out_matrices[:count, 2] = xz - wy
-    out_matrices[:count, 3] = 0.0
+    if scales is not None:
+        sx = scales[:count, 0]
+        sy = scales[:count, 1]
+        sz = scales[:count, 2]
 
-    # Column 1
-    out_matrices[:count, 4] = xy - wz
-    out_matrices[:count, 5] = 1.0 - (xx + zz)
-    out_matrices[:count, 6] = yz + wx
-    out_matrices[:count, 7] = 0.0
+        # Column 0
+        out_matrices[:count, 0] = (1.0 - (yy + zz)) * sx
+        out_matrices[:count, 1] = (xy + wz) * sx
+        out_matrices[:count, 2] = (xz - wy) * sx
+        out_matrices[:count, 3] = 0.0
 
-    # Column 2
-    out_matrices[:count, 8] = xz + wy
-    out_matrices[:count, 9] = yz - wx
-    out_matrices[:count, 10] = 1.0 - (xx + yy)
-    out_matrices[:count, 11] = 0.0
+        # Column 1
+        out_matrices[:count, 4] = (xy - wz) * sy
+        out_matrices[:count, 5] = (1.0 - (xx + zz)) * sy
+        out_matrices[:count, 6] = (yz + wx) * sy
+        out_matrices[:count, 7] = 0.0
+
+        # Column 2
+        out_matrices[:count, 8] = (xz + wy) * sz
+        out_matrices[:count, 9] = (yz - wx) * sz
+        out_matrices[:count, 10] = (1.0 - (xx + yy)) * sz
+        out_matrices[:count, 11] = 0.0
+    else:
+        # Column 0
+        out_matrices[:count, 0] = 1.0 - (yy + zz)
+        out_matrices[:count, 1] = xy + wz
+        out_matrices[:count, 2] = xz - wy
+        out_matrices[:count, 3] = 0.0
+
+        # Column 1
+        out_matrices[:count, 4] = xy - wz
+        out_matrices[:count, 5] = 1.0 - (xx + zz)
+        out_matrices[:count, 6] = yz + wx
+        out_matrices[:count, 7] = 0.0
+
+        # Column 2
+        out_matrices[:count, 8] = xz + wy
+        out_matrices[:count, 9] = yz - wx
+        out_matrices[:count, 10] = 1.0 - (xx + yy)
+        out_matrices[:count, 11] = 0.0
 
     # Column 3 (Translation)
     out_matrices[:count, 12] = pos[:, 0]
@@ -207,39 +231,71 @@ def matrix_look_at(
     eye: np.ndarray | tuple[float, float, float],
     target: np.ndarray | tuple[float, float, float],
     up: np.ndarray | tuple[float, float, float] = (0.0, 1.0, 0.0),
+    out: np.ndarray | None = None,
 ) -> np.ndarray:
     """Right-Handed look-at matrix (+Y Up, -Z Forward).
+
+    Computes the column-major 4x4 view matrix using zero-allocation scalar arithmetic.
 
     Returns:
         np.ndarray of shape (16,) dtype float32 (Column-major format).
     """
-    eye = np.asarray(eye, dtype=np.float32)
-    target = np.asarray(target, dtype=np.float32)
-    up = np.asarray(up, dtype=np.float32)
+    ex, ey, ez = float(eye[0]), float(eye[1]), float(eye[2])
+    tx, ty, tz = float(target[0]), float(target[1]), float(target[2])
+    ux, uy, uz = float(up[0]), float(up[1]), float(up[2])
 
-    # Forward direction (-Z)
-    f = target - eye
-    f_norm = np.linalg.norm(f)
-    f = f / (f_norm if f_norm > 1e-8 else 1.0)
+    # Forward vector f = target - eye
+    fx = tx - ex
+    fy = ty - ey
+    fz = tz - ez
+    f_len = math.sqrt(fx * fx + fy * fy + fz * fz)
+    inv_f_len = 1.0 / (f_len if f_len > 1e-8 else 1.0)
+    fx *= inv_f_len
+    fy *= inv_f_len
+    fz *= inv_f_len
 
-    # Right direction (+X) = f x up
-    s = np.cross(f, up)
-    s_norm = np.linalg.norm(s)
-    s = s / (s_norm if s_norm > 1e-8 else 1.0)
+    # Right vector s = f x up
+    sx = fy * uz - fz * uy
+    sy = fz * ux - fx * uz
+    sz = fx * uy - fy * ux
+    s_len = math.sqrt(sx * sx + sy * sy + sz * sz)
+    inv_s_len = 1.0 / (s_len if s_len > 1e-8 else 1.0)
+    sx *= inv_s_len
+    sy *= inv_s_len
+    sz *= inv_s_len
 
-    # Recomputed true up (+Y) = s x f
-    u = np.cross(s, f)
+    # Recomputed true up vector u = s x f
+    ux_f = sy * fz - sz * fy
+    uy_f = sz * fx - sx * fz
+    uz_f = sx * fy - sy * fx
 
-    # Column-major view matrix:
-    return np.array(
-        [
-            s[0], u[0], -f[0], 0.0,
-            s[1], u[1], -f[1], 0.0,
-            s[2], u[2], -f[2], 0.0,
-            -np.dot(s, eye), -np.dot(u, eye), np.dot(f, eye), 1.0,
-        ],
-        dtype=np.float32,
-    )
+    # Dot products for camera translation
+    dot_s_e = sx * ex + sy * ey + sz * ez
+    dot_u_e = ux_f * ex + uy_f * ey + uz_f * ez
+    dot_f_e = fx * ex + fy * ey + fz * ez
+
+    mat = out if out is not None else np.zeros(16, dtype=np.float32)
+    mat[0] = sx
+    mat[1] = ux_f
+    mat[2] = -fx
+    mat[3] = 0.0
+
+    mat[4] = sy
+    mat[5] = uy_f
+    mat[6] = -fy
+    mat[7] = 0.0
+
+    mat[8] = sz
+    mat[9] = uz_f
+    mat[10] = -fz
+    mat[11] = 0.0
+
+    mat[12] = -dot_s_e
+    mat[13] = -dot_u_e
+    mat[14] = dot_f_e
+    mat[15] = 1.0
+
+    return mat
 
 
 def matrix_perspective(
@@ -248,6 +304,7 @@ def matrix_perspective(
     near: float,
     far: float,
     reverse_z: bool = False,
+    out: np.ndarray | None = None,
 ) -> np.ndarray:
     """Right-Handed perspective projection matrix.
 
@@ -257,6 +314,7 @@ def matrix_perspective(
         near: Near clipping plane distance (> 0).
         far: Far clipping plane distance (> near).
         reverse_z: If True, maps near to 1.0 and far to 0.0 (floating-point depth).
+        out: Optional pre-allocated (16,) float32 array to write into.
 
     Returns:
         np.ndarray of shape (16,) dtype float32 (Column-major format).
@@ -264,7 +322,8 @@ def matrix_perspective(
     tan_half_fovy = math.tan(fovy_rad * 0.5)
     f = 1.0 / tan_half_fovy
 
-    mat = np.zeros(16, dtype=np.float32)
+    mat = out if out is not None else np.zeros(16, dtype=np.float32)
+    mat.fill(0.0)
     mat[0] = f / aspect
     mat[5] = f
     mat[11] = -1.0
@@ -281,14 +340,22 @@ def matrix_perspective(
     return mat
 
 
-def mat4_mul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+def mat4_mul(a: np.ndarray, b: np.ndarray, out: np.ndarray | None = None) -> np.ndarray:
     """Multiplies two column-major 4x4 matrices and returns a column-major 4x4 matrix."""
     a_mat = a.reshape((4, 4), order="F")
     b_mat = b.reshape((4, 4), order="F")
-    return (a_mat @ b_mat).flatten(order="F").astype(np.float32)
+    if out is not None:
+        out_mat = out.reshape((4, 4), order="F")
+        np.matmul(a_mat, b_mat, out=out_mat)
+        return out
+    return (a_mat @ b_mat).ravel(order="F").astype(np.float32)
 
 
-def mat4_inv(m: np.ndarray) -> np.ndarray:
+def mat4_inv(m: np.ndarray, out: np.ndarray | None = None) -> np.ndarray:
     """Computes the inverse of a column-major 4x4 matrix and returns a column-major 4x4 matrix."""
     m_mat = m.reshape((4, 4), order="F")
-    return np.linalg.inv(m_mat).flatten(order="F").astype(np.float32)
+    inv_mat = np.linalg.inv(m_mat)
+    if out is not None:
+        out.reshape((4, 4), order="F")[:] = inv_mat
+        return out
+    return inv_mat.ravel(order="F").astype(np.float32)

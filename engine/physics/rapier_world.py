@@ -15,7 +15,7 @@ from engine.core.ecs import EntityManager
 class PhysicsManager:
     """Manages the Rapier3D physics world and synchronizes state with the ECS."""
 
-    __slots__ = ("world", "_tracked_entities")
+    __slots__ = ("world", "_tracked_entities", "_dense_indices", "_has_direct_sync")
 
     def __init__(
         self,
@@ -25,6 +25,8 @@ class PhysicsManager:
     ) -> None:
         self.world = pymordial_rapier.PyRapierWorld(gravity_x, gravity_y, gravity_z)
         self._tracked_entities: list[int] = []
+        self._dense_indices: list[int] = []
+        self._has_direct_sync: bool = hasattr(self.world, "sync_transforms_direct")
 
     def create_body(
         self,
@@ -78,15 +80,22 @@ class PhysicsManager:
 
     def sync_to_ecs(self, ecs: EntityManager) -> None:
         """Batch-synchronizes updated Rapier body transforms into ECS RigidBodyState[1]."""
-        if not self._tracked_entities:
+        n = len(self._tracked_entities)
+        if n == 0:
             return
 
-        pool = ecs.pool
-        dense_indices = [pool.get_dense_index(ent_id) for ent_id in self._tracked_entities]
+        if len(self._dense_indices) != n:
+            self._dense_indices = [0] * n
 
-        if hasattr(self.world, "sync_transforms_direct"):
+        pool = ecs.pool
+        dense_indices = self._dense_indices
+        tracked = self._tracked_entities
+        for i in range(n):
+            dense_indices[i] = pool.get_dense_index(tracked[i])
+
+        if self._has_direct_sync:
             self.world.sync_transforms_direct(
-                self._tracked_entities,
+                tracked,
                 dense_indices,
                 ecs.rigid_body_state[1],
             )

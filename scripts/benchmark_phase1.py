@@ -1,7 +1,6 @@
 """Micro-benchmark for PyMordial Phase 1 hot paths."""
 
 import time
-import numpy as np
 
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop

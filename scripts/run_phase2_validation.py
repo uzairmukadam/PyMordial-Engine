@@ -15,21 +15,20 @@ Showcases:
 import sys
 from pathlib import Path
 
+import math
+import time
+import random
+import pygame
+
 # Ensure project root is in sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-import math
-import time
-import random
-import pygame
-import numpy as np
-
-from engine.core.ecs import EntityManager
-from engine.core.loop import EngineLoop
-from engine.physics.rapier_world import PhysicsManager
-from engine.gfx import (
+from engine.core.ecs import EntityManager  # noqa: E402
+from engine.core.loop import EngineLoop  # noqa: E402
+from engine.physics.rapier_world import PhysicsManager  # noqa: E402
+from engine.gfx import (  # noqa: E402
     RenderContext,
     RenderPipeline,
     GraphicsQuality,
@@ -114,7 +113,7 @@ def main():
     cam_dist = 18.0
     cam_yaw = 45.0
     cam_pitch = 25.0
-    cam_target = np.array([0.0, 2.0, 0.0], dtype=np.float32)
+    cam_target = (0.0, 2.0, 0.0)
 
     # Initial sun direction
     sun_angle = 0.0
@@ -240,7 +239,7 @@ def main():
         cx = cam_target[0] + cam_dist * math.cos(rad_pitch) * math.sin(rad_yaw)
         cy = cam_target[1] + cam_dist * math.sin(rad_pitch)
         cz = cam_target[2] + cam_dist * math.cos(rad_pitch) * math.cos(rad_yaw)
-        camera_pos = np.array([cx, cy, cz], dtype=np.float32)
+        camera_pos = (cx, cy, cz)
 
         # Sun direction vector
         sun_x = math.cos(sun_angle) * 0.6 + 0.2

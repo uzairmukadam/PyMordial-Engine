@@ -19,6 +19,10 @@ class CascadedShadowMap:
         "fbo",
         "split_distances",
         "light_matrices",
+        "_proj_scratch",
+        "_view_scratch",
+        "_center_scratch",
+        "_light_pos_scratch",
     )
 
     def __init__(
@@ -32,19 +36,16 @@ class CascadedShadowMap:
         self.atlas_size = atlas_size
         self.cascade_count = cascade_count
 
-        # Depth texture atlas
-        self.depth_texture = self.ctx.depth_texture((atlas_size, atlas_size))
-        self.depth_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.depth_texture.repeat_x = False
-        self.depth_texture.repeat_y = False
-
-        self.fbo = self.ctx.framebuffer(depth_attachment=self.depth_texture)
+        # Depth texture atlas and framebuffer
+        self.depth_texture = None  # type: ignore[assignment]
+        self.fbo = None  # type: ignore[assignment]
+        self._create_atlas()
 
         # Compute cascade split distances (log-linear blend)
         near = 0.1
         far = max_distance
+        lambda_val = 0.85
         splits = []
-        lambda_val = 0.85  # Bias toward logarithmic close-range splits
 
         for i in range(1, cascade_count + 1):
             p = i / cascade_count
@@ -57,7 +58,13 @@ class CascadedShadowMap:
             splits.append(far)
 
         self.split_distances = tuple(splits[:4])
-        self.light_matrices = [np.eye(4, dtype=np.float32).flatten() for _ in range(4)]
+        self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
+
+        # Pre-allocated scratch buffers
+        self._proj_scratch = np.zeros(16, dtype=np.float32)
+        self._view_scratch = np.zeros(16, dtype=np.float32)
+        self._center_scratch = np.zeros(3, dtype=np.float32)
+        self._light_pos_scratch = np.zeros(3, dtype=np.float32)
 
     def compute_cascade_matrices(
         self,
@@ -66,40 +73,47 @@ class CascadedShadowMap:
         sun_dir: np.ndarray,
     ) -> list[np.ndarray]:
         """Calculates 4 light-projection matrices fitted to cascade distances with texel stabilization."""
-        sun_norm = np.asarray(sun_dir, dtype=np.float32)
-        n = np.linalg.norm(sun_norm)
-        sun_norm = sun_norm / (n if n > 1e-6 else 1.0)
+        sx, sy, sz = float(sun_dir[0]), float(sun_dir[1]), float(sun_dir[2])
+        inv_sn = 1.0 / (math.sqrt(sx * sx + sy * sy + sz * sz) + 1e-6)
+        snx, sny, snz = sx * inv_sn, sy * inv_sn, sz * inv_sn
 
-        matrices = []
         prev_dist = 0.1
+        proj = self._proj_scratch
+        view = self._view_scratch
+        center = self._center_scratch
+        light_pos = self._light_pos_scratch
 
         for i in range(4):
             dist = self.split_distances[i]
             center_dist = (prev_dist + dist) * 0.5
-            center = camera_pos + camera_forward * center_dist
+
+            center[0] = camera_pos[0] + camera_forward[0] * center_dist
+            center[1] = camera_pos[1] + camera_forward[1] * center_dist
+            center[2] = camera_pos[2] + camera_forward[2] * center_dist
 
             radius = (dist - prev_dist) * 0.8 + 8.0
 
             # Light view matrix centered on cascade
-            light_pos = center - sun_norm * (radius * 2.0)
-            view = matrix_look_at(light_pos, center, up=(0.0, 1.0, 0.0))
+            light_pos[0] = center[0] - snx * (radius * 2.0)
+            light_pos[1] = center[1] - sny * (radius * 2.0)
+            light_pos[2] = center[2] - snz * (radius * 2.0)
+
+            matrix_look_at(light_pos, center, up=(0.0, 1.0, 0.0), out=view)
 
             # Orthographic projection with texel snapping
+            proj.fill(0.0)
             ext = radius
-            proj = np.zeros(16, dtype=np.float32)
             proj[0] = 1.0 / ext
             proj[5] = 1.0 / ext
             proj[10] = -1.0 / (radius * 4.0)
             proj[15] = 1.0
 
             # Combine: LightViewProjection (4x4 column major multiplication)
-            vp = mat4_mul(proj, view)
+            mat4_mul(proj, view, out=self.light_matrices[i])
 
-            matrices.append(vp)
             prev_dist = dist
 
-        self.light_matrices = matrices
-        return matrices
+        return self.light_matrices
 
     def begin_cascade(self, cascade_idx: int) -> None:
         """Sets viewport to the specific cascade quadrant in the 2x2 atlas."""
@@ -112,6 +126,23 @@ class CascadedShadowMap:
         self.fbo.use()
         self.fbo.clear(depth=1.0)
 
+    def _create_atlas(self) -> None:
+        self.depth_texture = self.ctx.depth_texture((self.atlas_size, self.atlas_size))
+        self.depth_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.depth_texture.repeat_x = False
+        self.depth_texture.repeat_y = False
+        self.fbo = self.ctx.framebuffer(depth_attachment=self.depth_texture)
+
+    def resize_atlas(self, new_size: int) -> None:
+        """Dynamically resizes shadow atlas if resolution changed."""
+        if new_size <= 0 or new_size == self.atlas_size:
+            return
+        self.destroy()
+        self.atlas_size = new_size
+        self._create_atlas()
+
     def destroy(self) -> None:
-        self.depth_texture.release()
-        self.fbo.release()
+        if self.depth_texture is not None:
+            self.depth_texture.release()
+        if self.fbo is not None:
+            self.fbo.release()

@@ -13,20 +13,20 @@ Demonstrates:
 import sys
 from pathlib import Path
 
-# Ensure project root is in sys.path
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
 import time
 import random
 import pygame
 import numpy as np
 
-from engine.core.ecs import EntityManager
-from engine.core.loop import EngineLoop
-from engine.core.input import InputManager
-from engine.physics.rapier_world import PhysicsManager
+# Ensure project root is in sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from engine.core.ecs import EntityManager  # noqa: E402
+from engine.core.loop import EngineLoop  # noqa: E402
+from engine.core.input import InputManager  # noqa: E402
+from engine.physics.rapier_world import PhysicsManager  # noqa: E402
 
 
 def main():
@@ -110,8 +110,8 @@ def main():
             (f"Render FPS: {fps_val:.1f} ({fps_mode})", (255, 235, 120), font_bold),
             (f"Frame Time: {frame_ms:.2f} ms | Simulation: 60 Hz Fixed", (220, 230, 245), font),
             (f"Active Entities: {ecs.active_count} / {ecs.max_entities}", (180, 240, 180), font),
-            (f"Physics Engine: Rapier3D Native Release [PARALLEL]", (150, 240, 160), font),
-            (f"Zero-Copy Sync: Direct C-Buffer Memory Writes [OK]", (150, 240, 160), font),
+            ("Physics Engine: Rapier3D Native Release [PARALLEL]", (150, 240, 160), font),
+            ("Zero-Copy Sync: Direct C-Buffer Memory Writes [OK]", (150, 240, 160), font),
             (f"PIE Status: {snapshot_status}", (200, 215, 240), font),
             ("Press [U] to toggle FPS cap | [SPACE] to spawn", (160, 170, 190), font),
         ]

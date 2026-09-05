@@ -71,11 +71,11 @@ class MultiDrawIndirect:
         if self.command_count == 0:
             return
 
-        has_base_instance = "u_BaseInstance" in program
+        base_inst_uniform = program.get("u_BaseInstance", None)
         for i in range(self.command_count):
             cmd = self.command_buffer[i]
-            if has_base_instance:
-                program["u_BaseInstance"].value = int(cmd["base_instance"])
+            if base_inst_uniform is not None:
+                base_inst_uniform.value = int(cmd["base_instance"])
             vao.render(
                 mode=moderngl.TRIANGLES,
                 vertices=int(cmd["count"]),

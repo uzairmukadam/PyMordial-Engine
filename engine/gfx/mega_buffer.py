@@ -173,9 +173,9 @@ class MegaBuffer:
         self._add_mesh("plane", verts, indices)
 
     def _add_sphere_primitive(self, sectors: int = 24, stacks: int = 16) -> None:
-        """Generates a UV sphere with radius 0.5."""
+        """Generates a unit UV sphere with radius 1.0."""
         verts_list = []
-        radius = 0.5
+        radius = 1.0
 
         for i in range(stacks + 1):
             stack_angle = math.pi / 2 - i * math.pi / stacks  # pi/2 to -pi/2

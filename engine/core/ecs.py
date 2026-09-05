@@ -12,7 +12,6 @@ from engine.core.entity_pool import EntityPool
 from engine.core.math_utils import (
     batch_nlerp_and_compose_mat4,
     trs_to_mat4,
-    quat_identity,
 )
 
 
@@ -205,6 +204,7 @@ class EntityManager:
             alpha,
             self.world_transforms,
             count,
+            scales=self.scales,
         )
 
     def get_active_transforms_view(self) -> np.ndarray:
