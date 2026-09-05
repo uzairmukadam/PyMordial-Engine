@@ -1,0 +1,18 @@
+[package]
+name = "pymordial_rapier"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pymordial_rapier"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module"] }
+rapier3d = { version = "0.22", features = ["simd-stable", "parallel"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
