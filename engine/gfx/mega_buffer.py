@@ -273,8 +273,8 @@ class MegaBuffer:
             k1 = i * (sectors + 1)
             k2 = k1 + sectors + 1
             for j in range(sectors):
-                indices.extend([k1, k1 + 1, k2])
-                indices.extend([k1 + 1, k2 + 1, k2])
+                indices.extend([k1, k2, k1 + 1])
+                indices.extend([k1 + 1, k2, k2 + 1])
                 k1 += 1
                 k2 += 1
 

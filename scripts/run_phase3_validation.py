@@ -47,6 +47,31 @@ def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
     return (math.sin(half), 0.0, 0.0, math.cos(half))
 
 
+def spawn_static_box(
+    ecs: EntityManager,
+    physics: PhysicsManager,
+    position: tuple[float, float, float],
+    size: tuple[float, float, float],
+    color: tuple[float, float, float],
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+    roughness: float = 0.5,
+    metallic: float = 0.1,
+) -> int:
+    """Spawns an aligned static box entity where visual scale exactly matches physical box collider."""
+    hx, hy, hz = size[0] * 0.5, size[1] * 0.5, size[2] * 0.5
+    ent = ecs.create_entity(
+        position=position,
+        rotation=rotation,
+        scale=size,
+        color=color,
+        roughness=roughness,
+        metallic=metallic,
+    )
+    physics.create_body(ent, body_type="fixed", position=position, rotation=rotation)
+    physics.attach_box_collider(ent, half_x=hx, half_y=hy, half_z=hz)
+    return ent
+
+
 def build_arena(
     ecs: EntityManager,
     physics: PhysicsManager,
@@ -58,128 +83,128 @@ def build_arena(
     """
     cube_ids: list[int] = []
 
-    # 1. Main Ground Platform (Center at y = -0.5, top surface at y = 0.0)
-    ground_id = ecs.create_entity(
+    # 1. Main Ground Platform: top surface flush at y = 0.0, size 50m x 1m x 50m
+    ground_id = spawn_static_box(
+        ecs,
+        physics,
         position=(0.0, -0.5, 0.0),
-        scale=(25.0, 0.5, 25.0),
-        color=(0.18, 0.20, 0.25),
+        size=(50.0, 1.0, 50.0),
+        color=(0.20, 0.22, 0.26),
         roughness=0.6,
         metallic=0.1,
     )
-    physics.create_body(ground_id, body_type="fixed", position=(0.0, -0.5, 0.0))
-    physics.attach_box_collider(ground_id, half_x=25.0, half_y=0.5, half_z=25.0)
     cube_ids.append(ground_id)
 
-    # 2. Stepping Course (Auto-Stepping validation)
-    # Step 1: 0.15m high (easily stepped over)
-    s1 = ecs.create_entity(
+    # 2. Stepping Course (Auto-Stepping validation, step height <= 0.3m)
+    # Step 1: 0.15m height (y: 0.0 -> 0.15)
+    s1 = spawn_static_box(
+        ecs,
+        physics,
         position=(-6.0, 0.075, -5.0),
-        scale=(2.5, 0.075, 1.2),
+        size=(3.0, 0.15, 1.5),
         color=(0.60, 0.55, 0.50),
         roughness=0.4,
         metallic=0.0,
     )
-    physics.create_body(s1, body_type="fixed", position=(-6.0, 0.075, -5.0))
-    physics.attach_box_collider(s1, half_x=2.5, half_y=0.075, half_z=1.2)
     cube_ids.append(s1)
 
-    # Step 2: 0.30m total height (top of auto-step limit)
-    s2 = ecs.create_entity(
-        position=(-6.0, 0.225, -7.0),
-        scale=(2.5, 0.075, 1.2),
+    # Step 2: 0.30m total height (y: 0.0 -> 0.30, rise 0.15m from step 1)
+    s2 = spawn_static_box(
+        ecs,
+        physics,
+        position=(-6.0, 0.15, -7.0),
+        size=(3.0, 0.30, 1.5),
         color=(0.65, 0.60, 0.55),
         roughness=0.4,
         metallic=0.0,
     )
-    physics.create_body(s2, body_type="fixed", position=(-6.0, 0.225, -7.0))
-    physics.attach_box_collider(s2, half_x=2.5, half_y=0.075, half_z=1.2)
     cube_ids.append(s2)
 
-    # Step 3: 0.45m total height
-    s3 = ecs.create_entity(
-        position=(-6.0, 0.375, -9.0),
-        scale=(2.5, 0.075, 1.2),
+    # Step 3: 0.45m total height (y: 0.0 -> 0.45, rise 0.15m from step 2)
+    s3 = spawn_static_box(
+        ecs,
+        physics,
+        position=(-6.0, 0.225, -9.0),
+        size=(3.0, 0.45, 1.5),
         color=(0.70, 0.65, 0.60),
         roughness=0.4,
         metallic=0.0,
     )
-    physics.create_body(s3, body_type="fixed", position=(-6.0, 0.375, -9.0))
-    physics.attach_box_collider(s3, half_x=2.5, half_y=0.075, half_z=1.2)
     cube_ids.append(s3)
 
     # Tall Barrier (1.2m high - requires jump to clear)
-    s4 = ecs.create_entity(
-        position=(-6.0, 0.6, -11.5),
-        scale=(2.5, 0.6, 1.0),
+    s4 = spawn_static_box(
+        ecs,
+        physics,
+        position=(-6.0, 0.60, -11.5),
+        size=(3.0, 1.20, 1.2),
         color=(0.75, 0.40, 0.20),
         roughness=0.3,
         metallic=0.2,
     )
-    physics.create_body(s4, body_type="fixed", position=(-6.0, 0.6, -11.5))
-    physics.attach_box_collider(s4, half_x=2.5, half_y=0.6, half_z=1.0)
     cube_ids.append(s4)
 
     # 3. Slope Limit Ramps
-    # Ramp A: 20° gentle incline (Walkable)
+    # Ramp A: 20° gentle incline (Walkable, <= 45°)
     q_ramp_a = make_quat_rot_x(math.radians(-20.0))
-    ra = ecs.create_entity(
-        position=(6.0, 0.8, -6.0),
+    ra = spawn_static_box(
+        ecs,
+        physics,
+        position=(6.0, 0.85, -6.0),
+        size=(3.0, 0.2, 6.0),
         rotation=q_ramp_a,
-        scale=(2.0, 0.1, 3.0),
         color=(0.25, 0.65, 0.40),  # Green
         roughness=0.4,
         metallic=0.1,
     )
-    physics.create_body(ra, body_type="fixed", position=(6.0, 0.8, -6.0), rotation=q_ramp_a)
-    physics.attach_box_collider(ra, half_x=2.0, half_y=0.1, half_z=3.0)
     cube_ids.append(ra)
 
-    # Ramp B: 52° steep incline (Exceeds 45° slope limit - Blocked)
+    # Ramp B: 52° steep incline (Exceeds 45° slope limit - Blocked/Sliding)
     q_ramp_b = make_quat_rot_x(math.radians(-52.0))
-    rb = ecs.create_entity(
-        position=(11.0, 1.5, -6.0),
+    rb = spawn_static_box(
+        ecs,
+        physics,
+        position=(11.0, 1.8, -6.0),
+        size=(3.0, 0.2, 6.0),
         rotation=q_ramp_b,
-        scale=(2.0, 0.1, 3.0),
         color=(0.75, 0.20, 0.25),  # Red
         roughness=0.3,
         metallic=0.2,
     )
-    physics.create_body(rb, body_type="fixed", position=(11.0, 1.5, -6.0), rotation=q_ramp_b)
-    physics.attach_box_collider(rb, half_x=2.0, half_y=0.1, half_z=3.0)
     cube_ids.append(rb)
 
     # 4. Obstacle Columns / Walls (Camera Raycast Clipping & Collision blocking)
-    col1 = ecs.create_entity(
+    col1 = spawn_static_box(
+        ecs,
+        physics,
         position=(-4.0, 2.0, 4.0),
-        scale=(0.7, 2.0, 0.7),
+        size=(1.2, 4.0, 1.2),
         color=(0.40, 0.45, 0.55),
         roughness=0.2,
         metallic=0.7,
     )
-    physics.create_body(col1, body_type="fixed", position=(-4.0, 2.0, 4.0))
-    physics.attach_box_collider(col1, half_x=0.7, half_y=2.0, half_z=0.7)
     cube_ids.append(col1)
 
-    col2 = ecs.create_entity(
+    col2 = spawn_static_box(
+        ecs,
+        physics,
         position=(4.0, 2.0, 4.0),
-        scale=(0.7, 2.0, 0.7),
+        size=(1.2, 4.0, 1.2),
         color=(0.40, 0.45, 0.55),
         roughness=0.2,
         metallic=0.7,
     )
-    physics.create_body(col2, body_type="fixed", position=(4.0, 2.0, 4.0))
-    physics.attach_box_collider(col2, half_x=0.7, half_y=2.0, half_z=0.7)
     cube_ids.append(col2)
 
-    wall = ecs.create_entity(
+    wall = spawn_static_box(
+        ecs,
+        physics,
         position=(0.0, 2.0, 8.0),
-        scale=(8.0, 2.0, 0.3),
+        size=(10.0, 4.0, 0.5),
         color=(0.30, 0.35, 0.45),
         roughness=0.5,
         metallic=0.1,
     )
-    physics.create_body(wall, body_type="fixed", position=(0.0, 2.0, 8.0))
-    physics.attach_box_collider(wall, half_x=8.0, half_y=2.0, half_z=0.3)
     cube_ids.append(wall)
 
     # 5. Player Character Entity (Rendered with capsule mesh primitive)
