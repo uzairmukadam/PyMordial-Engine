@@ -29,6 +29,12 @@ def _halton(index: int, base: int) -> float:
 class TAAPass(RenderPass):
     """Sub-pixel jittering and temporal reprojection accumulation pass."""
 
+    # Precomputed 8-phase Halton(2, 3) normalized offsets (-0.5 .. +0.5)
+    HALTON_8 = tuple(
+        (_halton(i + 1, 2) - 0.5, _halton(i + 1, 3) - 0.5)
+        for i in range(8)
+    )
+
     def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
         super().__init__(name="TAAPass", enabled=True)
         self.ctx = ctx
@@ -68,10 +74,8 @@ class TAAPass(RenderPass):
 
     def get_jitter(self, width: int, height: int) -> tuple[float, float]:
         """Calculates subpixel projection offset for the current frame."""
-        idx = (self.frame_idx % 8) + 1
-        jx = (_halton(idx, 2) - 0.5) / max(width, 1)
-        jy = (_halton(idx, 3) - 0.5) / max(height, 1)
-        return jx, jy
+        hx, hy = self.HALTON_8[self.frame_idx % 8]
+        return hx / max(width, 1), hy / max(height, 1)
 
     def resize(self, width: int, height: int) -> None:
         if width == self.width and height == self.height:

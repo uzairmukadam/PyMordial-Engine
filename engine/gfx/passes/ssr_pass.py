@@ -56,6 +56,8 @@ class SSRPass(RenderPass):
         self._u_max_rough = self.prog.get("u_SSR_MaxRoughness", None)
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     @property
     def ssr_tex(self) -> moderngl.Texture:
@@ -88,6 +90,9 @@ class SSRPass(RenderPass):
 
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssr_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssr_tex])
+
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
         if not getattr(context.config, "ssr_enabled", True):
@@ -129,7 +134,7 @@ class SSRPass(RenderPass):
         g_buffer.depth_texture.use(location=1)
         g_buffer.albedo_roughness_texture.use(location=2)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (1.0 / self.width, 0.0)
+            self._u_blur_dir.value = self._blur_dir_h
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 3. Vertical Bilateral Denoising Blur: blur -> raw_fbo
@@ -138,7 +143,7 @@ class SSRPass(RenderPass):
         g_buffer.depth_texture.use(location=1)
         g_buffer.albedo_roughness_texture.use(location=2)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (0.0, 1.0 / self.height)
+            self._u_blur_dir.value = self._blur_dir_v
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         context.resources["ssr_texture"] = self.raw_ssr_tex

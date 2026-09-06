@@ -36,8 +36,9 @@ class FXAAPass(RenderPass):
         self._u_threshold = self.prog.get("u_EdgeThreshold", None)
         self._u_threshold_min = self.prog.get("u_EdgeThresholdMin", None)
 
+        self._inv_screen = (1.0 / max(width, 1), 1.0 / max(height, 1))
         if self._u_inv_screen is not None:
-            self._u_inv_screen.value = (1.0 / max(width, 1), 1.0 / max(height, 1))
+            self._u_inv_screen.value = self._inv_screen
 
     def resize(self, width: int, height: int) -> None:
         if width == self.width and height == self.height:
@@ -55,8 +56,9 @@ class FXAAPass(RenderPass):
 
         self.fbo = self.ctx.framebuffer(color_attachments=[self.output_texture])
 
+        self._inv_screen = (1.0 / max(width, 1), 1.0 / max(height, 1))
         if self._u_inv_screen is not None:
-            self._u_inv_screen.value = (1.0 / max(width, 1), 1.0 / max(height, 1))
+            self._u_inv_screen.value = self._inv_screen
 
     def execute(self, context: RenderGraphContext) -> None:
         input_tex = context.resources.get("ldr_color")
@@ -71,7 +73,7 @@ class FXAAPass(RenderPass):
         input_tex.use(location=0)
 
         if self._u_inv_screen is not None:
-            self._u_inv_screen.value = (1.0 / max(self.width, 1), 1.0 / max(self.height, 1))
+            self._u_inv_screen.value = self._inv_screen
         if self._u_subpixel is not None:
             self._u_subpixel.value = float(getattr(context.config, "fxaa_subpixel", 0.75))
         if self._u_threshold is not None:

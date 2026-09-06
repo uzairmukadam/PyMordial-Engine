@@ -101,6 +101,7 @@ class RenderPipeline:
         "_u_shadow_offset",
         "_u_cascade_count",
         "_u_gbuffer_debug",
+        "_u_gbuffer_prev_vp",
         "_u_ao_enabled",
         "_u_gi_enabled",
         "_u_ibl_enabled",
@@ -236,6 +237,7 @@ class RenderPipeline:
         self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
+        self._u_gbuffer_prev_vp = self.gbuffer_prog.get("u_PrevViewProjection", None)
 
         self._u_ao_enabled = self.resolve_prog.get("u_AOEnabled", None)
         self._u_gi_enabled = self.resolve_prog.get("u_GIEnabled", None)
@@ -466,8 +468,8 @@ class RenderPipeline:
         if is_wireframe:
             self.ctx.wireframe = True
         try:
-            if "u_PrevViewProjection" in self.gbuffer_prog:
-                self.gbuffer_prog["u_PrevViewProjection"].write(self._prev_vp_mat.tobytes())
+            if self._u_gbuffer_prev_vp is not None:
+                self._u_gbuffer_prev_vp.write(self._prev_vp_mat.tobytes())
             self.mdi.submit(self.gbuffer_vao, self.gbuffer_prog)
         finally:
             if is_wireframe:
@@ -556,9 +558,9 @@ class RenderPipeline:
             self._u_point_light_count.value = ctx.resources.get("point_light_count", 0)
 
         if self._u_lpv_min is not None and "lpv_min" in ctx.resources:
-            self._u_lpv_min.value = tuple(ctx.resources["lpv_min"])
+            self._u_lpv_min.value = ctx.resources["lpv_min"]
         if self._u_lpv_size is not None and "lpv_size" in ctx.resources:
-            self._u_lpv_size.value = tuple(ctx.resources["lpv_size"])
+            self._u_lpv_size.value = ctx.resources["lpv_size"]
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 

@@ -6,6 +6,7 @@ injection and neighbor propagation to provide off-screen, camera-independent ind
 
 from __future__ import annotations
 from pathlib import Path
+import math
 import numpy as np
 import moderngl
 
@@ -44,6 +45,16 @@ class LPVPass(RenderPass):
         # 2. Grid bounds in world space
         self.volume_min = np.array([-32.0, -2.0, -32.0], dtype=np.float32)
         self.volume_size = np.array([64.0, 32.0, 64.0], dtype=np.float32)
+        self.volume_min_tuple: tuple[float, float, float] = (
+            float(self.volume_min[0]),
+            float(self.volume_min[1]),
+            float(self.volume_min[2]),
+        )
+        self.volume_size_tuple: tuple[float, float, float] = (
+            float(self.volume_size[0]),
+            float(self.volume_size[1]),
+            float(self.volume_size[2]),
+        )
 
         # 3. Compile LPV compute shader
         comp_src = (SHADER_DIR / "lpv_propagate.comp").read_text(encoding="utf-8")
@@ -60,28 +71,33 @@ class LPVPass(RenderPass):
         gi_mode = getattr(context.config, "gi_mode", "HYBRID")
         if gi_mode not in ("LPV", "HYBRID"):
             context.resources["lpv_volume"] = self.black_fallback
-            context.resources["lpv_min"] = self.volume_min
-            context.resources["lpv_size"] = self.volume_size
+            context.resources["lpv_min"] = self.volume_min_tuple
+            context.resources["lpv_size"] = self.volume_size_tuple
             return
 
         # Center volume grid on camera position with smooth snapping to grid step
         cell_size = self.volume_size[0] / self.grid_res
         cam_x, cam_y, cam_z = context.camera_pos
-        snap_x = np.floor(cam_x / cell_size) * cell_size
-        snap_z = np.floor(cam_z / cell_size) * cell_size
+        snap_x = math.floor(cam_x / cell_size) * cell_size
+        snap_z = math.floor(cam_z / cell_size) * cell_size
 
-        self.volume_min[0] = snap_x - self.volume_size[0] * 0.5
-        self.volume_min[1] = -2.0  # Ground aligned
-        self.volume_min[2] = snap_z - self.volume_size[2] * 0.5
+        min_x = snap_x - self.volume_size[0] * 0.5
+        min_y = -2.0  # Ground aligned
+        min_z = snap_z - self.volume_size[2] * 0.5
+
+        self.volume_min[0] = min_x
+        self.volume_min[1] = min_y
+        self.volume_min[2] = min_z
+        self.volume_min_tuple = (min_x, min_y, min_z)
 
         # Bind image units: src is readonly, dst is writeonly
         self._current_src.bind_to_image(0, read=True, write=False)
         self._current_dst.bind_to_image(1, read=False, write=True)
 
         if self._u_min is not None:
-            self._u_min.value = tuple(self.volume_min)
+            self._u_min.value = self.volume_min_tuple
         if self._u_size is not None:
-            self._u_size.value = tuple(self.volume_size)
+            self._u_size.value = self.volume_size_tuple
         if self._u_sun_dir is not None:
             self._u_sun_dir.value = (context.sun_dir[0], context.sun_dir[1], context.sun_dir[2], context.sun_lux)
         if self._u_intensity is not None:
@@ -98,8 +114,8 @@ class LPVPass(RenderPass):
 
         # Publish propagated 3D volume
         context.resources["lpv_volume"] = self._current_src
-        context.resources["lpv_min"] = self.volume_min
-        context.resources["lpv_size"] = self.volume_size
+        context.resources["lpv_min"] = self.volume_min_tuple
+        context.resources["lpv_size"] = self.volume_size_tuple
 
     def destroy(self) -> None:
         self.vol_a.release()

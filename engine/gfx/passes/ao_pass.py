@@ -67,6 +67,8 @@ class AmbientOcclusionPass(RenderPass):
         self._u_gtao_intensity = self.gtao_prog.get("u_Intensity", None)
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def resize(self, width: int, height: int) -> None:
         new_w = max(width // 2, 1)
@@ -94,6 +96,9 @@ class AmbientOcclusionPass(RenderPass):
 
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ao_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ao_tex])
+
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
         ao_mode = getattr(context.config, "ao_mode", "GTAO")
@@ -143,7 +148,7 @@ class AmbientOcclusionPass(RenderPass):
         self.raw_ao_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (1.0 / self.width, 0.0)
+            self._u_blur_dir.value = self._blur_dir_h
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 4. Vertical Bilateral Blur: blur -> raw_fbo
@@ -151,7 +156,7 @@ class AmbientOcclusionPass(RenderPass):
         self.blur_ao_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (0.0, 1.0 / self.height)
+            self._u_blur_dir.value = self._blur_dir_v
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # Published result is in raw_ao_tex (after 2 passes)

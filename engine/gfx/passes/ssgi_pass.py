@@ -58,6 +58,8 @@ class SSGIPass(RenderPass):
         self._u_thickness = self.ssgi_prog.get("u_SSGI_Thickness", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def resize(self, width: int, height: int) -> None:
         new_w = max(width // 2, 1)
@@ -85,6 +87,9 @@ class SSGIPass(RenderPass):
 
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssgi_tex])
+
+        self._blur_dir_h = (1.0 / self.width, 0.0)
+        self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "HYBRID")
@@ -127,7 +132,7 @@ class SSGIPass(RenderPass):
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (1.0 / self.width, 0.0)
+            self._u_blur_dir.value = self._blur_dir_h
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 3. Vertical Bilateral Blur: blur -> raw_fbo
@@ -136,7 +141,7 @@ class SSGIPass(RenderPass):
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
         if self._u_blur_dir is not None:
-            self._u_blur_dir.value = (0.0, 1.0 / self.height)
+            self._u_blur_dir.value = self._blur_dir_v
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         context.resources["ssgi_texture"] = self.raw_ssgi_tex

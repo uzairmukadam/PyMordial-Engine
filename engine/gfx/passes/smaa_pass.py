@@ -49,6 +49,17 @@ class SMAAPass(RenderPass):
         self.vao_neigh = self.ctx.vertex_array(self.prog_neigh, [])
         self.vao_resolve = self.ctx.vertex_array(self.prog_resolve, [])
 
+        # Pre-cache uniform handles to eliminate per-frame dictionary lookups
+        self._u_edge_inv_screen = self.prog_edge.get("u_InverseScreenSize", None)
+        self._u_edge_threshold = self.prog_edge.get("u_EdgeThreshold", None)
+        self._u_blend_inv_screen = self.prog_blend.get("u_InverseScreenSize", None)
+        self._u_blend_max_steps = self.prog_blend.get("u_MaxSearchSteps", None)
+        self._u_neigh_inv_screen = self.prog_neigh.get("u_InverseScreenSize", None)
+        self._u_resolve_inv_screen = self.prog_resolve.get("u_InverseScreenSize", None)
+        self._u_resolve_temporal_weight = self.prog_resolve.get("u_TemporalWeight", None)
+
+        self._inv_screen = (1.0 / max(self.width, 1), 1.0 / max(self.height, 1))
+
         self._create_textures()
 
     def _create_textures(self) -> None:
@@ -120,6 +131,8 @@ class SMAAPass(RenderPass):
         self.fbo_hist_b.release()
         self.hist_b.release()
 
+        self._inv_screen = (1.0 / max(self.width, 1), 1.0 / max(self.height, 1))
+
         self._create_textures()
 
     def execute(self, context: RenderGraphContext) -> None:
@@ -130,7 +143,6 @@ class SMAAPass(RenderPass):
             return
 
         aa_mode = getattr(context.config, "aa_mode", "SMAA_1X")
-        inv_screen = (1.0 / max(self.width, 1), 1.0 / max(self.height, 1))
 
         self.ctx.disable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.BLEND)
@@ -140,29 +152,29 @@ class SMAAPass(RenderPass):
         self.fbo_edge.use()
         self.fbo_edge.clear(0.0, 0.0, 0.0, 0.0)
         input_tex.use(location=0)
-        if "u_InverseScreenSize" in self.prog_edge:
-            self.prog_edge["u_InverseScreenSize"].value = inv_screen
-        if "u_EdgeThreshold" in self.prog_edge:
-            self.prog_edge["u_EdgeThreshold"].value = float(getattr(context.config, "smaa_threshold", 0.08))
+        if self._u_edge_inv_screen is not None:
+            self._u_edge_inv_screen.value = self._inv_screen
+        if self._u_edge_threshold is not None:
+            self._u_edge_threshold.value = float(getattr(context.config, "smaa_threshold", 0.08))
         self.vao_edge.render(moderngl.TRIANGLES, vertices=3)
 
         # ---- PASS 2: Blending Weight Calculation ----
         self.fbo_blend.use()
         self.fbo_blend.clear(0.0, 0.0, 0.0, 0.0)
         self.tex_edge.use(location=0)
-        if "u_InverseScreenSize" in self.prog_blend:
-            self.prog_blend["u_InverseScreenSize"].value = inv_screen
-        if "u_MaxSearchSteps" in self.prog_blend:
+        if self._u_blend_inv_screen is not None:
+            self._u_blend_inv_screen.value = self._inv_screen
+        if self._u_blend_max_steps is not None:
             steps = 32 if aa_mode == "SMAA_4X" else 16
-            self.prog_blend["u_MaxSearchSteps"].value = steps
+            self._u_blend_max_steps.value = steps
         self.vao_blend.render(moderngl.TRIANGLES, vertices=3)
 
         # ---- PASS 3: Neighborhood Blending ----
         self.fbo_smaa.use()
         input_tex.use(location=0)
         self.tex_blend.use(location=1)
-        if "u_InverseScreenSize" in self.prog_neigh:
-            self.prog_neigh["u_InverseScreenSize"].value = inv_screen
+        if self._u_neigh_inv_screen is not None:
+            self._u_neigh_inv_screen.value = self._inv_screen
         self.vao_neigh.render(moderngl.TRIANGLES, vertices=3)
 
         # If SMAA 1x, we are done
@@ -177,11 +189,11 @@ class SMAAPass(RenderPass):
         g_buffer.velocity_texture.use(location=2)
         g_buffer.depth_texture.use(location=3)
 
-        if "u_InverseScreenSize" in self.prog_resolve:
-            self.prog_resolve["u_InverseScreenSize"].value = inv_screen
-        if "u_TemporalWeight" in self.prog_resolve:
+        if self._u_resolve_inv_screen is not None:
+            self._u_resolve_inv_screen.value = self._inv_screen
+        if self._u_resolve_temporal_weight is not None:
             weight = 0.75 if aa_mode == "SMAA_4X" else 0.50
-            self.prog_resolve["u_TemporalWeight"].value = weight
+            self._u_resolve_temporal_weight.value = weight
 
         self.vao_resolve.render(moderngl.TRIANGLES, vertices=3)
 

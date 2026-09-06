@@ -64,6 +64,15 @@ from engine.camera import CameraManager, FreeFlyCamera  # noqa: E402
 from engine.audio import get_audio_engine  # noqa: E402
 from engine.window import WindowMode, VSyncMode  # noqa: E402
 
+VALIDATION_LANTERNS = (
+    (-8.0, 1.8, 0.0, 12.0, (1.0, 0.25, 0.15), 4.0),
+    (8.0, 1.8, 0.0, 12.0, (0.15, 0.75, 1.0), 4.0),
+    (0.0, 2.2, -8.0, 14.0, (0.20, 1.0, 0.35), 4.0),
+    (0.0, 2.2, 8.0, 14.0, (1.0, 0.85, 0.20), 4.5),
+    (10.0, 2.5, 10.0, 12.0, (0.85, 0.20, 0.95), 4.0),
+    (-10.0, 2.5, -10.0, 12.0, (1.0, 0.50, 0.10), 4.0),
+)
+
 
 def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
     """Computes unit quaternion for rotation around local X axis."""
@@ -1118,15 +1127,7 @@ def main() -> None:
         pipeline.clear_point_lights()
         if engine_tweaks.point_lights_enabled:
             t = loop.elapsed_time
-            lanterns = [
-                (-8.0, 1.8, 0.0, 12.0, (1.0, 0.25, 0.15), 4.0),
-                (8.0, 1.8, 0.0, 12.0, (0.15, 0.75, 1.0), 4.0),
-                (0.0, 2.2, -8.0, 14.0, (0.20, 1.0, 0.35), 4.0),
-                (0.0, 2.2, 8.0, 14.0, (1.0, 0.85, 0.20), 4.5),
-                (10.0, 2.5, 10.0, 12.0, (0.85, 0.20, 0.95), 4.0),
-                (-10.0, 2.5, -10.0, 12.0, (1.0, 0.50, 0.10), 4.0),
-            ]
-            for i, (bx, by, bz, r, col, intensity) in enumerate(lanterns):
+            for i, (bx, by, bz, r, col, intensity) in enumerate(VALIDATION_LANTERNS):
                 angle = t * 0.7 + i * 1.047
                 px = bx + math.cos(angle) * 3.0
                 py = by + math.sin(t * 1.5 + i) * 0.6

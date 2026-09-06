@@ -107,7 +107,10 @@ class IBLPass(RenderPass):
                 self._update_procedural_env_map(sun_dir)
             else:
                 # Update only if sun direction shifted noticeably
-                d_sq = sum((a - b) ** 2 for a, b in zip(sun_dir, self._last_sun_dir))
+                dx = sun_dir[0] - self._last_sun_dir[0]
+                dy = sun_dir[1] - self._last_sun_dir[1]
+                dz = sun_dir[2] - self._last_sun_dir[2]
+                d_sq = dx * dx + dy * dy + dz * dz
                 if d_sq > 0.0005:
                     self._update_procedural_env_map(sun_dir)
 
