@@ -279,3 +279,62 @@ class TestQualityPresetsAndGIMode:
         assert cinematic.gi_mode == "HYBRID"
         assert cinematic.ssgi_steps > ultra.ssgi_steps
         assert cinematic.ssr_steps > ultra.ssr_steps
+
+
+class TestShadowsAndSSCS:
+    def test_shadow_modes_and_parameters_in_presets(self):
+        low = get_quality_preset(GraphicsQuality.LOW)
+        assert low.shadow_mode == "HARD"
+        assert low.shadow_resolution == 1024
+        assert low.sscs_enabled is False
+
+        med = get_quality_preset(GraphicsQuality.MEDIUM)
+        assert med.shadow_mode == "PCF"
+        assert med.shadow_resolution == 2048
+        assert med.sscs_enabled is True
+
+        high = get_quality_preset(GraphicsQuality.HIGH)
+        assert high.shadow_mode == "PCSS"
+        assert high.shadow_softness == 1.2
+        assert high.shadow_bias == 0.0015
+        assert high.sscs_ray_distance == 1.0
+        assert high.sscs_max_distance == 50.0
+
+        ultra = get_quality_preset(GraphicsQuality.ULTRA)
+        assert ultra.shadow_mode == "PCSS"
+        assert ultra.shadow_resolution == 4096
+
+    def test_pipeline_shadow_modes_render_execution(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(
+            position=(0.0, 0.0, 0.0),
+            scale=(1.0, 1.0, 1.0),
+            color=(0.8, 0.8, 0.8),
+            roughness=0.3,
+            metallic=0.1,
+        )
+
+        for mode in ("HARD", "PCF", "PCSS"):
+            pipeline.config.shadow_mode = mode
+            pipeline.config.sscs_enabled = True
+            pipeline.config.shadow_softness = 1.5
+            pipeline.config.shadow_bias = 0.002
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 5.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.1,
+                sun_dir=(0.5, -0.7, 0.4),
+                sun_lux=4.0,
+            )
+            data = pipeline.post_process.final_texture.read()
+            assert len(data) == 320 * 240 * 4
+
+        # Test dynamic atlas resize
+        pipeline.csm.resize_atlas(1024)
+        assert pipeline.csm.atlas_size == 1024
+        assert pipeline.csm.depth_texture.size == (1024, 1024)
+
+        pipeline.destroy()
+

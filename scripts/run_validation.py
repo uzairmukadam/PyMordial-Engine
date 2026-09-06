@@ -48,6 +48,7 @@ from engine.gfx import (  # noqa: E402
     RenderContext,
     RenderPipeline,
     GraphicsQuality,
+    GIMode,
     get_quality_preset,
 )
 from engine.gfx.mega_buffer import MeshAllocation  # noqa: E402
@@ -57,6 +58,7 @@ from engine.debug import (  # noqa: E402
     GameTweaks,
     DebugToast,
     DebugMenu,
+    GBufferDebugMode,
 )
 from engine.camera import CameraManager, FreeFlyCamera  # noqa: E402
 from engine.audio import get_audio_engine  # noqa: E402
@@ -220,6 +222,10 @@ def main() -> None:
     parser.add_argument("--show-physics-colliders", action="store_true", default=False, help="Enable physics colliders wireframe")
     parser.add_argument("--debug-menu", action="store_true", help="Start with debug menu open")
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
+    parser.add_argument("--shadow-mode", type=str, default="pcss", choices=["hard", "pcf", "pcss"], help="Shadow filtering mode (default: pcss)")
+    parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
+    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=CSM, 7=SSCS, 8=Combined)")
+    parser.add_argument("--all-effects", action="store_true", default=False, help="Enable secondary graphics effects (GTAO, SSGI, SSR, IBL, TAA, point lights). Default is False (isolated shadows).")
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -258,10 +264,20 @@ def main() -> None:
     engine_tweaks = EngineTweaks()
     engine_tweaks.quality_preset = initial_preset_enum
     engine_tweaks.vsync_enabled = args.vsync
+    engine_tweaks.shadow_mode = args.shadow_mode.upper()
+    engine_tweaks.shadow_resolution = args.shadow_res
+    engine_tweaks.gbuffer_debug = GBufferDebugMode(args.gbuffer_debug)
     if args.wireframe:
         engine_tweaks.show_wireframe = True
     # Default to False (disabled) unless explicitly requested via --show-physics-colliders
     engine_tweaks.show_physics_colliders = args.show_physics_colliders
+    if not args.all_effects:
+        engine_tweaks.ao_mode = "OFF"
+        engine_tweaks.gi_mode = GIMode.OFF
+        engine_tweaks.ibl_enabled = False
+        engine_tweaks.ssr_enabled = False
+        engine_tweaks.taa_enabled = False
+        engine_tweaks.point_lights_enabled = False
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -285,6 +301,15 @@ def main() -> None:
         cfg = get_quality_preset(new_preset)
         cfg.wireframe = engine_tweaks.show_wireframe
         pipeline.apply_config(cfg)
+        engine_tweaks.shadow_resolution = cfg.shadow_resolution
+        engine_tweaks.shadow_mode = cfg.shadow_mode
+        engine_tweaks.shadow_softness = cfg.shadow_softness
+        engine_tweaks.shadow_bias = cfg.shadow_bias
+        engine_tweaks.sscs_enabled = cfg.sscs_enabled
+        engine_tweaks.sscs_steps = cfg.sscs_steps
+        engine_tweaks.sscs_thickness = cfg.sscs_thickness
+        engine_tweaks.sscs_ray_distance = cfg.sscs_ray_distance
+        engine_tweaks.sscs_max_distance = cfg.sscs_max_distance
         engine_tweaks.ao_mode = cfg.ao_mode
         engine_tweaks.gi_mode = cfg.gi_mode
         engine_tweaks.ibl_enabled = cfg.ibl_enabled
@@ -388,13 +413,13 @@ def main() -> None:
     cube_ids.append(spawn_static_box(ecs, physics, (4.0, 2.0, 7.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7))
     cube_ids.append(spawn_static_box(ecs, physics, (0.0, 2.0, 11.0), (12.0, 4.0, 0.6), color=(0.32, 0.36, 0.44), roughness=0.5, metallic=0.1))
 
-    # E. Cooked Monolith Obelisks (North plaza)
+    # E. Cooked Monolith Obelisks (North plaza, top of marble floor at Y = 0.05)
     monolith_ids: list[int] = []
     monolith_positions = [
-        (-4.0, 0.0, -1.0),
-        (4.0, 0.0, -1.0),
-        (-4.0, 0.0, -7.0),
-        (4.0, 0.0, -7.0),
+        (-4.0, 0.05, -1.0),
+        (4.0, 0.05, -1.0),
+        (-4.0, 0.05, -7.0),
+        (4.0, 0.05, -7.0),
     ]
     for pos in monolith_positions:
         ent = ecs.create_entity(
@@ -408,8 +433,8 @@ def main() -> None:
         physics.attach_box_collider(ent, half_x=0.8, half_y=2.1, half_z=0.8)
         monolith_ids.append(ent)
 
-    # F. Playable KCC Capsule Character
-    char_start_pos = (0.0, 0.92, 2.5)
+    # F. Playable KCC Capsule Character (Rests on marble floor at Y = 0.05 + 0.5 + 0.4 = 0.95)
+    char_start_pos = (0.0, 0.95, 2.5)
     char_id = ecs.create_entity(
         position=char_start_pos,
         scale=(1.0, 1.0, 1.0),
@@ -860,6 +885,17 @@ def main() -> None:
         loop.step_frame(dt)
 
         # Synchronize EngineTweaks to pipeline & dev tweaks
+        if engine_tweaks.shadow_resolution != pipeline.csm.atlas_size:
+            pipeline.csm.resize_atlas(engine_tweaks.shadow_resolution)
+        pipeline.config.shadow_resolution = engine_tweaks.shadow_resolution
+        pipeline.config.shadow_mode = engine_tweaks.shadow_mode
+        pipeline.config.shadow_softness = engine_tweaks.shadow_softness
+        pipeline.config.shadow_bias = engine_tweaks.shadow_bias
+        pipeline.config.sscs_enabled = engine_tweaks.sscs_enabled
+        pipeline.config.sscs_steps = engine_tweaks.sscs_steps
+        pipeline.config.sscs_thickness = engine_tweaks.sscs_thickness
+        pipeline.config.sscs_ray_distance = engine_tweaks.sscs_ray_distance
+        pipeline.config.sscs_max_distance = engine_tweaks.sscs_max_distance
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)

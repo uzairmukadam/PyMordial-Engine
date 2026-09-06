@@ -2,6 +2,7 @@
 
 from engine.gfx.quality_presets import (
     GraphicsQuality,
+    GIMode,
     RenderConfig,
     get_quality_preset,
     QUALITY_PRESETS,
@@ -18,6 +19,7 @@ from engine.gfx.hud_overlay import HudOverlay
 
 __all__ = [
     "GraphicsQuality",
+    "GIMode",
     "RenderConfig",
     "get_quality_preset",
     "QUALITY_PRESETS",

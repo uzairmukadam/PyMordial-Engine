@@ -64,6 +64,21 @@ class TestDebugSystem:
         assert g1 != g0
         assert isinstance(g1, GBufferDebugMode)
 
+        # Shadow & Contact Shadow properties
+        assert tweaks.shadow_resolution in (1024, 2048, 4096)
+        assert tweaks.shadow_mode in ("HARD", "PCF", "PCSS")
+        assert tweaks.shadow_softness > 0.0
+        assert tweaks.shadow_bias > 0.0
+        assert tweaks.sscs_enabled is True
+        assert tweaks.sscs_thickness > 0.0
+        assert tweaks.sscs_ray_distance > 0.0
+        assert tweaks.sscs_max_distance > 0.0
+
+        tweaks.shadow_mode = "HARD"
+        tweaks.shadow_resolution = 1024
+        assert tweaks.shadow_mode == "HARD"
+        assert tweaks.shadow_resolution == 1024
+
     def test_tier3_game_developer_tweaks(self):
         """Validates declarative registration of dev sliders, booleans, triggers, and watches."""
         gt = GameTweaks()

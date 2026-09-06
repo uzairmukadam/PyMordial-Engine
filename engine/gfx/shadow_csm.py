@@ -83,6 +83,10 @@ class CascadedShadowMap:
         center = self._center_scratch
         light_pos = self._light_pos_scratch
 
+        quad_size = max(self.atlas_size // 2, 1)
+        up_vec_standard = (0.0, 1.0, 0.0)
+        up_vec_alt = (0.0, 0.0, 1.0)
+
         for i in range(4):
             dist = self.split_distances[i]
             center_dist = (prev_dist + dist) * 0.5
@@ -91,21 +95,35 @@ class CascadedShadowMap:
             center[1] = camera_pos[1] + camera_forward[1] * center_dist
             center[2] = camera_pos[2] + camera_forward[2] * center_dist
 
-            radius = (dist - prev_dist) * 0.8 + 8.0
+            # Enclose cascade frustum slice with stable stepped bounding radius
+            raw_radius = max(dist * 0.92, (dist - prev_dist) * 0.85 + 7.5)
+            # Round radius to 0.5m increments to prevent projection breathing
+            radius = math.ceil(raw_radius * 2.0) * 0.5
 
-            # Light view matrix centered on cascade
-            light_pos[0] = center[0] - snx * (radius * 2.0)
-            light_pos[1] = center[1] - sny * (radius * 2.0)
-            light_pos[2] = center[2] - snz * (radius * 2.0)
+            # Light view matrix centered on cascade with extended occluder pull-back
+            caster_pullback = max(radius * 3.5, 65.0)
+            far = caster_pullback + radius * 2.5
+            light_pos[0] = center[0] - snx * caster_pullback
+            light_pos[1] = center[1] - sny * caster_pullback
+            light_pos[2] = center[2] - snz * caster_pullback
 
-            matrix_look_at(light_pos, center, up=(0.0, 1.0, 0.0), out=view)
+            # Prevent gimbal lock with near-vertical sun angles
+            up_vec = up_vec_standard if abs(sny) < 0.98 else up_vec_alt
+            matrix_look_at(light_pos, center, up=up_vec, out=view)
 
-            # Orthographic projection with texel snapping
+            # Subpixel Texel Snapping in Light View Space to eliminate edge swimming/shimmering
+            world_units_per_texel = (2.0 * radius) / float(quad_size)
+            if world_units_per_texel > 1e-6:
+                view[12] = round(view[12] / world_units_per_texel) * world_units_per_texel
+                view[13] = round(view[13] / world_units_per_texel) * world_units_per_texel
+
+            # Standard OpenGL orthographic projection (NDC z in [-1, 1], depth buffer in [0, 1])
             proj.fill(0.0)
             ext = radius
             proj[0] = 1.0 / ext
             proj[5] = 1.0 / ext
-            proj[10] = -1.0 / (radius * 4.0)
+            proj[10] = -2.0 / far
+            proj[14] = -1.0
             proj[15] = 1.0
 
             # Combine: LightViewProjection (4x4 column major multiplication)

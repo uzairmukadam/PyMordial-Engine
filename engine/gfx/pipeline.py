@@ -84,9 +84,14 @@ class RenderPipeline:
         "_capsule_alloc",
         "_csm_cascade_idx_uniform",
         "_u_pcf_samples",
+        "_u_shadow_mode",
+        "_u_shadow_softness",
+        "_u_shadow_bias",
         "_u_sscs_enabled",
         "_u_sscs_steps",
         "_u_sscs_thickness",
+        "_u_sscs_ray_distance",
+        "_u_sscs_max_distance",
         "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_ao_enabled",
@@ -214,9 +219,14 @@ class RenderPipeline:
         self._csm_cascade_idx_uniform = self.csm_prog.get("u_CascadeIndex", None)
 
         self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
+        self._u_shadow_mode = self.resolve_prog.get("u_ShadowMode", None)
+        self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
+        self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
         self._u_sscs_enabled = self.resolve_prog.get("u_SSCS_Enabled", None)
         self._u_sscs_steps = self.resolve_prog.get("u_SSCS_Steps", None)
         self._u_sscs_thickness = self.resolve_prog.get("u_SSCS_Thickness", None)
+        self._u_sscs_ray_distance = self.resolve_prog.get("u_SSCS_RayDistance", None)
+        self._u_sscs_max_distance = self.resolve_prog.get("u_SSCS_MaxDistance", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
 
@@ -478,12 +488,23 @@ class RenderPipeline:
         # Set resolve uniforms
         if self._u_pcf_samples is not None:
             self._u_pcf_samples.value = self.config.pcf_samples
+        if self._u_shadow_mode is not None:
+            mode_val = 0 if self.config.shadow_mode == "HARD" else (1 if self.config.shadow_mode == "PCF" else 2)
+            self._u_shadow_mode.value = mode_val
+        if self._u_shadow_softness is not None:
+            self._u_shadow_softness.value = float(self.config.shadow_softness)
+        if self._u_shadow_bias is not None:
+            self._u_shadow_bias.value = float(self.config.shadow_bias)
         if self._u_sscs_enabled is not None:
             self._u_sscs_enabled.value = 1 if self.config.sscs_enabled else 0
         if self._u_sscs_steps is not None:
             self._u_sscs_steps.value = self.config.sscs_steps
         if self._u_sscs_thickness is not None:
             self._u_sscs_thickness.value = self.config.sscs_thickness
+        if self._u_sscs_ray_distance is not None:
+            self._u_sscs_ray_distance.value = float(self.config.sscs_ray_distance)
+        if self._u_sscs_max_distance is not None:
+            self._u_sscs_max_distance.value = float(self.config.sscs_max_distance)
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_gbuffer_debug is not None:

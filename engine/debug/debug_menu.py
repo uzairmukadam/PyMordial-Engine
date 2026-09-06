@@ -450,19 +450,72 @@ class DebugMenu:
             imgui.separator()
             imgui.text("Lighting & Shadows")
 
-            # SSCS Contact Shadows
+            # 1. Shadow Map Resolution (1024, 2048, 4096)
+            res_options = ["1024", "2048", "4096"]
+            curr_res_str = str(et.shadow_resolution)
+            res_idx = res_options.index(curr_res_str) if curr_res_str in res_options else 1
+            res_changed, new_res_idx = imgui.combo("Shadow Resolution", res_idx, res_options)
+            if res_changed and new_res_idx != res_idx:
+                et.shadow_resolution = int(res_options[new_res_idx])
+                et.mark_custom()
+                self.toast.show(f"Shadow Resolution: {et.shadow_resolution}x{et.shadow_resolution}", duration=2.0)
+
+            # 2. Shadow Mode (HARD, PCF, PCSS)
+            shadow_modes = ["HARD", "PCF", "PCSS"]
+            s_idx = shadow_modes.index(et.shadow_mode) if et.shadow_mode in shadow_modes else 2
+            sm_changed, new_sm_idx = imgui.combo("Shadow Mode", s_idx, shadow_modes)
+            if sm_changed and new_sm_idx != s_idx:
+                et.shadow_mode = shadow_modes[new_sm_idx]
+                et.mark_custom()
+                self.toast.show(f"Shadow Mode: {et.shadow_mode}", duration=2.0)
+
+            # 3. Shadow Softness (PCF / PCSS)
+            if et.shadow_mode in ("PCF", "PCSS"):
+                soft_changed, soft_val = imgui.slider_float("Shadow Softness", et.shadow_softness, 0.2, 3.0, "%.2f")
+                if soft_changed:
+                    et.shadow_softness = soft_val
+                    et.mark_custom()
+
+            # 4. Shadow Depth Bias
+            bias_changed, bias_val = imgui.slider_float("Shadow Bias", et.shadow_bias, 0.0005, 0.0060, "%.4f")
+            if bias_changed:
+                et.shadow_bias = bias_val
+                et.mark_custom()
+
+            # 5. Screen-Space Contact Shadows (SSCS)
             sscs_changed, sscs_val = imgui.checkbox("Contact Shadows (SSCS)", et.sscs_enabled)
             if sscs_changed:
                 et.sscs_enabled = sscs_val
                 et.mark_custom()
                 self.toast.show(f"Contact Shadows: {'ON' if sscs_val else 'OFF'}", duration=1.5)
 
-            # Sun Angle (Azimuth)
+            if et.sscs_enabled:
+                st_changed, st_val = imgui.slider_int("SSCS Steps", et.sscs_steps, 4, 32)
+                if st_changed:
+                    et.sscs_steps = st_val
+                    et.mark_custom()
+
+                th_changed, th_val = imgui.slider_float("SSCS Thickness (m)", et.sscs_thickness, 0.02, 0.40, "%.2f m")
+                if th_changed:
+                    et.sscs_thickness = th_val
+                    et.mark_custom()
+
+                rd_changed, rd_val = imgui.slider_float("SSCS Ray Dist (m)", et.sscs_ray_distance, 0.2, 2.5, "%.2f m")
+                if rd_changed:
+                    et.sscs_ray_distance = rd_val
+                    et.mark_custom()
+
+                md_changed, md_val = imgui.slider_float("SSCS Max Dist (m)", et.sscs_max_distance, 10.0, 100.0, "%.1f m")
+                if md_changed:
+                    et.sscs_max_distance = md_val
+                    et.mark_custom()
+
+            # 6. Sun Angle (Azimuth)
             sun_changed, sun_val = imgui.slider_float("Sun Azimuth", et.sun_angle_deg, 0.0, 360.0, "%.1f deg")
             if sun_changed:
                 et.sun_angle_deg = sun_val
 
-            # Sun Elevation
+            # 7. Sun Elevation
             el_changed, el_val = imgui.slider_float("Sun Elevation", et.sun_elevation_deg, 0.0, 90.0, "%.1f deg")
             if el_changed:
                 et.sun_elevation_deg = el_val

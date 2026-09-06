@@ -27,15 +27,19 @@ class RenderConfig:
 
     # Shadow Settings
     shadow_resolution: int = 4096  # CSM Atlas size (1024, 2048, 4096)
+    shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS"
+    shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
+    shadow_bias: float = 0.0015    # Base depth bias
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
     pcf_samples: int = 16          # Poisson PCF taps (4, 8, 16)
     shadow_distance: float = 150.0 # Maximum shadow distance in meters
 
     # Screen-Space Contact Shadows (SSCS)
     sscs_enabled: bool = True
-    sscs_steps: int = 12           # Depth raymarching steps (<10m)
-    sscs_max_distance: float = 10.0
-    sscs_thickness: float = 0.05
+    sscs_steps: int = 16           # Depth raymarching steps (4 to 32)
+    sscs_ray_distance: float = 1.0 # Metric trace distance (0.2m to 3.0m)
+    sscs_max_distance: float = 50.0# Camera distance fade out (10.0m to 100.0m)
+    sscs_thickness: float = 0.15   # Physical metric thickness in meters
 
     # Depth Precision
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
@@ -88,6 +92,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
     GraphicsQuality.LOW: RenderConfig(
         shadow_resolution=1024,
+        shadow_mode="HARD",
+        shadow_softness=0.8,
+        shadow_bias=0.0020,
         csm_cascades=2,
         pcf_samples=4,
         shadow_distance=60.0,
@@ -106,6 +113,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
+        shadow_mode="PCF",
+        shadow_softness=1.0,
+        shadow_bias=0.0018,
         csm_cascades=3,
         pcf_samples=8,
         shadow_distance=100.0,
@@ -125,6 +135,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     ),
     GraphicsQuality.HIGH: RenderConfig(
         shadow_resolution=2048,
+        shadow_mode="PCSS",
+        shadow_softness=1.2,
+        shadow_bias=0.0015,
         csm_cascades=4,
         pcf_samples=16,
         shadow_distance=150.0,
@@ -145,6 +158,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     ),
     GraphicsQuality.ULTRA: RenderConfig(
         shadow_resolution=4096,
+        shadow_mode="PCSS",
+        shadow_softness=1.2,
+        shadow_bias=0.0015,
         csm_cascades=4,
         pcf_samples=16,
         shadow_distance=200.0,
@@ -165,6 +181,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
         shadow_resolution=4096,
+        shadow_mode="PCSS",
+        shadow_softness=1.4,
+        shadow_bias=0.0012,
         csm_cascades=4,
         pcf_samples=16,
         shadow_distance=300.0,
