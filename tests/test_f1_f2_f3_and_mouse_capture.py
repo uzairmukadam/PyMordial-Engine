@@ -275,3 +275,41 @@ class TestDebugMenuAndMouseCapture:
         # Frame 7: Ensure number keys 1-5 do NOT have preset action bindings
         for k in (Key.NUM_1, Key.NUM_2, Key.NUM_3, Key.NUM_4, Key.NUM_5):
             assert f"preset_{k}" not in input_mgr._actions
+
+    def test_debug_menu_resolution_resize_adaptation(self):
+        """Validates that DebugMenu synchronizes its viewport and dimensions on WindowResizeEvent."""
+        from engine.events import publish_event, WindowResizeEvent
+
+        input_mgr = InputManager()
+        menu = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=DebugToast(),
+            input_mgr=input_mgr,
+            screen_width=1280,
+            screen_height=720,
+        )
+
+        assert menu.width == 1280
+        assert menu.height == 720
+        assert menu.io.display_size[0] == 1280.0
+        assert menu.io.display_size[1] == 720.0
+
+        # Dispatch WindowResizeEvent to 1920x1080 (e.g. resolution change or fullscreen)
+        publish_event(WindowResizeEvent(width=1920, height=1080))
+        assert menu.width == 1920
+        assert menu.height == 1080
+        assert menu.io.display_size[0] == 1920.0
+        assert menu.io.display_size[1] == 1080.0
+
+        # Dispatch WindowResizeEvent to 2560x1440
+        publish_event(WindowResizeEvent(width=2560, height=1440))
+        assert menu.width == 2560
+        assert menu.height == 1440
+        assert menu.io.display_size[0] == 2560.0
+        assert menu.io.display_size[1] == 1440.0
+
+        menu.destroy()
+

@@ -568,6 +568,10 @@ def main() -> None:
             camera_mgr.blend_to("follow", duration_seconds=0.75)
             toast.show("Camera: 3rd-Person Follow (F10)", duration=2.0, color=(56, 189, 248))
 
+    def trigger_set_resolution(w: int, h: int) -> None:
+        render_ctx.window.set_resolution(w, h)
+        toast.show(f"Resolution: {w}x{h}", duration=2.0, color=(74, 222, 128))
+
     def trigger_toggle_fullscreen() -> None:
         render_ctx.window.toggle_fullscreen()
         mode_str = "BORDERLESS FULLSCREEN" if render_ctx.window.mode == WindowMode.BORDERLESS_FULLSCREEN else "WINDOWED"
@@ -583,12 +587,18 @@ def main() -> None:
     game_tweaks.add_action("Camera", "Center Camera View", trigger_reset_camera)
     game_tweaks.add_action("Camera", "Toggle Mode (Follow/Free)", trigger_toggle_camera)
     game_tweaks.add_action("Display", "Toggle Fullscreen (F11)", trigger_toggle_fullscreen)
+    game_tweaks.add_action("Display", "Set 1280x720 (HD)", lambda: trigger_set_resolution(1280, 720))
+    game_tweaks.add_action("Display", "Set 1600x900 (HD+)", lambda: trigger_set_resolution(1600, 900))
+    game_tweaks.add_action("Display", "Set 1920x1080 (FHD)", lambda: trigger_set_resolution(1920, 1080))
+    game_tweaks.add_action("Display", "Set 2560x1440 (QHD)", lambda: trigger_set_resolution(2560, 1440))
     game_tweaks.add_action("Physics", "Spawn Spheres", trigger_spawn_batch)
     game_tweaks.add_action("Physics", "Clear Spheres", trigger_clear_spheres)
     game_tweaks.add_action("PIE", "Save Snapshot", trigger_pie_save)
     game_tweaks.add_action("PIE", "Restore Snapshot", trigger_pie_restore)
 
     # Watches
+    game_tweaks.add_watch("Display", "Resolution", lambda: f"{render_ctx.window.width}x{render_ctx.window.height}")
+    game_tweaks.add_watch("Display", "Mode", lambda: render_ctx.window.mode.name)
     game_tweaks.add_watch("Entities", "Active Count", lambda: ecs.active_count)
     game_tweaks.add_watch("KCC", "Grounded", lambda: motor.state.is_grounded)
     game_tweaks.add_watch("KCC", "Speed", lambda: f"{motor.state.horizontal_speed:.1f} m/s")
@@ -979,7 +989,7 @@ def main() -> None:
         out_path = Path(args.screenshot).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         raw_data = pipeline.post_process.final_fbo.read(components=4, dtype="f1")
-        img = Image.frombytes("RGBA", (width, height), raw_data)
+        img = Image.frombytes("RGBA", (render_ctx.width, render_ctx.height), raw_data)
         img = img.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         img.save(out_path)
         print(f"Validation screenshot saved to: {out_path}")

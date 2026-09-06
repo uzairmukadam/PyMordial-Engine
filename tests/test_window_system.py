@@ -34,3 +34,33 @@ def test_window_supported_resolutions():
     res_list = win.get_supported_resolutions()
     assert len(res_list) > 0
     assert (1280, 720) in res_list
+
+
+def test_window_resizable_flag():
+    cfg_default = WindowConfig(width=800, height=600, hidden=True)
+    assert not cfg_default.resizable
+    win = Window(cfg_default)
+    assert not win.config.resizable
+
+    cfg_resizable = WindowConfig(width=800, height=600, hidden=True, resizable=True)
+    assert cfg_resizable.resizable
+    win2 = Window(cfg_resizable)
+    assert win2.config.resizable
+
+
+def test_window_set_mode_transitions():
+    cfg = WindowConfig(width=800, height=600, hidden=True)
+    win = Window(cfg)
+    assert win.mode == WindowMode.WINDOWED
+
+    win.set_mode(WindowMode.BORDERLESS_FULLSCREEN)
+    assert win.mode == WindowMode.BORDERLESS_FULLSCREEN
+    assert win.width == win._desktop_width
+    assert win.height == win._desktop_height
+
+    win.set_mode(WindowMode.WINDOWED)
+    assert win.mode == WindowMode.WINDOWED
+    assert win.width == 800
+    assert win.height == 600
+
+

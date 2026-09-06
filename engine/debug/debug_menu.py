@@ -19,6 +19,7 @@ from engine.debug.game_tweaks import GameTweaks, TweakType
 from engine.debug.toast import DebugToast
 from engine.input.input_manager import InputManager
 from engine.gfx.quality_presets import GraphicsQuality
+from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
 
 try:
     import OpenGL.GL as gl
@@ -91,9 +92,14 @@ class DebugMenu:
 
         self._apply_theme()
 
+        # Subscribe to runtime window resize events to keep ImGui viewport synchronized
+        subscribe_event(WindowResizeEvent, self._on_window_resize, priority=80)
+
     def _apply_theme(self) -> None:
         """Applies a modern, sleek AAA dark theme with translucent slate & cyan accents."""
         style = imgui.get_style()
+        style.display_window_padding = imgui.ImVec2(10.0, 10.0)
+        style.display_safe_area_padding = imgui.ImVec2(10.0, 10.0)
         style.window_rounding = 8.0
         style.frame_rounding = 5.0
         style.grab_rounding = 4.0
@@ -319,7 +325,8 @@ class DebugMenu:
     def _render_f2_graphics(self) -> None:
         """Renders independent F2 Graphics Pipeline & Renderer tweaks panel."""
         imgui.set_next_window_size(imgui.ImVec2(440.0, 480.0), imgui.Cond_.first_use_ever.value)
-        imgui.set_next_window_pos(imgui.ImVec2(320.0, 20.0), imgui.Cond_.first_use_ever.value)
+        f2_x = 20.0 + (500.0 if self.width >= 1600 else 300.0)
+        imgui.set_next_window_pos(imgui.ImVec2(f2_x, 20.0), imgui.Cond_.first_use_ever.value)
         expanded, p_open = imgui.begin("Graphics Pipeline & Renderer [F2]", p_open=True)
         if not p_open:
             self.show_graphics = False
@@ -398,7 +405,8 @@ class DebugMenu:
     def _render_f3_game_tweaks(self) -> None:
         """Renders independent F3 Gameplay Developer Tweaks & Inspector panel."""
         imgui.set_next_window_size(imgui.ImVec2(440.0, 520.0), imgui.Cond_.first_use_ever.value)
-        imgui.set_next_window_pos(imgui.ImVec2(540.0, 20.0), imgui.Cond_.first_use_ever.value)
+        f3_x = 20.0 + (960.0 if self.width >= 1920 else (520.0 if self.width >= 1600 else 320.0))
+        imgui.set_next_window_pos(imgui.ImVec2(f3_x, 20.0), imgui.Cond_.first_use_ever.value)
         expanded, p_open = imgui.begin("Gameplay Tweaks & Inspector [F3]", p_open=True)
         if not p_open:
             self.show_game_tweaks = False
@@ -477,6 +485,15 @@ class DebugMenu:
         if not self.visible and not has_toasts:
             return
 
+        # Dynamically synchronize with true display window resolution
+        if pygame.display.get_init():
+            try:
+                win_w, win_h = pygame.display.get_window_size()
+                if win_w > 0 and win_h > 0 and (win_w != self.width or win_h != self.height):
+                    self.resize(win_w, win_h)
+            except Exception:
+                pass
+
         self.io.display_size = imgui.ImVec2(float(self.width), float(self.height))
         self.renderer.process_inputs()
         imgui.new_frame()
@@ -502,17 +519,30 @@ class DebugMenu:
                 gl.glDisable(gl.GL_SCISSOR_TEST)
                 gl.glBindVertexArray(0)
                 gl.glUseProgram(0)
+                gl.glViewport(0, 0, int(self.width), int(self.height))
             except Exception:
                 pass
 
+    def _on_window_resize(self, event: WindowResizeEvent) -> None:
+        """Handles window resize event dispatched from windowing subsystem."""
+        self.resize(event.width, event.height)
+
     def resize(self, width: int, height: int) -> None:
-        """Handles window resize."""
+        """Handles window resize and synchronizes ImGui viewport dimensions."""
+        if width <= 0 or height <= 0:
+            return
         self.width = width
         self.height = height
         self.io.display_size = imgui.ImVec2(float(width), float(height))
+        if self.renderer is not None:
+            try:
+                self.renderer._update_textures()
+            except Exception:
+                pass
 
     def destroy(self) -> None:
         """Shuts down ImGui context and backend renderer."""
+        unsubscribe_event(WindowResizeEvent, self._on_window_resize)
         if self.renderer is not None:
             try:
                 self.renderer.shutdown()

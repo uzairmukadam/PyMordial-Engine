@@ -52,7 +52,7 @@ class WindowConfig:
     title: str = "PyMordial Engine 3D"
     mode: WindowMode = WindowMode.WINDOWED
     vsync: VSyncMode = VSyncMode.ON
-    resizable: bool = True
+    resizable: bool = False
     hidden: bool = False
     depth_bits: int = 24
 
@@ -90,6 +90,17 @@ class Window:
 
         self._windowed_width = self.width
         self._windowed_height = self.height
+
+        # Enable Per-Monitor DPI Awareness on Windows to prevent DWM scaling distortion
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            try:
+                import ctypes
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
 
         if not pygame.get_init():
             pygame.init()
@@ -155,7 +166,7 @@ class Window:
 
     def set_mode(self, mode: WindowMode) -> None:
         """Transitions display mode on the fly (Windowed <-> Borderless <-> Exclusive)."""
-        if self.is_headless or mode == self.mode:
+        if mode == self.mode:
             return
 
         old_mode = self.mode
@@ -173,8 +184,26 @@ class Window:
             self.width = self._desktop_width
             self.height = self._desktop_height
 
-        self.surface = self._create_surface()
-        pygame.display.set_caption(self.title)
+        if hasattr(pygame, "Window") and not self.is_headless:
+            try:
+                win = pygame.Window.from_display_module()
+                if mode == WindowMode.BORDERLESS_FULLSCREEN:
+                    win.borderless = True
+                    win.size = (self._desktop_width, self._desktop_height)
+                    win.position = (0, 0)
+                elif mode == WindowMode.EXCLUSIVE_FULLSCREEN:
+                    win.set_fullscreen(desktop=False)
+                else:  # WINDOWED
+                    win.borderless = False
+                    win.size = (self.width, self.height)
+                    win.position = pygame.WINDOWPOS_CENTERED
+            except Exception:
+                self.surface = self._create_surface()
+        elif not self.is_headless:
+            self.surface = self._create_surface()
+
+        if not self.is_headless:
+            pygame.display.set_caption(self.title)
 
         log_info(LogChannel.WINDOW, f"Display mode switched: {old_mode.name} -> {mode.name} ({self.width}x{self.height})")
         publish_event(WindowModeChangedEvent(mode=int(mode), width=self.width, height=self.height))
@@ -192,7 +221,16 @@ class Window:
             self._windowed_height = height
 
         if not self.is_headless:
-            self.surface = self._create_surface()
+            if hasattr(pygame, "Window"):
+                try:
+                    win = pygame.Window.from_display_module()
+                    win.size = (width, height)
+                    if self.mode == WindowMode.WINDOWED:
+                        win.position = pygame.WINDOWPOS_CENTERED
+                except Exception:
+                    self.surface = self._create_surface()
+            else:
+                self.surface = self._create_surface()
             pygame.display.set_caption(self.title)
 
         log_info(LogChannel.WINDOW, f"Resolution changed to {width}x{height}")

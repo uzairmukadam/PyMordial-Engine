@@ -31,6 +31,7 @@ class RenderContext:
         hidden: bool = False,
         config: Optional[RenderConfig] = None,
         window: Optional[Window] = None,
+        resizable: bool = False,
     ) -> None:
         self.config = config if config is not None else get_quality_preset(GraphicsQuality.HIGH)
         self.is_headless = hidden
@@ -47,6 +48,7 @@ class RenderContext:
                 title=title,
                 hidden=hidden,
                 depth_bits=24,
+                resizable=resizable,
             )
             self.window = Window(win_cfg)
             self.width = self.window.width
@@ -107,6 +109,11 @@ class RenderContext:
         self.width = new_width
         self.height = new_height
         self.ctx.viewport = (0, 0, new_width, new_height)
+        if self.ctx.screen is not None:
+            try:
+                self.ctx.screen.viewport = (0, 0, new_width, new_height)
+            except Exception:
+                pass
 
     def clear(
         self,

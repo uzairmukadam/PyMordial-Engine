@@ -18,6 +18,7 @@ from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.post_process import PostProcessPipeline
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
+from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
 
 
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
@@ -187,6 +188,9 @@ class RenderPipeline:
             quad_vert,
         )
 
+        # Automatically synchronize framebuffers with window resolution changes
+        subscribe_event(WindowResizeEvent, self._on_window_resize, priority=90)
+
     def apply_config(self, new_config: RenderConfig) -> None:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
@@ -201,6 +205,10 @@ class RenderPipeline:
         self.ctx_wrapper.height = height
         self.g_buffer.resize(width, height)
         self.post_process.resize(width, height)
+
+    def _on_window_resize(self, event: WindowResizeEvent) -> None:
+        """Handler for WindowResizeEvent dispatched by Window or user actions."""
+        self.resize(event.width, event.height)
 
     def load_cooked_mesh(self, name: str, vpath: str) -> MeshAllocation:
         """Loads a cooked .pm_mesh from VFS and registers it into the MegaBuffer."""
@@ -381,6 +389,7 @@ class RenderPipeline:
         return self.post_process.output_texture_id
 
     def destroy(self) -> None:
+        unsubscribe_event(WindowResizeEvent, self._on_window_resize)
         self.debug.destroy()
         self.resources.close()
         self.frame_context.destroy()
