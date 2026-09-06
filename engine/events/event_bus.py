@@ -5,7 +5,7 @@ from collections import deque
 import threading
 from typing import Any, Callable, TypeVar
 from engine.events.event import Event
-from engine.logging import log_error, log_trace, LogChannel
+from engine.logging import log_error, LogChannel
 
 T = TypeVar("T", bound=Event)
 EventHandler = Callable[[Any], None]
@@ -24,7 +24,7 @@ class EventBus:
 
     def subscribe(self, event_type: type[T], handler: Callable[[T], None], priority: int = 0) -> None:
         """Registers a listener for a specific event type.
-        
+
         Higher priority numbers execute earlier.
         """
         with self._lock:

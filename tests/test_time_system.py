@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 import time
-import pytest
-from engine.time import TimeSystem, Stopwatch, Cooldown, FPSLimiter
+from engine.time import TimeSystem, Stopwatch, Cooldown
 
 
 def test_time_domains_and_dilation():

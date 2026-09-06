@@ -58,7 +58,7 @@ from engine.debug import (  # noqa: E402
     DebugToast,
     DebugMenu,
 )
-from engine.camera import CameraManager, FollowCamera, FollowCameraConfig, FreeFlyCamera  # noqa: E402
+from engine.camera import CameraManager, FreeFlyCamera  # noqa: E402
 from engine.audio import get_audio_engine  # noqa: E402
 from engine.window import WindowMode  # noqa: E402
 
@@ -651,6 +651,10 @@ def main() -> None:
     frame_idx = 0
     footstep_timer = 0.0
 
+    # Zero-allocation reusable per-frame vectors
+    scratch_fwd_vec = [0.0, 0.0, 0.0]
+    scratch_sun_dir = [0.0, 0.0, 0.0]
+
     while running:
         raw_dt_ms = clock.tick(0)
         dt = min(raw_dt_ms * 0.001, 0.1)
@@ -658,7 +662,10 @@ def main() -> None:
         monitor.begin_frame()
 
         if not args.headless:
-            input_mgr.poll_events()
+            events = input_mgr.poll_events()
+            if not input_mgr.is_mouse_grabbed and debug_menu.visible:
+                for ev in events:
+                    debug_menu.process_event(ev)
         else:
             input_mgr.begin_frame()
             input_mgr.update_axes()
@@ -691,23 +698,23 @@ def main() -> None:
         if input_mgr.is_action_pressed("toggle_fullscreen"):
             trigger_toggle_fullscreen()
 
-        # Direct Debug Tab Hotkeys (F1 = Performance, F2 = Graphics, F3 = Game)
-        tab_toggled_this_frame = False
+        # Direct Debug Panel Hotkeys (F1 = Multi-Style Perf, F2 = Graphics, F3 = Game Tweaks)
         if input_mgr.is_action_pressed("debug_perf") or input_mgr.is_action_pressed("debug_perf_toggle"):
-            is_open = debug_menu.toggle_tab(0)
-            msg = "Debug: Performance Monitor (F1)" if is_open else "Debug Menu Closed"
-            toast.show(msg, duration=1.5, color=(147, 197, 253))
-            tab_toggled_this_frame = True
+            style = debug_menu.cycle_f1()
+            if style == 1:
+                toast.show("Debug: Performance HUD [Basic] (F1)", duration=1.5, color=(147, 197, 253))
+            elif style == 2:
+                toast.show("Debug: Performance Profiler [Expanded] (F1)", duration=1.5, color=(147, 197, 253))
+            else:
+                toast.show("Debug: Performance Monitor Closed", duration=1.5, color=(147, 197, 253))
         elif input_mgr.is_action_pressed("debug_graphics") or input_mgr.is_action_pressed("debug_graphics_toggle"):
-            is_open = debug_menu.toggle_tab(1)
-            msg = "Debug: Graphics Options (F2)" if is_open else "Debug Menu Closed"
+            is_open = debug_menu.toggle_graphics()
+            msg = "Debug: Graphics Options [F2]" if is_open else "Graphics Options Closed"
             toast.show(msg, duration=1.5, color=(147, 197, 253))
-            tab_toggled_this_frame = True
         elif input_mgr.is_action_pressed("debug_game") or input_mgr.is_action_pressed("debug_game_toggle"):
-            is_open = debug_menu.toggle_tab(2)
-            msg = "Debug: Game Options (F3)" if is_open else "Debug Menu Closed"
+            is_open = debug_menu.toggle_game_tweaks()
+            msg = "Debug: Game Developer Tweaks [F3]" if is_open else "Game Tweaks Closed"
             toast.show(msg, duration=1.5, color=(147, 197, 253))
-            tab_toggled_this_frame = True
 
         # Secondary wireframe hotkeys (F7 / F8)
         if input_mgr.is_action_pressed("toggle_wireframe"):
@@ -722,54 +729,48 @@ def main() -> None:
             state_str = "ON" if engine_tweaks.show_physics_colliders else "OFF"
             toast.show(f"Physics Gizmos: {state_str}", duration=2.0, color=(74, 222, 128))
 
-        # Input dispatching
-        if debug_menu.visible:
-            if not tab_toggled_this_frame:
-                debug_menu.handle_input()
-            move_fwd = 0.0
-            move_strafe = 0.0
-            is_sprinting = False
-        else:
-            if not args.headless:
-                move_vec = input_mgr.get_vector2("move")
-                move_strafe = move_vec[0]
-                move_fwd = move_vec[1]
-                is_sprinting = input_mgr.is_action_down("sprint")
+        # Gameplay & Character Input (Never locked by debug menu)
+        if not args.headless:
+            move_vec = input_mgr.get_vector2("move")
+            move_strafe = move_vec[0]
+            move_fwd = move_vec[1]
+            is_sprinting = input_mgr.is_action_down("sprint")
 
-                if input_mgr.is_action_pressed("jump"):
-                    jump_requested = True
-                    if motor.state.is_grounded:
-                        audio_engine.play_sound("jump", position=char_start_pos, volume=0.8)
-                if input_mgr.is_action_pressed("reset_player"):
-                    trigger_reset_player()
-                if input_mgr.is_action_pressed("reset_camera"):
-                    trigger_reset_camera()
-                if input_mgr.is_action_pressed("spawn_spheres"):
-                    trigger_spawn_batch()
-                if input_mgr.is_action_pressed("clear_spheres"):
-                    trigger_clear_spheres()
-                if input_mgr.is_action_pressed("pie_save"):
-                    trigger_pie_save()
-                if input_mgr.is_action_pressed("pie_restore"):
-                    trigger_pie_restore()
+            if input_mgr.is_action_pressed("jump"):
+                jump_requested = True
+                if motor.state.is_grounded:
+                    audio_engine.play_sound("jump", position=char_start_pos, volume=0.8)
+            if input_mgr.is_action_pressed("reset_player"):
+                trigger_reset_player()
+            if input_mgr.is_action_pressed("reset_camera"):
+                trigger_reset_camera()
+            if input_mgr.is_action_pressed("spawn_spheres"):
+                trigger_spawn_batch()
+            if input_mgr.is_action_pressed("clear_spheres"):
+                trigger_clear_spheres()
+            if input_mgr.is_action_pressed("pie_save"):
+                trigger_pie_save()
+            if input_mgr.is_action_pressed("pie_restore"):
+                trigger_pie_restore()
 
-                if input_mgr.is_action_pressed("cycle_tonemap"):
-                    m = engine_tweaks.cycle_tonemapper()
-                    toast.show(f"Tonemapper: {m}", duration=2.0, color=(192, 132, 252))
+            if input_mgr.is_action_pressed("cycle_tonemap"):
+                m = engine_tweaks.cycle_tonemapper()
+                toast.show(f"Tonemapper: {m}", duration=2.0, color=(192, 132, 252))
 
-                if input_mgr.is_action_pressed("cycle_gbuffer"):
-                    g = engine_tweaks.cycle_gbuffer_debug()
-                    toast.show(f"G-Buffer Mode: {g.name}", duration=2.0, color=(251, 146, 60))
+            if input_mgr.is_action_pressed("cycle_gbuffer"):
+                g = engine_tweaks.cycle_gbuffer_debug()
+                toast.show(f"G-Buffer Mode: {g.name}", duration=2.0, color=(251, 146, 60))
 
-                if input_mgr.is_action_pressed("toggle_sun_ray"):
-                    engine_tweaks.show_sun_ray = not engine_tweaks.show_sun_ray
-                    toast.show(f"Sun Ray Gizmo: {engine_tweaks.show_sun_ray}", duration=2.0, color=(250, 204, 21))
+            if input_mgr.is_action_pressed("toggle_sun_ray"):
+                engine_tweaks.show_sun_ray = not engine_tweaks.show_sun_ray
+                toast.show(f"Sun Ray Gizmo: {engine_tweaks.show_sun_ray}", duration=2.0, color=(250, 204, 21))
 
-                if input_mgr.is_action_pressed("cycle_preset"):
-                    p = engine_tweaks.cycle_quality_preset()
-                    toast.show(f"Preset: {p.value.upper()}", duration=2.0, color=(56, 189, 248))
+            if input_mgr.is_action_pressed("cycle_preset"):
+                p = engine_tweaks.cycle_quality_preset()
+                toast.show(f"Preset: {p.value.upper()}", duration=2.0, color=(56, 189, 248))
 
-                # Camera Look & Orbit (Standard AAA: Stick Right turns Right, Stick Up tilts Up)
+            # Camera Look & Orbit (Active only when mouse is grabbed / captured)
+            if input_mgr.is_mouse_grabbed:
                 look_vec = input_mgr.get_vector2("look")
                 if abs(look_vec[0]) > 0.01 or abs(look_vec[1]) > 0.01:
                     sens = cam_sens_tweak.value
@@ -780,14 +781,9 @@ def main() -> None:
                         min(cam.config.max_pitch_deg, cam.pitch_deg + pitch_mult * look_vec[1] * 90.0 * sens * dt),
                     )
 
-                if input_mgr.is_mouse_grabbed:
-                    dx, dy = input_mgr.mouse_delta
-                    if dx != 0 or dy != 0:
-                        cam.handle_mouse_orbit(dx, dy)
-                elif input_mgr.is_mouse_down(MouseButton.LEFT) or input_mgr.is_mouse_down(MouseButton.RIGHT):
-                    dx, dy = input_mgr.mouse_delta
-                    if dx != 0 or dy != 0:
-                        cam.handle_mouse_orbit(dx, dy)
+                dx, dy = input_mgr.mouse_delta
+                if dx != 0 or dy != 0:
+                    cam.handle_mouse_orbit(dx, dy)
 
                 if input_mgr.mouse_wheel != 0.0:
                     cam.handle_zoom(input_mgr.mouse_wheel)
@@ -870,8 +866,10 @@ def main() -> None:
                 )
 
         # Update 3D Audio spatial listener
-        fwd_vec = (camera_target[0] - camera_pos[0], camera_target[1] - camera_pos[1], camera_target[2] - camera_pos[2])
-        audio_engine.update(dt, camera_position=camera_pos, camera_forward=fwd_vec)
+        scratch_fwd_vec[0] = camera_target[0] - camera_pos[0]
+        scratch_fwd_vec[1] = camera_target[1] - camera_pos[1]
+        scratch_fwd_vec[2] = camera_target[2] - camera_pos[2]
+        audio_engine.update(dt, camera_position=camera_pos, camera_forward=scratch_fwd_vec)
 
         # Compute Sun vector from Azimuth & Elevation
         rad_sun_az = math.radians(engine_tweaks.sun_angle_deg)
@@ -879,7 +877,9 @@ def main() -> None:
         sun_x = math.cos(rad_sun_el) * math.sin(rad_sun_az)
         sun_y = -math.sin(rad_sun_el)
         sun_z = math.cos(rad_sun_el) * math.cos(rad_sun_az)
-        sun_dir = (sun_x, sun_y, sun_z)
+        scratch_sun_dir[0] = sun_x
+        scratch_sun_dir[1] = sun_y
+        scratch_sun_dir[2] = sun_z
 
         # 3D Immediate-Mode Wireframe Debug Drawing
         pipeline.debug.update(dt)
@@ -956,7 +956,7 @@ def main() -> None:
                 camera_pos=camera_pos,
                 camera_target=camera_target,
                 time_elapsed=loop.elapsed_time,
-                sun_dir=sun_dir,
+                sun_dir=scratch_sun_dir,
                 sun_lux=pipeline.config.sun_intensity,
                 draw_batches=draw_batches,
                 debug_draw=pipeline.debug,
@@ -988,6 +988,7 @@ def main() -> None:
     debug_menu.destroy()
     pipeline.destroy()
     render_ctx.destroy()
+    audio_engine.shutdown()
     pygame.quit()
     print("PyMordial Engine Master Validation completed successfully.")
 

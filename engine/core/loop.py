@@ -133,7 +133,7 @@ class EngineLoop:
 
             # 1. Input Processing
             self.input_manager.poll_events()
-            if self.input_manager.should_quit or self.input_manager.is_action_just_pressed("pause"):
+            if self.input_manager.should_quit or self.input_manager.is_action_pressed("pause"):
                 self.is_running = False
                 break
 

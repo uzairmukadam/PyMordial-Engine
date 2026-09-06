@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 from pathlib import Path
-import pytest
 from engine.logging import (
     Logger,
     LogLevel,
     LogChannel,
-    ConsoleSink,
-    FileSink,
-    RingBufferSink,
 )
 
 

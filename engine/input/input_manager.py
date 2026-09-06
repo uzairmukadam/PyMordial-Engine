@@ -20,7 +20,6 @@ from engine.input.codes import (
 from engine.input.actions import ActionBinding, AxisBinding, Vector2Binding
 from engine.input.context import InputContext, InputContextStack
 from engine.input.haptics import HapticsManager
-from engine.events import publish_event, InputActionEvent
 
 
 class InputManager:
@@ -732,12 +731,14 @@ class InputManager:
                 self._pad_released.add(btn_code)
                 self._dispatch_pad_release(btn_code)
 
-    def poll_events(self) -> None:
+    def poll_events(self) -> list[pygame.event.Event]:
         """Drains Pygame events once per frame and updates internal state buffers."""
         self.begin_frame()
-        for event in pygame.event.get():
+        events = pygame.event.get()
+        for event in events:
             self.process_event(event)
         self.update_axes()
+        return events
 
     # --------------------------------------------------------------------------
     # Public Query Interface
@@ -760,6 +761,9 @@ class InputManager:
         if action_name in self._debug_actions:
             return self._debug_action_released.get(action_name, False)
         return False if self.is_debug_mode else self._action_released.get(action_name, False)
+
+    is_action_just_pressed = is_action_pressed
+    is_action_just_released = is_action_released
 
     def get_axis(self, axis_name: str) -> float:
         """Returns the normalized axis value in range [-1.0, +1.0]."""

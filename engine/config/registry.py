@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from engine.config.cvar import CVar, CVarFlags
 from engine.logging import log_info, log_warn, LogChannel
 

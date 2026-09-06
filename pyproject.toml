@@ -18,6 +18,7 @@ dependencies = [
     "numpy>=2.0.0",
     "zstandard>=0.23.0",
     "imgui-bundle>=1.92.0",
+    "pyopengl>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -33,3 +34,12 @@ include = ["engine*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+

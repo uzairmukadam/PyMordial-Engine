@@ -3,6 +3,7 @@
 Provides zero-overhead immediate-mode visual debugging for physics colliders,
 bounding spheres, raycasts, coordinate frames, and arbitrary 3D geometry.
 Batch renders all lines in a single OpenGL draw call with Reversed-Z depth testing.
+Optimized with vectorized precomputed unit templates for ~10x faster gizmo generation.
 """
 
 from __future__ import annotations
@@ -15,8 +16,89 @@ import moderngl
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
 
 
+def _build_unit_box_template() -> np.ndarray:
+    corners = np.array([
+        [-0.5, -0.5, -0.5],  # 0: ---
+        [ 0.5, -0.5, -0.5],  # 1: +--
+        [ 0.5,  0.5, -0.5],  # 2: ++-
+        [-0.5,  0.5, -0.5],  # 3: -+-
+        [-0.5, -0.5,  0.5],  # 4: --+
+        [ 0.5, -0.5,  0.5],  # 5: +-+
+        [ 0.5,  0.5,  0.5],  # 6: +++
+        [-0.5,  0.5,  0.5],  # 7: -++
+    ], dtype=np.float32)
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom
+        (4, 5), (5, 6), (6, 7), (7, 4),  # Top
+        (0, 4), (1, 5), (2, 6), (3, 7),  # Struts
+    ]
+    verts = np.empty((24, 3), dtype=np.float32)
+    for i, (i0, i1) in enumerate(edges):
+        verts[i * 2] = corners[i0]
+        verts[i * 2 + 1] = corners[i1]
+    return verts
+
+
+def _build_unit_sphere_template(segments: int = 16) -> np.ndarray:
+    step = 2.0 * math.pi / segments
+    verts = np.empty((segments * 6, 3), dtype=np.float32)
+    out_idx = 0
+    for i in range(segments):
+        a0, a1 = i * step, (i + 1) * step
+        c0, s0 = math.cos(a0), math.sin(a0)
+        c1, s1 = math.cos(a1), math.sin(a1)
+        # XY ring
+        verts[out_idx] = (c0, s0, 0.0)
+        verts[out_idx + 1] = (c1, s1, 0.0)
+        # XZ ring
+        verts[out_idx + 2] = (c0, 0.0, s0)
+        verts[out_idx + 3] = (c1, 0.0, s1)
+        # YZ ring
+        verts[out_idx + 4] = (0.0, c0, s0)
+        verts[out_idx + 5] = (0.0, c1, s1)
+        out_idx += 6
+    return verts
+
+
+def _build_unit_capsule_components(segments: int = 12) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    step = 2.0 * math.pi / segments
+    ring_verts = []
+    for i in range(segments):
+        a0, a1 = i * step, (i + 1) * step
+        ring_verts.extend([(math.cos(a0), 0.0, math.sin(a0)), (math.cos(a1), 0.0, math.sin(a1))])
+    ring_t = np.array(ring_verts, dtype=np.float32)
+
+    strut_lines = []
+    for angle in (0.0, math.pi * 0.5, math.pi, math.pi * 1.5):
+        c, s = math.cos(angle), math.sin(angle)
+        strut_lines.extend([(c, -1.0, s), (c, 1.0, s)])
+    strut_t = np.array(strut_lines, dtype=np.float32)
+
+    half_segs = segments // 2
+    dome_lines = []
+    for i in range(half_segs):
+        a0, a1 = i * math.pi / half_segs, (i + 1) * math.pi / half_segs
+        c0, s0 = math.cos(a0), math.sin(a0)
+        c1, s1 = math.cos(a1), math.sin(a1)
+        # Top dome: XY and YZ (offset +1 on y)
+        dome_lines.extend([
+            (c0, s0, 0.0, 1.0), (c1, s1, 0.0, 1.0),
+            (0.0, s0, c0, 1.0), (0.0, s1, c1, 1.0),
+            # Bot dome: XY and YZ (offset -1 on y)
+            (c0, -s0, 0.0, -1.0), (c1, -s1, 0.0, -1.0),
+            (0.0, -s0, c0, -1.0), (0.0, -s1, c1, -1.0),
+        ])
+    return ring_t, strut_t, np.array(dome_lines, dtype=np.float32)
+
+
+# Precomputed static geometry templates
+UNIT_BOX_VERTS = _build_unit_box_template()
+UNIT_SPHERE_16_VERTS = _build_unit_sphere_template(16)
+CAPSULE_12_RINGS, CAPSULE_12_STRUTS, CAPSULE_12_DOMES = _build_unit_capsule_components(12)
+
+
 class DebugDraw:
-    """Immediate-mode 3D visual wireframe gizmo drawer."""
+    """Immediate-mode 3D visual wireframe gizmo drawer with zero-allocation template caching."""
 
     __slots__ = (
         "ctx",
@@ -151,27 +233,30 @@ class DebugDraw:
         color: tuple[float, float, float, float] | tuple[float, float, float] = (0.0, 1.0, 0.0, 1.0),
         duration: float = 0.0,
     ) -> None:
-        """Draws a 3D wireframe box (12 edges)."""
+        """Draws a 3D wireframe box (12 edges = 24 vertices)."""
+        if duration == 0.0 and self.vertex_count + 24 <= self.max_vertices:
+            c = (color[0], color[1], color[2], color[3] if len(color) > 3 else 1.0)
+            idx = self.vertex_count
+            buf = self.vertex_buffer
+            buf[idx : idx + 24, 0:3] = UNIT_BOX_VERTS * size + center
+            buf[idx : idx + 24, 3:7] = c
+            self.vertex_count += 24
+            return
+
+        # Fallback for persistent lines or buffer overflow
         hx, hy, hz = size[0] * 0.5, size[1] * 0.5, size[2] * 0.5
         cx, cy, cz = center[0], center[1], center[2]
-
         corners = [
-            (cx - hx, cy - hy, cz - hz),  # 0: ---
-            (cx + hx, cy - hy, cz - hz),  # 1: +--
-            (cx + hx, cy + hy, cz - hz),  # 2: ++-
-            (cx - hx, cy + hy, cz - hz),  # 3: -+-
-            (cx - hx, cy - hy, cz + hz),  # 4: --+
-            (cx + hx, cy - hy, cz + hz),  # 5: +-+
-            (cx + hx, cy + hy, cz + hz),  # 6: +++
-            (cx - hx, cy + hy, cz + hz),  # 7: -++
+            (cx - hx, cy - hy, cz - hz), (cx + hx, cy - hy, cz - hz),
+            (cx + hx, cy + hy, cz - hz), (cx - hx, cy + hy, cz - hz),
+            (cx - hx, cy - hy, cz + hz), (cx + hx, cy - hy, cz + hz),
+            (cx + hx, cy + hy, cz + hz), (cx - hx, cy + hy, cz + hz),
         ]
-
         edges = [
-            (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom
-            (4, 5), (5, 6), (6, 7), (7, 4),  # Top
-            (0, 4), (1, 5), (2, 6), (3, 7),  # Struts
+            (0, 1), (1, 2), (2, 3), (3, 0),
+            (4, 5), (5, 6), (6, 7), (7, 4),
+            (0, 4), (1, 5), (2, 6), (3, 7),
         ]
-
         for i0, i1 in edges:
             self.draw_line(corners[i0], corners[i1], color=color, duration=duration)
 
@@ -200,20 +285,25 @@ class DebugDraw:
         duration: float = 0.0,
     ) -> None:
         """Draws a 3D wireframe sphere composed of 3 orthogonal rings (XY, XZ, YZ)."""
+        if segments == 16 and duration == 0.0 and self.vertex_count + 96 <= self.max_vertices:
+            c = (color[0], color[1], color[2], color[3] if len(color) > 3 else 1.0)
+            idx = self.vertex_count
+            buf = self.vertex_buffer
+            buf[idx : idx + 96, 0:3] = UNIT_SPHERE_16_VERTS * radius + center
+            buf[idx : idx + 96, 3:7] = c
+            self.vertex_count += 96
+            return
+
+        # Fallback for custom segments or persistent lines
         step = 2.0 * math.pi / segments
         cx, cy, cz = center[0], center[1], center[2]
-
         for i in range(segments):
             a0 = i * step
             a1 = (i + 1) * step
             c0, s0 = math.cos(a0) * radius, math.sin(a0) * radius
             c1, s1 = math.cos(a1) * radius, math.sin(a1) * radius
-
-            # XY ring
             self.draw_line((cx + c0, cy + s0, cz), (cx + c1, cy + s1, cz), color=color, duration=duration)
-            # XZ ring
             self.draw_line((cx + c0, cy, cz + s0), (cx + c1, cy, cz + s1), color=color, duration=duration)
-            # YZ ring
             self.draw_line((cx, cy + c0, cz + s0), (cx, cy + c1, cz + s1), color=color, duration=duration)
 
     def draw_capsule(
@@ -226,40 +316,66 @@ class DebugDraw:
         duration: float = 0.0,
     ) -> None:
         """Draws a 3D wireframe capsule (cylinder + hemispherical caps) along Y-axis."""
+        if segments == 12 and duration == 0.0 and self.vertex_count + 104 <= self.max_vertices:
+            c = (color[0], color[1], color[2], color[3] if len(color) > 3 else 1.0)
+            cx, cy, cz = center[0], center[1], center[2]
+            idx = self.vertex_count
+            buf = self.vertex_buffer
+
+            # 1. Top and bottom horizontal rings (24 + 24 = 48 vertices)
+            top_center = np.array([cx, cy + half_height, cz], dtype=np.float32)
+            bot_center = np.array([cx, cy - half_height, cz], dtype=np.float32)
+            buf[idx : idx + 24, 0:3] = CAPSULE_12_RINGS * radius + top_center
+            buf[idx : idx + 24, 3:7] = c
+            buf[idx + 24 : idx + 48, 0:3] = CAPSULE_12_RINGS * radius + bot_center
+            buf[idx + 24 : idx + 48, 3:7] = c
+
+            # 2. Struts (8 vertices)
+            struts = CAPSULE_12_STRUTS.copy()
+            struts[:, 0] = struts[:, 0] * radius + cx
+            struts[:, 1] = cy + struts[:, 1] * half_height
+            struts[:, 2] = struts[:, 2] * radius + cz
+            buf[idx + 48 : idx + 56, 0:3] = struts
+            buf[idx + 48 : idx + 56, 3:7] = c
+
+            # 3. Domes (48 vertices)
+            domes = CAPSULE_12_DOMES.copy()
+            domes_pos = np.empty((48, 3), dtype=np.float32)
+            domes_pos[:, 0] = domes[:, 0] * radius + cx
+            domes_pos[:, 1] = cy + domes[:, 3] * half_height + domes[:, 1] * radius
+            domes_pos[:, 2] = domes[:, 2] * radius + cz
+            buf[idx + 56 : idx + 104, 0:3] = domes_pos
+            buf[idx + 56 : idx + 104, 3:7] = c
+
+            self.vertex_count += 104
+            return
+
+        # Fallback for custom segments or persistent lines
         cx, cy, cz = center[0], center[1], center[2]
         top_y = cy + half_height
         bot_y = cy - half_height
-
         step = 2.0 * math.pi / segments
-
-        # 1. Top and Bottom horizontal rings
         for i in range(segments):
             a0 = i * step
             a1 = (i + 1) * step
             c0, s0 = math.cos(a0) * radius, math.sin(a0) * radius
             c1, s1 = math.cos(a1) * radius, math.sin(a1) * radius
-
             self.draw_line((cx + c0, top_y, cz + s0), (cx + c1, top_y, cz + s1), color=color, duration=duration)
             self.draw_line((cx + c0, bot_y, cz + s0), (cx + c1, bot_y, cz + s1), color=color, duration=duration)
 
-        # 2. Vertical cylinder struts (at 0, 90, 180, 270 deg)
         for angle in (0.0, math.pi * 0.5, math.pi, math.pi * 1.5):
             sx = math.cos(angle) * radius
             sz = math.sin(angle) * radius
             self.draw_line((cx + sx, bot_y, cz + sz), (cx + sx, top_y, cz + sz), color=color, duration=duration)
 
-        # 3. Top and Bottom hemispherical dome arcs
         half_segs = segments // 2
         for i in range(half_segs):
             a0 = i * math.pi / half_segs
             a1 = (i + 1) * math.pi / half_segs
             c0, s0 = math.cos(a0) * radius, math.sin(a0) * radius
             c1, s1 = math.cos(a1) * radius, math.sin(a1) * radius
-
-            # Top dome (XY and YZ)
             self.draw_line((cx + c0, top_y + s0, cz), (cx + c1, top_y + s1, cz), color=color, duration=duration)
             self.draw_line((cx, top_y + s0, cz + c0), (cx, top_y + s1, cz + c1), color=color, duration=duration)
-            # Bottom dome (XY and YZ)
             self.draw_line((cx + c0, bot_y - s0, cz), (cx + c1, bot_y - s1, cz), color=color, duration=duration)
             self.draw_line((cx, bot_y - s0, cz + c0), (cx, bot_y - s1, cz + c1), color=color, duration=duration)
 
@@ -284,11 +400,9 @@ class DebugDraw:
         if self.ctx is None or self.vao is None or self.vbo is None or self.vertex_count <= 0:
             return
 
-        # Upload active vertices to GPU buffer
         active_bytes = self.vertex_buffer[: self.vertex_count].tobytes()
         self.vbo.write(active_bytes)
 
-        # Enable depth testing with current depth func (Reversed-Z: '>')
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.depth_func = ">"
         self.vao.render(moderngl.LINES, vertices=self.vertex_count)

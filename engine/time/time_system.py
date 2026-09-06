@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 import time
-from typing import Callable
 from engine.events import publish_event, TimeScaleChangedEvent
-from engine.logging import log_info, LogChannel
 
 
 class TimeSystem:
@@ -50,10 +48,10 @@ class TimeSystem:
 
     def tick(self, raw_dt: float) -> tuple[float, float]:
         """Advances real and game time domains.
-        
+
         Args:
             raw_dt: Raw wall-clock delta time in seconds.
-            
+
         Returns:
             (clamped_real_dt, effective_game_dt)
         """

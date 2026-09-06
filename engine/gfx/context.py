@@ -5,7 +5,7 @@ from typing import Optional
 import moderngl
 
 from engine.gfx.quality_presets import RenderConfig, get_quality_preset, GraphicsQuality
-from engine.window import Window, WindowConfig, WindowMode, VSyncMode
+from engine.window import Window, WindowConfig
 from engine.events import subscribe_event, WindowResizeEvent
 
 

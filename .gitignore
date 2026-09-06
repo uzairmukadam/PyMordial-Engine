@@ -219,3 +219,11 @@ __marimo__/
 
 # Scratch files and temporary test scripts
 scratch/
+
+# Engine logs & ImGui settings
+logs/
+imgui.ini
+*.pm_mesh
+*.pm_tex
+*.pak
+

@@ -3,7 +3,6 @@
 from __future__ import annotations
 from datetime import datetime
 import time
-from typing import Sequence
 from engine.logging.sinks import LogLevel, LogEntry, LogSink, ConsoleSink, FileSink, RingBufferSink
 
 
@@ -54,7 +53,7 @@ class Logger:
 
     def set_release_mode(self, enabled: bool) -> None:
         """Enables stripped release mode.
-        
+
         In release mode, TRACE, DEBUG, and INFO calls are early-out no-ops.
         Only WARN, ERROR, and FATAL are processed to capture crash logs.
         """

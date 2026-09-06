@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
 import numpy as np
 import pygame
 
-from engine.audio.bus import AudioBus, AudioMixer
+from engine.audio.bus import AudioMixer
 from engine.audio.sound import SoundCue, ProceduralSoundSynthesizer
 from engine.audio.spatial import AudioListener
 from engine.audio.voice_pool import VoicePool, ActiveVoice
 from engine.events import subscribe_event, PlaySoundCueEvent
-from engine.logging import log_info, log_warn, log_debug, LogChannel
+from engine.logging import log_info, log_warn, LogChannel
 
 
 class AudioEngine:
@@ -167,10 +166,23 @@ class AudioEngine:
         if self.voice_pool is not None:
             self.voice_pool.stop_all()
 
+    def shutdown(self) -> None:
+        """Stops active voices and cleans up mixer hardware."""
+        self.stop_all()
+        if pygame.mixer.get_init():
+            try:
+                pygame.mixer.quit()
+            except Exception:
+                pass
+        self.is_initialized = False
 
-# Global default audio engine instance
-_GLOBAL_AUDIO_ENGINE: AudioEngine = AudioEngine()
+
+# Global default audio engine instance (lazily initialized)
+_GLOBAL_AUDIO_ENGINE: AudioEngine | None = None
 
 
 def get_audio_engine() -> AudioEngine:
+    global _GLOBAL_AUDIO_ENGINE
+    if _GLOBAL_AUDIO_ENGINE is None:
+        _GLOBAL_AUDIO_ENGINE = AudioEngine()
     return _GLOBAL_AUDIO_ENGINE

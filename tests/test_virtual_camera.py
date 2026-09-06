@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 import numpy as np
-import pytest
 from engine.camera import (
     VirtualCamera,
-    FollowCamera,
-    FollowCameraConfig,
     FreeFlyCamera,
     OrbitCamera,
     CameraManager,

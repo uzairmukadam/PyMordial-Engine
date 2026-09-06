@@ -1,9 +1,6 @@
 """Camera Stack and Blending Manager for PyMordial Engine."""
 
 from __future__ import annotations
-import math
-import numpy as np
-from typing import Callable
 
 from engine.camera.camera import VirtualCamera
 from engine.logging import log_info, LogChannel

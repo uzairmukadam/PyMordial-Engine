@@ -45,7 +45,7 @@ def calculate_spatial_pan_and_attenuation(
     rolloff_factor: float = 1.0,
 ) -> tuple[float, float, float]:
     """Computes distance attenuation and stereo left/right panning factors.
-    
+
     Returns:
         (left_volume, right_volume, attenuation_factor)
     """

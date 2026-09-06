@@ -71,6 +71,8 @@ class EngineTweaks:
         for cb in self._on_quality_changed:
             cb(preset)
 
+    set_preset = set_quality_preset
+
     def cycle_quality_preset(self) -> GraphicsQuality:
         """Cycles to the next preset: LOW -> MED -> HIGH -> ULTRA -> CINEMATIC."""
         presets = [

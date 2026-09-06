@@ -1,53 +1,33 @@
-"""Glassmorphic 3-Tab Debug Menu UI for PyMordial Engine.
+"""Native Dear ImGui Debug System for PyMordial Engine.
 
-Navigable via Keyboard, Mouse, and Gamepad. Renders:
-- Tab 1: System Monitor & Performance Profiler
-- Tab 2: Engine Graphics, G-Buffer & Pipeline Tweaks
-- Tab 3: Game-Specific Developer Tweaks & Inspector
+Provides independent, non-intrusive debug panels:
+- F1: Performance & Resource Profiler (Multi-Style: Compact HUD -> Expanded Profiler -> Closed)
+- F2: Graphics Pipeline & Renderer Tweaks
+- F3: Gameplay Developer Tweaks & Inspector
+- F9: Mouse Release/Capture for seamless panel interaction without locking gameplay
 """
 
 from __future__ import annotations
+import numpy as np
 import pygame
 import moderngl
+from imgui_bundle import imgui
+from imgui_bundle.python_backends.pygame_backend import PygameRenderer
 from engine.debug.monitor import SystemMonitor
-from engine.debug.engine_tweaks import EngineTweaks
+from engine.debug.engine_tweaks import EngineTweaks, GBufferDebugMode
 from engine.debug.game_tweaks import GameTweaks, TweakType
 from engine.debug.toast import DebugToast
 from engine.input.input_manager import InputManager
+from engine.gfx.quality_presets import GraphicsQuality
 
-DEBUG_MENU_VERT = """#version 450 core
-uniform vec2 u_ScreenSize;
-uniform vec4 u_Rect; // [x, y, w, h] in screen pixel coordinates
-out vec2 v_UV;
-
-void main() {
-    vec2 pos = vec2(0.0);
-    vec2 uv = vec2(0.0);
-    if (gl_VertexID == 0) { pos = u_Rect.xy; uv = vec2(0.0, 0.0); }
-    else if (gl_VertexID == 1) { pos = vec2(u_Rect.x + u_Rect.z, u_Rect.y); uv = vec2(1.0, 0.0); }
-    else if (gl_VertexID == 2) { pos = vec2(u_Rect.x, u_Rect.y + u_Rect.w); uv = vec2(0.0, 1.0); }
-    else if (gl_VertexID == 3) { pos = u_Rect.xy + u_Rect.zw; uv = vec2(1.0, 1.0); }
-
-    vec2 ndc = (pos / u_ScreenSize) * 2.0 - 1.0;
-    ndc.y = -ndc.y;
-    gl_Position = vec4(ndc, 0.0, 1.0);
-    v_UV = uv;
-}
-"""
-
-DEBUG_MENU_FRAG = """#version 450 core
-in vec2 v_UV;
-out vec4 out_FragColor;
-uniform sampler2D u_Texture;
-
-void main() {
-    out_FragColor = texture(u_Texture, v_UV);
-}
-"""
+try:
+    import OpenGL.GL as gl
+except ImportError:
+    gl = None
 
 
 class DebugMenu:
-    """Coordinates the 3-tier debug overlay UI."""
+    """Coordinates independent Dear ImGui debug panels for F1, F2, and F3."""
 
     __slots__ = (
         "ctx",
@@ -56,22 +36,14 @@ class DebugMenu:
         "game_tweaks",
         "toast",
         "input_mgr",
-        "visible",
-        "active_tab",
-        "selected_item_idx",
         "width",
         "height",
-        "panel_w",
-        "panel_h",
-        "surface",
-        "texture",
-        "prog",
-        "vao",
-        "font",
-        "font_bold",
-        "font_title",
-        "_u_screen_size",
-        "_u_rect",
+        "f1_style",
+        "show_graphics",
+        "show_game_tweaks",
+        "imgui_ctx",
+        "io",
+        "renderer",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -94,378 +66,462 @@ class DebugMenu:
         self.toast = toast
         self.input_mgr = input_mgr
 
-        self.visible = False
-        self.active_tab = 0
-        self.selected_item_idx = 0
-
         self.width = screen_width
         self.height = screen_height
-        self.panel_w = 510
-        self.panel_h = 650
 
-        if not pygame.font.get_init():
-            pygame.font.init()
+        # Independent panel states
+        # f1_style: 0 = Off, 1 = Basic HUD overlay, 2 = Expanded Profiler window
+        self.f1_style: int = 0
+        self.show_graphics: bool = False
+        self.show_game_tweaks: bool = False
 
-        self.font = pygame.font.SysFont("Consolas", 12)
-        self.font_bold = pygame.font.SysFont("Consolas", 13, bold=True)
-        self.font_title = pygame.font.SysFont("Consolas", 15, bold=True)
+        # Initialize Dear ImGui context
+        self.imgui_ctx = imgui.create_context()
+        self.io = imgui.get_io()
+        self.io.display_size = imgui.ImVec2(float(screen_width), float(screen_height))
+        self.io.backend_flags |= imgui.BackendFlags_.renderer_has_textures.value
 
-        self.surface = pygame.Surface((self.panel_w, self.panel_h), pygame.SRCALPHA)
-        if self.ctx is not None:
-            self.texture = self.ctx.texture((self.panel_w, self.panel_h), 4)
-            self.prog = self.ctx.program(vertex_shader=DEBUG_MENU_VERT, fragment_shader=DEBUG_MENU_FRAG)
-            self.vao = self.ctx.vertex_array(self.prog, [])
-            self._u_screen_size = self.prog.get("u_ScreenSize", None)
-            self._u_rect = self.prog.get("u_Rect", None)
+        # Initialize Pygame OpenGL backend if display surface and context are available
+        self.renderer: PygameRenderer | None = None
+        if self.ctx is not None and pygame.display.get_surface() is not None:
+            try:
+                self.renderer = PygameRenderer()
+            except Exception:
+                self.renderer = None
+
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """Applies a modern, sleek AAA dark theme with translucent slate & cyan accents."""
+        style = imgui.get_style()
+        style.window_rounding = 8.0
+        style.frame_rounding = 5.0
+        style.grab_rounding = 4.0
+        style.popup_rounding = 6.0
+        style.scrollbar_rounding = 6.0
+        style.frame_padding = imgui.ImVec2(8.0, 5.0)
+        style.item_spacing = imgui.ImVec2(8.0, 6.0)
+
+        style.set_color_(imgui.Col_.window_bg.value, imgui.ImVec4(0.06, 0.09, 0.14, 0.90))
+        style.set_color_(imgui.Col_.border.value, imgui.ImVec4(0.22, 0.35, 0.48, 0.60))
+        style.set_color_(imgui.Col_.title_bg.value, imgui.ImVec4(0.08, 0.13, 0.20, 0.95))
+        style.set_color_(imgui.Col_.title_bg_active.value, imgui.ImVec4(0.12, 0.23, 0.40, 1.0))
+        style.set_color_(imgui.Col_.header.value, imgui.ImVec4(0.12, 0.23, 0.38, 0.70))
+        style.set_color_(imgui.Col_.header_hovered.value, imgui.ImVec4(0.18, 0.32, 0.52, 0.85))
+        style.set_color_(imgui.Col_.header_active.value, imgui.ImVec4(0.22, 0.40, 0.65, 1.0))
+        style.set_color_(imgui.Col_.button.value, imgui.ImVec4(0.12, 0.25, 0.42, 0.80))
+        style.set_color_(imgui.Col_.button_hovered.value, imgui.ImVec4(0.20, 0.42, 0.70, 0.95))
+        style.set_color_(imgui.Col_.button_active.value, imgui.ImVec4(0.22, 0.55, 0.92, 1.0))
+        style.set_color_(imgui.Col_.frame_bg.value, imgui.ImVec4(0.10, 0.15, 0.22, 0.70))
+        style.set_color_(imgui.Col_.frame_bg_hovered.value, imgui.ImVec4(0.15, 0.22, 0.32, 0.85))
+        style.set_color_(imgui.Col_.frame_bg_active.value, imgui.ImVec4(0.20, 0.30, 0.45, 1.0))
+        style.set_color_(imgui.Col_.slider_grab.value, imgui.ImVec4(0.22, 0.65, 0.95, 0.90))
+        style.set_color_(imgui.Col_.slider_grab_active.value, imgui.ImVec4(0.35, 0.75, 1.0, 1.0))
+        style.set_color_(imgui.Col_.check_mark.value, imgui.ImVec4(0.35, 0.85, 0.55, 1.0))
+
+    # --------------------------------------------------------------------------
+    # Panel Toggling & Multi-Style Lifecycle
+    # --------------------------------------------------------------------------
+
+    def cycle_f1(self) -> int:
+        """Cycles F1 performance panel: 0 (Off) -> 1 (Basic HUD) -> 2 (Expanded Profiler) -> 0."""
+        self.f1_style = (self.f1_style + 1) % 3
+        return self.f1_style
+
+    def toggle_graphics(self) -> bool:
+        """Toggles independent F2 Graphics Options panel."""
+        self.show_graphics = not self.show_graphics
+        return self.show_graphics
+
+    def toggle_game_tweaks(self) -> bool:
+        """Toggles independent F3 Gameplay Developer Tweaks panel."""
+        self.show_game_tweaks = not self.show_game_tweaks
+        return self.show_game_tweaks
+
+    @property
+    def visible(self) -> bool:
+        """Returns True if any debug panel is currently active."""
+        return self.f1_style > 0 or self.show_graphics or self.show_game_tweaks
+
+    @visible.setter
+    def visible(self, val: bool) -> None:
+        if not val:
+            self.f1_style = 0
+            self.show_graphics = False
+            self.show_game_tweaks = False
         else:
-            self.texture = None
-            self.prog = None
-            self.vao = None
-            self._u_screen_size = None
-            self._u_rect = None
+            if self.f1_style == 0 and not self.show_graphics and not self.show_game_tweaks:
+                self.f1_style = 1
+
+    @property
+    def active_tab(self) -> int:
+        """Compatibility property for legacy 3-tab queries."""
+        if self.show_game_tweaks:
+            return 2
+        if self.show_graphics:
+            return 1
+        return 0
+
+    @active_tab.setter
+    def active_tab(self, tab_idx: int) -> None:
+        """Compatibility setter for legacy 3-tab queries."""
+        if tab_idx == 0:
+            self.f1_style = 1 if self.f1_style == 0 else self.f1_style
+        elif tab_idx == 1:
+            self.show_graphics = True
+        elif tab_idx == 2:
+            self.show_game_tweaks = True
 
     def toggle(self) -> bool:
-        """Toggles debug menu visibility."""
-        self.visible = not self.visible
-        self.input_mgr.set_debug_mode(self.visible)
-        return self.visible
-
-    def toggle_tab(self, tab_idx: int) -> bool:
-        """Toggles a specific debug tab (F1=Performance, F2=Graphics, F3=Game).
-
-        - If closed: opens directly on tab_idx.
-        - If open on tab_idx: closes the menu.
-        - If open on a different tab: switches to tab_idx without closing.
-        """
-        target_tab = max(0, min(len(self.TABS) - 1, tab_idx))
-        if not self.visible:
-            self.active_tab = target_tab
-            self.selected_item_idx = 0
-            self.visible = True
-            self.input_mgr.set_debug_mode(True)
-            return True
-        elif self.active_tab == target_tab:
+        """Toggles debug system visibility."""
+        if self.visible:
             self.visible = False
-            self.input_mgr.set_debug_mode(False)
             return False
         else:
-            self.active_tab = target_tab
-            self.selected_item_idx = 0
+            self.f1_style = 1
             return True
 
+    def toggle_tab(self, tab_idx: int) -> bool:
+        """Legacy tab toggle compatibility:
+        - F1 (0): cycles basic -> expanded -> off
+        - F2 (1): toggles graphics on/off
+        - F3 (2): toggles game tweaks on/off
+        """
+        if tab_idx == 0:
+            new_style = self.cycle_f1()
+            return new_style > 0
+        elif tab_idx == 1:
+            return self.toggle_graphics()
+        elif tab_idx == 2:
+            return self.toggle_game_tweaks()
+        return False
+
     def handle_input(self) -> None:
-        """Handles menu navigation from KBM and Gamepad."""
-        if not self.visible:
-            return
+        """No-op: Debug menu uses mouse interaction via F9; keyboard is never hijacked."""
+        pass
 
-        # Close on B button or Escape
-        if self.input_mgr.is_action_pressed("debug_close_b") or self.input_mgr.is_action_pressed("quit"):
-            self.toggle()
-            self.toast.show("Debug Menu Closed", duration=1.5, color=(147, 197, 253))
-            return
+    def process_event(self, event: pygame.event.Event) -> bool:
+        """Forwards Pygame events to ImGui (mouse clicks, motion, wheel when mouse is free)."""
+        if self.renderer is not None:
+            return bool(self.renderer.process_event(event))
+        return False
 
-        # Tab switching (Q/E or LB/RB)
-        if self.input_mgr.is_action_pressed("debug_tab_prev"):
-            self.active_tab = (self.active_tab - 1) % len(self.TABS)
-            self.selected_item_idx = 0
-        elif self.input_mgr.is_action_pressed("debug_tab_next"):
-            self.active_tab = (self.active_tab + 1) % len(self.TABS)
-            self.selected_item_idx = 0
+    # --------------------------------------------------------------------------
+    # ImGui Panel Renderers
+    # --------------------------------------------------------------------------
 
-        # Nav up / down
-        if self.input_mgr.is_action_pressed("debug_nav_up"):
-            self.selected_item_idx = max(0, self.selected_item_idx - 1)
-        elif self.input_mgr.is_action_pressed("debug_nav_down"):
-            self.selected_item_idx += 1
+    def _render_f1_basic_hud(self) -> None:
+        """Renders minimal, unobtrusive HUD overlay showing FPS, Frame Time, and core indicators."""
+        imgui.set_next_window_pos(imgui.ImVec2(16.0, 16.0), imgui.Cond_.always.value)
+        imgui.set_next_window_bg_alpha(0.70)
+        flags = (
+            imgui.WindowFlags_.no_decoration.value
+            | imgui.WindowFlags_.always_auto_resize.value
+            | imgui.WindowFlags_.no_saved_settings.value
+            | imgui.WindowFlags_.no_focus_on_appearing.value
+            | imgui.WindowFlags_.no_nav.value
+        )
+        imgui.begin("##F1_BasicHUD", flags=flags)
 
-        # Tab 2: Engine Tweaks adjustments
-        if self.active_tab == 1:
-            total_items = 7
-            self.selected_item_idx = max(0, min(total_items - 1, self.selected_item_idx))
+        fps = self.monitor.fps
+        if fps >= 55.0:
+            fps_col = imgui.ImVec4(0.29, 0.87, 0.50, 1.0)  # Green
+        elif fps >= 30.0:
+            fps_col = imgui.ImVec4(0.98, 0.80, 0.18, 1.0)  # Yellow
+        else:
+            fps_col = imgui.ImVec4(0.94, 0.27, 0.27, 1.0)  # Red
 
-            nav_act = self.input_mgr.is_action_pressed("debug_nav_activate")
-            nav_l = self.input_mgr.is_action_pressed("debug_nav_left")
-            nav_r = self.input_mgr.is_action_pressed("debug_nav_right")
+        imgui.text_colored(fps_col, f"FPS: {fps:5.1f}")
+        imgui.same_line()
+        imgui.text(f"|  {self.monitor.avg_frame_time_ms:4.1f} ms")
 
-            if nav_act:
-                if self.selected_item_idx == 0:
-                    p = self.engine_tweaks.cycle_quality_preset()
-                    self.toast.show(f"Quality Preset: {p.value.upper()}")
-                elif self.selected_item_idx == 1:
-                    m = self.engine_tweaks.cycle_tonemapper()
-                    self.toast.show(f"Tonemapper: {m}")
-                elif self.selected_item_idx == 2:
-                    g = self.engine_tweaks.cycle_gbuffer_debug()
-                    self.toast.show(f"G-Buffer Mode: {g.name}")
-                elif self.selected_item_idx == 3:
-                    self.engine_tweaks.toggle_wireframe()
-                    state_str = "ON" if self.engine_tweaks.show_wireframe else "OFF"
-                    self.toast.show(f"Mesh Wireframe: {state_str}")
-                elif self.selected_item_idx == 4:
-                    self.engine_tweaks.toggle_physics_colliders()
-                    state_str = "ON" if self.engine_tweaks.show_physics_colliders else "OFF"
-                    self.toast.show(f"Physics Gizmos: {state_str}")
-                elif self.selected_item_idx == 5:
-                    self.engine_tweaks.sun_angle_deg = (self.engine_tweaks.sun_angle_deg + 15.0) % 360.0
-                    self.toast.show(f"Sun Angle: {self.engine_tweaks.sun_angle_deg:0.1f}°")
-                elif self.selected_item_idx == 6:
-                    self.engine_tweaks.sscs_enabled = not self.engine_tweaks.sscs_enabled
-                    state_str = "ON" if self.engine_tweaks.sscs_enabled else "OFF"
-                    self.toast.show(f"Contact Shadows: {state_str}")
-            elif nav_l:
-                if self.selected_item_idx == 0:
-                    p = self.engine_tweaks.cycle_quality_preset()
-                    self.toast.show(f"Quality Preset: {p.value.upper()}")
-                elif self.selected_item_idx == 1:
-                    m = self.engine_tweaks.cycle_tonemapper()
-                    self.toast.show(f"Tonemapper: {m}")
-                elif self.selected_item_idx == 2:
-                    g = self.engine_tweaks.cycle_gbuffer_debug()
-                    self.toast.show(f"G-Buffer Mode: {g.name}")
-                elif self.selected_item_idx == 3:
-                    self.engine_tweaks.show_wireframe = False
-                    self.toast.show("Mesh Wireframe: OFF")
-                elif self.selected_item_idx == 4:
-                    self.engine_tweaks.show_physics_colliders = False
-                    self.toast.show("Physics Gizmos: OFF")
-                elif self.selected_item_idx == 5:
-                    self.engine_tweaks.sun_angle_deg = (self.engine_tweaks.sun_angle_deg - 15.0) % 360.0
-                    self.toast.show(f"Sun Angle: {self.engine_tweaks.sun_angle_deg:0.1f}°")
-                elif self.selected_item_idx == 6:
-                    self.engine_tweaks.sscs_enabled = False
-                    self.toast.show("Contact Shadows: OFF")
-            elif nav_r:
-                if self.selected_item_idx == 0:
-                    p = self.engine_tweaks.cycle_quality_preset()
-                    self.toast.show(f"Quality Preset: {p.value.upper()}")
-                elif self.selected_item_idx == 1:
-                    m = self.engine_tweaks.cycle_tonemapper()
-                    self.toast.show(f"Tonemapper: {m}")
-                elif self.selected_item_idx == 2:
-                    g = self.engine_tweaks.cycle_gbuffer_debug()
-                    self.toast.show(f"G-Buffer Mode: {g.name}")
-                elif self.selected_item_idx == 3:
-                    self.engine_tweaks.show_wireframe = True
-                    self.toast.show("Mesh Wireframe: ON")
-                elif self.selected_item_idx == 4:
-                    self.engine_tweaks.show_physics_colliders = True
-                    self.toast.show("Physics Gizmos: ON")
-                elif self.selected_item_idx == 5:
-                    self.engine_tweaks.sun_angle_deg = (self.engine_tweaks.sun_angle_deg + 15.0) % 360.0
-                    self.toast.show(f"Sun Angle: {self.engine_tweaks.sun_angle_deg:0.1f}°")
-                elif self.selected_item_idx == 6:
-                    self.engine_tweaks.sscs_enabled = True
-                    self.toast.show("Contact Shadows: ON")
+        # Core indicators: 1% Low FPS & Active Entities
+        imgui.text_disabled(f"1% Low: {self.monitor.one_percent_low_fps:4.1f} FPS")
 
-        # Tab 3: Game Tweaks adjustments
-        elif self.active_tab == 2:
-            all_items = []
+        active_ent = self.game_tweaks.get_value("Entities", "Active Count")
+        if active_ent is not None:
+            imgui.same_line()
+            imgui.text_disabled(f"|  Entities: {active_ent}")
+
+        imgui.text_disabled("[F1] Expand  |  [F9] Mouse")
+        imgui.end()
+
+    def _render_f1_expanded_profiler(self) -> None:
+        """Renders full performance profiler window with frame time graph and CPU stage latencies."""
+        imgui.set_next_window_size(imgui.ImVec2(480.0, 440.0), imgui.Cond_.first_use_ever.value)
+        imgui.set_next_window_pos(imgui.ImVec2(20.0, 20.0), imgui.Cond_.first_use_ever.value)
+        expanded, p_open = imgui.begin("Performance & Resource Monitor [F1]", p_open=True)
+        if not p_open:
+            self.f1_style = 0
+
+        if expanded:
+            m = self.monitor
+            fps = m.fps
+            fps_col = (
+                imgui.ImVec4(0.29, 0.87, 0.50, 1.0)
+                if fps >= 55.0
+                else (imgui.ImVec4(0.98, 0.80, 0.18, 1.0) if fps >= 30.0 else imgui.ImVec4(0.94, 0.27, 0.27, 1.0))
+            )
+            imgui.text("FPS:")
+            imgui.same_line()
+            imgui.text_colored(fps_col, f"{fps:5.1f}")
+            imgui.same_line()
+            imgui.text(f"   Avg: {m.avg_fps:5.1f}  |  1% Low: {m.one_percent_low_fps:5.1f}")
+
+            imgui.text(f"Frame Time: {m.avg_frame_time_ms:5.2f} ms  (Min: {m.min_frame_time_ms:0.1f}, Max: {m.max_frame_time_ms:0.1f})")
+
+            imgui.separator()
+            imgui.text("Frame Time History (ms)")
+            ft_history = np.array(m.frame_times_ms, dtype=np.float32)
+            if len(ft_history) > 0:
+                overlay_str = f"{m.avg_frame_time_ms:.2f} ms (Target: 16.6ms)"
+                imgui.plot_lines(
+                    "##FT_Plot",
+                    ft_history,
+                    values_offset=0,
+                    overlay_text=overlay_str,
+                    scale_min=0.0,
+                    scale_max=33.3,
+                    graph_size=imgui.ImVec2(440.0, 75.0),
+                )
+
+            imgui.separator()
+            imgui.text("CPU Stage Latencies (Microseconds)")
+            if imgui.begin_table("Subsystems", 3, imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value):
+                imgui.table_setup_column("Stage")
+                imgui.table_setup_column("Latency (us)")
+                imgui.table_setup_column("Latency (ms)")
+                imgui.table_headers_row()
+
+                for stage, us in m.stage_averages_us.items():
+                    imgui.table_next_row()
+                    imgui.table_next_column()
+                    imgui.text(stage)
+                    imgui.table_next_column()
+                    imgui.text(f"{us:6.1f} us")
+                    imgui.table_next_column()
+                    ms_val = us / 1000.0
+                    col = (
+                        imgui.ImVec4(0.29, 0.87, 0.50, 1.0)
+                        if ms_val <= 4.0
+                        else (imgui.ImVec4(0.98, 0.80, 0.18, 1.0) if ms_val <= 8.0 else imgui.ImVec4(0.94, 0.27, 0.27, 1.0))
+                    )
+                    imgui.text_colored(col, f"{ms_val:0.2f} ms")
+                imgui.end_table()
+
+            imgui.separator()
+            active_ent = self.game_tweaks.get_value("Entities", "Active Count")
+            if active_ent is not None:
+                imgui.text(f"Active Entities: {active_ent}")
+            imgui.text_disabled("[F1] Close  |  [F9] Mouse Grab")
+        imgui.end()
+
+    def _render_f2_graphics(self) -> None:
+        """Renders independent F2 Graphics Pipeline & Renderer tweaks panel."""
+        imgui.set_next_window_size(imgui.ImVec2(440.0, 480.0), imgui.Cond_.first_use_ever.value)
+        imgui.set_next_window_pos(imgui.ImVec2(320.0, 20.0), imgui.Cond_.first_use_ever.value)
+        expanded, p_open = imgui.begin("Graphics Pipeline & Renderer [F2]", p_open=True)
+        if not p_open:
+            self.show_graphics = False
+
+        if expanded:
+            et = self.engine_tweaks
+
+            # 1. Quality Preset
+            preset_names = ["low", "medium", "high", "ultra", "cinematic"]
+            current_preset = et.quality_preset.value.lower()
+            current_idx = preset_names.index(current_preset) if current_preset in preset_names else 2
+            changed, new_idx = imgui.combo("Quality Preset", current_idx, [p.upper() for p in preset_names])
+            if changed and new_idx != current_idx:
+                et.set_quality_preset(GraphicsQuality(preset_names[new_idx]))
+                self.toast.show(f"Quality Preset: {preset_names[new_idx].upper()}", duration=2.0)
+
+            # 2. Tonemapper
+            tonemap_options = ["ACES", "AgX", "Reinhard"]
+            t_idx = tonemap_options.index(et.tonemap_mode) if et.tonemap_mode in tonemap_options else 0
+            t_changed, new_t_idx = imgui.combo("Tonemapper", t_idx, tonemap_options)
+            if t_changed and new_t_idx != t_idx:
+                et.tonemap_mode = tonemap_options[new_t_idx]
+                self.toast.show(f"Tonemapper: {et.tonemap_mode}", duration=2.0)
+
+            # 3. G-Buffer Debug Mode
+            gbuf_names = [m.name for m in GBufferDebugMode]
+            gbuf_idx = gbuf_names.index(et.gbuffer_debug.name) if et.gbuffer_debug.name in gbuf_names else 0
+            g_changed, new_g_idx = imgui.combo("G-Buffer Debug", gbuf_idx, gbuf_names)
+            if g_changed and new_g_idx != gbuf_idx:
+                et.gbuffer_debug = GBufferDebugMode[gbuf_names[new_g_idx]]
+                self.toast.show(f"G-Buffer Mode: {et.gbuffer_debug.name}", duration=2.0)
+
+            imgui.separator()
+            imgui.text("Lighting & Shadows")
+
+            # SSCS Contact Shadows
+            sscs_changed, sscs_val = imgui.checkbox("Contact Shadows (SSCS)", et.sscs_enabled)
+            if sscs_changed:
+                et.sscs_enabled = sscs_val
+                self.toast.show(f"Contact Shadows: {'ON' if sscs_val else 'OFF'}", duration=1.5)
+
+            # Sun Angle (Azimuth)
+            sun_changed, sun_val = imgui.slider_float("Sun Azimuth", et.sun_angle_deg, 0.0, 360.0, "%.1f deg")
+            if sun_changed:
+                et.sun_angle_deg = sun_val
+
+            # Sun Elevation
+            el_changed, el_val = imgui.slider_float("Sun Elevation", et.sun_elevation_deg, 0.0, 90.0, "%.1f deg")
+            if el_changed:
+                et.sun_elevation_deg = el_val
+
+            imgui.separator()
+            imgui.text("Debug Visualizers & Gizmos")
+
+            # Mesh Wireframe
+            wire_changed, wire_val = imgui.checkbox("Mesh Wireframe", et.show_wireframe)
+            if wire_changed:
+                et.show_wireframe = wire_val
+                self.toast.show(f"Mesh Wireframe: {'ON' if wire_val else 'OFF'}", duration=1.5)
+
+            # Physics Colliders
+            phys_changed, phys_val = imgui.checkbox("Physics Gizmos / Colliders", et.show_physics_colliders)
+            if phys_changed:
+                et.show_physics_colliders = phys_val
+                self.toast.show(f"Physics Gizmos: {'ON' if phys_val else 'OFF'}", duration=1.5)
+
+            # Sun Ray Gizmo
+            sun_ray_changed, sun_ray_val = imgui.checkbox("Sun Ray Gizmo", et.show_sun_ray)
+            if sun_ray_changed:
+                et.show_sun_ray = sun_ray_val
+
+            imgui.separator()
+            imgui.text_disabled("[F2] Close Panel  |  [F9] Mouse Grab")
+        imgui.end()
+
+    def _render_f3_game_tweaks(self) -> None:
+        """Renders independent F3 Gameplay Developer Tweaks & Inspector panel."""
+        imgui.set_next_window_size(imgui.ImVec2(440.0, 520.0), imgui.Cond_.first_use_ever.value)
+        imgui.set_next_window_pos(imgui.ImVec2(540.0, 20.0), imgui.Cond_.first_use_ever.value)
+        expanded, p_open = imgui.begin("Gameplay Tweaks & Inspector [F3]", p_open=True)
+        if not p_open:
+            self.show_game_tweaks = False
+
+        if expanded:
             for cat in self.game_tweaks.get_categories():
-                for it in self.game_tweaks.get_items(cat):
-                    all_items.append(it)
+                if imgui.collapsing_header(cat, imgui.TreeNodeFlags_.default_open.value):
+                    for item in self.game_tweaks.get_items(cat):
+                        if item.tweak_type == TweakType.BOOL:
+                            changed, val = imgui.checkbox(item.name, bool(item.value))
+                            if changed:
+                                item.set_value(val)
+                                self.toast.show(f"{item.name}: {val}", duration=1.5)
+                        elif item.tweak_type in (TweakType.FLOAT, TweakType.INT):
+                            min_v = float(item.min_val) if item.min_val is not None else 0.0
+                            max_v = float(item.max_val) if item.max_val is not None else 100.0
+                            if item.tweak_type == TweakType.INT:
+                                changed, val = imgui.slider_int(item.name, int(item.value), int(min_v), int(max_v))
+                            else:
+                                changed, val = imgui.slider_float(item.name, float(item.value), min_v, max_v, "%.2f")
+                            if changed:
+                                item.set_value(val)
+                        elif item.tweak_type == TweakType.ACTION:
+                            if imgui.button(f"Trigger {item.name}"):
+                                item.trigger()
+                        elif item.tweak_type == TweakType.WATCH:
+                            val = item.read_watch()
+                            imgui.text_disabled(f"{item.name}:")
+                            imgui.same_line()
+                            imgui.text_colored(imgui.ImVec4(0.35, 0.85, 1.0, 1.0), str(val))
 
-            if all_items:
-                self.selected_item_idx = max(0, min(self.selected_item_idx, len(all_items) - 1))
-                item = all_items[self.selected_item_idx]
+            imgui.separator()
+            imgui.text_disabled("[F3] Close Panel  |  [F9] Mouse Grab")
+        imgui.end()
 
-                if self.input_mgr.is_action_pressed("debug_nav_activate"):
-                    if item.tweak_type == TweakType.BOOL:
-                        item.set_value(not item.value)
-                        self.toast.show(f"{item.name}: {item.value}")
-                    elif item.tweak_type == TweakType.ACTION:
-                        item.trigger()
-                        self.toast.show(f"Action '{item.name}' Triggered")
-                elif self.input_mgr.is_action_pressed("debug_nav_left"):
-                    if item.tweak_type == TweakType.BOOL:
-                        item.set_value(False)
-                        self.toast.show(f"{item.name}: {item.value}")
-                    elif item.tweak_type in (TweakType.FLOAT, TweakType.INT):
-                        step = item.step if item.step is not None else 1.0
-                        item.set_value(item.value - step)
-                elif self.input_mgr.is_action_pressed("debug_nav_right"):
-                    if item.tweak_type == TweakType.BOOL:
-                        item.set_value(True)
-                        self.toast.show(f"{item.name}: {item.value}")
-                    elif item.tweak_type in (TweakType.FLOAT, TweakType.INT):
-                        step = item.step if item.step is not None else 1.0
-                        item.set_value(item.value + step)
+    def _render_toasts(self) -> None:
+        """Renders active toast notifications as an elegant centered HUD banner."""
+        if not self.toast:
+            return
+        active_toasts = self.toast.get_active()
+        if not active_toasts:
+            return
+
+        imgui.set_next_window_pos(
+            imgui.ImVec2(float(self.width) * 0.5, float(self.height) - 40.0),
+            imgui.Cond_.always.value,
+            imgui.ImVec2(0.5, 1.0),
+        )
+        imgui.set_next_window_bg_alpha(0.85)
+        flags = (
+            imgui.WindowFlags_.no_decoration.value
+            | imgui.WindowFlags_.always_auto_resize.value
+            | imgui.WindowFlags_.no_saved_settings.value
+            | imgui.WindowFlags_.no_focus_on_appearing.value
+            | imgui.WindowFlags_.no_nav.value
+            | imgui.WindowFlags_.no_inputs.value
+        )
+        imgui.begin("##ToastOverlay", flags=flags)
+        for msg, col in active_toasts:
+            r = col[0] / 255.0 if col[0] > 1.0 else col[0]
+            g = col[1] / 255.0 if col[1] > 1.0 else col[1]
+            b = col[2] / 255.0 if col[2] > 1.0 else col[2]
+            imgui.text_colored(imgui.ImVec4(r, g, b, 1.0), f"• {msg}")
+        imgui.end()
+
+    # --------------------------------------------------------------------------
+    # Main Render Call
+    # --------------------------------------------------------------------------
 
     def render(self) -> None:
-        """Draws the debug menu overlay to screen if visible."""
-        if not self.visible or self.ctx is None or self.texture is None:
+        """Draws active ImGui debug panels and notifications."""
+        if self.renderer is None:
             return
 
-        s = self.surface
-        s.fill((12, 18, 28, 225))  # Glassmorphic dark slate
+        has_toasts = self.toast is not None and len(self.toast.get_active()) > 0
+        if not self.visible and not has_toasts:
+            return
 
-        # Outer border
-        pygame.draw.rect(s, (56, 189, 248, 240), (0, 0, self.panel_w, self.panel_h), 2, border_radius=8)
+        self.io.display_size = imgui.ImVec2(float(self.width), float(self.height))
+        self.renderer.process_inputs()
+        imgui.new_frame()
 
-        # Header Title
-        title_surf = self.font_title.render("PYMORDIAL ENGINE — DEBUG SYSTEM", True, (255, 255, 255))
-        s.blit(title_surf, (16, 14))
+        if self.f1_style == 1:
+            self._render_f1_basic_hud()
+        elif self.f1_style == 2:
+            self._render_f1_expanded_profiler()
 
-        # Tabs Header
-        tab_x = 16
-        for i, tab_name in enumerate(self.TABS):
-            is_active = (i == self.active_tab)
-            bg_col = (30, 58, 138, 255) if is_active else (20, 30, 45, 180)
-            text_col = (255, 255, 255) if is_active else (148, 163, 184)
-            tab_surf = self.font_bold.render(tab_name, True, text_col)
-            tw, th = tab_surf.get_width() + 14, tab_surf.get_height() + 8
-            pygame.draw.rect(s, bg_col, (tab_x, 42, tw, th), border_radius=4)
-            if is_active:
-                pygame.draw.rect(s, (56, 189, 248), (tab_x, 42, tw, th), 1, border_radius=4)
-            s.blit(tab_surf, (tab_x + 7, 46))
-            tab_x += tw + 6
+        if self.show_graphics:
+            self._render_f2_graphics()
 
-        # Content area
-        pygame.draw.line(s, (51, 65, 85), (16, 76), (self.panel_w - 16, 76), 1)
-        y = 88
+        if self.show_game_tweaks:
+            self._render_f3_game_tweaks()
 
-        # --- TAB 1: SYSTEM MONITOR ---
-        if self.active_tab == 0:
-            m = self.monitor
-            lines = [
-                f"FPS:              {m.fps:5.1f}  (Avg: {m.avg_fps:5.1f})",
-                f"1% Low FPS:       {m.one_percent_low_fps:5.1f}",
-                f"Frame Time:       {m.avg_frame_time_ms:5.2f} ms  (Min: {m.min_frame_time_ms:0.1f}, Max: {m.max_frame_time_ms:0.1f})",
-                "",
-                "--- CPU Stage Latencies (Microseconds) ---",
-            ]
-            for stage, us in m.stage_averages_us.items():
-                lines.append(f"  {stage:<16} : {us:6.1f} us  ({us/1000.0:0.2f} ms)")
+        self._render_toasts()
 
-            lines.extend([
-                "",
-                "--- Mini Frame-Time History ---",
-            ])
-            for line in lines:
-                txt = self.font.render(line, True, (226, 232, 240))
-                s.blit(txt, (20, y))
-                y += 18
+        imgui.render()
+        self.renderer.render(imgui.get_draw_data())
 
-            # Draw sparkline histogram
-            hist_x = 24
-            hist_y = y + 10
-            hist_w = self.panel_w - 48
-            hist_h = 60
-            pygame.draw.rect(s, (15, 23, 42), (hist_x, hist_y, hist_w, hist_h), border_radius=4)
-            pygame.draw.rect(s, (51, 65, 85), (hist_x, hist_y, hist_w, hist_h), 1, border_radius=4)
-
-            # Draw 16.6ms target line
-            target_y = hist_y + hist_h - int((16.67 / 33.33) * hist_h)
-            pygame.draw.line(s, (74, 222, 128, 120), (hist_x, target_y), (hist_x + hist_w, target_y), 1)
-
-            step = hist_w / len(m.frame_times_ms)
-            for i, ft in enumerate(m.frame_times_ms):
-                bar_h = min(hist_h, int((ft / 33.33) * hist_h))
-                bx = int(hist_x + i * step)
-                by = hist_y + hist_h - bar_h
-                col = (74, 222, 128) if ft <= 17.0 else (239, 68, 68)
-                pygame.draw.line(s, col, (bx, hist_y + hist_h), (bx, by), 1)
-
-        # --- TAB 2: ENGINE & GRAPHICS TWEAKS ---
-        elif self.active_tab == 1:
-            et = self.engine_tweaks
-            items = [
-                f"Quality Preset:     {et.quality_preset.value.upper()}",
-                f"Tonemapper Mode:    {et.tonemap_mode}",
-                f"G-Buffer Debug RT:  {et.gbuffer_debug.name}",
-                f"Mesh Wireframes:    {'[ON]' if et.show_wireframe else '[OFF]'}",
-                f"Physics Colliders:  {'[ON]' if et.show_physics_colliders else '[OFF]'}",
-                f"Sun Direction:      {et.sun_angle_deg:0.1f} deg",
-                f"Contact Shadows:    {'[ON]' if et.sscs_enabled else '[OFF]'}",
-            ]
-            for idx, item_str in enumerate(items):
-                is_sel = (idx == self.selected_item_idx)
-                prefix = "> " if is_sel else "  "
-                col = (56, 189, 248) if is_sel else (203, 213, 225)
-                txt = self.font_bold.render(prefix + item_str, True, col)
-                if is_sel:
-                    pygame.draw.rect(s, (30, 58, 138, 120), (18, y - 2, self.panel_w - 36, 20), border_radius=4)
-                s.blit(txt, (20, y))
-                y += 24
-
-        # --- TAB 3: GAME-SPECIFIC DEVELOPER TWEAKS ---
-        elif self.active_tab == 2:
-            all_items = []
-            for cat in self.game_tweaks.get_categories():
-                all_items.append((True, cat))  # Category header
-                for it in self.game_tweaks.get_items(cat):
-                    all_items.append((False, it))
-
-            item_counter = 0
-            for is_header, obj in all_items:
-                if is_header:
-                    cat_txt = self.font_bold.render(f"[{obj}]", True, (250, 204, 21))
-                    s.blit(cat_txt, (20, y))
-                    y += 20
-                else:
-                    it = obj
-                    is_sel = (item_counter == self.selected_item_idx)
-                    val_str = str(it.read_watch() if it.tweak_type == TweakType.WATCH else it.value)
-                    row_str = f"{it.name:<20} : {val_str}"
-                    prefix = "> " if is_sel else "  "
-                    col = (56, 189, 248) if is_sel else (226, 232, 240)
-                    if is_sel:
-                        pygame.draw.rect(s, (30, 58, 138, 120), (18, y - 2, self.panel_w - 36, 20), border_radius=4)
-                    txt = self.font.render(prefix + row_str, True, col)
-                    s.blit(txt, (20, y))
-                    y += 22
-                    item_counter += 1
-
-        footer_y = self.panel_h - 26
-
-        # Draw opaque footer background to prevent any item text overlapping
-        pygame.draw.rect(s, (12, 18, 28, 250), (2, footer_y - 28, self.panel_w - 4, 52), border_bottom_left_radius=6, border_bottom_right_radius=6)
-
-        # Draw active toast notification if any
-        if self.toast:
-            active_toasts = self.toast.get_active()
-            if active_toasts:
-                t_msg, t_col = active_toasts[-1]
-                max_t_len = 54
-                if len(t_msg) > max_t_len:
-                    t_msg = t_msg[:max_t_len - 3] + "..."
-                t_surf = self.font_bold.render(f"Notification: {t_msg}", True, t_col)
-                s.blit(t_surf, (20, footer_y - 24))
-
-        # Draw Footer with navigation hints
-        pygame.draw.line(s, (51, 65, 85), (16, footer_y - 6), (self.panel_w - 16, footer_y - 6), 1)
-        hint = "[F1-F3] Switch Tabs | [Arrows] Navigate | [Enter] Toggle | [Esc/B] Close"
-        hint_surf = self.font.render(hint, True, (148, 163, 184))
-        s.blit(hint_surf, (20, footer_y))
-
-        # Upload surface to ModernGL texture
-        raw = pygame.image.tobytes(s, "RGBA")
-        self.texture.write(raw)
-
-        # Draw to screen with alpha blending
-        self.ctx.enable(moderngl.BLEND)
-        self.ctx.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.disable(moderngl.CULL_FACE)
-
-        if self._u_screen_size is not None:
-            self._u_screen_size.value = (float(self.width), float(self.height))
-        if self._u_rect is not None:
-            self._u_rect.value = (20.0, 20.0, float(self.panel_w), float(self.panel_h))
-
-        self.texture.use(location=0)
-        self.vao.render(moderngl.TRIANGLE_STRIP, vertices=4)
-        self.ctx.disable(moderngl.BLEND)
+        if gl is not None:
+            try:
+                gl.glDisable(gl.GL_SCISSOR_TEST)
+                gl.glBindVertexArray(0)
+                gl.glUseProgram(0)
+            except Exception:
+                pass
 
     def resize(self, width: int, height: int) -> None:
         """Handles window resize."""
         self.width = width
         self.height = height
+        self.io.display_size = imgui.ImVec2(float(width), float(height))
 
     def destroy(self) -> None:
-        """Releases GPU texture and programs."""
-        if self.texture is not None:
-            self.texture.release()
-        if self.vao is not None:
-            self.vao.release()
-        if self.prog is not None:
-            self.prog.release()
+        """Shuts down ImGui context and backend renderer."""
+        if self.renderer is not None:
+            try:
+                self.renderer.shutdown()
+            except Exception:
+                pass
+            self.renderer = None
+        if self.imgui_ctx is not None:
+            try:
+                imgui.destroy_context(self.imgui_ctx)
+            except Exception:
+                pass
+            self.imgui_ctx = None

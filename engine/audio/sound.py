@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-import math
 import numpy as np
 import pygame
 
 from engine.audio.spatial import AttenuationModel
-from engine.logging import log_info, log_warn, LogChannel
 
 
 @dataclass(slots=True)

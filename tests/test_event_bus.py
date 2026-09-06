@@ -1,13 +1,10 @@
 """Unit tests for PyMordial Engine Centralized Event Bus."""
 
 from __future__ import annotations
-import pytest
 from engine.events import (
-    Event,
     EventBus,
     WindowResizeEvent,
     InputActionEvent,
-    CVarChangedEvent,
 )
 
 

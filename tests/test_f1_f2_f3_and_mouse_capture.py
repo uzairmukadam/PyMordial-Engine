@@ -1,39 +1,35 @@
-"""Unit test validating dedicated F1/F2/F3 debug tabs, F9 mouse capture, and KCC jitter fixes."""
+"""Unit test validating independent Dear ImGui F1/F2/F3 debug panels, multi-style F1 cycling, F9 mouse release, and unrestricted gameplay."""
 
 import math
+import pygame
 from engine.core.ecs import EntityManager
-from engine.input import InputManager
+from engine.input import InputManager, Key
 from engine.physics.rapier_world import PhysicsManager
 from engine.physics.character_motor import CharacterMotor
 from engine.debug import SystemMonitor, EngineTweaks, GameTweaks, DebugToast, DebugMenu
 
 
 class TestDebugMenuAndMouseCapture:
-    def test_mouse_capture_and_debug_mode_lifecycle(self):
-        """Validates that mouse is captured by default and cleanly toggled by F9 and debug mode."""
+    def test_mouse_capture_and_f9_toggle(self):
+        """Validates that mouse capture is cleanly toggled by F9 and defaults to captured."""
         input_mgr = InputManager(register_defaults=True)
 
         # 1. Start with mouse grabbed
         input_mgr.set_mouse_grab(True)
         assert input_mgr.is_mouse_grabbed is True
 
-        # 2. Entering debug mode frees the cursor and remembers prior grab state
-        input_mgr.set_debug_mode(True)
-        assert input_mgr.is_mouse_grabbed is False
-        assert input_mgr._was_mouse_grabbed is True
-
-        # 3. Exiting debug mode restores mouse capture
-        input_mgr.set_debug_mode(False)
-        assert input_mgr.is_mouse_grabbed is True
-        assert input_mgr._was_mouse_grabbed is False
-
-        # 4. F9 toggle
+        # 2. F9 toggle frees the cursor
         new_grab = not input_mgr.is_mouse_grabbed
         input_mgr.set_mouse_grab(new_grab)
         assert input_mgr.is_mouse_grabbed is False
 
-    def test_direct_f1_f2_f3_tab_toggling(self):
-        """Validates that F1, F2, F3 toggle dedicated tabs and close cleanly."""
+        # 3. F9 toggle recaptures the cursor
+        new_grab = not input_mgr.is_mouse_grabbed
+        input_mgr.set_mouse_grab(new_grab)
+        assert input_mgr.is_mouse_grabbed is True
+
+    def test_f1_multi_style_cycling(self):
+        """Validates F1 3-stage lifecycle: 0 (Off) -> 1 (Basic HUD) -> 2 (Expanded Profiler) -> 0 (Closed)."""
         monitor = SystemMonitor(history_size=10)
         engine_tweaks = EngineTweaks()
         game_tweaks = GameTweaks()
@@ -49,35 +45,116 @@ class TestDebugMenuAndMouseCapture:
             input_mgr=input_mgr,
         )
 
+        assert menu.f1_style == 0
         assert not menu.visible
 
-        # Press F1 -> Opens Tab 0 (Performance)
-        opened = menu.toggle_tab(0)
-        assert opened is True
+        # Press 1: Basic HUD
+        s1 = menu.cycle_f1()
+        assert s1 == 1
+        assert menu.f1_style == 1
         assert menu.visible is True
-        assert menu.active_tab == 0
 
-        # Press F1 again -> Closes menu
-        closed = menu.toggle_tab(0)
-        assert closed is False
+        # Press 2: Expanded Profiler
+        s2 = menu.cycle_f1()
+        assert s2 == 2
+        assert menu.f1_style == 2
+        assert menu.visible is True
+
+        # Press 3: Close
+        s0 = menu.cycle_f1()
+        assert s0 == 0
+        assert menu.f1_style == 0
         assert menu.visible is False
 
-        # Press F2 -> Opens Tab 1 (Graphics Options)
-        opened = menu.toggle_tab(1)
-        assert opened is True
-        assert menu.visible is True
-        assert menu.active_tab == 1
+    def test_independent_f1_f2_f3_panels(self):
+        """Validates that F1, F2, and F3 are completely independent panels and can be open simultaneously."""
+        monitor = SystemMonitor(history_size=10)
+        engine_tweaks = EngineTweaks()
+        game_tweaks = GameTweaks()
+        toast = DebugToast()
+        input_mgr = InputManager(register_defaults=True)
 
-        # Press F3 while Tab 1 is open -> Switches to Tab 2 (Game Options) without closing
-        switched = menu.toggle_tab(2)
-        assert switched is True
-        assert menu.visible is True
-        assert menu.active_tab == 2
+        menu = DebugMenu(
+            ctx=None,
+            monitor=monitor,
+            engine_tweaks=engine_tweaks,
+            game_tweaks=game_tweaks,
+            toast=toast,
+            input_mgr=input_mgr,
+        )
 
-        # Press F3 again -> Closes menu
-        closed = menu.toggle_tab(2)
-        assert closed is False
+        # 1. Open F1 (Basic HUD)
+        menu.cycle_f1()
+        assert menu.f1_style == 1
+        assert not menu.show_graphics
+        assert not menu.show_game_tweaks
+
+        # 2. Open F2 (Graphics) - F1 MUST REMAIN OPEN
+        menu.toggle_graphics()
+        assert menu.f1_style == 1
+        assert menu.show_graphics is True
+        assert not menu.show_game_tweaks
+
+        # 3. Open F3 (Game Tweaks) - ALL THREE PANELS ARE NOW OPEN SIMULTANEOUSLY
+        menu.toggle_game_tweaks()
+        assert menu.f1_style == 1
+        assert menu.show_graphics is True
+        assert menu.show_game_tweaks is True
+        assert menu.visible is True
+
+        # 4. Advance F1 to Expanded Profiler - F2 and F3 remain open
+        menu.cycle_f1()
+        assert menu.f1_style == 2
+        assert menu.show_graphics is True
+        assert menu.show_game_tweaks is True
+
+        # 5. Close F1 - F2 and F3 remain open
+        menu.cycle_f1()
+        assert menu.f1_style == 0
+        assert menu.show_graphics is True
+        assert menu.show_game_tweaks is True
+        assert menu.visible is True
+
+        # 6. Close F2 - F3 remains open
+        menu.toggle_graphics()
+        assert menu.show_graphics is False
+        assert menu.show_game_tweaks is True
+        assert menu.visible is True
+
+        # 7. Close F3 - All closed
+        menu.toggle_game_tweaks()
+        assert menu.show_game_tweaks is False
         assert menu.visible is False
+
+    def test_gameplay_actions_unrestricted_with_debug_panels_open(self):
+        """Validates that gameplay movement (WASD, sprint, jump) is never locked when debug panels are open."""
+        input_mgr = InputManager(register_defaults=True)
+        menu = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=DebugToast(),
+            input_mgr=input_mgr,
+        )
+
+        # Open all debug panels
+        menu.cycle_f1()  # F1 open
+        menu.toggle_graphics()  # F2 open
+        menu.toggle_game_tweaks()  # F3 open
+        assert menu.visible is True
+
+        # In the new design, input_mgr is NOT placed in a locking debug mode
+        assert input_mgr.is_debug_mode is False
+
+        # Simulate pressing 'W' (move forward)
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_w))
+        input_mgr.update_axes()
+
+        move_vec = input_mgr.get_vector2("move")
+        # Moving forward means move_forward > 0 (vector Y > 0)
+        assert move_vec[1] > 0.0, "WASD movement MUST NOT be locked when debug panels are open!"
 
     def test_character_motor_rotation_sync_and_angular_damping(self):
         """Validates that CharacterMotor rotation synchronizes to Rapier and survives sync_to_ecs."""
@@ -114,10 +191,7 @@ class TestDebugMenuAndMouseCapture:
         assert abs(synced_qw - expected_qw) < 1e-4
 
     def test_frame_by_frame_debug_hotkeys_and_no_numeric_presets(self):
-        """Validates that pressing F1 opens and keeps menu open, switching tabs works, and number keys 1-5 do not change presets."""
-        import pygame
-        from engine.input import Key
-
+        """Validates frame-by-frame hotkey handling for F1 (cycling), F2, F3, and no numeric preset conflict."""
         monitor = SystemMonitor(history_size=10)
         engine_tweaks = EngineTweaks()
         game_tweaks = GameTweaks()
@@ -135,57 +209,69 @@ class TestDebugMenuAndMouseCapture:
 
         def step_simulated_frame():
             input_mgr.update_axes()
-            tab_toggled = False
             if input_mgr.is_action_pressed("debug_perf_toggle"):
-                menu.toggle_tab(0)
-                tab_toggled = True
+                menu.cycle_f1()
             elif input_mgr.is_action_pressed("debug_graphics_toggle"):
-                menu.toggle_tab(1)
-                tab_toggled = True
+                menu.toggle_graphics()
             elif input_mgr.is_action_pressed("debug_game_toggle"):
-                menu.toggle_tab(2)
-                tab_toggled = True
+                menu.toggle_game_tweaks()
 
-            if menu.visible and not tab_toggled:
-                menu.handle_input()
-
-        # Frame 1: User presses F1
+        # Frame 1: User presses F1 -> style 1 (Basic HUD)
         input_mgr.begin_frame()
         input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F1))
         step_simulated_frame()
-        assert menu.visible is True, "Menu MUST be open after pressing F1"
-        assert menu.active_tab == 0, "Active tab must be Tab 0 (Performance)"
+        assert menu.f1_style == 1, "F1 press 1 must open style 1 (Basic HUD)"
 
-        # Frame 2: Key held or no key pressed, menu MUST REMAIN OPEN on Tab 0
+        # Release F1
         input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYUP, key=pygame.K_F1))
         step_simulated_frame()
-        assert menu.visible is True, "Menu MUST remain open on subsequent frames"
-        assert menu.active_tab == 0
+        assert menu.f1_style == 1
 
-        # Frame 3: User presses F2 -> Switches to Tab 1 (Graphics Options)
+        # Frame 2: User presses F1 again -> style 2 (Expanded Profiler)
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F1))
+        step_simulated_frame()
+        assert menu.f1_style == 2, "F1 press 2 must expand to style 2 (Expanded Profiler)"
+
+        # Release F1
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYUP, key=pygame.K_F1))
+        step_simulated_frame()
+        assert menu.f1_style == 2
+
+        # Frame 3: User presses F1 again -> style 0 (Closed)
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F1))
+        step_simulated_frame()
+        assert menu.f1_style == 0, "F1 press 3 must close F1 panel"
+
+        # Frame 4: User presses F2 -> Graphics panel opens
         input_mgr.begin_frame()
         input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F2))
         step_simulated_frame()
-        assert menu.visible is True, "Menu MUST remain open"
-        assert menu.active_tab == 1, "Active tab must switch to Tab 1 (Graphics Options)"
+        assert menu.show_graphics is True
 
-        # Frame 4: User presses F3 -> Switches to Tab 2 (Game Options)
+        # Frame 5: User presses F3 -> Game Tweaks opens alongside F2
         input_mgr.begin_frame()
         input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F3))
         step_simulated_frame()
-        assert menu.visible is True
-        assert menu.active_tab == 2, "Active tab must switch to Tab 2 (Game Options)"
+        assert menu.show_graphics is True
+        assert menu.show_game_tweaks is True
 
-        # Key release
+        # Release F2 & F3
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYUP, key=pygame.K_F2))
         input_mgr.process_event(pygame.event.Event(pygame.KEYUP, key=pygame.K_F3))
-
-        # Frame 5: User presses F3 again -> Closes menu
-        input_mgr.begin_frame()
-        input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F3))
         step_simulated_frame()
-        assert menu.visible is False, "Menu MUST close when active tab hotkey is pressed again"
 
-        # Frame 6: Ensure number keys 1-5 do NOT have preset action bindings
+        # Frame 6: User presses F2 again -> Closes Graphics, Game Tweaks remains open!
+        input_mgr.begin_frame()
+        input_mgr.process_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F2))
+        step_simulated_frame()
+        assert menu.show_graphics is False
+        assert menu.show_game_tweaks is True
+
+        # Frame 7: Ensure number keys 1-5 do NOT have preset action bindings
         for k in (Key.NUM_1, Key.NUM_2, Key.NUM_3, Key.NUM_4, Key.NUM_5):
             assert f"preset_{k}" not in input_mgr._actions
-

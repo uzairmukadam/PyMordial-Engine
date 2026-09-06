@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 from pathlib import Path
-import pytest
-from engine.config import CVar, CVarFlags, CVarRegistry
+from engine.config import CVar, CVarRegistry
 
 
 def test_cvar_typing_and_clamping():

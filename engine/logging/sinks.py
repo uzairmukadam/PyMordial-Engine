@@ -4,12 +4,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
 from enum import IntEnum
 from pathlib import Path
 import sys
 import threading
-from typing import Sequence
 
 
 class LogLevel(IntEnum):

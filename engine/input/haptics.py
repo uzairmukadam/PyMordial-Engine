@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import pygame
-from engine.logging import log_info, log_warn, LogChannel
+from engine.logging import log_warn, LogChannel
 
 
 class HapticsManager:
@@ -31,7 +31,7 @@ class HapticsManager:
         device_index: int = 0,
     ) -> bool:
         """Triggers dual-motor haptic rumble on a connected controller.
-        
+
         Args:
             low_frequency: Low frequency motor intensity (0.0 to 1.0)
             high_frequency: High frequency motor intensity (0.0 to 1.0)

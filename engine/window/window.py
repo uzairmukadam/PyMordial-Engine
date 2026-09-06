@@ -7,7 +7,6 @@ resolution changes, VSync toggling, DPI/monitor queries, and lifecycle event dis
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Optional, Sequence
 import pygame
 
 from engine.events import (
@@ -17,7 +16,7 @@ from engine.events import (
     WindowFocusEvent,
     WindowCloseEvent,
 )
-from engine.logging import log_info, log_warn, log_debug, LogChannel
+from engine.logging import log_info, LogChannel
 
 
 class WindowMode(IntEnum):

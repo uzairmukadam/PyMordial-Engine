@@ -1,9 +1,8 @@
 """Unit tests for PyMordial Engine Windowing Subsystem."""
 
 from __future__ import annotations
-import pytest
 from engine.window import Window, WindowConfig, WindowMode, VSyncMode
-from engine.events import subscribe_event, WindowResizeEvent, WindowModeChangedEvent
+from engine.events import subscribe_event, WindowResizeEvent
 
 
 def test_window_initialization_headless():

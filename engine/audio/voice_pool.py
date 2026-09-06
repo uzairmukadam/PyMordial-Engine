@@ -1,7 +1,6 @@
 """Channel Allocation and Voice Pooling Manager for PyMordial Engine."""
 
 from __future__ import annotations
-from dataclasses import dataclass
 import numpy as np
 import pygame
 
@@ -11,7 +10,6 @@ from engine.audio.spatial import (
     AudioListener,
     calculate_spatial_pan_and_attenuation,
 )
-from engine.logging import log_debug, LogChannel
 
 
 class ActiveVoice:
