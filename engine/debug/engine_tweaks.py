@@ -60,6 +60,8 @@ class EngineTweaks:
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
+        "ssr_thickness",
+        "ssr_max_roughness",
         "taa_enabled",
         "point_lights_enabled",
         "vsync_enabled",
@@ -109,7 +111,9 @@ class EngineTweaks:
         self.lpv_intensity = 1.0
         self.ibl_enabled = True
         self.ssr_enabled = True
-        self.ssr_steps = 24
+        self.ssr_steps = 32
+        self.ssr_thickness = 0.40
+        self.ssr_max_roughness = 0.65
         self.taa_enabled = True
         self.point_lights_enabled = True
 

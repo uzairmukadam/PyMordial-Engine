@@ -455,6 +455,7 @@ class RenderPipeline:
 
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)
+        ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssr_pass.execute(ctx)
 
         # ---- PASS 7: Consolidated Deferred Resolve ----

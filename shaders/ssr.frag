@@ -28,9 +28,9 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform int u_SSR_Steps = 24;
-uniform float u_SSR_MaxDistance = 15.0;
-uniform float u_SSR_Thickness = 0.35;
+uniform int u_SSR_Steps = 32;
+uniform float u_SSR_MaxDistance = 20.0;
+uniform float u_SSR_Thickness = 0.40;
 uniform float u_SSR_MaxRoughness = 0.65;
 
 vec3 OctahedralDecode(vec2 f) {
@@ -42,11 +42,15 @@ vec3 OctahedralDecode(vec2 f) {
     return normalize(n);
 }
 
-vec3 GetWorldPos(vec2 uv, float depth) {
+vec3 GetViewPos(vec2 uv, float depth) {
     vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 view = u_InvProjection * clip;
-    view /= view.w;
-    return (u_InvView * vec4(view.xyz, 1.0)).xyz;
+    return view.xyz / view.w;
+}
+
+// Jorge Jimenez's Interleaved Gradient Noise for uniform blue-noise spatial dithering
+float InterleavedGradientNoise(vec2 screen_pos) {
+    return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
 }
 
 void main() {
@@ -59,34 +63,45 @@ void main() {
     vec4 albedo_rough = texture(u_GBufferAlbedoRoughness, v_UV);
     float roughness = albedo_rough.a;
 
-    // Skip rough surfaces that don't produce mirror-like specular reflections
+    // Skip rough surfaces that don't produce specular reflections
     if (roughness > u_SSR_MaxRoughness) {
         out_SSR = vec4(0.0);
         return;
     }
 
-    vec3 world_pos = GetWorldPos(v_UV, raw_depth);
-    vec3 N = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
-    vec3 V = normalize(u_CameraPos_Time.xyz - world_pos);
-    vec3 R = reflect(-V, N);
+    vec3 view_pos = GetViewPos(v_UV, raw_depth);
+    vec3 world_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
+    vec3 view_normal = normalize((u_View * vec4(world_normal, 0.0)).xyz);
+    vec3 view_dir = normalize(-view_pos);
+    vec3 R = reflect(-view_dir, view_normal);
 
-    // If reflection ray points into the surface or towards the camera, abort
-    if (dot(N, R) <= 0.0) {
+    // If reflection ray points towards the surface or into camera clipping plane, abort
+    if (dot(view_normal, R) <= 0.001) {
         out_SSR = vec4(0.0);
         return;
     }
 
-    vec3 ray_origin = world_pos + N * 0.05;
-    int steps = clamp(u_SSR_Steps, 8, 48);
+    // Interleaved Gradient Noise for sub-texel ray jittering
+    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
+
+    // Normal offset to avoid self-reflection acne
+    vec3 ray_origin = view_pos + view_normal * 0.02;
+    int steps = clamp(u_SSR_Steps, 12, 64);
     float step_len = u_SSR_MaxDistance / float(steps);
 
     vec2 hit_uv = vec2(0.0);
     float hit_found = 0.0;
+    float hit_dist = 0.0;
 
     for (int s = 1; s <= steps; ++s) {
-        vec3 curr_world = ray_origin + R * (float(s) * step_len);
+        // Dithered ray marching: eliminates uniform stepping bands
+        float t = (float(s) - 0.5 + jitter) * step_len;
+        vec3 curr_view = ray_origin + R * t;
 
-        vec4 clip_sample = u_ViewProjection * vec4(curr_world, 1.0);
+        // Abort if ray passes behind the near clipping plane
+        if (curr_view.z >= -0.08) break;
+
+        vec4 clip_sample = u_Projection * vec4(curr_view, 1.0);
         if (clip_sample.w <= 0.0) break;
         vec3 ndc_sample = clip_sample.xyz / clip_sample.w;
         vec2 sample_uv = ndc_sample.xy * 0.5 + 0.5;
@@ -98,43 +113,61 @@ void main() {
         float scene_depth = texture(u_GBufferDepth, sample_uv).r;
         if (scene_depth <= 0.000001) continue;
 
-        vec3 scene_world = GetWorldPos(sample_uv, scene_depth);
-        float depth_diff = length(curr_world - scene_world);
+        vec3 scene_view = GetViewPos(sample_uv, scene_depth);
 
-        // Reversed-Z: scene_depth >= ndc_sample.z
-        if (ndc_sample.z <= scene_depth && depth_diff < u_SSR_Thickness) {
-            // Binary search refinement for sub-step precision
-            vec3 p_start = curr_world - R * step_len;
-            vec3 p_end = curr_world;
-            for (int b = 0; b < 4; ++b) {
-                vec3 p_mid = (p_start + p_end) * 0.5;
-                vec4 c_mid = u_ViewProjection * vec4(p_mid, 1.0);
-                vec3 n_mid = c_mid.xyz / c_mid.w;
-                vec2 uv_mid = n_mid.xy * 0.5 + 0.5;
+        // View-space depth comparison (-Z is metric distance from camera)
+        float ray_depth = -curr_view.z;
+        float geo_depth = -scene_view.z;
+        float depth_diff = ray_depth - geo_depth;
+
+        // Adaptive thickness threshold guarantees step_len cannot overshoot geometry
+        float adaptive_thickness = max(u_SSR_Thickness, step_len * 1.35) * (1.0 + ray_depth * 0.03);
+
+        if (depth_diff >= 0.0 && depth_diff < adaptive_thickness) {
+            // Sub-pixel binary search bisection (6 iterations)
+            float t_min = max(0.0, t - step_len);
+            float t_max = t;
+            vec2 best_uv = sample_uv;
+
+            for (int b = 0; b < 6; ++b) {
+                float t_mid = (t_min + t_max) * 0.5;
+                vec3 p_mid = ray_origin + R * t_mid;
+                vec4 c_mid = u_Projection * vec4(p_mid, 1.0);
+                vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
+
                 float d_mid = texture(u_GBufferDepth, uv_mid).r;
-                if (n_mid.z <= d_mid) {
-                    p_end = p_mid;
-                    hit_uv = uv_mid;
+                vec3 s_mid = GetViewPos(uv_mid, d_mid);
+                float diff_mid = (-p_mid.z) - (-s_mid.z);
+
+                if (diff_mid >= 0.0) {
+                    t_max = t_mid;
+                    best_uv = uv_mid;
                 } else {
-                    p_start = p_mid;
+                    t_min = t_mid;
                 }
             }
+
+            hit_uv = best_uv;
             hit_found = 1.0;
+            hit_dist = t;
             break;
         }
     }
 
     if (hit_found > 0.0) {
-        // Screen edge vignette fade to eliminate hard popping
+        // Screen edge vignette fade to eliminate hard boundary popping
         vec2 edge_coords = abs(hit_uv - 0.5) * 2.0;
         float edge_factor = clamp(1.0 - max(edge_coords.x, edge_coords.y), 0.0, 1.0);
-        edge_factor = smoothstep(0.0, 0.2, edge_factor);
+        edge_factor = smoothstep(0.0, 0.15, edge_factor);
+
+        // Ray travel distance attenuation
+        float dist_fade = clamp(1.0 - (hit_dist / u_SSR_MaxDistance), 0.0, 1.0);
 
         // Roughness fade
         float rough_fade = 1.0 - smoothstep(0.0, u_SSR_MaxRoughness, roughness);
 
         vec3 reflected_color = texture(u_SceneColor, hit_uv).rgb;
-        float alpha = edge_factor * rough_fade;
+        float alpha = edge_factor * dist_fade * rough_fade;
         out_SSR = vec4(reflected_color, alpha);
     } else {
         out_SSR = vec4(0.0);

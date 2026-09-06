@@ -62,8 +62,10 @@ class RenderConfig:
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
     ssr_enabled: bool = True
-    ssr_steps: int = 24
+    ssr_steps: int = 32
     ssr_max_roughness: float = 0.65
+    ssr_thickness: float = 0.40
+    ssr_max_distance: float = 20.0
 
     # Temporal Anti-Aliasing (TAA)
     taa_enabled: bool = True

@@ -935,6 +935,8 @@ def main() -> None:
         pipeline.config.ibl_enabled = engine_tweaks.ibl_enabled
         pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
         pipeline.config.ssr_steps = engine_tweaks.ssr_steps
+        pipeline.config.ssr_thickness = engine_tweaks.ssr_thickness
+        pipeline.config.ssr_max_roughness = engine_tweaks.ssr_max_roughness
         pipeline.config.taa_enabled = engine_tweaks.taa_enabled
         pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
         wireframe_tweak.value = engine_tweaks.show_wireframe
