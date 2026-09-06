@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 from typing import Optional
-import pygame
 import moderngl
 
 from engine.gfx.quality_presets import RenderConfig, get_quality_preset, GraphicsQuality
+from engine.window import Window, WindowConfig, WindowMode, VSyncMode
+from engine.events import subscribe_event, WindowResizeEvent
 
 
 class RenderContext:
@@ -19,6 +20,7 @@ class RenderContext:
         "config",
         "is_headless",
         "depth_func_name",
+        "window",
     )
 
     def __init__(
@@ -28,29 +30,29 @@ class RenderContext:
         title: str = "PyMordial Engine 3D",
         hidden: bool = False,
         config: Optional[RenderConfig] = None,
+        window: Optional[Window] = None,
     ) -> None:
-        self.width = width
-        self.height = height
         self.config = config if config is not None else get_quality_preset(GraphicsQuality.HIGH)
         self.is_headless = hidden
 
-        if not pygame.get_init():
-            pygame.init()
+        if window is not None:
+            self.window = window
+            self.width = window.width
+            self.height = window.height
+            self.is_headless = window.is_headless
+        else:
+            win_cfg = WindowConfig(
+                width=width,
+                height=height,
+                title=title,
+                hidden=hidden,
+                depth_bits=24,
+            )
+            self.window = Window(win_cfg)
+            self.width = self.window.width
+            self.height = self.window.height
 
-        # Request OpenGL 4.5 Core Profile
-        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MAJOR_VERSION, 4)
-        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_MINOR_VERSION, 5)
-        pygame.display.gl_set_attribute(pygame.GL_CONTEXT_PROFILE_MASK, pygame.GL_CONTEXT_PROFILE_CORE)
-        pygame.display.gl_set_attribute(pygame.GL_DOUBLEBUFFER, 1)
-        pygame.display.gl_set_attribute(pygame.GL_DEPTH_SIZE, 24)
-
-        flags = pygame.OPENGL | pygame.DOUBLEBUF
-        if hidden:
-            flags |= pygame.HIDDEN
-
-        self.screen = pygame.display.set_mode((width, height), flags)
-        if not hidden:
-            pygame.display.set_caption(title)
+        self.screen = self.window.surface
 
         # Create ModernGL Core context
         try:
@@ -86,6 +88,13 @@ class RenderContext:
             self.ctx.depth_func = "<"
             self.depth_func_name = "<"
 
+        # Auto-subscribe to window resize events
+        subscribe_event(WindowResizeEvent, self._on_window_resize, priority=100)
+
+    def _on_window_resize(self, event: WindowResizeEvent) -> None:
+        """Synchronizes OpenGL viewport when window resolution changes."""
+        self.resize(event.width, event.height)
+
     @classmethod
     def create_headless(cls, width: int = 800, height: int = 600) -> RenderContext:
         """Creates a headless hidden OpenGL 4.5 context suitable for automated unit tests."""
@@ -118,8 +127,7 @@ class RenderContext:
 
     def swap_buffers(self) -> None:
         """Swaps front and back buffers."""
-        if not self.is_headless:
-            pygame.display.flip()
+        self.window.swap_buffers()
 
     def destroy(self) -> None:
         """Releases context resources."""

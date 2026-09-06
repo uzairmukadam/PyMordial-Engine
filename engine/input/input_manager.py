@@ -18,6 +18,9 @@ from engine.input.codes import (
     DeviceType,
 )
 from engine.input.actions import ActionBinding, AxisBinding, Vector2Binding
+from engine.input.context import InputContext, InputContextStack
+from engine.input.haptics import HapticsManager
+from engine.events import publish_event, InputActionEvent
 
 
 class InputManager:
@@ -32,6 +35,8 @@ class InputManager:
         "is_mouse_grabbed",
         "_was_mouse_grabbed",
         "should_quit",
+        "context_stack",
+        "haptics",
         "_actions",
         "_debug_actions",
         "_axes",
@@ -131,9 +136,30 @@ class InputManager:
         self._controllers: dict[int, Any] = {}
         self._has_sdl2_controller: bool = False
 
+        self.context_stack = InputContextStack()
+        self.haptics = HapticsManager()
+
         self._init_subsystems()
         if register_defaults:
             self._register_default_bindings()
+
+    def push_context(self, context: InputContext) -> None:
+        """Pushes a prioritized input context onto the stack."""
+        self.context_stack.push_context(context)
+
+    def pop_context(self, context_or_name: InputContext | str) -> InputContext | None:
+        """Pops an input context from the stack."""
+        return self.context_stack.pop_context(context_or_name)
+
+    def set_rumble(
+        self,
+        low_frequency: float,
+        high_frequency: float,
+        duration_seconds: float,
+        device_index: int = 0,
+    ) -> bool:
+        """Triggers dual-motor haptic rumble on a connected controller."""
+        return self.haptics.set_rumble(low_frequency, high_frequency, duration_seconds, device_index)
 
     def _init_subsystems(self) -> None:
         """Initializes underlying Pygame input, joystick, and SDL2 GameController subsystems."""

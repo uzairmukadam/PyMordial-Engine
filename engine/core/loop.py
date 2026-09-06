@@ -1,7 +1,7 @@
 """Deterministic Fixed-Accumulator Engine Tick Loop.
 
 Orchestrates input polling, fixed-frequency simulation (60 Hz), sub-frame
-alpha interpolation, and variable-rate render/UI phases.
+alpha interpolation, and variable-rate render/UI phases with multi-domain TimeSystem.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import pygame
 
 from engine.core.ecs import EntityManager
 from engine.input import InputManager
+from engine.time import TimeSystem, FPSLimiter
+from engine.events import flush_events
 
 
 class EngineLoop:
@@ -23,6 +25,8 @@ class EngineLoop:
         "is_running",
         "ecs",
         "input_manager",
+        "time_system",
+        "limiter",
         "fixed_tick_count",
         "total_frames",
         "elapsed_time",
@@ -40,6 +44,7 @@ class EngineLoop:
         input_manager: Optional[InputManager] = None,
         fixed_dt: float = 1.0 / 60.0,
         max_accumulator: float = 0.20,
+        target_fps: int = 0,
     ) -> None:
         self.fixed_dt = fixed_dt
         self.max_accumulator = max_accumulator
@@ -48,6 +53,8 @@ class EngineLoop:
 
         self.ecs = ecs if ecs is not None else EntityManager()
         self.input_manager = input_manager if input_manager is not None else InputManager()
+        self.time_system = TimeSystem(fixed_dt=fixed_dt, max_delta_time=max_accumulator)
+        self.limiter = FPSLimiter(target_fps=target_fps)
 
         self.fixed_tick_count = 0
         self.total_frames = 0
@@ -72,10 +79,10 @@ class EngineLoop:
         Returns:
             The number of fixed update sub-ticks executed during this frame.
         """
-        clamped_dt = min(frame_time, self.max_accumulator)
-        self.accumulator += clamped_dt
-        self.elapsed_time += clamped_dt
-        self.total_frames += 1
+        real_dt, game_dt = self.time_system.tick(frame_time)
+        self.accumulator += game_dt
+        self.elapsed_time = self.time_system.game_time
+        self.total_frames = self.time_system.frame_count
 
         sub_ticks = 0
 
@@ -86,16 +93,20 @@ class EngineLoop:
             if self.on_fixed_update:
                 self.on_fixed_update(self.fixed_dt)
 
-            self.fixed_tick_count += 1
+            self.time_system.step_fixed_tick()
+            self.fixed_tick_count = self.time_system.fixed_tick_count
             sub_ticks += 1
             self.accumulator -= self.fixed_dt
 
         # Phase 2: Variable Timestep Phase (Sub-Frame Interpolation & Gameplay)
-        alpha = self.accumulator / self.fixed_dt
+        alpha = self.accumulator / self.fixed_dt if self.fixed_dt > 0 else 0.0
         self.ecs.interpolate_render_transforms(alpha)
 
         if self.on_update:
-            self.on_update(clamped_dt, alpha)
+            self.on_update(game_dt, alpha)
+
+        # Dispatch queued engine events
+        flush_events()
 
         # Phase 3: Render Phase
         if self.on_render:
@@ -105,6 +116,7 @@ class EngineLoop:
         if self.on_ui:
             self.on_ui()
 
+        self.fps = self.time_system.fps
         return sub_ticks
 
     def run(self, max_frames: Optional[int] = None) -> None:
@@ -128,6 +140,10 @@ class EngineLoop:
             # 2-4. Step simulation, interpolation, and rendering
             self.step_frame(frame_time)
 
+            # Frame rate limiter, if configured
+            if self.limiter.target_fps > 0:
+                self.limiter.wait()
+
             # FPS counter update (once per second)
             frame_counter += 1
             now = time.perf_counter()
@@ -139,37 +155,3 @@ class EngineLoop:
             if max_frames and self.total_frames >= max_frames:
                 self.is_running = False
                 break
-
-
-if __name__ == "__main__":
-    pygame.init()
-    screen = pygame.display.set_mode((800, 600))
-    pygame.display.set_caption("PyMordial Engine - Loop Test")
-
-    loop = EngineLoop()
-    font = pygame.font.SysFont("Consolas", 18)
-
-    # Spawn test entities
-    for i in range(10):
-        loop.ecs.create_entity(position=(i * 1.5, 0.0, 0.0))
-
-    def on_fixed_tick(dt: float) -> None:
-        pass
-
-    def on_render_frame(alpha: float) -> None:
-        screen.fill((25, 28, 35))
-        fps_text = font.render(
-            f"PyMordial Engine Phase 1 | FPS: {loop.fps:.1f} | Frame: {loop.frame_time_ms:.2f}ms | Ticks: {loop.fixed_tick_count}",
-            True,
-            (180, 220, 255),
-        )
-        screen.blit(fps_text, (20, 20))
-        pygame.display.flip()
-
-    loop.on_fixed_update = on_fixed_tick
-    loop.on_render = on_render_frame
-
-    print("Running PyMordial Engine loop... (Press ESC or close window to exit)")
-    loop.run(max_frames=180)
-    pygame.quit()
-    print("Loop execution completed successfully.")

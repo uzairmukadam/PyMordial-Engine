@@ -58,6 +58,9 @@ from engine.debug import (  # noqa: E402
     DebugToast,
     DebugMenu,
 )
+from engine.camera import CameraManager, FollowCamera, FollowCameraConfig, FreeFlyCamera  # noqa: E402
+from engine.audio import get_audio_engine  # noqa: E402
+from engine.window import WindowMode  # noqa: E402
 
 
 def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
@@ -450,6 +453,13 @@ def main() -> None:
         initial_pitch_deg=22.0,
     )
 
+    # Audio Engine & Virtual Camera Stack
+    audio_engine = get_audio_engine()
+    camera_mgr = CameraManager()
+    camera_mgr.register_camera("follow", cam, make_active=True)
+    free_cam = FreeFlyCamera(position=(0.0, 5.0, 10.0), fov=75.0)
+    camera_mgr.register_camera("free", free_cam)
+
     # 6. Configure Unified Input Bindings (AAA Standard)
     # Character actions
     input_mgr.bind_action("jump", keys=[Key.SPACE], gamepad_buttons=[GamepadButton.A])
@@ -467,11 +477,13 @@ def main() -> None:
     input_mgr.bind_action("cycle_tonemap", keys=[Key.T], gamepad_buttons=[GamepadButton.DPAD_DOWN])
     input_mgr.bind_action("cycle_gbuffer", keys=[Key.G], gamepad_buttons=[GamepadButton.DPAD_LEFT])
     input_mgr.bind_action("toggle_sun_ray", keys=[Key.L], gamepad_buttons=[GamepadButton.DPAD_UP])
-    # Dedicated Debug System hotkeys: F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture)
+    # Dedicated Debug System hotkeys: F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture), F10 (Camera), F11 (Fullscreen)
     input_mgr.bind_action("debug_perf", keys=[Key.F1, Key.GRAVE], gamepad_buttons=[GamepadButton.BACK], is_debug=True)
     input_mgr.bind_action("debug_graphics", keys=[Key.F2], is_debug=True)
     input_mgr.bind_action("debug_game", keys=[Key.F3], is_debug=True)
     input_mgr.bind_action("debug_mouse_capture", keys=[Key.F9], is_debug=True)
+    input_mgr.bind_action("toggle_camera", keys=[Key.F10], is_debug=True)
+    input_mgr.bind_action("toggle_fullscreen", keys=[Key.F11], is_debug=True)
     input_mgr.bind_action("toggle_wireframe", keys=[Key.F7], is_debug=True)
     input_mgr.bind_action("toggle_physics_wireframe", keys=[Key.F8], is_debug=True)
     input_mgr.bind_action("quit", keys=[Key.ESCAPE], gamepad_buttons=[GamepadButton.START])
@@ -548,9 +560,29 @@ def main() -> None:
         cam.current_distance = cam.config.distance
         toast.show("Camera View Centered", duration=1.5, color=(147, 197, 253))
 
+    def trigger_toggle_camera() -> None:
+        if camera_mgr.active_camera_name == "follow":
+            camera_mgr.blend_to("free", duration_seconds=0.75)
+            toast.show("Camera: 6-DOF Free Fly (F10)", duration=2.0, color=(147, 197, 253))
+        else:
+            camera_mgr.blend_to("follow", duration_seconds=0.75)
+            toast.show("Camera: 3rd-Person Follow (F10)", duration=2.0, color=(56, 189, 248))
+
+    def trigger_toggle_fullscreen() -> None:
+        render_ctx.window.toggle_fullscreen()
+        mode_str = "BORDERLESS FULLSCREEN" if render_ctx.window.mode == WindowMode.BORDERLESS_FULLSCREEN else "WINDOWED"
+        toast.show(f"Display Mode: {mode_str} (F11)", duration=2.0, color=(74, 222, 128))
+
+    # Audio Tweaks
+    game_tweaks.add_float("Audio", "Master Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("master", v))
+    game_tweaks.add_float("Audio", "SFX Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("sfx", v))
+    game_tweaks.add_action("Audio", "Play Test Click", lambda: audio_engine.play_sound("click", volume=0.8))
+
     # Actions
     game_tweaks.add_action("Character", "Reset to Spawn", trigger_reset_player)
     game_tweaks.add_action("Camera", "Center Camera View", trigger_reset_camera)
+    game_tweaks.add_action("Camera", "Toggle Mode (Follow/Free)", trigger_toggle_camera)
+    game_tweaks.add_action("Display", "Toggle Fullscreen (F11)", trigger_toggle_fullscreen)
     game_tweaks.add_action("Physics", "Spawn Spheres", trigger_spawn_batch)
     game_tweaks.add_action("Physics", "Clear Spheres", trigger_clear_spheres)
     game_tweaks.add_action("PIE", "Save Snapshot", trigger_pie_save)
@@ -617,6 +649,7 @@ def main() -> None:
     clock = pygame.time.Clock()
     running = True
     frame_idx = 0
+    footstep_timer = 0.0
 
     while running:
         raw_dt_ms = clock.tick(0)
@@ -651,6 +684,12 @@ def main() -> None:
             input_mgr._was_mouse_grabbed = new_grab
             state_str = "CAPTURED" if new_grab else "FREE"
             toast.show(f"Mouse Capture: {state_str} (F9)", duration=2.0, color=(56, 189, 248))
+
+        # Camera & Window Hotkeys (F10 = Camera Toggle, F11 = Fullscreen Toggle)
+        if input_mgr.is_action_pressed("toggle_camera"):
+            trigger_toggle_camera()
+        if input_mgr.is_action_pressed("toggle_fullscreen"):
+            trigger_toggle_fullscreen()
 
         # Direct Debug Tab Hotkeys (F1 = Performance, F2 = Graphics, F3 = Game)
         tab_toggled_this_frame = False
@@ -699,6 +738,8 @@ def main() -> None:
 
                 if input_mgr.is_action_pressed("jump"):
                     jump_requested = True
+                    if motor.state.is_grounded:
+                        audio_engine.play_sound("jump", position=char_start_pos, volume=0.8)
                 if input_mgr.is_action_pressed("reset_player"):
                     trigger_reset_player()
                 if input_mgr.is_action_pressed("reset_camera"):
@@ -794,12 +835,43 @@ def main() -> None:
         else:
             char_world_pos = (0.0, 0.0, 0.0)
 
-        with monitor.scope("camera_update"):
-            camera_pos, camera_target = cam.update(
+        # Procedural footstep audio updates
+        if motor.state.is_grounded and motor.state.horizontal_speed > 1.5:
+            step_interval = 0.35 if is_sprinting else 0.55
+            footstep_timer += dt
+            if footstep_timer >= step_interval:
+                footstep_timer = 0.0
+                audio_engine.play_sound("footstep", position=char_world_pos, volume=0.6)
+        else:
+            footstep_timer = 0.3
+
+        # Update Camera Manager and Active Camera
+        camera_mgr.update(dt)
+        if camera_mgr.active_camera_name == "free":
+            free_cam.move(
                 dt=dt,
-                character_pos=char_world_pos,
-                physics=physics,
+                forward_axis=move_fwd,
+                right_axis=move_strafe,
+                up_axis=1.0 if input_mgr.is_action_down("jump") else (-1.0 if input_mgr.is_action_down("sprint") else 0.0),
+                boost=input_mgr.is_action_down("sprint"),
             )
+            if input_mgr.is_mouse_grabbed or input_mgr.is_mouse_down(MouseButton.RIGHT):
+                dx, dy = input_mgr.mouse_delta
+                if dx != 0 or dy != 0:
+                    free_cam.handle_mouse_look(dx, dy)
+            camera_pos = (float(free_cam.position[0]), float(free_cam.position[1]), float(free_cam.position[2]))
+            camera_target = (float(free_cam.target[0]), float(free_cam.target[1]), float(free_cam.target[2]))
+        else:
+            with monitor.scope("camera_update"):
+                camera_pos, camera_target = cam.update(
+                    dt=dt,
+                    character_pos=char_world_pos,
+                    physics=physics,
+                )
+
+        # Update 3D Audio spatial listener
+        fwd_vec = (camera_target[0] - camera_pos[0], camera_target[1] - camera_pos[1], camera_target[2] - camera_pos[2])
+        audio_engine.update(dt, camera_position=camera_pos, camera_forward=fwd_vec)
 
         # Compute Sun vector from Azimuth & Elevation
         rad_sun_az = math.radians(engine_tweaks.sun_angle_deg)
