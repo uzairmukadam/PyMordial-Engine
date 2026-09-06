@@ -238,6 +238,9 @@ def main() -> None:
     ecs = EntityManager(max_entities=2000)
     physics = PhysicsManager(gravity_x=0.0, gravity_y=-20.0, gravity_z=0.0)
     input_mgr = InputManager()
+    if not args.headless:
+        input_mgr.set_mouse_grab(True)
+        input_mgr._was_mouse_grabbed = True
     loop = EngineLoop(ecs=ecs, input_manager=input_mgr, fixed_dt=1.0 / 60.0)
 
     # 2. Standardized 3-Tier Debug System
@@ -464,18 +467,16 @@ def main() -> None:
     input_mgr.bind_action("cycle_tonemap", keys=[Key.T], gamepad_buttons=[GamepadButton.DPAD_DOWN])
     input_mgr.bind_action("cycle_gbuffer", keys=[Key.G], gamepad_buttons=[GamepadButton.DPAD_LEFT])
     input_mgr.bind_action("toggle_sun_ray", keys=[Key.L], gamepad_buttons=[GamepadButton.DPAD_UP])
-    input_mgr.bind_action("cycle_preset", gamepad_buttons=[GamepadButton.DPAD_RIGHT])
-    input_mgr.bind_action("toggle_wireframe", keys=[Key.F2], is_debug=True)
-    input_mgr.bind_action("toggle_physics_wireframe", keys=[Key.F3], is_debug=True)
-    input_mgr.bind_action("debug_toggle", keys=[Key.F1, Key.GRAVE], gamepad_buttons=[GamepadButton.BACK], is_debug=True)
+    # Dedicated Debug System hotkeys: F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture)
+    input_mgr.bind_action("debug_perf", keys=[Key.F1, Key.GRAVE], gamepad_buttons=[GamepadButton.BACK], is_debug=True)
+    input_mgr.bind_action("debug_graphics", keys=[Key.F2], is_debug=True)
+    input_mgr.bind_action("debug_game", keys=[Key.F3], is_debug=True)
+    input_mgr.bind_action("debug_mouse_capture", keys=[Key.F9], is_debug=True)
+    input_mgr.bind_action("toggle_wireframe", keys=[Key.F7], is_debug=True)
+    input_mgr.bind_action("toggle_physics_wireframe", keys=[Key.F8], is_debug=True)
     input_mgr.bind_action("quit", keys=[Key.ESCAPE], gamepad_buttons=[GamepadButton.START])
 
-    # Presets and zoom
-    input_mgr.bind_action("preset_1", keys=[Key.NUM_1])
-    input_mgr.bind_action("preset_2", keys=[Key.NUM_2])
-    input_mgr.bind_action("preset_3", keys=[Key.NUM_3])
-    input_mgr.bind_action("preset_4", keys=[Key.NUM_4])
-    input_mgr.bind_action("preset_5", keys=[Key.NUM_5])
+    # Camera zoom
     input_mgr.bind_action("zoom_in", keys=[Key.Q])
     input_mgr.bind_action("zoom_out", keys=[Key.E])
 
@@ -561,7 +562,7 @@ def main() -> None:
     game_tweaks.add_watch("KCC", "Speed", lambda: f"{motor.state.horizontal_speed:.1f} m/s")
     game_tweaks.add_watch("Camera", "Distance", lambda: f"{cam.current_distance:.1f} m")
 
-    toast.show("PyMordial Engine Master Playground Ready (F1 / Back for Menu)", duration=4.0, color=(56, 189, 248))
+    toast.show("PyMordial Engine Ready — F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture)", duration=4.5, color=(56, 189, 248))
 
     # Pre-cache MeshAllocation objects for zero-allocation MDI batch rendering
     alloc_cube = pipeline.mega_buffer.allocations["cube"]
@@ -629,24 +630,54 @@ def main() -> None:
             input_mgr.begin_frame()
             input_mgr.update_axes()
 
-        if input_mgr.should_quit or input_mgr.is_action_pressed("quit"):
+        if input_mgr.should_quit:
             running = False
             break
+        if input_mgr.is_action_pressed("quit"):
+            if debug_menu.visible:
+                debug_menu.toggle()
+                toast.show("Debug Menu Closed", duration=1.5, color=(147, 197, 253))
+            else:
+                running = False
+                break
 
-        # Debug Menu Toggle
-        if input_mgr.is_action_pressed("debug_toggle") or input_mgr.is_action_pressed("debug_menu_toggle"):
-            is_open = debug_menu.toggle()
-            state_str = "Opened" if is_open else "Closed"
-            toast.show(f"Debug Menu {state_str}", duration=1.5, color=(147, 197, 253))
+        # Mouse capture toggle (F9)
+        if (
+            input_mgr.is_action_pressed("debug_mouse_capture")
+            or input_mgr.is_action_pressed("debug_mouse_capture_toggle")
+        ):
+            new_grab = not input_mgr.is_mouse_grabbed
+            input_mgr.set_mouse_grab(new_grab)
+            input_mgr._was_mouse_grabbed = new_grab
+            state_str = "CAPTURED" if new_grab else "FREE"
+            toast.show(f"Mouse Capture: {state_str} (F9)", duration=2.0, color=(56, 189, 248))
 
-        # Hotkeys for Wireframe (F2) & Physics Gizmos (F3)
-        if input_mgr.is_action_pressed("toggle_wireframe") or input_mgr.is_action_pressed("debug_wireframe_toggle"):
+        # Direct Debug Tab Hotkeys (F1 = Performance, F2 = Graphics, F3 = Game)
+        tab_toggled_this_frame = False
+        if input_mgr.is_action_pressed("debug_perf") or input_mgr.is_action_pressed("debug_perf_toggle"):
+            is_open = debug_menu.toggle_tab(0)
+            msg = "Debug: Performance Monitor (F1)" if is_open else "Debug Menu Closed"
+            toast.show(msg, duration=1.5, color=(147, 197, 253))
+            tab_toggled_this_frame = True
+        elif input_mgr.is_action_pressed("debug_graphics") or input_mgr.is_action_pressed("debug_graphics_toggle"):
+            is_open = debug_menu.toggle_tab(1)
+            msg = "Debug: Graphics Options (F2)" if is_open else "Debug Menu Closed"
+            toast.show(msg, duration=1.5, color=(147, 197, 253))
+            tab_toggled_this_frame = True
+        elif input_mgr.is_action_pressed("debug_game") or input_mgr.is_action_pressed("debug_game_toggle"):
+            is_open = debug_menu.toggle_tab(2)
+            msg = "Debug: Game Options (F3)" if is_open else "Debug Menu Closed"
+            toast.show(msg, duration=1.5, color=(147, 197, 253))
+            tab_toggled_this_frame = True
+
+        # Secondary wireframe hotkeys (F7 / F8)
+        if input_mgr.is_action_pressed("toggle_wireframe"):
             engine_tweaks.toggle_wireframe()
             wireframe_tweak.value = engine_tweaks.show_wireframe
             state_str = "ON" if engine_tweaks.show_wireframe else "OFF"
             toast.show(f"Mesh Wireframe: {state_str}", duration=2.0, color=(56, 189, 248))
 
-        if input_mgr.is_action_pressed("toggle_physics_wireframe") or input_mgr.is_action_pressed("debug_physics_toggle"):
+        if input_mgr.is_action_pressed("toggle_physics_wireframe"):
             engine_tweaks.toggle_physics_colliders()
             physics_wire_tweak.value = engine_tweaks.show_physics_colliders
             state_str = "ON" if engine_tweaks.show_physics_colliders else "OFF"
@@ -654,7 +685,8 @@ def main() -> None:
 
         # Input dispatching
         if debug_menu.visible:
-            debug_menu.handle_input()
+            if not tab_toggled_this_frame:
+                debug_menu.handle_input()
             move_fwd = 0.0
             move_strafe = 0.0
             is_sprinting = False
@@ -696,18 +728,6 @@ def main() -> None:
                     p = engine_tweaks.cycle_quality_preset()
                     toast.show(f"Preset: {p.value.upper()}", duration=2.0, color=(56, 189, 248))
 
-                # Preset switching via number keys
-                if input_mgr.is_action_pressed("preset_1"):
-                    engine_tweaks.set_quality_preset(GraphicsQuality.LOW)
-                elif input_mgr.is_action_pressed("preset_2"):
-                    engine_tweaks.set_quality_preset(GraphicsQuality.MEDIUM)
-                elif input_mgr.is_action_pressed("preset_3"):
-                    engine_tweaks.set_quality_preset(GraphicsQuality.HIGH)
-                elif input_mgr.is_action_pressed("preset_4"):
-                    engine_tweaks.set_quality_preset(GraphicsQuality.ULTRA)
-                elif input_mgr.is_action_pressed("preset_5"):
-                    engine_tweaks.set_quality_preset(GraphicsQuality.CINEMATIC)
-
                 # Camera Look & Orbit (Standard AAA: Stick Right turns Right, Stick Up tilts Up)
                 look_vec = input_mgr.get_vector2("look")
                 if abs(look_vec[0]) > 0.01 or abs(look_vec[1]) > 0.01:
@@ -719,9 +739,14 @@ def main() -> None:
                         min(cam.config.max_pitch_deg, cam.pitch_deg + pitch_mult * look_vec[1] * 90.0 * sens * dt),
                     )
 
-                if input_mgr.is_mouse_down(MouseButton.LEFT) or input_mgr.is_mouse_down(MouseButton.RIGHT):
+                if input_mgr.is_mouse_grabbed:
                     dx, dy = input_mgr.mouse_delta
-                    cam.handle_mouse_orbit(dx, dy)
+                    if dx != 0 or dy != 0:
+                        cam.handle_mouse_orbit(dx, dy)
+                elif input_mgr.is_mouse_down(MouseButton.LEFT) or input_mgr.is_mouse_down(MouseButton.RIGHT):
+                    dx, dy = input_mgr.mouse_delta
+                    if dx != 0 or dy != 0:
+                        cam.handle_mouse_orbit(dx, dy)
 
                 if input_mgr.mouse_wheel != 0.0:
                     cam.handle_zoom(input_mgr.mouse_wheel)
@@ -758,9 +783,16 @@ def main() -> None:
         wireframe_tweak.value = engine_tweaks.show_wireframe
         physics_wire_tweak.value = engine_tweaks.show_physics_colliders
 
-        # Synchronize Camera & Character
+        # Synchronize Camera & Character (Sub-Frame Interpolated for Jitter-Free Tracking)
         char_idx = ecs.pool.get_dense_index(char_id)
-        char_world_pos = tuple(ecs.rigid_body_state[1, char_idx, 0:3])
+        if char_idx >= 0:
+            char_world_pos = (
+                float(ecs.world_transforms[char_idx, 12]),
+                float(ecs.world_transforms[char_idx, 13]),
+                float(ecs.world_transforms[char_idx, 14]),
+            )
+        else:
+            char_world_pos = (0.0, 0.0, 0.0)
 
         with monitor.scope("camera_update"):
             camera_pos, camera_target = cam.update(
@@ -816,20 +848,21 @@ def main() -> None:
                     size=b_size,
                     color=(0.35, 0.75, 0.45, 0.5),
                 )
-            # Dynamic spheres colliders
+            # Dynamic spheres colliders (Interpolated Sub-Frame Coordinates)
             for sph in sphere_ids:
                 s_idx = ecs.pool.get_dense_index(sph)
-                s_pos = (
-                    float(ecs.rigid_body_state[1, s_idx, 0]),
-                    float(ecs.rigid_body_state[1, s_idx, 1]),
-                    float(ecs.rigid_body_state[1, s_idx, 2]),
-                )
-                s_r = float(ecs.scales[s_idx, 0])
-                pipeline.debug.draw_sphere(
-                    center=s_pos,
-                    radius=s_r,
-                    color=(0.95, 0.45, 0.25, 0.7),
-                )
+                if s_idx >= 0:
+                    s_pos = (
+                        float(ecs.world_transforms[s_idx, 12]),
+                        float(ecs.world_transforms[s_idx, 13]),
+                        float(ecs.world_transforms[s_idx, 14]),
+                    )
+                    s_r = float(ecs.scales[s_idx, 0])
+                    pipeline.debug.draw_sphere(
+                        center=s_pos,
+                        radius=s_r,
+                        color=(0.95, 0.45, 0.25, 0.7),
+                    )
 
         if engine_tweaks.show_sun_ray:
             pipeline.debug.draw_ray(

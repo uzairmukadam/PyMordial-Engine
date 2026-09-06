@@ -74,11 +74,11 @@ class DebugMenu:
         "_u_rect",
     )
 
-    TABS = ["1. System Monitor", "2. Engine & Graphics", "3. Game Tweaks"]
+    TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
 
     def __init__(
         self,
-        ctx: moderngl.Context,
+        ctx: moderngl.Context | None,
         monitor: SystemMonitor,
         engine_tweaks: EngineTweaks,
         game_tweaks: GameTweaks,
@@ -100,8 +100,8 @@ class DebugMenu:
 
         self.width = screen_width
         self.height = screen_height
-        self.panel_w = 460
-        self.panel_h = 580
+        self.panel_w = 510
+        self.panel_h = 650
 
         if not pygame.font.get_init():
             pygame.font.init()
@@ -111,13 +111,18 @@ class DebugMenu:
         self.font_title = pygame.font.SysFont("Consolas", 15, bold=True)
 
         self.surface = pygame.Surface((self.panel_w, self.panel_h), pygame.SRCALPHA)
-        self.texture = self.ctx.texture((self.panel_w, self.panel_h), 4)
-
-        self.prog = self.ctx.program(vertex_shader=DEBUG_MENU_VERT, fragment_shader=DEBUG_MENU_FRAG)
-        self.vao = self.ctx.vertex_array(self.prog, [])
-
-        self._u_screen_size = self.prog.get("u_ScreenSize", None)
-        self._u_rect = self.prog.get("u_Rect", None)
+        if self.ctx is not None:
+            self.texture = self.ctx.texture((self.panel_w, self.panel_h), 4)
+            self.prog = self.ctx.program(vertex_shader=DEBUG_MENU_VERT, fragment_shader=DEBUG_MENU_FRAG)
+            self.vao = self.ctx.vertex_array(self.prog, [])
+            self._u_screen_size = self.prog.get("u_ScreenSize", None)
+            self._u_rect = self.prog.get("u_Rect", None)
+        else:
+            self.texture = None
+            self.prog = None
+            self.vao = None
+            self._u_screen_size = None
+            self._u_rect = None
 
     def toggle(self) -> bool:
         """Toggles debug menu visibility."""
@@ -125,14 +130,38 @@ class DebugMenu:
         self.input_mgr.set_debug_mode(self.visible)
         return self.visible
 
+    def toggle_tab(self, tab_idx: int) -> bool:
+        """Toggles a specific debug tab (F1=Performance, F2=Graphics, F3=Game).
+
+        - If closed: opens directly on tab_idx.
+        - If open on tab_idx: closes the menu.
+        - If open on a different tab: switches to tab_idx without closing.
+        """
+        target_tab = max(0, min(len(self.TABS) - 1, tab_idx))
+        if not self.visible:
+            self.active_tab = target_tab
+            self.selected_item_idx = 0
+            self.visible = True
+            self.input_mgr.set_debug_mode(True)
+            return True
+        elif self.active_tab == target_tab:
+            self.visible = False
+            self.input_mgr.set_debug_mode(False)
+            return False
+        else:
+            self.active_tab = target_tab
+            self.selected_item_idx = 0
+            return True
+
     def handle_input(self) -> None:
         """Handles menu navigation from KBM and Gamepad."""
         if not self.visible:
             return
 
         # Close on B button or Escape
-        if self.input_mgr.is_action_pressed("debug_close_b"):
+        if self.input_mgr.is_action_pressed("debug_close_b") or self.input_mgr.is_action_pressed("quit"):
             self.toggle()
+            self.toast.show("Debug Menu Closed", duration=1.5, color=(147, 197, 253))
             return
 
         # Tab switching (Q/E or LB/RB)
@@ -263,7 +292,7 @@ class DebugMenu:
 
     def render(self) -> None:
         """Draws the debug menu overlay to screen if visible."""
-        if not self.visible:
+        if not self.visible or self.ctx is None or self.texture is None:
             return
 
         s = self.surface
@@ -388,17 +417,23 @@ class DebugMenu:
 
         footer_y = self.panel_h - 26
 
+        # Draw opaque footer background to prevent any item text overlapping
+        pygame.draw.rect(s, (12, 18, 28, 250), (2, footer_y - 28, self.panel_w - 4, 52), border_bottom_left_radius=6, border_bottom_right_radius=6)
+
         # Draw active toast notification if any
         if self.toast:
             active_toasts = self.toast.get_active()
             if active_toasts:
                 t_msg, t_col = active_toasts[-1]
+                max_t_len = 54
+                if len(t_msg) > max_t_len:
+                    t_msg = t_msg[:max_t_len - 3] + "..."
                 t_surf = self.font_bold.render(f"Notification: {t_msg}", True, t_col)
                 s.blit(t_surf, (20, footer_y - 24))
 
         # Draw Footer with navigation hints
         pygame.draw.line(s, (51, 65, 85), (16, footer_y - 6), (self.panel_w - 16, footer_y - 6), 1)
-        hint = "[Q/E or LB/RB] Tabs | [Arrows/DPad] Navigate | [Enter/A] Toggle | [F1/B] Close"
+        hint = "[F1-F3] Switch Tabs | [Arrows] Navigate | [Enter] Toggle | [Esc/B] Close"
         hint_surf = self.font.render(hint, True, (148, 163, 184))
         s.blit(hint_surf, (20, footer_y))
 

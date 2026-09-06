@@ -30,6 +30,7 @@ class InputManager:
         "mouse_delta",
         "mouse_wheel",
         "is_mouse_grabbed",
+        "_was_mouse_grabbed",
         "should_quit",
         "_actions",
         "_debug_actions",
@@ -86,6 +87,7 @@ class InputManager:
         self.mouse_delta = (0, 0)
         self.mouse_wheel = 0.0
         self.is_mouse_grabbed = False
+        self._was_mouse_grabbed = False
 
         self._actions: dict[str, ActionBinding] = {}
         self._debug_actions: dict[str, ActionBinding] = {}
@@ -239,18 +241,24 @@ class InputManager:
 
         # 3. Dedicated Debug System Layer
         self.bind_action(
+            "debug_perf_toggle",
+            keys=[Key.F1, Key.GRAVE],
+            gamepad_buttons=[GamepadButton.BACK],
+            is_debug=True,
+        )
+        self.bind_action(
             "debug_menu_toggle",
             keys=[Key.F1, Key.GRAVE],
             gamepad_buttons=[GamepadButton.BACK],
             is_debug=True,
         )
         self.bind_action(
-            "debug_wireframe_toggle",
+            "debug_graphics_toggle",
             keys=[Key.F2],
             is_debug=True,
         )
         self.bind_action(
-            "debug_physics_toggle",
+            "debug_game_toggle",
             keys=[Key.F3],
             is_debug=True,
         )
@@ -262,6 +270,11 @@ class InputManager:
         self.bind_action(
             "debug_profiler_toggle",
             keys=[Key.F5],
+            is_debug=True,
+        )
+        self.bind_action(
+            "debug_mouse_capture_toggle",
+            keys=[Key.F9],
             is_debug=True,
         )
         self.bind_action(
@@ -790,5 +803,11 @@ class InputManager:
     def set_debug_mode(self, active: bool) -> None:
         """Activates debug input layer (suspends gameplay actions while keeping debug navigation)."""
         self.is_debug_mode = active
-        if active and self.is_mouse_grabbed:
-            self.set_mouse_grab(False)
+        if active:
+            if self.is_mouse_grabbed:
+                self._was_mouse_grabbed = True
+                self.set_mouse_grab(False)
+        else:
+            if self._was_mouse_grabbed:
+                self.set_mouse_grab(True)
+                self._was_mouse_grabbed = False

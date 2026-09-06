@@ -222,9 +222,15 @@ class CharacterMotor:
         state.velocity[0] = curr_vx
         state.velocity[2] = curr_vz
 
-        # Update character orientation towards movement direction if moving
+        # Update character orientation towards movement direction if moving with smooth angular damping
         if dir_len > 0.1:
-            state.yaw_deg = math.degrees(math.atan2(-dir_x, -dir_z))
+            target_yaw = math.degrees(math.atan2(-dir_x, -dir_z))
+            diff = (target_yaw - state.yaw_deg + 180.0) % 360.0 - 180.0
+            max_turn = 720.0 * dt  # 720 deg/s smooth angular damping
+            if abs(diff) <= max_turn:
+                state.yaw_deg = target_yaw
+            else:
+                state.yaw_deg += math.copysign(max_turn, diff)
 
         # 3. Vertical Kinematics & Jumping
         curr_vy = float(state.velocity[1])
@@ -270,9 +276,16 @@ class CharacterMotor:
         else:
             state.velocity[1] = eff_dy / dt
 
-        # 6. Synchronize Updated Position & Rotation into ECS Contiguous Buffer
+        # 6. Synchronize Updated Position & Rotation into Rapier and ECS Contiguous Buffer
         transform = self.physics.world.get_transform(self.entity_id)
         pos_x, pos_y, pos_z = transform[0], transform[1], transform[2]
+
+        half_yaw = math.radians(state.yaw_deg) * 0.5
+        qy = math.sin(half_yaw)
+        qw = math.cos(half_yaw)
+
+        # Synchronize rotation into Rapier rigid body so sync_to_ecs doesn't clobber it
+        self.physics.set_transform(self.entity_id, (pos_x, pos_y, pos_z), (0.0, qy, 0.0, qw))
 
         dense_idx = self.ecs.pool.get_dense_index(self.entity_id)
         if dense_idx >= 0:
@@ -280,10 +293,7 @@ class CharacterMotor:
             rbs[1, dense_idx, 0] = pos_x
             rbs[1, dense_idx, 1] = pos_y
             rbs[1, dense_idx, 2] = pos_z
-
-            # Rotation quaternion facing yaw direction
-            half_yaw = math.radians(state.yaw_deg) * 0.5
             rbs[1, dense_idx, 3] = 0.0
-            rbs[1, dense_idx, 4] = math.sin(half_yaw)
+            rbs[1, dense_idx, 4] = qy
             rbs[1, dense_idx, 5] = 0.0
-            rbs[1, dense_idx, 6] = math.cos(half_yaw)
+            rbs[1, dense_idx, 6] = qw
