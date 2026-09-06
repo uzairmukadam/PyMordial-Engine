@@ -46,6 +46,7 @@ out vec4 v_PrevClip;
 out flat uint v_EntityID;
 
 uniform uint u_BaseInstance; // Set per draw batch or via indirect command
+uniform mat4 u_PrevViewProjection;
 
 void main() {
     uint entity_idx = u_BaseInstance + uint(gl_InstanceID);
@@ -60,7 +61,7 @@ void main() {
     v_UV = in_uv;
 
     v_CurrClip = u_ViewProjection * world_pos;
-    v_PrevClip = v_CurrClip; // Motion vector tracking
+    v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * world_pos) : v_CurrClip;
 
     gl_Position = v_CurrClip;
 }

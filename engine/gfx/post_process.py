@@ -70,14 +70,23 @@ class PostProcessPipeline:
         self.final_fbo = self.ctx.framebuffer(color_attachments=[self.final_texture])
 
     def _destroy_framebuffers(self) -> None:
-        if self.hdr_texture is not None:
-            self.hdr_texture.release()
-        if self.hdr_fbo is not None:
-            self.hdr_fbo.release()
-        if self.final_texture is not None:
-            self.final_texture.release()
+        if self.ctx.screen is not None:
+            try:
+                self.ctx.screen.use()
+            except Exception:
+                pass
         if self.final_fbo is not None:
             self.final_fbo.release()
+            self.final_fbo = None
+        if self.final_texture is not None:
+            self.final_texture.release()
+            self.final_texture = None
+        if self.hdr_fbo is not None:
+            self.hdr_fbo.release()
+            self.hdr_fbo = None
+        if self.hdr_texture is not None:
+            self.hdr_texture.release()
+            self.hdr_texture = None
 
     def resize(self, new_width: int, new_height: int) -> None:
         if new_width <= 0 or new_height <= 0:

@@ -68,7 +68,10 @@ class EngineTweaks:
         "ssr_steps",
         "ssr_thickness",
         "ssr_max_roughness",
+        "aa_mode",
         "taa_enabled",
+        "taa_feedback",
+        "taa_sharpness",
         "point_lights_enabled",
         "vsync_enabled",
         "uncapped_fps",
@@ -123,7 +126,10 @@ class EngineTweaks:
         self.ssr_steps = 32
         self.ssr_thickness = 0.40
         self.ssr_max_roughness = 0.65
+        self.aa_mode = "TAA"
         self.taa_enabled = True
+        self.taa_feedback = 0.92
+        self.taa_sharpness = 0.35
         self.point_lights_enabled = True
 
         # VSync disabled by default per user request

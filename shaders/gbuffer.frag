@@ -38,10 +38,12 @@ void main() {
     float metallic = clamp(mat1.r, 0.0, 1.0);
     float ao = clamp(mat1.g, 0.0, 1.0);
 
-    // Compute screen-space velocity vector
-    vec2 curr_ndc = (v_CurrClip.xy / v_CurrClip.w) * 0.5 + 0.5;
-    vec2 prev_ndc = (v_PrevClip.xy / v_PrevClip.w) * 0.5 + 0.5;
-    vec2 velocity = curr_ndc - prev_ndc;
+    // Compute screen-space velocity vector (UV space: curr_uv - prev_uv)
+    float curr_inv_w = 1.0 / max(v_CurrClip.w, 1e-6);
+    float prev_inv_w = 1.0 / max(v_PrevClip.w, 1e-6);
+    vec2 curr_uv = (v_CurrClip.xy * curr_inv_w) * 0.5 + 0.5;
+    vec2 prev_uv = (v_PrevClip.xy * prev_inv_w) * 0.5 + 0.5;
+    vec2 velocity = curr_uv - prev_uv;
 
     // Pack into MRT outputs
     out_AlbedoRoughness = vec4(albedo, roughness);

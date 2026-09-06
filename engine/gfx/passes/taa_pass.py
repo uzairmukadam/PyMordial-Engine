@@ -64,6 +64,7 @@ class TAAPass(RenderPass):
 
         self._u_prev_vp = self.prog.get("u_PrevViewProjection", None)
         self._u_feedback = self.prog.get("u_Feedback", None)
+        self._u_sharpness = self.prog.get("u_Sharpness", None)
 
     def get_jitter(self, width: int, height: int) -> tuple[float, float]:
         """Calculates subpixel projection offset for the current frame."""
@@ -116,9 +117,14 @@ class TAAPass(RenderPass):
         current_tex.use(location=0)
         self._read_hist.use(location=1)
         g_buffer.depth_texture.use(location=2)
+        g_buffer.velocity_texture.use(location=3)
 
         if self._u_prev_vp is not None:
             self._u_prev_vp.write(self._prev_vp.tobytes())
+        if self._u_feedback is not None:
+            self._u_feedback.value = float(getattr(context.config, "taa_feedback", 0.92))
+        if self._u_sharpness is not None:
+            self._u_sharpness.value = float(getattr(context.config, "taa_sharpness", 0.35))
 
         self.vao.render(moderngl.TRIANGLES, vertices=3)
 

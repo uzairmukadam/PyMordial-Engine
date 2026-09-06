@@ -69,8 +69,14 @@ class RenderConfig:
     ssr_thickness: float = 0.40
     ssr_max_distance: float = 20.0
 
-    # Temporal Anti-Aliasing (TAA)
+    # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
+    aa_mode: str = "TAA"
     taa_enabled: bool = True
+    taa_feedback: float = 0.92
+    taa_sharpness: float = 0.35
+    fxaa_subpixel: float = 0.75
+    fxaa_edge_threshold: float = 0.125
+    smaa_threshold: float = 0.08
 
     # Clustered Local Lighting
     clustered_lights_enabled: bool = True
@@ -111,6 +117,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         gi_mode="OFF",
         ibl_enabled=False,
         ssr_enabled=False,
+        aa_mode="OFF",
         taa_enabled=False,
         clustered_lights_enabled=False,
         bloom_enabled=False,

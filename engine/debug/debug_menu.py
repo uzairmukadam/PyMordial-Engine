@@ -208,6 +208,18 @@ class DebugMenu:
 
     def process_event(self, event: pygame.event.Event) -> bool:
         """Forwards Pygame events to ImGui (mouse clicks, motion, wheel when mouse is free)."""
+        # Intercept window resize events to prevent PygameRenderer from destroying the OpenGL context
+        if event.type in (
+            pygame.VIDEORESIZE,
+            getattr(pygame, "WINDOWRESIZED", -1),
+            getattr(pygame, "WINDOWSIZECHANGED", -1),
+        ):
+            w = getattr(event, "w", getattr(event, "x", self.width))
+            h = getattr(event, "h", getattr(event, "y", self.height))
+            if w > 0 and h > 0:
+                self.resize(w, h)
+            return True
+
         if self.renderer is not None:
             return bool(self.renderer.process_event(event))
         return False
@@ -249,7 +261,20 @@ class DebugMenu:
             imgui.same_line()
             imgui.text_disabled(f"|  Entities: {active_ent}")
 
-        imgui.text_disabled("[F1] Expand  |  [F9] Mouse")
+        imgui.separator()
+        if imgui.small_button("Graphics Options [F2]"):
+            self.show_graphics = not self.show_graphics
+            if self.input_mgr and self.show_graphics and self.input_mgr.is_mouse_grabbed:
+                self.input_mgr.set_mouse_grab(False)
+                self.input_mgr._was_mouse_grabbed = False
+        imgui.same_line()
+        if imgui.small_button("Game Tweaks [F3]"):
+            self.show_game_tweaks = not self.show_game_tweaks
+            if self.input_mgr and self.show_game_tweaks and self.input_mgr.is_mouse_grabbed:
+                self.input_mgr.set_mouse_grab(False)
+                self.input_mgr._was_mouse_grabbed = False
+
+        imgui.text_disabled("[F1] Expand HUD  |  [F2] Graphics  |  [F9] Free Mouse")
         imgui.end()
 
     def _render_f1_expanded_profiler(self) -> None:
@@ -319,7 +344,20 @@ class DebugMenu:
             active_ent = self.game_tweaks.get_value("Entities", "Active Count")
             if active_ent is not None:
                 imgui.text(f"Active Entities: {active_ent}")
-            imgui.text_disabled("[F1] Close  |  [F9] Mouse Grab")
+
+            if imgui.button("Open Graphics Options [F2]"):
+                self.show_graphics = True
+                if self.input_mgr and self.input_mgr.is_mouse_grabbed:
+                    self.input_mgr.set_mouse_grab(False)
+                    self.input_mgr._was_mouse_grabbed = False
+            imgui.same_line()
+            if imgui.button("Open Game Tweaks [F3]"):
+                self.show_game_tweaks = True
+                if self.input_mgr and self.input_mgr.is_mouse_grabbed:
+                    self.input_mgr.set_mouse_grab(False)
+                    self.input_mgr._was_mouse_grabbed = False
+
+            imgui.text_disabled("[F1] Close  |  [F2] Graphics  |  [F9] Mouse Grab")
         imgui.end()
 
     def _render_f2_graphics(self) -> None:
@@ -463,12 +501,30 @@ class DebugMenu:
                     et.ssr_max_roughness = ssr_mr_val
                     et.mark_custom()
 
-            # TAA
-            taa_changed, taa_val = imgui.checkbox("Temporal Anti-Aliasing (TAA)", et.taa_enabled)
-            if taa_changed:
-                et.taa_enabled = taa_val
+            # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
+            aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x", "TAA"]
+            aa_internal_modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"]
+            curr_mode = getattr(et, "aa_mode", "TAA" if et.taa_enabled else "OFF")
+            curr_aa_idx = aa_internal_modes.index(curr_mode) if curr_mode in aa_internal_modes else 5
+
+            aa_changed, aa_idx = imgui.combo("Anti-Aliasing", curr_aa_idx, aa_modes)
+            if aa_changed:
+                chosen_internal = aa_internal_modes[aa_idx]
+                et.aa_mode = chosen_internal
+                et.taa_enabled = (chosen_internal == "TAA")
                 et.mark_custom()
-                self.toast.show(f"TAA: {'ON' if taa_val else 'OFF'}", duration=1.5)
+                self.toast.show(f"Anti-Aliasing: {aa_modes[aa_idx]}", duration=1.5)
+
+            if getattr(et, "aa_mode", "TAA") == "TAA":
+                fb_changed, fb_val = imgui.slider_float("TAA Feedback", et.taa_feedback, 0.70, 0.98, "%.2f")
+                if fb_changed:
+                    et.taa_feedback = fb_val
+                    et.mark_custom()
+
+                sp_changed, sp_val = imgui.slider_float("TAA Sharpness", et.taa_sharpness, 0.0, 1.0, "%.2f")
+                if sp_changed:
+                    et.taa_sharpness = sp_val
+                    et.mark_custom()
 
             # Dynamic Local Point Lights
             pl_changed, pl_val = imgui.checkbox("Dynamic Local Lights (SSBO 3)", et.point_lights_enabled)
@@ -638,7 +694,7 @@ class DebugMenu:
     # Main Render Call
     # --------------------------------------------------------------------------
 
-    def render(self) -> None:
+    def render(self, target_fbo: moderngl.Framebuffer | None = None) -> None:
         """Draws active ImGui debug panels and notifications."""
         if self.renderer is None:
             return
@@ -646,6 +702,12 @@ class DebugMenu:
         has_toasts = self.toast is not None and len(self.toast.get_active()) > 0
         if not self.visible and not has_toasts:
             return
+
+        # Explicitly bind target FBO or screen backbuffer so ImGui draws on the visible display
+        if target_fbo is not None:
+            target_fbo.use()
+        elif self.ctx is not None and hasattr(self.ctx, "screen") and self.ctx.screen is not None:
+            self.ctx.screen.use()
 
         # Dynamically synchronize with true display window resolution
         if pygame.display.get_init():
@@ -674,6 +736,12 @@ class DebugMenu:
         self._render_toasts()
 
         imgui.render()
+        if gl is not None:
+            try:
+                while gl.glGetError() != 0:
+                    pass
+            except Exception:
+                pass
         self.renderer.render(imgui.get_draw_data())
 
         if gl is not None:

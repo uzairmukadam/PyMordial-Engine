@@ -235,13 +235,26 @@ def main() -> None:
     parser.add_argument("--wireframe", action="store_true", help="Start with mesh wireframe enabled")
     parser.add_argument("--no-physics-colliders", action="store_true", default=True, help="Disable physics colliders wireframe (default: True/disabled)")
     parser.add_argument("--show-physics-colliders", action="store_true", default=False, help="Enable physics colliders wireframe")
-    parser.add_argument("--debug-menu", action="store_true", help="Start with debug menu open")
+    parser.add_argument(
+        "--debug-menu",
+        dest="debug_menu",
+        action="store_true",
+        default=True,
+        help="Start with debug menu open (default: True)",
+    )
+    parser.add_argument(
+        "--no-debug-menu",
+        dest="debug_menu",
+        action="store_false",
+        help="Start with debug menu closed",
+    )
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
     parser.add_argument("--shadow-mode", type=str, default="pcss", choices=["hard", "pcf", "pcss"], help="Shadow filtering mode (default: pcss)")
     parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
     parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 9=LPV, 10=GI_Total)")
     parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "hbao", "gtao"], help="AO mode override (off, ssao, hbao, gtao)")
     parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ssgi", "lpv", "hybrid"], help="GI mode override (off, ssgi, lpv, hybrid)")
+    parser.add_argument("--aa-mode", type=str, default="", choices=["", "off", "fxaa", "smaa_1x", "smaa_2x", "smaa_4x", "taa"], help="AA mode override (off, fxaa, smaa_1x, smaa_2x, smaa_4x, taa)")
     parser.add_argument("--all-effects", action="store_true", default=False, help="Enable secondary graphics effects (GTAO, SSGI, SSR, IBL, TAA, point lights). Default is False (isolated shadows).")
     args = parser.parse_args()
 
@@ -293,12 +306,16 @@ def main() -> None:
         engine_tweaks.gi_mode = GIMode.OFF
         engine_tweaks.ibl_enabled = False
         engine_tweaks.ssr_enabled = False
+        engine_tweaks.aa_mode = "OFF"
         engine_tweaks.taa_enabled = False
         engine_tweaks.point_lights_enabled = False
     if args.ao_mode:
         engine_tweaks.ao_mode = args.ao_mode.upper()
     if args.gi_mode:
         engine_tweaks.gi_mode = args.gi_mode.upper()
+    if args.aa_mode:
+        engine_tweaks.aa_mode = args.aa_mode.upper()
+        engine_tweaks.taa_enabled = (args.aa_mode.upper() == "TAA")
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -313,8 +330,13 @@ def main() -> None:
         screen_height=height,
     )
     if args.debug_menu:
-        debug_menu.visible = True
-        debug_menu.active_tab = max(0, min(2, args.debug_tab))
+        debug_menu.show_graphics = True
+        debug_menu.f1_style = 1
+        if not args.headless:
+            input_mgr.set_mouse_grab(False)
+            input_mgr._was_mouse_grabbed = False
+
+    toast.show("Press [F1] or [F2] for Graphics Options | [F9] Mouse Grab", duration=6.0, color=(56, 189, 248))
 
     def on_quality_changed(new_preset: GraphicsQuality) -> None:
         if new_preset == GraphicsQuality.CUSTOM:
@@ -335,6 +357,7 @@ def main() -> None:
         engine_tweaks.gi_mode = cfg.gi_mode
         engine_tweaks.ibl_enabled = cfg.ibl_enabled
         engine_tweaks.ssr_enabled = cfg.ssr_enabled
+        engine_tweaks.aa_mode = cfg.aa_mode
         engine_tweaks.taa_enabled = cfg.taa_enabled
         engine_tweaks.point_lights_enabled = cfg.clustered_lights_enabled
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
@@ -795,22 +818,34 @@ def main() -> None:
         if input_mgr.is_action_pressed("toggle_fullscreen"):
             trigger_toggle_fullscreen()
 
-        # Direct Debug Panel Hotkeys (F1 = Multi-Style Perf, F2 = Graphics, F3 = Game Tweaks)
-        if input_mgr.is_action_pressed("debug_perf") or input_mgr.is_action_pressed("debug_perf_toggle"):
+        # Direct Debug Panel Hotkeys (F1 = Multi-Style Perf + Graphics, F2 = Graphics Options, F3 = Game Tweaks)
+        if input_mgr.is_action_pressed("debug_perf") or input_mgr.is_action_pressed("debug_perf_toggle") or input_mgr.is_action_pressed("debug_menu_toggle"):
             style = debug_menu.cycle_f1()
+            # If opening F1, also open Graphics Options and free the mouse
+            if style > 0 and not debug_menu.show_graphics:
+                debug_menu.show_graphics = True
+            if debug_menu.show_graphics and input_mgr.is_mouse_grabbed:
+                input_mgr.set_mouse_grab(False)
+                input_mgr._was_mouse_grabbed = False
             if style == 1:
-                toast.show("Debug: Performance HUD [Basic] (F1)", duration=1.5, color=(147, 197, 253))
+                toast.show("Debug: Performance HUD & Graphics Options [F1/F2] (Mouse Free)", duration=2.0, color=(56, 189, 248))
             elif style == 2:
                 toast.show("Debug: Performance Profiler [Expanded] (F1)", duration=1.5, color=(147, 197, 253))
             else:
                 toast.show("Debug: Performance Monitor Closed", duration=1.5, color=(147, 197, 253))
         elif input_mgr.is_action_pressed("debug_graphics") or input_mgr.is_action_pressed("debug_graphics_toggle"):
             is_open = debug_menu.toggle_graphics()
-            msg = "Debug: Graphics Options [F2]" if is_open else "Graphics Options Closed"
+            if is_open and input_mgr.is_mouse_grabbed:
+                input_mgr.set_mouse_grab(False)
+                input_mgr._was_mouse_grabbed = False
+            msg = "Debug: Graphics Options [F2] (Mouse Free)" if is_open else "Graphics Options Closed"
             toast.show(msg, duration=1.5, color=(147, 197, 253))
         elif input_mgr.is_action_pressed("debug_game") or input_mgr.is_action_pressed("debug_game_toggle"):
             is_open = debug_menu.toggle_game_tweaks()
-            msg = "Debug: Game Developer Tweaks [F3]" if is_open else "Game Tweaks Closed"
+            if is_open and input_mgr.is_mouse_grabbed:
+                input_mgr.set_mouse_grab(False)
+                input_mgr._was_mouse_grabbed = False
+            msg = "Debug: Game Developer Tweaks [F3] (Mouse Free)" if is_open else "Game Tweaks Closed"
             toast.show(msg, duration=1.5, color=(147, 197, 253))
 
         # Secondary wireframe hotkeys (F7 / F8)
@@ -942,8 +977,10 @@ def main() -> None:
         pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
         pipeline.config.ssr_steps = engine_tweaks.ssr_steps
         pipeline.config.ssr_thickness = engine_tweaks.ssr_thickness
-        pipeline.config.ssr_max_roughness = engine_tweaks.ssr_max_roughness
-        pipeline.config.taa_enabled = engine_tweaks.taa_enabled
+        pipeline.config.aa_mode = getattr(engine_tweaks, "aa_mode", "TAA" if engine_tweaks.taa_enabled else "OFF")
+        pipeline.config.taa_enabled = (pipeline.config.aa_mode == "TAA")
+        pipeline.config.taa_feedback = getattr(engine_tweaks, "taa_feedback", 0.92)
+        pipeline.config.taa_sharpness = getattr(engine_tweaks, "taa_sharpness", 0.35)
         pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
         wireframe_tweak.value = engine_tweaks.show_wireframe
         physics_wire_tweak.value = engine_tweaks.show_physics_colliders
@@ -1114,7 +1151,11 @@ def main() -> None:
 
 
         # Render 3-Tier Glassmorphic Debug Menu if visible
-        debug_menu.render()
+        if debug_menu.visible or (debug_menu.toast is not None and len(debug_menu.toast.get_active()) > 0):
+            pipeline.post_process.final_fbo.use()
+            debug_menu.render(pipeline.post_process.final_fbo)
+            if not args.headless:
+                render_ctx.ctx.copy_framebuffer(render_ctx.ctx.screen, pipeline.post_process.final_fbo)
 
         if not args.headless:
             render_ctx.swap_buffers()

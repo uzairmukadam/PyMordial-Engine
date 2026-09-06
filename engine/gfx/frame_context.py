@@ -36,6 +36,7 @@ class FrameContext:
         camera_pos: tuple[float, float, float] | np.ndarray,
         time_elapsed: float,
         screen_size: tuple[float, float],
+        jitter: tuple[float, float] = (0.0, 0.0),
         sun_dir: tuple[float, float, float] = (0.35, -0.85, 0.40),
         sun_lux: float = 4.0,
         sun_color: tuple[float, float, float] = (1.0, 0.96, 0.88),
@@ -63,8 +64,8 @@ class FrameContext:
         # 84..87: Screen Size (w, h) & Subpixel Jitter
         buf[84] = float(screen_size[0])
         buf[85] = float(screen_size[1])
-        buf[86] = 0.0  # Jitter X
-        buf[87] = 0.0  # Jitter Y
+        buf[86] = float(jitter[0])  # Subpixel Jitter X
+        buf[87] = float(jitter[1])  # Subpixel Jitter Y
 
         # 88..91: Sun Direction & Lux
         sx, sy, sz = float(sun_dir[0]), float(sun_dir[1]), float(sun_dir[2])

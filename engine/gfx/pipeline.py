@@ -28,9 +28,16 @@ from engine.gfx.passes.lpv_pass import LPVPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight
 from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
+from engine.gfx.passes.fxaa_pass import FXAAPass
+from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
 from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+
+try:
+    import OpenGL.GL as gl
+except ImportError:
+    gl = None
 
 
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
@@ -60,6 +67,9 @@ class RenderPipeline:
         "lights_pass",
         "ssr_pass",
         "taa_pass",
+        "fxaa_pass",
+        "smaa_pass",
+        "_prev_vp_mat",
         "post_process",
         "resources",
         "debug",
@@ -154,6 +164,9 @@ class RenderPipeline:
         self.lights_pass = ClusteredLightingPass(self.ctx, max_lights=self.config.max_point_lights)
         self.ssr_pass = SSRPass(self.ctx, w, h)
         self.taa_pass = TAAPass(self.ctx, w, h)
+        self.fxaa_pass = FXAAPass(self.ctx, w, h)
+        self.smaa_pass = SMAAPass(self.ctx, w, h)
+        self._prev_vp_mat = np.identity(4, dtype=np.float32).flatten()
 
         # Pre-allocated scratch buffers for zero-allocation frame rendering
         self._view_mat = np.zeros(16, dtype=np.float32)
@@ -289,7 +302,16 @@ class RenderPipeline:
         self.ssgi_pass.resize(width, height)
         self.ssr_pass.resize(width, height)
         self.taa_pass.resize(width, height)
+        self.fxaa_pass.resize(width, height)
+        self.smaa_pass.resize(width, height)
         self.post_process.resize(width, height)
+
+        if gl is not None:
+            try:
+                while gl.glGetError() != 0:
+                    pass
+            except Exception:
+                pass
 
     def _on_window_resize(self, event: WindowResizeEvent) -> None:
         self.resize(event.width, event.height)
@@ -348,10 +370,15 @@ class RenderPipeline:
             out=self._proj_mat,
         )
 
-        # Sub-pixel projection jitter for TAA
+        # Sub-pixel projection jitter for TAA, SMAA 2x, SMAA 4x
         jitter_x, jitter_y = 0.0, 0.0
-        if self.config.taa_enabled:
+        aa_mode = getattr(self.config, "aa_mode", "TAA" if self.config.taa_enabled else "OFF")
+        if aa_mode == "TAA":
             jitter_x, jitter_y = self.taa_pass.get_jitter(w, h)
+        elif aa_mode in ("SMAA_2X", "SMAA_4X"):
+            jitter_x, jitter_y = self.smaa_pass.get_jitter(w, h, aa_mode)
+
+        if jitter_x != 0.0 or jitter_y != 0.0:
             self._proj_mat[8] += jitter_x * 2.0
             self._proj_mat[9] += jitter_y * 2.0
 
@@ -383,6 +410,7 @@ class RenderPipeline:
             camera_pos=self._cam_pos,
             time_elapsed=time_elapsed,
             screen_size=(float(w), float(h)),
+            jitter=(jitter_x, jitter_y),
             sun_dir=sun_dir,
             sun_lux=sun_lux,
             csm_matrices=csm_matrices,
@@ -438,6 +466,8 @@ class RenderPipeline:
         if is_wireframe:
             self.ctx.wireframe = True
         try:
+            if "u_PrevViewProjection" in self.gbuffer_prog:
+                self.gbuffer_prog["u_PrevViewProjection"].write(self._prev_vp_mat.tobytes())
             self.mdi.submit(self.gbuffer_vao, self.gbuffer_prog)
         finally:
             if is_wireframe:
@@ -539,24 +569,40 @@ class RenderPipeline:
             active_debug.render()
             active_debug.clear()
 
-        # ---- PASS 8: Temporal Anti-Aliasing (TAA) ----
-        ctx.resources["hdr_color"] = self.post_process.hdr_texture
-        self.taa_pass.execute(ctx)
-        resolved_hdr = ctx.resources.get("taa_output", self.post_process.hdr_texture)
-
-        # ---- PASS 9: Post-Process & Tone-Mapping ----
+        # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
-        # Point post-process to antialiased HDR texture if TAA was applied
-        prev_hdr = self.post_process.hdr_texture
-        if resolved_hdr is not None and resolved_hdr is not prev_hdr:
-            self.post_process.hdr_texture = resolved_hdr
+        aa_mode = getattr(self.config, "aa_mode", "TAA" if self.config.taa_enabled else "OFF")
 
-        try:
-            self.post_process.render(target_fbo=None)
-            if not self.ctx_wrapper.is_headless:
-                self.post_process.render(target_fbo=self.ctx.screen)
-        finally:
-            self.post_process.hdr_texture = prev_hdr
+        if aa_mode == "TAA":
+            ctx.resources["hdr_color"] = self.post_process.hdr_texture
+            self.taa_pass.execute(ctx)
+            resolved_hdr = ctx.resources.get("taa_output", self.post_process.hdr_texture)
+            prev_hdr = self.post_process.hdr_texture
+            if resolved_hdr is not None and resolved_hdr is not prev_hdr:
+                self.post_process.hdr_texture = resolved_hdr
+            try:
+                self.post_process.render(target_fbo=self.post_process.final_fbo)
+            finally:
+                self.post_process.hdr_texture = prev_hdr
+        else:
+            self.post_process.render(target_fbo=self.post_process.final_fbo)
+            ctx.resources["ldr_color"] = self.post_process.final_texture
+
+            if aa_mode == "FXAA":
+                self.fxaa_pass.execute(ctx)
+                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.fxaa_pass.fbo)
+            elif aa_mode in ("SMAA_1X", "SMAA_2X", "SMAA_4X"):
+                self.smaa_pass.execute(ctx)
+                if aa_mode == "SMAA_1X":
+                    self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass.fbo_smaa)
+                else:
+                    self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass._write_fbo)
+
+        if not self.ctx_wrapper.is_headless:
+            self.ctx.copy_framebuffer(self.ctx.screen, self.post_process.final_fbo)
+
+        # Store current ViewProjection for next frame's motion vectors
+        self._prev_vp_mat = np.copy(self._vp_mat)
 
     @property
     def output_texture_id(self) -> int:
@@ -579,6 +625,8 @@ class RenderPipeline:
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
         self.taa_pass.destroy()
+        self.fxaa_pass.destroy()
+        self.smaa_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()

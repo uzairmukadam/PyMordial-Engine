@@ -275,17 +275,61 @@ class TestTemporalAntiAliasing:
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
 
+        pipeline.config.aa_mode = "TAA"
         pipeline.config.taa_enabled = True
         for f in range(3):
             pipeline.render_frame(
                 ecs=ecs,
-                camera_pos=(0.0, 2.0, 5.0),
+                camera_pos=(0.0, 2.0, 5.0 + f * 0.1),
                 camera_target=(0.0, 0.0, 0.0),
                 time_elapsed=f * 0.016,
             )
 
         data = pipeline.post_process.final_texture.read()
         assert len(data) == 320 * 240 * 4
+
+        # Verify G-Buffer RT2 (Velocity Buffer) contains motion vectors
+        vel_data = pipeline.g_buffer.velocity_texture.read()
+        assert len(vel_data) == 320 * 240 * 2 * 2  # RG16F = 4 bytes/texel
+
+        pipeline.destroy()
+
+    def test_fxaa_and_smaa_modes(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
+
+        modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"]
+        for mode in modes:
+            pipeline.config.aa_mode = mode
+            pipeline.config.taa_enabled = (mode == "TAA")
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 5.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.016,
+            )
+            data = pipeline.post_process.final_texture.read()
+            assert len(data) == 320 * 240 * 4
+
+        pipeline.destroy()
+
+    def test_smaa_jitter_patterns(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+
+        # SMAA 1x has 0 jitter
+        j1 = [pipeline.smaa_pass.get_jitter(1920, 1080, "SMAA_1X", frame_idx=i) for i in range(4)]
+        assert all(jx == 0.0 and jy == 0.0 for jx, jy in j1)
+
+        # SMAA 2x has 2 distinct phases
+        j2 = [pipeline.smaa_pass.get_jitter(1920, 1080, "SMAA_2X", frame_idx=i) for i in range(4)]
+        assert j2[0] != j2[1]
+        assert j2[0] == j2[2]
+
+        # SMAA 4x has 4 distinct phases
+        j4 = [pipeline.smaa_pass.get_jitter(1920, 1080, "SMAA_4X", frame_idx=i) for i in range(4)]
+        assert len(set(j4)) == 4
 
         pipeline.destroy()
 
