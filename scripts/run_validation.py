@@ -25,6 +25,7 @@ import random
 import sys
 from pathlib import Path
 import pygame
+import numpy as np
 from PIL import Image
 
 # Ensure project root is in sys.path
@@ -60,17 +61,20 @@ from engine.debug import (  # noqa: E402
     DebugMenu,
     GBufferDebugMode,
 )
-from engine.camera import CameraManager, FreeFlyCamera  # noqa: E402
+from engine.camera import CameraManager, FreeFlyCamera, VirtualCamera  # noqa: E402
 from engine.audio import get_audio_engine  # noqa: E402
 from engine.window import WindowMode, VSyncMode  # noqa: E402
 
 VALIDATION_LANTERNS = (
-    (-8.0, 1.8, 0.0, 12.0, (1.0, 0.25, 0.15), 4.0),
-    (8.0, 1.8, 0.0, 12.0, (0.15, 0.75, 1.0), 4.0),
-    (0.0, 2.2, -8.0, 14.0, (0.20, 1.0, 0.35), 4.0),
-    (0.0, 2.2, 8.0, 14.0, (1.0, 0.85, 0.20), 4.5),
-    (10.0, 2.5, 10.0, 12.0, (0.85, 0.20, 0.95), 4.0),
-    (-10.0, 2.5, -10.0, 12.0, (1.0, 0.50, 0.10), 4.0),
+    # (base_x, base_y, base_z, radius, color, intensity, speed, orbit_radius, phase)
+    (0.0, 3.4, -23.5, 16.0, (1.0, 0.85, 0.30), 5.5, 0.5, 2.0, 0.0),       # 1. Altar Relic (Gold)
+    (0.0, 1.8, -9.5, 14.0, (0.15, 0.85, 1.0), 4.5, 0.8, 2.8, 1.0),        # 2. Pool Basin (Cyan)
+    (-4.5, 2.6, -7.0, 12.0, (1.0, 0.25, 0.15), 4.2, 0.9, 1.8, 2.0),       # 3. West Colonnade (Ruby)
+    (4.5, 2.6, -7.0, 12.0, (0.85, 0.25, 1.0), 4.2, 0.9, 1.8, 3.0),        # 4. East Colonnade (Violet)
+    (-4.5, 2.6, -17.0, 12.0, (0.20, 1.0, 0.40), 4.2, 0.7, 1.8, 4.0),      # 5. North-West Sconce (Emerald)
+    (4.5, 2.6, -17.0, 12.0, (1.0, 0.55, 0.10), 4.2, 0.7, 1.8, 5.0),       # 6. North-East Sconce (Amber)
+    (14.0, 2.8, -11.0, 13.0, (0.25, 0.65, 1.0), 4.0, 0.6, 2.2, 1.5),      # 7. Material Gallery (Sapphire)
+    (-14.0, 2.8, -11.0, 13.0, (1.0, 0.95, 0.85), 4.0, 0.6, 2.2, 3.5),     # 8. Parkour Course (Pearl White)
 )
 
 
@@ -264,7 +268,32 @@ def main() -> None:
     parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "hbao", "gtao"], help="AO mode override (off, ssao, hbao, gtao)")
     parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ssgi", "lpv", "hybrid"], help="GI mode override (off, ssgi, lpv, hybrid)")
     parser.add_argument("--aa-mode", type=str, default="", choices=["", "off", "fxaa", "smaa_1x", "smaa_2x", "smaa_4x", "taa"], help="AA mode override (off, fxaa, smaa_1x, smaa_2x, smaa_4x, taa)")
-    parser.add_argument("--all-effects", action="store_true", default=False, help="Enable secondary graphics effects (GTAO, SSGI, SSR, IBL, TAA, point lights). Default is False (isolated shadows).")
+    parser.add_argument(
+        "--all-effects",
+        dest="all_effects",
+        action="store_true",
+        default=True,
+        help="Enable secondary graphics effects (GTAO, SSGI, SSR, IBL, TAA, point lights). Default is True.",
+    )
+    parser.add_argument(
+        "--no-all-effects",
+        dest="all_effects",
+        action="store_false",
+        help="Disable secondary graphics effects (isolated shadows).",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        default=False,
+        help="Run automated 300-frame camera benchmark sweep and output performance metrics.",
+    )
+    parser.add_argument(
+        "--camera",
+        type=str,
+        default="follow",
+        choices=["follow", "free", "cinematic", "inspection", "courtyard"],
+        help="Initial active camera viewpoint (default: follow)",
+    )
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -381,7 +410,7 @@ def main() -> None:
     alloc_monolith = pipeline.load_cooked_mesh("monolith", "models/monolith.pm_mesh")
     cooked_mesh = pipeline.resources.load_mesh("models/monolith.pm_mesh")
 
-    # 5. Construct Unified Playground Scene Environment
+    # 5. Construct PyMordial Architecture & Material Testbed (PAMT) Scene
     cube_ids: list[int] = []
     step_boxes: list[tuple[tuple[float, float, float], tuple[float, float, float]]] = []
 
@@ -398,83 +427,136 @@ def main() -> None:
     cube_ids.append(ground_id)
     step_boxes.append(((0.0, -0.5, 0.0), (60.0, 1.0, 60.0)))
 
-    # Reflective Marble Plaza Platform (Showcase for SSR, IBL, and SSGI Diffuse Bounce)
-    plaza_id = spawn_static_box(
+    # B. Central Reflective Obsidian / Water Basin (Mirror Reflection & SSR Showcase)
+    basin_id = spawn_static_box(
         ecs,
         physics,
-        position=(0.0, 0.025, 0.0),
-        size=(22.0, 0.05, 22.0),
-        color=(0.12, 0.14, 0.18),
-        roughness=0.08,
-        metallic=0.75,
+        position=(0.0, 0.02, -9.5),
+        size=(5.0, 0.04, 16.0),
+        color=(0.04, 0.05, 0.07),
+        roughness=0.03,
+        metallic=0.88,
     )
-    cube_ids.append(plaza_id)
-    step_boxes.append(((0.0, 0.025, 0.0), (22.0, 0.05, 22.0)))
+    cube_ids.append(basin_id)
+    step_boxes.append(((0.0, 0.02, -9.5), (5.0, 0.04, 16.0)))
 
-    # B. Stepping Course & Curbs (West side, testing auto-stepping <= 0.30m)
-    # Step 1: 0.15m height (easy auto-step)
-    s1_pos, s1_size = (-7.0, 0.075, -6.0), (3.5, 0.15, 1.6)
-    cube_ids.append(spawn_static_box(ecs, physics, s1_pos, s1_size, color=(0.60, 0.55, 0.50), roughness=0.4, metallic=0.0))
-    step_boxes.append((s1_pos, s1_size))
+    # Pool Basin Framing Curbs
+    curb_north = spawn_static_box(ecs, physics, (0.0, 0.06, -17.65), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
+    curb_south = spawn_static_box(ecs, physics, (0.0, 0.06, -1.35), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
+    curb_west = spawn_static_box(ecs, physics, (-2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
+    curb_east = spawn_static_box(ecs, physics, (2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
+    cube_ids.extend([curb_north, curb_south, curb_west, curb_east])
+    step_boxes.extend([
+        ((0.0, 0.06, -17.65), (5.6, 0.08, 0.3)),
+        ((0.0, 0.06, -1.35), (5.6, 0.08, 0.3)),
+        ((-2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
+        ((2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
+    ])
 
-    # Step 2: 0.30m total height (auto-step limit)
-    s2_pos, s2_size = (-7.0, 0.150, -8.0), (3.5, 0.30, 1.6)
-    cube_ids.append(spawn_static_box(ecs, physics, s2_pos, s2_size, color=(0.65, 0.60, 0.55), roughness=0.4, metallic=0.0))
-    step_boxes.append((s2_pos, s2_size))
+    # C. Temple Altar Stepped Dais (3-Tier Stepped Platform at the North End)
+    d1_pos, d1_size = (0.0, 0.10, -23.5), (9.0, 0.20, 7.0)
+    cube_ids.append(spawn_static_box(ecs, physics, d1_pos, d1_size, color=(0.28, 0.30, 0.35), roughness=0.55, metallic=0.1))
+    step_boxes.append((d1_pos, d1_size))
 
-    # Step 3: 0.45m total height (requires jump)
-    s3_pos, s3_size = (-7.0, 0.225, -10.0), (3.5, 0.45, 1.6)
-    cube_ids.append(spawn_static_box(ecs, physics, s3_pos, s3_size, color=(0.70, 0.65, 0.60), roughness=0.4, metallic=0.0))
-    step_boxes.append((s3_pos, s3_size))
+    d2_pos, d2_size = (0.0, 0.30, -23.5), (7.0, 0.20, 5.5)
+    cube_ids.append(spawn_static_box(ecs, physics, d2_pos, d2_size, color=(0.32, 0.34, 0.40), roughness=0.50, metallic=0.1))
+    step_boxes.append((d2_pos, d2_size))
 
-    # Tall Barrier (1.2m high - jump obstacle)
-    s4_pos, s4_size = (-7.0, 0.600, -12.5), (3.5, 1.20, 1.2)
-    cube_ids.append(spawn_static_box(ecs, physics, s4_pos, s4_size, color=(0.78, 0.42, 0.20), roughness=0.3, metallic=0.2))
-    step_boxes.append((s4_pos, s4_size))
+    d3_pos, d3_size = (0.0, 0.50, -23.5), (5.0, 0.20, 4.0)
+    cube_ids.append(spawn_static_box(ecs, physics, d3_pos, d3_size, color=(0.38, 0.40, 0.46), roughness=0.45, metallic=0.1))
+    step_boxes.append((d3_pos, d3_size))
 
-    # C. Slope Limit Testing Ramps (East side)
-    # Ramp A: 20° gentle incline (Walkable green ramp, <= 45°)
-    q_ramp_a = make_quat_rot_x(math.radians(-20.0))
-    ramp_a = spawn_static_box(
-        ecs,
-        physics,
-        position=(7.0, 0.85, -6.0),
-        size=(3.5, 0.2, 6.0),
-        rotation=q_ramp_a,
-        color=(0.22, 0.68, 0.38),
-        roughness=0.4,
-        metallic=0.1,
-    )
-    cube_ids.append(ramp_a)
+    # D. Transverse Lintels & Longitudinal Architectural Beams (Spanning Pillars)
+    colonnade_z = [-2.0, -8.0, -14.0, -20.0]
+    for cz in colonnade_z:
+        lintel = spawn_static_box(ecs, physics, (0.0, 4.25, cz), (10.2, 0.35, 1.0), color=(0.36, 0.38, 0.44), roughness=0.5, metallic=0.1)
+        cube_ids.append(lintel)
+        step_boxes.append(((0.0, 4.25, cz), (10.2, 0.35, 1.0)))
 
-    # Ramp B: 52° steep incline (Exceeds 45° slope limit - Blocked / Sliding red ramp)
-    q_ramp_b = make_quat_rot_x(math.radians(-52.0))
-    ramp_b = spawn_static_box(
-        ecs,
-        physics,
-        position=(12.0, 1.80, -6.0),
-        size=(3.5, 0.2, 6.0),
-        rotation=q_ramp_b,
-        color=(0.78, 0.22, 0.25),
-        roughness=0.3,
-        metallic=0.2,
-    )
-    cube_ids.append(ramp_b)
+    beam_l = spawn_static_box(ecs, physics, (-4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1)
+    beam_r = spawn_static_box(ecs, physics, (4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1)
+    cube_ids.extend([beam_l, beam_r])
+    step_boxes.extend([
+        ((-4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
+        ((4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
+    ])
 
-    # D. Obstacle Columns & Boundary Walls
-    cube_ids.append(spawn_static_box(ecs, physics, (-4.0, 2.0, 7.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7))
-    cube_ids.append(spawn_static_box(ecs, physics, (4.0, 2.0, 7.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7))
-    cube_ids.append(spawn_static_box(ecs, physics, (0.0, 2.0, 11.0), (12.0, 4.0, 0.6), color=(0.32, 0.36, 0.44), roughness=0.5, metallic=0.1))
+    # E. East Wing — Material & Micro-Geometry Gallery
+    gal_floor = spawn_static_box(ecs, physics, (14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1)
+    cube_ids.append(gal_floor)
+    step_boxes.append(((14.0, 0.025, -11.0), (12.0, 0.05, 24.0)))
 
-    # E. Cooked Monolith Obelisks (North plaza, top of marble floor at Y = 0.05)
+    # 7 Material Inspection Pedestals
+    pedestal_z = [-20.0, -17.0, -14.0, -11.0, -8.0, -5.0, -2.0]
+    for pz in pedestal_z:
+        ped = spawn_static_box(ecs, physics, (14.0, 0.45, pz), (1.0, 0.90, 1.0), color=(0.30, 0.32, 0.36), roughness=0.6, metallic=0.05)
+        cube_ids.append(ped)
+        step_boxes.append(((14.0, 0.45, pz), (1.0, 0.90, 1.0)))
+
+    # 3 Advanced Feature Exhibition Slabs (POM, SSDM, Decals)
+    slab_pom = spawn_static_box(ecs, physics, (17.5, 0.60, -17.0), (2.0, 1.20, 2.0), color=(0.55, 0.50, 0.45), roughness=0.4, metallic=0.1)
+    slab_ssdm = spawn_static_box(ecs, physics, (17.5, 0.60, -11.0), (2.0, 1.20, 2.0), color=(0.45, 0.50, 0.55), roughness=0.4, metallic=0.1)
+    slab_decal = spawn_static_box(ecs, physics, (17.5, 1.25, -5.0), (0.4, 2.50, 3.0), color=(0.60, 0.60, 0.60), roughness=0.7, metallic=0.05)
+    cube_ids.extend([slab_pom, slab_ssdm, slab_decal])
+    step_boxes.extend([
+        ((17.5, 0.60, -17.0), (2.0, 1.20, 2.0)),
+        ((17.5, 0.60, -11.0), (2.0, 1.20, 2.0)),
+        ((17.5, 1.25, -5.0), (0.4, 2.50, 3.0)),
+    ])
+
+    # F. West Wing — Gameplay Parkour & Obstacle Zone
+    pk_floor = spawn_static_box(ecs, physics, (-14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1)
+    cube_ids.append(pk_floor)
+    step_boxes.append(((-14.0, 0.025, -11.0), (12.0, 0.05, 24.0)))
+
+    # 3 Auto-stepping Curbs (0.10m, 0.20m, 0.30m)
+    p_s1 = spawn_static_box(ecs, physics, (-14.0, 0.05, -3.0), (3.0, 0.10, 1.5), color=(0.55, 0.55, 0.52), roughness=0.4, metallic=0.0)
+    p_s2 = spawn_static_box(ecs, physics, (-14.0, 0.10, -5.5), (3.0, 0.20, 1.5), color=(0.60, 0.60, 0.58), roughness=0.4, metallic=0.0)
+    p_s3 = spawn_static_box(ecs, physics, (-14.0, 0.15, -8.0), (3.0, 0.30, 1.5), color=(0.65, 0.65, 0.62), roughness=0.4, metallic=0.0)
+    p_hurdle = spawn_static_box(ecs, physics, (-14.0, 0.35, -11.0), (3.0, 0.70, 0.5), color=(0.75, 0.40, 0.20), roughness=0.3, metallic=0.2)
+    p_vault = spawn_static_box(ecs, physics, (-14.0, 0.75, -14.0), (3.0, 1.50, 0.6), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
+    cube_ids.extend([p_s1, p_s2, p_s3, p_hurdle, p_vault])
+    step_boxes.extend([
+        ((-14.0, 0.05, -3.0), (3.0, 0.10, 1.5)),
+        ((-14.0, 0.10, -5.5), (3.0, 0.20, 1.5)),
+        ((-14.0, 0.15, -8.0), (3.0, 0.30, 1.5)),
+        ((-14.0, 0.35, -11.0), (3.0, 0.70, 0.5)),
+        ((-14.0, 0.75, -14.0), (3.0, 1.50, 0.6)),
+    ])
+
+    # 3 Slope Testing Ramps (20° Green Walkable, 38° Yellow Medium, 52° Red Sliding)
+    q_ramp_20 = make_quat_rot_x(math.radians(-20.0))
+    ramp_20 = spawn_static_box(ecs, physics, (-17.0, 0.85, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_20, color=(0.22, 0.72, 0.38), roughness=0.4, metallic=0.1)
+    q_ramp_38 = make_quat_rot_x(math.radians(-38.0))
+    ramp_38 = spawn_static_box(ecs, physics, (-14.0, 1.35, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_38, color=(0.88, 0.78, 0.20), roughness=0.4, metallic=0.1)
+    q_ramp_52 = make_quat_rot_x(math.radians(-52.0))
+    ramp_52 = spawn_static_box(ecs, physics, (-11.0, 1.85, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_52, color=(0.85, 0.22, 0.22), roughness=0.3, metallic=0.2)
+    cube_ids.extend([ramp_20, ramp_38, ramp_52])
+
+    # G. South Arrival Plaza Gate & Boundary Walls
+    gate_col_l = spawn_static_box(ecs, physics, (-3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
+    gate_col_r = spawn_static_box(ecs, physics, (3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
+    boundary_wall = spawn_static_box(ecs, physics, (0.0, 2.0, 13.0), (16.0, 4.0, 0.6), color=(0.32, 0.36, 0.44), roughness=0.5, metallic=0.1)
+    cube_ids.extend([gate_col_l, gate_col_r, boundary_wall])
+    step_boxes.extend([
+        ((-3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
+        ((3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
+        ((0.0, 2.0, 13.0), (16.0, 4.0, 0.6)),
+    ])
+
+    # H. Monolith Columns: 8 Colonnade Pillars + 1 Golden Altar Relic Monolith
     monolith_ids: list[int] = []
-    monolith_positions = [
-        (-4.0, 0.05, -1.0),
-        (4.0, 0.05, -1.0),
-        (-4.0, 0.05, -7.0),
-        (4.0, 0.05, -7.0),
+    colonnade_positions = [
+        (-4.5, 0.05, -2.0),
+        (4.5, 0.05, -2.0),
+        (-4.5, 0.05, -8.0),
+        (4.5, 0.05, -8.0),
+        (-4.5, 0.05, -14.0),
+        (4.5, 0.05, -14.0),
+        (-4.5, 0.05, -20.0),
+        (4.5, 0.05, -20.0),
     ]
-    for pos in monolith_positions:
+    for pos in colonnade_positions:
         ent = ecs.create_entity(
             position=pos,
             scale=(1.0, 1.0, 1.0),
@@ -486,8 +568,22 @@ def main() -> None:
         physics.attach_box_collider(ent, half_x=0.8, half_y=2.1, half_z=0.8)
         monolith_ids.append(ent)
 
-    # F. Playable KCC Capsule Character (Rests on marble floor at Y = 0.05 + 0.5 + 0.4 = 0.95)
-    char_start_pos = (0.0, 0.95, 2.5)
+    # 1 Golden Altar Monolith atop the 3-Tier Dais
+    altar_pos = (0.0, 0.65, -23.5)
+    altar_ent = ecs.create_entity(
+        position=altar_pos,
+        scale=(1.0, 1.0, 1.0),
+        color=(0.95, 0.82, 0.35),
+        roughness=0.18,
+        metallic=0.75,
+    )
+    physics.create_body(altar_ent, body_type="fixed", position=(altar_pos[0], altar_pos[1] + 2.1, altar_pos[2]))
+    physics.attach_box_collider(altar_ent, half_x=0.8, half_y=2.1, half_z=0.8)
+    monolith_ids.append(altar_ent)
+    monolith_positions = colonnade_positions + [altar_pos]
+
+    # I. Playable KCC Capsule Character (Rests at South Arrival Plaza facing North)
+    char_start_pos = (0.0, 0.95, 6.0)
     char_id = ecs.create_entity(
         position=char_start_pos,
         scale=(1.0, 1.0, 1.0),
@@ -509,7 +605,32 @@ def main() -> None:
         initial_position=char_start_pos,
     )
 
-    # G. Dynamic PBR Physics Spheres Cluster (Rich Metallic & Roughness Materials)
+    # J. Fixed Calibrated Material Gallery Inspection Spheres (7 Spheres atop Pedestals)
+    gallery_sphere_ids: list[int] = []
+    GALLERY_MATERIALS = [
+        ((0.95, 0.78, 0.25), 0.12, 0.95),  # 1. Polished Gold
+        ((0.92, 0.94, 0.96), 0.05, 0.98),  # 2. Chrome / Mirror
+        ((0.92, 0.55, 0.35), 0.32, 0.90),  # 3. Brushed Copper
+        ((0.88, 0.08, 0.12), 0.15, 0.05),  # 4. Glossy Ruby
+        ((0.12, 0.40, 0.92), 0.22, 0.10),  # 5. Cobalt Glass
+        ((0.15, 0.75, 0.35), 0.55, 0.00),  # 6. Matte Emerald
+        ((0.85, 0.85, 0.85), 0.95, 0.00),  # 7. Chalk / Plaster
+    ]
+    for pz, (mat_col, mat_rough, mat_metal) in zip(pedestal_z, GALLERY_MATERIALS):
+        s_pos = (14.0, 1.35, pz)
+        s_radius = 0.45
+        sph_ent = ecs.create_entity(
+            position=s_pos,
+            scale=(s_radius, s_radius, s_radius),
+            color=mat_col,
+            roughness=mat_rough,
+            metallic=mat_metal,
+        )
+        physics.create_body(sph_ent, body_type="fixed", position=s_pos)
+        physics.attach_sphere_collider(sph_ent, radius=s_radius)
+        gallery_sphere_ids.append(sph_ent)
+
+    # K. Dynamic PBR Physics Spheres Cluster
     PBR_PALETTE = [
         ((0.95, 0.75, 0.25), 0.15, 0.90),  # Polished Gold
         ((0.90, 0.92, 0.95), 0.20, 0.90),  # Chrome
@@ -520,14 +641,14 @@ def main() -> None:
         ((0.90, 0.50, 0.20), 0.40, 0.40),  # Copper
     ]
 
-    sphere_ids: list[int] = []
+    dynamic_sphere_ids: list[int] = []
 
     def spawn_pbr_sphere(px: float | None = None, py: float | None = None, pz: float | None = None) -> int:
         x = px if px is not None else random.uniform(-2.5, 2.5)
         y = py if py is not None else random.uniform(3.5, 8.0)
-        z = pz if pz is not None else random.uniform(3.0, 7.0)
+        z = pz if pz is not None else random.uniform(2.0, 6.0)
         color, rough, metal = random.choice(PBR_PALETTE)
-        radius = random.uniform(0.35, 0.55)
+        radius = random.uniform(0.35, 0.50)
 
         sph = ecs.create_entity(
             position=(x, y, z),
@@ -538,17 +659,21 @@ def main() -> None:
         )
         physics.create_body(sph, body_type="dynamic", position=(x, y, z))
         physics.attach_sphere_collider(sph, radius=radius)
-        sphere_ids.append(sph)
+        dynamic_sphere_ids.append(sph)
         return sph
 
-    # Seed initial cluster of 16 dynamic physics spheres
-    for _ in range(16):
+    # Seed initial dynamic physics spheres
+    for _ in range(12):
         spawn_pbr_sphere()
 
     # Pre-simulation instant PIE memory snapshot
     saved_snapshot = ecs.snapshot_memory()
 
-    # H. 3rd-Person Collision-Aware Follow Camera
+    # L. Virtual Camera Stack & Presets
+    audio_engine = get_audio_engine()
+    camera_mgr = CameraManager()
+
+    # 1. 3rd-Person Collision-Aware Follow Camera (Default)
     cam = CharacterCamera(
         config=CharacterCameraConfig(
             distance=7.5,
@@ -557,16 +682,40 @@ def main() -> None:
             yaw_sensitivity=0.25,
             pitch_sensitivity=0.25,
         ),
-        initial_yaw_deg=45.0,
-        initial_pitch_deg=22.0,
+        initial_yaw_deg=0.0,
+        initial_pitch_deg=18.0,
     )
-
-    # Audio Engine & Virtual Camera Stack
-    audio_engine = get_audio_engine()
-    camera_mgr = CameraManager()
     camera_mgr.register_camera("follow", cam, make_active=True)
+
+    # 2. 6-DOF Free Fly Camera
     free_cam = FreeFlyCamera(position=(0.0, 5.0, 10.0), fov=75.0)
     camera_mgr.register_camera("free", free_cam)
+
+    # 3. Panoramic Vista Camera (North down the Colonnade Avenue)
+    cinematic_cam = VirtualCamera(
+        position=(0.0, 4.8, 8.5),
+        target=(0.0, 2.2, -14.0),
+        fov=70.0,
+    )
+    camera_mgr.register_camera("cinematic", cinematic_cam)
+
+    # 4. Material Gallery Inspection Camera (Close-up of calibrated spheres)
+    inspection_cam = VirtualCamera(
+        position=(18.5, 2.2, -11.0),
+        target=(14.0, 1.35, -11.0),
+        fov=65.0,
+    )
+    camera_mgr.register_camera("inspection", inspection_cam)
+
+    # 5. Courtyard High Overview Camera (Bird's eye view of full testbed)
+    courtyard_cam = VirtualCamera(
+        position=(-18.0, 16.0, 12.0),
+        target=(0.0, 1.0, -10.0),
+        fov=72.0,
+    )
+    camera_mgr.register_camera("courtyard", courtyard_cam)
+    if args.camera and args.camera.lower() != "follow":
+        camera_mgr.switch_to(args.camera.lower())
 
     # 6. Configure Unified Input Bindings (AAA Standard)
     # Character actions
@@ -575,22 +724,27 @@ def main() -> None:
     input_mgr.bind_action("reset_player", keys=[Key.R], gamepad_buttons=[GamepadButton.Y])
     input_mgr.bind_action("reset_camera", keys=[Key.Z], gamepad_buttons=[GamepadButton.RIGHT_STICK])
 
-    # Simulation actions (X = Spawn, B = Clear)
+    # Simulation actions (B = Spawn, C = Clear)
     input_mgr.bind_action("spawn_spheres", keys=[Key.B], gamepad_buttons=[GamepadButton.X])
     input_mgr.bind_action("clear_spheres", keys=[Key.C], gamepad_buttons=[GamepadButton.B])
     input_mgr.bind_action("pie_save", keys=[Key.P])
     input_mgr.bind_action("pie_restore", keys=[Key.U])
 
+    # Camera Preset Hotkeys (F4 = Cinematic, F5 = Gallery, F6 = Courtyard, F10 = Toggle Follow/Free)
+    input_mgr.bind_action("cam_cinematic", keys=[Key.F4], is_debug=True)
+    input_mgr.bind_action("cam_inspection", keys=[Key.F5], is_debug=True)
+    input_mgr.bind_action("cam_courtyard", keys=[Key.F6], is_debug=True)
+    input_mgr.bind_action("toggle_camera", keys=[Key.F10], is_debug=True)
+
     # Graphics & Pipeline actions
     input_mgr.bind_action("cycle_tonemap", keys=[Key.T], gamepad_buttons=[GamepadButton.DPAD_DOWN])
     input_mgr.bind_action("cycle_gbuffer", keys=[Key.G], gamepad_buttons=[GamepadButton.DPAD_LEFT])
     input_mgr.bind_action("toggle_sun_ray", keys=[Key.L], gamepad_buttons=[GamepadButton.DPAD_UP])
-    # Dedicated Debug System hotkeys: F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture), F10 (Camera), F11 (Fullscreen)
+    # Dedicated Debug System hotkeys: F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture), F11 (Fullscreen)
     input_mgr.bind_action("debug_perf", keys=[Key.F1, Key.GRAVE], gamepad_buttons=[GamepadButton.BACK], is_debug=True)
     input_mgr.bind_action("debug_graphics", keys=[Key.F2], is_debug=True)
     input_mgr.bind_action("debug_game", keys=[Key.F3], is_debug=True)
     input_mgr.bind_action("debug_mouse_capture", keys=[Key.F9], is_debug=True)
-    input_mgr.bind_action("toggle_camera", keys=[Key.F10], is_debug=True)
     input_mgr.bind_action("toggle_fullscreen", keys=[Key.F11], is_debug=True)
     input_mgr.bind_action("toggle_wireframe", keys=[Key.F7], is_debug=True)
     input_mgr.bind_action("toggle_physics_wireframe", keys=[Key.F8], is_debug=True)
@@ -609,15 +763,15 @@ def main() -> None:
         batch_size = int(sphere_batch_tweak.value)
         for _ in range(batch_size):
             spawn_pbr_sphere()
-        toast.show(f"Spawned {batch_size} PBR Spheres (Total: {ecs.active_count})", duration=2.0, color=(74, 222, 128))
+        toast.show(f"Spawned {batch_size} PBR Spheres (Dynamic: {len(dynamic_sphere_ids)})", duration=2.0, color=(74, 222, 128))
 
     def trigger_clear_spheres() -> None:
-        count = len(sphere_ids)
-        for sph in sphere_ids:
+        count = len(dynamic_sphere_ids)
+        for sph in dynamic_sphere_ids:
             physics.remove_body(sph)
             ecs.destroy_entity(sph)
-        sphere_ids.clear()
-        toast.show(f"Cleared {count} Spheres (Entities: {ecs.active_count})", duration=2.0, color=(248, 113, 113))
+        dynamic_sphere_ids.clear()
+        toast.show(f"Cleared {count} Dynamic Spheres (Gallery Intact)", duration=2.0, color=(248, 113, 113))
 
     def trigger_pie_save() -> None:
         nonlocal saved_snapshot
@@ -626,21 +780,26 @@ def main() -> None:
 
     def trigger_pie_restore() -> None:
         nonlocal saved_snapshot
-        for sph in sphere_ids:
+        for sph in dynamic_sphere_ids:
             physics.remove_body(sph)
             ecs.destroy_entity(sph)
-        sphere_ids.clear()
+        dynamic_sphere_ids.clear()
 
         ecs.restore_snapshot(saved_snapshot)
         # Re-attach dynamic bodies for spheres present in snapshot
         for i in range(ecs.active_count):
             ent_id = ecs.pool.get_entity_id(i)
-            if ent_id not in cube_ids and ent_id not in monolith_ids and ent_id != char_id:
+            if (
+                ent_id not in cube_ids
+                and ent_id not in monolith_ids
+                and ent_id not in gallery_sphere_ids
+                and ent_id != char_id
+            ):
                 pos = ecs.rigid_body_state[1, i, 0:3]
                 rot = ecs.rigid_body_state[1, i, 3:7]
                 physics.create_body(ent_id, body_type="dynamic", position=pos, rotation=rot)
                 physics.attach_sphere_collider(ent_id, radius=float(ecs.scales[i, 0]))
-                sphere_ids.append(ent_id)
+                dynamic_sphere_ids.append(ent_id)
 
         toast.show(f"PIE Restored via memcpy ({ecs.active_count} entities)", duration=2.5, color=(250, 204, 21))
 
@@ -666,8 +825,8 @@ def main() -> None:
     game_tweaks.add_float("Shadows", "Normal Bias", default=0.0010, min_val=0.0, max_val=0.0050, step=0.0001, on_changed=lambda v: setattr(engine_tweaks, "shadow_normal_bias", v))
 
     def trigger_reset_camera() -> None:
-        cam.yaw_deg = 45.0
-        cam.pitch_deg = 22.0
+        cam.yaw_deg = 0.0
+        cam.pitch_deg = 18.0
         cam.current_distance = cam.config.distance
         toast.show("Camera View Centered", duration=1.5, color=(147, 197, 253))
 
@@ -701,8 +860,12 @@ def main() -> None:
 
     # Actions
     game_tweaks.add_action("Character", "Reset to Spawn", trigger_reset_player)
+    game_tweaks.add_action("Camera", "Follow Cam", lambda: camera_mgr.blend_to("follow", 0.75))
+    game_tweaks.add_action("Camera", "Free Fly Cam", lambda: camera_mgr.blend_to("free", 0.75))
+    game_tweaks.add_action("Camera", "Cinematic Vista (F4)", lambda: camera_mgr.blend_to("cinematic", 0.75))
+    game_tweaks.add_action("Camera", "Material Gallery (F5)", lambda: camera_mgr.blend_to("inspection", 0.75))
+    game_tweaks.add_action("Camera", "Courtyard Overview (F6)", lambda: camera_mgr.blend_to("courtyard", 0.75))
     game_tweaks.add_action("Camera", "Center Camera View", trigger_reset_camera)
-    game_tweaks.add_action("Camera", "Toggle Mode (Follow/Free)", trigger_toggle_camera)
     game_tweaks.add_action("Display", "Toggle Fullscreen (F11)", trigger_toggle_fullscreen)
     game_tweaks.add_action("Display", "Toggle VSync", trigger_toggle_vsync)
     game_tweaks.add_action("Display", "Set 1280x720 (HD)", lambda: trigger_set_resolution(1280, 720))
@@ -721,9 +884,10 @@ def main() -> None:
     game_tweaks.add_watch("Entities", "Active Count", lambda: ecs.active_count)
     game_tweaks.add_watch("KCC", "Grounded", lambda: motor.state.is_grounded)
     game_tweaks.add_watch("KCC", "Speed", lambda: f"{motor.state.horizontal_speed:.1f} m/s")
+    game_tweaks.add_watch("Camera", "Active View", lambda: camera_mgr.active_camera_name.title())
     game_tweaks.add_watch("Camera", "Distance", lambda: f"{cam.current_distance:.1f} m")
 
-    toast.show("PyMordial Engine Ready — F1 (Perf), F2 (Graphics), F3 (Game), F9 (Mouse Capture)", duration=4.5, color=(56, 189, 248))
+    toast.show("PyMordial PAMT Ready — F1 (Perf), F2 (Graphics), F4-F6 (Cameras), F9 (Mouse Grab)", duration=4.5, color=(56, 189, 248))
 
     # Pre-cache MeshAllocation objects for zero-allocation MDI batch rendering
     alloc_cube = pipeline.mega_buffer.allocations["cube"]
@@ -732,13 +896,14 @@ def main() -> None:
 
     num_cubes = len(cube_ids)
     num_monoliths = len(monolith_ids)
+    total_spheres = len(gallery_sphere_ids) + len(dynamic_sphere_ids)
 
-    # Zero-allocation MDI batch list: cubes, monoliths, character capsule, dynamic spheres
+    # Zero-allocation MDI batch list: cubes, monoliths, character capsule, all spheres
     draw_batches: list[tuple[MeshAllocation, int, int]] = [
         (alloc_cube, num_cubes, 0),
         (alloc_monolith, num_monoliths, num_cubes),
         (alloc_capsule, 1, num_cubes + num_monoliths),
-        (alloc_sphere, len(sphere_ids), num_cubes + num_monoliths + 1),
+        (alloc_sphere, total_spheres, num_cubes + num_monoliths + 1),
     ]
 
     # Simulation State
@@ -779,6 +944,13 @@ def main() -> None:
     running = True
     frame_idx = 0
     footstep_timer = 0.0
+    frame_times_ms: list[float] = []
+
+    if args.benchmark:
+        if args.frames <= 0:
+            args.frames = 300
+        debug_menu.visible = False
+        debug_menu.show_graphics = False
 
     # Zero-allocation reusable per-frame vectors
     scratch_fwd_vec = [0.0, 0.0, 0.0]
@@ -821,8 +993,17 @@ def main() -> None:
             state_str = "CAPTURED" if new_grab else "FREE"
             toast.show(f"Mouse Capture: {state_str} (F9)", duration=2.0, color=(56, 189, 248))
 
-        # Camera & Window Hotkeys (F10 = Camera Toggle, F11 = Fullscreen Toggle)
-        if input_mgr.is_action_pressed("toggle_camera"):
+        # Camera Preset Hotkeys (F4 = Cinematic, F5 = Gallery, F6 = Courtyard, F10 = Follow/Free, F11 = Fullscreen)
+        if input_mgr.is_action_pressed("cam_cinematic"):
+            camera_mgr.blend_to("cinematic", duration_seconds=0.75)
+            toast.show("Camera: Panoramic Vista (F4)", duration=2.0, color=(147, 197, 253))
+        elif input_mgr.is_action_pressed("cam_inspection"):
+            camera_mgr.blend_to("inspection", duration_seconds=0.75)
+            toast.show("Camera: Material Gallery (F5)", duration=2.0, color=(147, 197, 253))
+        elif input_mgr.is_action_pressed("cam_courtyard"):
+            camera_mgr.blend_to("courtyard", duration_seconds=0.75)
+            toast.show("Camera: Courtyard Overview (F6)", duration=2.0, color=(147, 197, 253))
+        elif input_mgr.is_action_pressed("toggle_camera"):
             trigger_toggle_camera()
         if input_mgr.is_action_pressed("toggle_fullscreen"):
             trigger_toggle_fullscreen()
@@ -1015,8 +1196,11 @@ def main() -> None:
         else:
             footstep_timer = 0.3
 
-        # Update Camera Manager and Active Camera
-        camera_mgr.update(dt)
+        # Always update follow camera state so its position/target stay fresh
+        with monitor.scope("camera_update"):
+            cam.update_follow(dt=dt, character_pos=char_world_pos, physics=physics)
+
+        # Update Free Fly Camera controls if active
         if camera_mgr.active_camera_name == "free":
             free_cam.move(
                 dt=dt,
@@ -1029,15 +1213,12 @@ def main() -> None:
                 dx, dy = input_mgr.mouse_delta
                 if dx != 0 or dy != 0:
                     free_cam.handle_mouse_look(dx, dy)
-            camera_pos = (float(free_cam.position[0]), float(free_cam.position[1]), float(free_cam.position[2]))
-            camera_target = (float(free_cam.target[0]), float(free_cam.target[1]), float(free_cam.target[2]))
-        else:
-            with monitor.scope("camera_update"):
-                camera_pos, camera_target = cam.update(
-                    dt=dt,
-                    character_pos=char_world_pos,
-                    physics=physics,
-                )
+
+        # Advance camera transitions and active camera state
+        camera_mgr.update(dt)
+        active_cam = camera_mgr.active_camera
+        camera_pos = (float(active_cam.position[0]), float(active_cam.position[1]), float(active_cam.position[2]))
+        camera_target = (float(active_cam.target[0]), float(active_cam.target[1]), float(active_cam.target[2]))
 
         # Update 3D Audio spatial listener
         scratch_fwd_vec[0] = camera_target[0] - camera_pos[0]
@@ -1094,8 +1275,8 @@ def main() -> None:
                     size=b_size,
                     color=(0.35, 0.75, 0.45, 0.5),
                 )
-            # Dynamic spheres colliders (Interpolated Sub-Frame Coordinates)
-            for sph in sphere_ids:
+            # All spheres colliders (Gallery + Dynamic Sub-Frame Coordinates)
+            for sph in (gallery_sphere_ids + dynamic_sphere_ids):
                 s_idx = ecs.pool.get_dense_index(sph)
                 if s_idx >= 0:
                     s_pos = (
@@ -1119,19 +1300,19 @@ def main() -> None:
             )
 
         # Dynamic Sphere Batch Count Update
-        num_spheres = len(sphere_ids)
-        if draw_batches[3][1] != num_spheres:
-            draw_batches[3] = (alloc_sphere, num_spheres, num_cubes + num_monoliths + 1)
+        total_spheres = len(gallery_sphere_ids) + len(dynamic_sphere_ids)
+        if draw_batches[3][1] != total_spheres:
+            draw_batches[3] = (alloc_sphere, total_spheres, num_cubes + num_monoliths + 1)
 
         # Update Clustered Dynamic Local Lights (SSBO 3)
         pipeline.clear_point_lights()
         if engine_tweaks.point_lights_enabled:
             t = loop.elapsed_time
-            for i, (bx, by, bz, r, col, intensity) in enumerate(VALIDATION_LANTERNS):
-                angle = t * 0.7 + i * 1.047
-                px = bx + math.cos(angle) * 3.0
-                py = by + math.sin(t * 1.5 + i) * 0.6
-                pz = bz + math.sin(angle) * 3.0
+            for bx, by, bz, r, col, intensity, speed, orbit_r, phase in VALIDATION_LANTERNS:
+                angle = t * speed + phase
+                px = bx + math.cos(angle) * orbit_r
+                py = by + math.sin(t * 1.5 + phase) * 0.4
+                pz = bz + math.sin(angle) * orbit_r
                 pipeline.add_point_light((px, py, pz), radius=r, color=col, intensity=intensity)
                 if engine_tweaks.show_physics_colliders:
                     pipeline.debug.draw_sphere((px, py, pz), radius=0.20, color=(col[0], col[1], col[2], 0.9))
@@ -1149,8 +1330,6 @@ def main() -> None:
                 debug_draw=pipeline.debug,
             )
 
-
-
         # Render 3-Tier Glassmorphic Debug Menu if visible
         if debug_menu.visible or (debug_menu.toast is not None and len(debug_menu.toast.get_active()) > 0):
             pipeline.post_process.final_fbo.use()
@@ -1161,13 +1340,62 @@ def main() -> None:
         if not args.headless:
             render_ctx.swap_buffers()
 
+        # Benchmark frame tracking & automated camera choreography
+        if args.benchmark:
+            frame_times_ms.append(raw_dt_ms)
+            if frame_idx == 0:
+                camera_mgr.switch_to("cinematic")
+            elif frame_idx == 100:
+                camera_mgr.blend_to("inspection", duration_seconds=1.5)
+            elif frame_idx == 200:
+                camera_mgr.blend_to("courtyard", duration_seconds=1.5)
+
         frame_idx += 1
         if args.frames > 0 and frame_idx >= args.frames:
             break
 
+    # Automated Benchmark Performance Report
+    if args.benchmark and len(frame_times_ms) > 0:
+        bench_times = frame_times_ms[5:] if len(frame_times_ms) > 10 else frame_times_ms
+        avg_ms = float(np.mean(bench_times))
+        avg_fps = 1000.0 / avg_ms if avg_ms > 0.0 else 0.0
+        min_ms = float(np.min(bench_times))
+        max_fps = 1000.0 / min_ms if min_ms > 0.0 else 0.0
+        max_ms = float(np.max(bench_times))
+        min_fps = 1000.0 / max_ms if max_ms > 0.0 else 0.0
+        p99_ms = float(np.percentile(bench_times, 99.0))
+        low_1pct_fps = 1000.0 / p99_ms if p99_ms > 0.0 else 0.0
+        p999_ms = float(np.percentile(bench_times, 99.9))
+        low_01pct_fps = 1000.0 / p999_ms if p999_ms > 0.0 else 0.0
+
+        print("\n" + "=" * 80)
+        print("           PYMORDIAL ENGINE MASTER GRAPHICS BENCHMARK REPORT")
+        print("=" * 80)
+        print(" Scene:               PyMordial Architecture & Material Testbed (PAMT)")
+        print(f" Resolution:          {render_ctx.width}x{render_ctx.height}")
+        print(f" Quality Preset:      {engine_tweaks.quality_preset.value.upper()}")
+        print(f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | SSCS: {'ON' if engine_tweaks.sscs_enabled else 'OFF'}")
+        print(f" Ambient Occlusion:   {engine_tweaks.ao_mode}")
+        print(f" Global Illumination: {engine_tweaks.gi_mode}")
+        print(f" Anti-Aliasing:       {engine_tweaks.aa_mode}")
+        print(f" SSR / IBL:           SSR={'ON' if engine_tweaks.ssr_enabled else 'OFF'} | IBL={'ON' if engine_tweaks.ibl_enabled else 'OFF'}")
+        print(f" Clustered Lights:    8 Dynamic Orbiting Lanterns ({'ON' if engine_tweaks.point_lights_enabled else 'OFF'})")
+        print(f" Total Frames Tested: {len(bench_times)}")
+        print("-" * 80)
+        print(f"  Average FPS:        {avg_fps:6.1f} FPS  ({avg_ms:.2f} ms)")
+        print(f"  Max FPS:            {max_fps:6.1f} FPS  ({min_ms:.2f} ms)")
+        print(f"  Min FPS:            {min_fps:6.1f} FPS  ({max_ms:.2f} ms)")
+        print(f"  1.0% Low:           {low_1pct_fps:6.1f} FPS  ({p99_ms:.2f} ms)")
+        print(f"  0.1% Low:           {low_01pct_fps:6.1f} FPS  ({p999_ms:.2f} ms)")
+        print("=" * 80 + "\n")
+
     # Automated Screenshot Capture
-    if args.screenshot:
-        out_path = Path(args.screenshot).resolve()
+    screenshot_target = args.screenshot
+    if not screenshot_target and args.benchmark:
+        screenshot_target = str(ROOT_DIR / "build" / "benchmark_result.png")
+
+    if screenshot_target:
+        out_path = Path(screenshot_target).resolve()
         out_path.parent.mkdir(parents=True, exist_ok=True)
         raw_data = pipeline.post_process.final_fbo.read(components=4, dtype="f1")
         img = Image.frombytes("RGBA", (render_ctx.width, render_ctx.height), raw_data)
