@@ -7,7 +7,7 @@ G-Buffer inspection modes, visual 3D wireframes, and shadow parameters.
 from __future__ import annotations
 from enum import IntEnum
 from typing import Callable
-from engine.gfx.quality_presets import GraphicsQuality
+from engine.gfx.quality_presets import GraphicsQuality, GIMode
 
 
 class GBufferDebugMode(IntEnum):
@@ -39,6 +39,17 @@ class EngineTweaks:
         "sscs_enabled",
         "sscs_steps",
         "sscs_thickness",
+        "ao_mode",
+        "ao_intensity",
+        "gi_mode",
+        "ssgi_steps",
+        "ssgi_intensity",
+        "lpv_intensity",
+        "ibl_enabled",
+        "ssr_enabled",
+        "ssr_steps",
+        "taa_enabled",
+        "point_lights_enabled",
         "uncapped_fps",
         "_on_quality_changed",
     )
@@ -61,6 +72,19 @@ class EngineTweaks:
         self.sscs_enabled = True
         self.sscs_steps = 16
         self.sscs_thickness = 0.05
+
+        # Phase 5 High-End Graphics Settings
+        self.ao_mode = "GTAO"
+        self.ao_intensity = 1.0
+        self.gi_mode = GIMode.HYBRID.value
+        self.ssgi_steps = 12
+        self.ssgi_intensity = 1.2
+        self.lpv_intensity = 1.0
+        self.ibl_enabled = True
+        self.ssr_enabled = True
+        self.ssr_steps = 24
+        self.taa_enabled = True
+        self.point_lights_enabled = True
 
         self.uncapped_fps = True
         self._on_quality_changed: list[Callable[[GraphicsQuality], None]] = []

@@ -9,6 +9,14 @@ layout (binding = 1) uniform sampler2D u_GBufferNormalMetallic;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;          // Reversed-Z Depth32F
 layout (binding = 3) uniform sampler2D u_ShadowAtlas;
 
+// Phase 5 Advanced Inputs
+layout (binding = 4) uniform sampler2D u_AOTexture;            // GTAO / SSAO
+layout (binding = 5) uniform sampler2D u_SSGITexture;          // Screen-Space Global Illumination
+layout (binding = 6) uniform sampler2D u_BRDFLUT;              // Split-sum 2D BRDF LUT
+layout (binding = 7) uniform sampler2D u_EnvironmentMap;       // Prefiltered HDR Environment Map
+layout (binding = 8) uniform sampler2D u_SSRTexture;           // Screen-Space Reflections
+layout (binding = 9) uniform sampler3D u_LPVVolume;            // 3D Light Propagation Volume
+
 // Unified Frame Context UBO 0
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -30,13 +38,32 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-// Configurable quality uniforms
+// SSBO 3: Dynamic Clustered Local Point Lights
+struct PointLightData {
+    vec4 pos_radius;      // xyz = position, w = radius
+    vec4 color_intensity; // rgb = color, w = intensity
+};
+
+layout (std430, binding = 3) buffer PointLightBuffer {
+    PointLightData u_PointLights[];
+};
+
+// Configurable quality & feature uniforms
 uniform int u_PCF_Samples;       // 4, 8, 16
 uniform int u_SSCS_Enabled;      // 0 or 1
 uniform int u_SSCS_Steps;        // 8 to 16
 uniform float u_SSCS_Thickness;  // 0.05
 uniform int u_CascadeCount;      // 1 to 4
 uniform int u_GBufferDebug;      // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
+
+// Phase 5 Toggles & Settings
+uniform int u_AOEnabled = 1;
+uniform int u_GIEnabled = 3;     // 0=Off, 1=SSGI, 2=LPV, 3=Hybrid
+uniform int u_IBLEnabled = 1;
+uniform int u_SSREnabled = 1;
+uniform int u_PointLightCount = 0;
+uniform vec3 u_LPV_Min = vec3(-32.0, -2.0, -32.0);
+uniform vec3 u_LPV_Size = vec3(64.0, 32.0, 64.0);
 
 const float PI = 3.14159265358979323846;
 
@@ -86,6 +113,10 @@ vec3 FresnelSchlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
 // Cascaded Shadow Map Evaluation (CSM)
 float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     float NdotL = dot(N, L);
@@ -101,7 +132,6 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     }
 
     float cos_theta = clamp(NdotL, 0.0, 1.0);
-    // Normal-offset bias prevents self-shadow acne on curved surfaces (spheres/characters)
     float normal_offset = 0.02 * (1.0 - cos_theta);
     vec3 biased_pos = world_pos + N * normal_offset;
 
@@ -113,18 +143,15 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
         return 1.0;
     }
 
-    // Offset in 2x2 atlas: cascade 0 = (0,0), 1 = (0.5, 0), 2 = (0, 0.5), 3 = (0.5, 0.5)
     vec2 atlas_offset = vec2(float(cascade % 2) * 0.5, float(cascade / 2) * 0.5);
     vec2 uv = proj_coords.xy * 0.5 + atlas_offset;
 
     float current_depth = proj_coords.z;
-    // Slope-scaled depth bias based on true surface normal
     float bias = max(0.003 * (1.0 - cos_theta), 0.0008);
 
     float shadow = 0.0;
     float filter_radius = 0.0008;
 
-    // Dither Poisson disc rotation using screen-space coordinates
     float angle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
     float s = sin(angle);
     float c = cos(angle);
@@ -160,7 +187,6 @@ float CalculateSSCS(vec3 world_pos, vec3 light_dir, float view_depth) {
         if (curr_pos.x < 0.0 || curr_pos.x > 1.0 || curr_pos.y < 0.0 || curr_pos.y > 1.0) break;
 
         float sampled_depth = texture(u_GBufferDepth, curr_pos.xy).r;
-        // In Reversed-Z, closer depths are larger: sampled_depth > curr_pos.z means occluded
         if (sampled_depth > curr_pos.z && (sampled_depth - curr_pos.z) < u_SSCS_Thickness) {
             shadow = 0.15;
             break;
@@ -184,18 +210,16 @@ void main() {
         return;
     }
 
-    // In Reversed-Z, background clear is 0.0
+    // Sky gradient for background pixels
     if (raw_depth <= 0.000001) {
         if (u_GBufferDebug > 0) {
             out_HDRColor = vec4(0.0, 0.0, 0.0, 1.0);
             return;
         }
-        // Render rich atmospheric sky gradient
         vec3 sky_zenith = vec3(0.08, 0.22, 0.45);
         vec3 sky_horizon = vec3(0.65, 0.75, 0.88);
         vec3 sky = mix(sky_horizon, sky_zenith, pow(v_UV.y, 1.5));
 
-        // Add sun disc glow
         vec3 ray_ndc = vec3(v_UV * 2.0 - 1.0, 1.0);
         vec4 ray_view = u_InvProjection * vec4(ray_ndc, 1.0);
         ray_view.z = -1.0;
@@ -219,10 +243,16 @@ void main() {
     vec4 normal_metal = texture(u_GBufferNormalMetallic, v_UV);
 
     vec3 albedo = albedo_rough.rgb;
-    float roughness = albedo_rough.a;
+    float roughness = clamp(albedo_rough.a, 0.04, 1.0);
     vec3 N = OctahedralDecode(normal_metal.rg);
     float metallic = normal_metal.b;
     float ao = normal_metal.a;
+
+    // Multiply by screen-space GTAO/SSAO if enabled
+    if (u_AOEnabled == 1) {
+        float gtao = texture(u_AOTexture, v_UV).r;
+        ao *= gtao;
+    }
 
     if (u_GBufferDebug == 1) {
         out_HDRColor = vec4(albedo, 1.0);
@@ -239,7 +269,7 @@ void main() {
     vec3 L = normalize(-u_SunDirection_Intensity.xyz);
     vec3 H = normalize(V + L);
 
-    // PBR Cook-Torrance BRDF Evaluation
+    // PBR Cook-Torrance Direct Sun Lighting
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     float NDF = DistributionGGX(N, H, roughness);
     float G = GeometrySmith(N, V, L, roughness);
@@ -255,26 +285,99 @@ void main() {
     float NdotL = max(dot(N, L), 0.0);
     vec3 radiance = u_SunColor_Ambient.rgb * u_SunDirection_Intensity.w;
 
-    // Shadow evaluation: CSM + Screen-Space Contact Shadows
     float csm_shadow = CalculateCSMShadow(world_pos.xyz, N, L, -view_pos.z);
     float sscs_shadow = CalculateSSCS(world_pos.xyz, L, -view_pos.z);
     float shadow = min(csm_shadow, sscs_shadow);
 
-    vec3 direct_light = (kD * albedo / PI + specular) * radiance * NdotL * shadow;
+    vec3 direct_sun = (kD * albedo / PI + specular) * radiance * NdotL * shadow;
 
-    // Hemispheric Sky & Ground Bounce Ambient Lighting
-    vec3 sky_ambient = vec3(0.20, 0.28, 0.42) * (u_SunColor_Ambient.w * 3.0);
-    vec3 ground_ambient = vec3(0.25, 0.28, 0.25) * (u_SunColor_Ambient.w * 2.0);
+    // Dynamic Clustered Point Lights (SSBO 3)
+    vec3 point_lights_accum = vec3(0.0);
+    int light_count = min(u_PointLightCount, 128);
+    for (int i = 0; i < light_count; ++i) {
+        vec3 pl_pos = u_PointLights[i].pos_radius.xyz;
+        float pl_radius = u_PointLights[i].pos_radius.w;
+        vec3 pl_delta = pl_pos - world_pos.xyz;
+        float pl_dist = length(pl_delta);
+
+        if (pl_dist < pl_radius) {
+            vec3 pl_L = pl_delta / max(pl_dist, 0.0001);
+            float pl_NdotL = max(dot(N, pl_L), 0.0);
+
+            if (pl_NdotL > 0.0) {
+                // Smooth physical inverse-square attenuation with windowing
+                float ratio = pl_dist / pl_radius;
+                float win = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
+                float atten = (win * win) / (pl_dist * pl_dist + 1.0);
+
+                vec3 pl_H = normalize(V + pl_L);
+                float pl_NDF = DistributionGGX(N, pl_H, roughness);
+                float pl_G = GeometrySmith(N, V, pl_L, roughness);
+                vec3 pl_F = FresnelSchlick(max(dot(pl_H, V), 0.0), F0);
+
+                vec3 pl_spec = (pl_NDF * pl_G * pl_F) / (4.0 * max(dot(N, V), 0.0) * pl_NdotL + 0.0001);
+                vec3 pl_diff = (vec3(1.0) - pl_F) * (1.0 - metallic) * albedo / PI;
+
+                vec3 pl_rad = u_PointLights[i].color_intensity.rgb * u_PointLights[i].color_intensity.w;
+                point_lights_accum += (pl_diff + pl_spec) * pl_rad * pl_NdotL * atten;
+            }
+        }
+    }
+
+    // Global Illumination (SSGI + LPV)
+    vec3 indirect_diffuse = vec3(0.0);
+
+    // 1. LPV (Volumetric 3D Indirect Diffuse Bounce)
+    if (u_GIEnabled == 2 || u_GIEnabled == 3) {
+        vec3 lpv_uvw = clamp((world_pos.xyz - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
+        vec4 lpv_sample = texture(u_LPVVolume, lpv_uvw);
+        indirect_diffuse += lpv_sample.rgb * albedo * (1.0 - metallic);
+    }
+
+    // 2. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
+    if (u_GIEnabled == 1 || u_GIEnabled == 3) {
+        vec4 ssgi_sample = texture(u_SSGITexture, v_UV);
+        indirect_diffuse += ssgi_sample.rgb * albedo * (1.0 - metallic);
+    }
+
+    // Ambient Sky / Ground Foundation
+    vec3 sky_ambient = vec3(0.18, 0.24, 0.38) * (u_SunColor_Ambient.w * 2.5);
+    vec3 ground_ambient = vec3(0.22, 0.24, 0.22) * (u_SunColor_Ambient.w * 1.8);
     vec3 hemisphere_light = mix(ground_ambient, sky_ambient, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
+    vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic);
 
-    vec3 ambient_diffuse = hemisphere_light * albedo * (vec3(1.0) - kS) * (1.0 - metallic) * ao;
-    vec3 ambient_specular = hemisphere_light * F0 * ao * (1.0 - roughness * 0.5);
-    vec3 ambient = ambient_diffuse + ambient_specular;
+    // Image-Based Lighting (IBL) & Screen-Space Reflections (SSR)
+    vec3 indirect_specular = vec3(0.0);
 
-    // Volumetric Atmospheric Fog in-scattering
+    if (u_IBLEnabled == 1) {
+        vec3 R = reflect(-V, N);
+        float NdotV = max(dot(N, V), 0.0);
+
+        // Sample Split-Sum BRDF LUT
+        vec2 brdf = texture(u_BRDFLUT, vec2(NdotV, roughness)).rg;
+
+        // Sample Prefiltered Environment Map
+        vec2 env_uv = vec2(atan(R.z, R.x) / (2.0 * PI) + 0.5, asin(clamp(R.y, -0.999, 0.999)) / PI + 0.5);
+        vec3 env_radiance = textureLod(u_EnvironmentMap, env_uv, roughness * 5.0).rgb;
+
+        // Sample SSR
+        if (u_SSREnabled == 1) {
+            vec4 ssr_sample = texture(u_SSRTexture, v_UV);
+            env_radiance = mix(env_radiance, ssr_sample.rgb, ssr_sample.a);
+        }
+
+        vec3 F_env = FresnelSchlickRoughness(NdotV, F0, roughness);
+        indirect_specular = env_radiance * (F_env * brdf.x + brdf.y);
+    }
+
+    // Total combine with Ambient Occlusion
+    vec3 ambient = (ambient_base + indirect_diffuse + indirect_specular) * ao;
+    vec3 total_lit = direct_sun + point_lights_accum + ambient;
+
+    // Atmospheric Fog
     float dist = length(world_pos.xyz - u_CameraPos_Time.xyz);
     float fog_factor = 1.0 - exp(-dist * u_FogColor_Density.w);
-    vec3 final_color = mix(ambient + direct_light, u_FogColor_Density.rgb, fog_factor);
+    vec3 final_color = mix(total_lit, u_FogColor_Density.rgb, fog_factor);
 
     out_HDRColor = vec4(final_color, 1.0);
 }

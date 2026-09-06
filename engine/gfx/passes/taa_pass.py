@@ -1,0 +1,146 @@
+"""Temporal Anti-Aliasing (TAA) Pass for PyMordial Engine.
+
+Implements subpixel Halton (2, 3) projection jittering, history reprojection,
+and YCoCg neighborhood variance bounding-box clamping to eliminate specular shimmer
+and geometric aliasing.
+"""
+
+from __future__ import annotations
+from pathlib import Path
+import numpy as np
+import moderngl
+
+from engine.gfx.render_graph import RenderPass, RenderGraphContext
+
+SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+
+
+def _halton(index: int, base: int) -> float:
+    f = 1.0
+    r = 0.0
+    curr = index
+    while curr > 0:
+        f = f / base
+        r = r + f * (curr % base)
+        curr = curr // base
+    return r
+
+
+class TAAPass(RenderPass):
+    """Sub-pixel jittering and temporal reprojection accumulation pass."""
+
+    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+        super().__init__(name="TAAPass", enabled=True)
+        self.ctx = ctx
+        self.width = width
+        self.height = height
+        self.frame_idx = 0
+
+        # Ping-pong history textures (RGBA16F)
+        self.hist_a = self.ctx.texture((width, height), 4, dtype="f2")
+        self.hist_a.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.hist_a.repeat_x = False
+        self.hist_a.repeat_y = False
+
+        self.hist_b = self.ctx.texture((width, height), 4, dtype="f2")
+        self.hist_b.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.hist_b.repeat_x = False
+        self.hist_b.repeat_y = False
+
+        self.fbo_a = self.ctx.framebuffer(color_attachments=[self.hist_a])
+        self.fbo_b = self.ctx.framebuffer(color_attachments=[self.hist_b])
+
+        self._read_hist = self.hist_a
+        self._write_fbo = self.fbo_b
+        self._write_hist = self.hist_b
+
+        self._prev_vp = np.identity(4, dtype=np.float32).flatten()
+
+        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
+        taa_frag = (SHADER_DIR / "taa.frag").read_text(encoding="utf-8")
+
+        self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=taa_frag)
+        self.vao = self.ctx.vertex_array(self.prog, [])
+
+        self._u_prev_vp = self.prog.get("u_PrevViewProjection", None)
+        self._u_feedback = self.prog.get("u_Feedback", None)
+
+    def get_jitter(self, width: int, height: int) -> tuple[float, float]:
+        """Calculates subpixel projection offset for the current frame."""
+        idx = (self.frame_idx % 8) + 1
+        jx = (_halton(idx, 2) - 0.5) / max(width, 1)
+        jy = (_halton(idx, 3) - 0.5) / max(height, 1)
+        return jx, jy
+
+    def resize(self, width: int, height: int) -> None:
+        if width == self.width and height == self.height:
+            return
+        self.width = width
+        self.height = height
+
+        self.fbo_a.release()
+        self.fbo_b.release()
+        self.hist_a.release()
+        self.hist_b.release()
+
+        self.hist_a = self.ctx.texture((width, height), 4, dtype="f2")
+        self.hist_a.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.hist_a.repeat_x = False
+        self.hist_a.repeat_y = False
+
+        self.hist_b = self.ctx.texture((width, height), 4, dtype="f2")
+        self.hist_b.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.hist_b.repeat_x = False
+        self.hist_b.repeat_y = False
+
+        self.fbo_a = self.ctx.framebuffer(color_attachments=[self.hist_a])
+        self.fbo_b = self.ctx.framebuffer(color_attachments=[self.hist_b])
+
+        self._read_hist = self.hist_a
+        self._write_fbo = self.fbo_b
+        self._write_hist = self.hist_b
+
+    def execute(self, context: RenderGraphContext) -> None:
+        self.frame_idx += 1
+        current_tex = context.resources.get("hdr_color")
+        g_buffer = context.resources.get("g_buffer")
+
+        if not getattr(context.config, "taa_enabled", True) or current_tex is None or g_buffer is None:
+            context.resources["taa_output"] = current_tex
+            return
+
+        self._write_fbo.use()
+        self.ctx.viewport = (0, 0, self.width, self.height)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+
+        current_tex.use(location=0)
+        self._read_hist.use(location=1)
+        g_buffer.depth_texture.use(location=2)
+
+        if self._u_prev_vp is not None:
+            self._u_prev_vp.write(self._prev_vp.tobytes())
+
+        self.vao.render(moderngl.TRIANGLES, vertices=3)
+
+        # Store previous view-projection for reprojection next frame
+        if hasattr(context.frame_context, "view_proj_mat"):
+            self._prev_vp = np.copy(context.frame_context.view_proj_mat)
+
+        # Ping-pong swap
+        context.resources["taa_output"] = self._write_hist
+        if self._read_hist is self.hist_a:
+            self._read_hist = self.hist_b
+            self._write_fbo = self.fbo_a
+            self._write_hist = self.hist_a
+        else:
+            self._read_hist = self.hist_a
+            self._write_fbo = self.fbo_b
+            self._write_hist = self.hist_b
+
+    def destroy(self) -> None:
+        self.fbo_a.release()
+        self.fbo_b.release()
+        self.hist_a.release()
+        self.hist_b.release()
+        self.vao.release()
+        self.prog.release()

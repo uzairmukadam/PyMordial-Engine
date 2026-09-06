@@ -13,6 +13,13 @@ class GraphicsQuality(str, Enum):
     CINEMATIC = "cinematic"
 
 
+class GIMode(str, Enum):
+    OFF = "OFF"
+    SSGI = "SSGI"
+    LPV = "LPV"
+    HYBRID = "HYBRID"
+
+
 @dataclass
 class RenderConfig:
     """Configurable graphics and shader parameters for AAA quality and player scaling."""
@@ -32,7 +39,28 @@ class RenderConfig:
     # Depth Precision
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
 
-    # Lighting & PBR
+    # Ambient Occlusion (GTAO / SSAO)
+    ao_mode: str = "GTAO"          # "OFF", "SSAO", "GTAO"
+    ao_intensity: float = 1.0
+    ao_radius: float = 0.75
+
+    # Global Illumination (SSGI & LPV)
+    gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID"
+    ssgi_steps: int = 12
+    ssgi_ray_distance: float = 2.5
+    ssgi_intensity: float = 1.2
+    lpv_intensity: float = 1.0
+
+    # Image-Based Lighting & Screen-Space Reflections (SSR)
+    ibl_enabled: bool = True
+    ssr_enabled: bool = True
+    ssr_steps: int = 24
+    ssr_max_roughness: float = 0.65
+
+    # Temporal Anti-Aliasing (TAA)
+    taa_enabled: bool = True
+
+    # Clustered Local Lighting
     clustered_lights_enabled: bool = True
     max_point_lights: int = 256
     sun_intensity: float = 4.0     # Sun lux intensity
@@ -63,6 +91,12 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_distance=60.0,
         sscs_enabled=False,
         sscs_steps=4,
+        ao_mode="OFF",
+        gi_mode="OFF",
+        ibl_enabled=False,
+        ssr_enabled=False,
+        taa_enabled=False,
+        clustered_lights_enabled=False,
         bloom_enabled=False,
         bloom_iterations=3,
         volumetric_fog_enabled=False,
@@ -75,6 +109,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_distance=100.0,
         sscs_enabled=True,
         sscs_steps=8,
+        ao_mode="SSAO",
+        gi_mode="SSGI",
+        ssgi_steps=8,
+        ibl_enabled=True,
+        ssr_enabled=False,
+        taa_enabled=True,
+        clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=4,
         volumetric_fog_enabled=True,
@@ -87,6 +128,14 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_distance=150.0,
         sscs_enabled=True,
         sscs_steps=12,
+        ao_mode="GTAO",
+        gi_mode="SSGI",
+        ssgi_steps=12,
+        ibl_enabled=True,
+        ssr_enabled=True,
+        ssr_steps=20,
+        taa_enabled=True,
+        clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=5,
         volumetric_fog_enabled=True,
@@ -99,6 +148,14 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_distance=200.0,
         sscs_enabled=True,
         sscs_steps=16,
+        ao_mode="GTAO",
+        gi_mode="HYBRID",
+        ssgi_steps=16,
+        ibl_enabled=True,
+        ssr_enabled=True,
+        ssr_steps=28,
+        taa_enabled=True,
+        clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
         volumetric_fog_enabled=True,
@@ -111,6 +168,14 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_distance=300.0,
         sscs_enabled=True,
         sscs_steps=24,
+        ao_mode="GTAO",
+        gi_mode="HYBRID",
+        ssgi_steps=24,
+        ibl_enabled=True,
+        ssr_enabled=True,
+        ssr_steps=40,
+        taa_enabled=True,
+        clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
         bloom_intensity=0.06,
@@ -125,5 +190,4 @@ def get_quality_preset(quality: GraphicsQuality | str) -> RenderConfig:
     if isinstance(quality, str):
         quality = GraphicsQuality(quality.lower())
     cfg = QUALITY_PRESETS.get(quality, QUALITY_PRESETS[GraphicsQuality.HIGH])
-    # Return fresh instance copy so caller can tune parameters individually
     return RenderConfig(**cfg.__dict__)

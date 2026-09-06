@@ -19,6 +19,18 @@ class GBuffer:
         "fbo",
     )
 
+    @property
+    def albedo_roughness_texture(self) -> moderngl.Texture:
+        return self.rt_albedo_roughness
+
+    @property
+    def normal_metallic_texture(self) -> moderngl.Texture:
+        return self.rt_normal_metallic
+
+    @property
+    def velocity_texture(self) -> moderngl.Texture:
+        return self.rt_velocity
+
     def __init__(
         self,
         ctx: moderngl.Context,

@@ -275,6 +275,12 @@ def main() -> None:
         cfg = get_quality_preset(new_preset)
         cfg.wireframe = engine_tweaks.show_wireframe
         pipeline.apply_config(cfg)
+        engine_tweaks.ao_mode = cfg.ao_mode
+        engine_tweaks.gi_mode = cfg.gi_mode
+        engine_tweaks.ibl_enabled = cfg.ibl_enabled
+        engine_tweaks.ssr_enabled = cfg.ssr_enabled
+        engine_tweaks.taa_enabled = cfg.taa_enabled
+        engine_tweaks.point_lights_enabled = cfg.clustered_lights_enabled
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
@@ -302,6 +308,19 @@ def main() -> None:
     )
     cube_ids.append(ground_id)
     step_boxes.append(((0.0, -0.5, 0.0), (60.0, 1.0, 60.0)))
+
+    # Reflective Marble Plaza Platform (Showcase for SSR, IBL, and SSGI Diffuse Bounce)
+    plaza_id = spawn_static_box(
+        ecs,
+        physics,
+        position=(0.0, 0.025, 0.0),
+        size=(22.0, 0.05, 22.0),
+        color=(0.12, 0.14, 0.18),
+        roughness=0.08,
+        metallic=0.75,
+    )
+    cube_ids.append(plaza_id)
+    step_boxes.append(((0.0, 0.025, 0.0), (22.0, 0.05, 22.0)))
 
     # B. Stepping Course & Curbs (West side, testing auto-stepping <= 0.30m)
     # Step 1: 0.15m height (easy auto-step)
@@ -827,6 +846,17 @@ def main() -> None:
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)
         pipeline.config.exposure = engine_tweaks.exposure
         pipeline.config.sun_intensity = engine_tweaks.sun_lux
+        pipeline.config.ao_mode = engine_tweaks.ao_mode
+        pipeline.config.ao_intensity = engine_tweaks.ao_intensity
+        pipeline.config.gi_mode = engine_tweaks.gi_mode
+        pipeline.config.ssgi_steps = engine_tweaks.ssgi_steps
+        pipeline.config.ssgi_intensity = engine_tweaks.ssgi_intensity
+        pipeline.config.lpv_intensity = engine_tweaks.lpv_intensity
+        pipeline.config.ibl_enabled = engine_tweaks.ibl_enabled
+        pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
+        pipeline.config.ssr_steps = engine_tweaks.ssr_steps
+        pipeline.config.taa_enabled = engine_tweaks.taa_enabled
+        pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
         wireframe_tweak.value = engine_tweaks.show_wireframe
         physics_wire_tweak.value = engine_tweaks.show_physics_colliders
 
@@ -958,6 +988,27 @@ def main() -> None:
         num_spheres = len(sphere_ids)
         if draw_batches[3][1] != num_spheres:
             draw_batches[3] = (alloc_sphere, num_spheres, num_cubes + num_monoliths + 1)
+
+        # Update Clustered Dynamic Local Lights (SSBO 3)
+        pipeline.clear_point_lights()
+        if engine_tweaks.point_lights_enabled:
+            t = loop.elapsed_time
+            lanterns = [
+                (-8.0, 1.8, 0.0, 12.0, (1.0, 0.25, 0.15), 4.0),
+                (8.0, 1.8, 0.0, 12.0, (0.15, 0.75, 1.0), 4.0),
+                (0.0, 2.2, -8.0, 14.0, (0.20, 1.0, 0.35), 4.0),
+                (0.0, 2.2, 8.0, 14.0, (1.0, 0.85, 0.20), 4.5),
+                (10.0, 2.5, 10.0, 12.0, (0.85, 0.20, 0.95), 4.0),
+                (-10.0, 2.5, -10.0, 12.0, (1.0, 0.50, 0.10), 4.0),
+            ]
+            for i, (bx, by, bz, r, col, intensity) in enumerate(lanterns):
+                angle = t * 0.7 + i * 1.047
+                px = bx + math.cos(angle) * 3.0
+                py = by + math.sin(t * 1.5 + i) * 0.6
+                pz = bz + math.sin(angle) * 3.0
+                pipeline.add_point_light((px, py, pz), radius=r, color=col, intensity=intensity)
+                if engine_tweaks.show_physics_colliders:
+                    pipeline.debug.draw_sphere((px, py, pz), radius=0.20, color=(col[0], col[1], col[2], 0.9))
 
         # Render ModernGL 4.5 Core 3D frame via MDI with Tier 1 profiling
         with monitor.scope("render_pipeline"):
