@@ -55,6 +55,7 @@ class SSGIPass(RenderPass):
         self._u_steps = self.ssgi_prog.get("u_SSGI_Steps", None)
         self._u_rays = self.ssgi_prog.get("u_SSGI_RayCount", None)
         self._u_dist = self.ssgi_prog.get("u_SSGI_RayDistance", None)
+        self._u_thickness = self.ssgi_prog.get("u_SSGI_Thickness", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
 
@@ -104,13 +105,19 @@ class SSGIPass(RenderPass):
         g_buffer.albedo_roughness_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)
         g_buffer.depth_texture.use(location=2)
+        scene_color = context.resources.get("scene_color", g_buffer.albedo_roughness_texture)
+        scene_color.use(location=3)
 
         if self._u_steps is not None:
-            self._u_steps.value = getattr(context.config, "ssgi_steps", 12)
+            self._u_steps.value = getattr(context.config, "ssgi_steps", 16)
+        if self._u_rays is not None:
+            self._u_rays.value = getattr(context.config, "ssgi_rays", 8)
         if self._u_intensity is not None:
-            self._u_intensity.value = getattr(context.config, "ssgi_intensity", 1.2)
+            self._u_intensity.value = getattr(context.config, "ssgi_intensity", 1.5)
         if self._u_dist is not None:
-            self._u_dist.value = getattr(context.config, "ssgi_ray_distance", 2.5)
+            self._u_dist.value = getattr(context.config, "ssgi_ray_distance", 3.0)
+        if self._u_thickness is not None:
+            self._u_thickness.value = getattr(context.config, "ssgi_thickness", 0.35)
 
         self.ssgi_vao.render(moderngl.TRIANGLES, vertices=3)
 

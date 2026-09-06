@@ -379,9 +379,24 @@ class DebugMenu:
                 self.toast.show(f"GI Mode: {et.gi_mode}", duration=2.0)
 
             if et.gi_mode in ("SSGI", "HYBRID"):
-                ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 24)
+                ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 32)
                 if ssgi_st_changed:
                     et.ssgi_steps = ssgi_st_val
+                    et.mark_custom()
+
+                ssgi_ray_changed, ssgi_ray_val = imgui.slider_int("SSGI Rays", getattr(et, "ssgi_rays", 8), 1, 16)
+                if ssgi_ray_changed:
+                    et.ssgi_rays = ssgi_ray_val
+                    et.mark_custom()
+
+                ssgi_dist_changed, ssgi_dist_val = imgui.slider_float("SSGI Distance", getattr(et, "ssgi_ray_distance", 3.0), 0.5, 8.0, "%.1fm")
+                if ssgi_dist_changed:
+                    et.ssgi_ray_distance = ssgi_dist_val
+                    et.mark_custom()
+
+                ssgi_thick_changed, ssgi_thick_val = imgui.slider_float("SSGI Thickness", getattr(et, "ssgi_thickness", 0.35), 0.05, 1.0, "%.2fm")
+                if ssgi_thick_changed:
+                    et.ssgi_thickness = ssgi_thick_val
                     et.mark_custom()
 
                 ssgi_in_changed, ssgi_in_val = imgui.slider_float("SSGI Intensity", et.ssgi_intensity, 0.1, 3.0, "%.2f")

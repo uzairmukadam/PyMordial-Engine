@@ -239,8 +239,9 @@ def main() -> None:
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
     parser.add_argument("--shadow-mode", type=str, default="pcss", choices=["hard", "pcf", "pcss"], help="Shadow filtering mode (default: pcss)")
     parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
-    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO)")
+    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 9=LPV, 10=GI_Total)")
     parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "hbao", "gtao"], help="AO mode override (off, ssao, hbao, gtao)")
+    parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ssgi", "lpv", "hybrid"], help="GI mode override (off, ssgi, lpv, hybrid)")
     parser.add_argument("--all-effects", action="store_true", default=False, help="Enable secondary graphics effects (GTAO, SSGI, SSR, IBL, TAA, point lights). Default is False (isolated shadows).")
     args = parser.parse_args()
 
@@ -296,6 +297,8 @@ def main() -> None:
         engine_tweaks.point_lights_enabled = False
     if args.ao_mode:
         engine_tweaks.ao_mode = args.ao_mode.upper()
+    if args.gi_mode:
+        engine_tweaks.gi_mode = args.gi_mode.upper()
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -930,6 +933,9 @@ def main() -> None:
         pipeline.config.ao_radius = engine_tweaks.ao_radius
         pipeline.config.gi_mode = engine_tweaks.gi_mode
         pipeline.config.ssgi_steps = engine_tweaks.ssgi_steps
+        pipeline.config.ssgi_rays = engine_tweaks.ssgi_rays
+        pipeline.config.ssgi_thickness = engine_tweaks.ssgi_thickness
+        pipeline.config.ssgi_ray_distance = engine_tweaks.ssgi_ray_distance
         pipeline.config.ssgi_intensity = engine_tweaks.ssgi_intensity
         pipeline.config.lpv_intensity = engine_tweaks.lpv_intensity
         pipeline.config.ibl_enabled = engine_tweaks.ibl_enabled

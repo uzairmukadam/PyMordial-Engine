@@ -54,9 +54,11 @@ class RenderConfig:
 
     # Global Illumination (SSGI & LPV)
     gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID"
-    ssgi_steps: int = 12
-    ssgi_ray_distance: float = 2.5
-    ssgi_intensity: float = 1.2
+    ssgi_steps: int = 16
+    ssgi_rays: int = 8
+    ssgi_ray_distance: float = 3.0
+    ssgi_thickness: float = 0.35
+    ssgi_intensity: float = 1.5
     lpv_intensity: float = 1.0
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)

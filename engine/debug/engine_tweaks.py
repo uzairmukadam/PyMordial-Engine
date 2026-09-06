@@ -21,6 +21,9 @@ class GBufferDebugMode(IntEnum):
     SHADOW_ATLAS = 5   # Cascaded Shadow Maps depth atlas
     SHADOW_MASK = 6    # Direct Cascaded Shadow Map occlusion mask
     AO = 7             # Ambient Occlusion (SSAO / HBAO / GTAO) mask
+    SSGI = 8           # Screen-Space Global Illumination indirect diffuse
+    LPV = 9            # Light Propagation Volumes 3D irradiance slice
+    GI_TOTAL = 10      # Consolidated Total Indirect Diffuse
 
 
 class EngineTweaks:
@@ -55,6 +58,9 @@ class EngineTweaks:
         "ao_radius",
         "gi_mode",
         "ssgi_steps",
+        "ssgi_rays",
+        "ssgi_thickness",
+        "ssgi_ray_distance",
         "ssgi_intensity",
         "lpv_intensity",
         "ibl_enabled",
@@ -106,8 +112,11 @@ class EngineTweaks:
         self.ao_intensity = 1.2
         self.ao_radius = 0.75
         self.gi_mode = GIMode.HYBRID.value
-        self.ssgi_steps = 12
-        self.ssgi_intensity = 1.2
+        self.ssgi_steps = 16
+        self.ssgi_rays = 8
+        self.ssgi_thickness = 0.35
+        self.ssgi_ray_distance = 3.0
+        self.ssgi_intensity = 1.5
         self.lpv_intensity = 1.0
         self.ibl_enabled = True
         self.ssr_enabled = True

@@ -54,6 +54,7 @@ class LPVPass(RenderPass):
         self._u_sun_dir = self.compute_prog.get("u_SunDirection_Intensity", None)
         self._u_sun_color = self.compute_prog.get("u_SunColor_Ambient", None)
         self._u_intensity = self.compute_prog.get("u_LPV_Intensity", None)
+        self._u_point_light_count = self.compute_prog.get("u_PointLightCount", None)
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "HYBRID")
@@ -85,6 +86,8 @@ class LPVPass(RenderPass):
             self._u_sun_dir.value = (context.sun_dir[0], context.sun_dir[1], context.sun_dir[2], context.sun_lux)
         if self._u_intensity is not None:
             self._u_intensity.value = getattr(context.config, "lpv_intensity", 1.0)
+        if self._u_point_light_count is not None:
+            self._u_point_light_count.value = context.resources.get("point_light_count", 0)
 
         # Dispatch 32x32x32 compute grid (8x8x8 groups of 4x4x4 threads)
         groups = self.grid_res // 4

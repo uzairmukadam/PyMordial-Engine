@@ -446,16 +446,16 @@ class RenderPipeline:
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
         self.ao_pass.execute(ctx)
 
-        # ---- PASS 4: Global Illumination (SSGI + LPV) ----
+        # ---- PASS 4: Clustered Dynamic Local Lights (SSBO 3) ----
+        self.lights_pass.execute(ctx)
+
+        # ---- PASS 5: Global Illumination (SSGI + LPV) ----
+        ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssgi_pass.execute(ctx)
         self.lpv_pass.execute(ctx)
 
-        # ---- PASS 5: Clustered Dynamic Local Lights ----
-        self.lights_pass.execute(ctx)
-
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)
-        ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssr_pass.execute(ctx)
 
         # ---- PASS 7: Consolidated Deferred Resolve ----

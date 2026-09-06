@@ -444,25 +444,50 @@ void main() {
 
     // Global Illumination (SSGI + LPV)
     vec3 indirect_diffuse = vec3(0.0);
+    vec4 ssgi_sample = vec4(0.0);
+    vec4 lpv_sample = vec4(0.0);
 
-    // 1. LPV (Volumetric 3D Indirect Diffuse Bounce)
-    if (u_GIEnabled == 2 || u_GIEnabled == 3) {
-        vec3 lpv_uvw = clamp((world_pos.xyz - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
-        vec4 lpv_sample = texture(u_LPVVolume, lpv_uvw);
-        indirect_diffuse += lpv_sample.rgb * albedo * (1.0 - metallic);
+    // 1. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
+    if (u_GIEnabled == 1 || u_GIEnabled == 3) {
+        ssgi_sample = texture(u_SSGITexture, v_UV);
+        vec3 ssgi_diffuse = ssgi_sample.rgb * albedo * (1.0 - metallic);
+        indirect_diffuse += ssgi_diffuse;
     }
 
-    // 2. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
-    if (u_GIEnabled == 1 || u_GIEnabled == 3) {
-        vec4 ssgi_sample = texture(u_SSGITexture, v_UV);
-        indirect_diffuse += ssgi_sample.rgb * albedo * (1.0 - metallic);
+    // 2. LPV (Volumetric 3D Indirect Diffuse Bounce)
+    if (u_GIEnabled == 2 || u_GIEnabled == 3) {
+        // Normal-Oriented Volumetric Sampling: offset along N by 75% voxel cell
+        vec3 voxel_cell = u_LPV_Size / 32.0;
+        vec3 lpv_sample_pos = world_pos.xyz + N * (voxel_cell * 0.75);
+        vec3 lpv_uvw = clamp((lpv_sample_pos - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
+        lpv_sample = texture(u_LPVVolume, lpv_uvw);
+
+        vec3 lpv_diffuse = lpv_sample.rgb * albedo * (1.0 - metallic) * 0.40;
+        if (u_GIEnabled == 2) {
+            indirect_diffuse += lpv_diffuse;
+        } else {
+            // In HYBRID mode: where SSGI hits, SSGI takes precedence; where SSGI misses, LPV smoothly fills in
+            indirect_diffuse += lpv_diffuse * (1.0 - clamp(ssgi_sample.a * 1.5, 0.0, 1.0));
+        }
+    }
+
+    if (u_GBufferDebug == 8) {
+        out_HDRColor = vec4(ssgi_sample.rgb, 1.0);
+        return;
+    } else if (u_GBufferDebug == 9) {
+        out_HDRColor = vec4(lpv_sample.rgb, 1.0);
+        return;
+    } else if (u_GBufferDebug == 10) {
+        out_HDRColor = vec4(indirect_diffuse, 1.0);
+        return;
     }
 
     // Ambient Sky / Ground Foundation
     vec3 sky_ambient = vec3(0.18, 0.24, 0.38) * (u_SunColor_Ambient.w * 2.5);
     vec3 ground_ambient = vec3(0.22, 0.24, 0.22) * (u_SunColor_Ambient.w * 1.8);
     vec3 hemisphere_light = mix(ground_ambient, sky_ambient, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
-    vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic);
+    float base_ambient_scale = (u_GIEnabled > 0) ? 0.35 : 1.0;
+    vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic) * base_ambient_scale;
 
     // Image-Based Lighting (IBL) & Screen-Space Reflections (SSR)
     vec3 indirect_specular = vec3(0.0);

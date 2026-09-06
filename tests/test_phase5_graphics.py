@@ -166,6 +166,46 @@ class TestSSGIAndLPVGlobalIllumination:
 
         pipeline.destroy()
 
+    def test_gi_with_dynamic_lights(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(
+            position=(0.0, 1.0, 0.0),
+            scale=(1.0, 2.0, 1.0),
+            color=(0.95, 0.15, 0.10),
+            roughness=0.3,
+            metallic=0.1,
+        )
+
+        pipeline.clear_point_lights()
+        pipeline.add_point_light((0.5, 1.0, 1.0), radius=5.0, color=(0.2, 0.6, 1.0), intensity=4.0)
+
+        pipeline.config.gi_mode = GIMode.HYBRID.value
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+            time_elapsed=0.1,
+        )
+
+        # Verify SSGI texture has data and LPV volume is active
+        ssgi_data = pipeline.ssgi_pass.raw_ssgi_tex.read()
+        assert len(ssgi_data) == 160 * 120 * 4 * 2
+        lpv_data = pipeline.lpv_pass._current_src.read()
+        assert len(lpv_data) == 32 * 32 * 32 * 4 * 2
+
+        # Verify debug buffer modes 8, 9, 10 render without error
+        for debug_mode in (8, 9, 10):
+            pipeline.config.debug_gbuffer = debug_mode
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 5.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.1,
+            )
+
+        pipeline.destroy()
+
 
 class TestClusteredLightingAndSSR:
     def test_clustered_local_lights_ssbo(self, render_ctx: RenderContext):
