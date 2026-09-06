@@ -124,6 +124,15 @@ vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
 }
 
+// Jimenez Multi-Bounce Approximation for rich indirect saturation inside crevices
+vec3 MultiBounceAO(float visibility, vec3 albedo) {
+    vec3 a = 2.0404 * albedo - 0.3324;
+    vec3 b = -4.7951 * albedo + 0.6417;
+    vec3 c = 2.7552 * albedo + 0.6903;
+    vec3 x = vec3(visibility);
+    return clamp(max(x, ((x * a + b) * x + c) * x), 0.0, 1.0);
+}
+
 // Linearize depth from Reversed-Z buffer to positive metric view-space depth in meters
 float LinearizeDepth(float depth, vec2 uv) {
     vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
@@ -388,12 +397,17 @@ void main() {
 
     float shadow = CalculateCSMShadow(world_pos.xyz, N, L, -view_pos.z);
 
-    if (u_GBufferDebug == 6 || u_GBufferDebug == 7 || u_GBufferDebug == 8) {
+    if (u_GBufferDebug == 6) {
         out_HDRColor = vec4(vec3(shadow), 1.0);
+        return;
+    } else if (u_GBufferDebug == 7) {
+        out_HDRColor = vec4(vec3(ao), 1.0);
         return;
     }
 
-    vec3 direct_sun = (kD * albedo / PI + specular) * radiance * NdotL * shadow;
+    // Subtle direct contact crevice micro-shadowing
+    float direct_crevice = clamp(ao + max(dot(N, L), 0.0), 0.0, 1.0);
+    vec3 direct_sun = (kD * albedo / PI + specular) * radiance * NdotL * shadow * direct_crevice;
 
     // Dynamic Clustered Point Lights (SSBO 3)
     vec3 point_lights_accum = vec3(0.0);
@@ -470,12 +484,16 @@ void main() {
             env_radiance = mix(env_radiance, ssr_sample.rgb, ssr_sample.a);
         }
 
+        // Specular occlusion (Lagarde / Frostbite) prevents specular light leaks into deep crevices
+        float spec_ao = clamp(ao * ao + sqrt(NdotV) * (1.0 - ao), 0.0, 1.0);
+
         vec3 F_env = FresnelSchlickRoughness(NdotV, F0, roughness);
-        indirect_specular = env_radiance * (F_env * brdf.x + brdf.y);
+        indirect_specular = env_radiance * (F_env * brdf.x + brdf.y) * spec_ao;
     }
 
-    // Total combine with Ambient Occlusion (SSCS applied directly to direct sun, not doubled here)
-    vec3 ambient = (ambient_base + indirect_diffuse + indirect_specular) * ao;
+    // Total combine with Multi-Bounce color-preserving Ambient Occlusion on diffuse
+    vec3 bounce_ao = MultiBounceAO(ao, albedo);
+    vec3 ambient = (ambient_base + indirect_diffuse) * bounce_ao + indirect_specular;
     vec3 total_lit = direct_sun + point_lights_accum + ambient;
 
     // Atmospheric Fog

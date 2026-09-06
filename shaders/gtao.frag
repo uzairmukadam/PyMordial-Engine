@@ -27,12 +27,13 @@ layout (std140, binding = 0) uniform FrameData {
 };
 
 uniform float u_Radius = 0.75;
-uniform float u_Intensity = 1.0;
+uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
 uniform int u_Directions = 3;
 uniform int u_Steps = 4;
 
 const float PI = 3.14159265358979323846;
+const float HALF_PI = 1.5707963267948966;
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -49,9 +50,17 @@ vec3 GetViewPos(vec2 uv, float depth) {
     return view.xyz / view.w;
 }
 
-// Interleaved gradient noise for spatial dithering
-float SpatialNoise(vec2 coord) {
-    return fract(52.9829189 * fract(dot(coord, vec2(0.06711056, 0.00583715))));
+// Jorge Jimenez's Interleaved Gradient Noise for spatial dithering
+float InterleavedGradientNoise(vec2 screen_pos) {
+    return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
+}
+
+// Fast accurate acos approximation
+float FastACos(float inX) {
+    float x = abs(inX);
+    float res = -0.156583 * x + HALF_PI;
+    res *= sqrt(max(0.0, 1.0 - x));
+    return (inX >= 0.0) ? res : PI - res;
 }
 
 void main() {
@@ -66,51 +75,100 @@ void main() {
     vec3 view_normal = normalize((u_View * vec4(world_normal, 0.0)).xyz);
     vec3 view_dir = normalize(-view_pos);
 
-    // Screen-space radius inversely proportional to view depth
-    float screen_radius = clamp(u_Radius / max(-view_pos.z, 0.1), 0.002, 0.15);
-    float noise = SpatialNoise(gl_FragCoord.xy);
+    float noise = InterleavedGradientNoise(gl_FragCoord.xy);
+
+    // Physically scaled screen radius in UV units
+    float view_z = max(-view_pos.z, 0.1);
+    float proj_scale = u_Projection[1][1] * 0.5;
+    vec2 screen_radius_uv = vec2(
+        (u_Radius * proj_scale / view_z) * (u_ScreenSize_Jitter.y / u_ScreenSize_Jitter.x),
+        (u_Radius * proj_scale / view_z)
+    );
+    vec2 min_radius_uv = 4.0 / u_ScreenSize_Jitter.xy;
+    vec2 max_radius_uv = vec2(0.20);
+    screen_radius_uv = clamp(screen_radius_uv, min_radius_uv, max_radius_uv);
+
+    int num_dirs = clamp(u_Directions, 1, 6);
+    int num_steps = clamp(u_Steps, 2, 8);
 
     float visibility = 0.0;
-    float num_directions = float(clamp(u_Directions, 1, 6));
-    float num_steps = float(clamp(u_Steps, 2, 8));
 
-    for (int d = 0; d < u_Directions; ++d) {
-        float angle = (float(d) + noise) * (PI / num_directions);
-        vec2 dir = vec2(cos(angle), sin(angle));
+    for (int d = 0; d < num_dirs; ++d) {
+        float phi = (float(d) + noise) * (PI / float(num_dirs));
+        vec2 dir_2d = vec2(cos(phi), sin(phi));
 
-        float horizon_cos = -1.0;
+        vec3 dir_view = vec3(dir_2d.x, dir_2d.y, 0.0);
+        vec3 ortho_dir_view = dir_view - dot(dir_view, view_dir) * view_dir;
+        vec3 axis_vec = normalize(cross(ortho_dir_view, view_dir));
+        vec3 proj_normal = view_normal - axis_vec * dot(view_normal, axis_vec);
 
-        for (int s = 1; s <= u_Steps; ++s) {
-            float step_ratio = float(s) / num_steps;
-            vec2 sample_uv = v_UV + dir * screen_radius * (step_ratio * step_ratio);
+        float proj_norm_len = length(proj_normal);
+        if (proj_norm_len < 0.001) continue;
 
-            if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
-                continue;
+        float sign_norm = sign(dot(ortho_dir_view, proj_normal));
+        float cos_norm = clamp(dot(proj_normal, view_dir) / proj_norm_len, 0.0, 1.0);
+        float n = sign_norm * FastACos(cos_norm);
+
+        // Natural unoccluded horizon target limits defined by tangent plane
+        float low_horizon_cos0 = cos(n + HALF_PI);
+        float low_horizon_cos1 = cos(n - HALF_PI);
+
+        float horizon_cos0 = low_horizon_cos0;
+        float horizon_cos1 = low_horizon_cos1;
+
+        for (int s = 1; s <= num_steps; ++s) {
+            float alpha = (float(s) - 0.5 + noise * 0.5) / float(num_steps);
+
+            // Step along positive side
+            vec2 uv0 = v_UV + dir_2d * screen_radius_uv * alpha;
+            if (uv0.x >= 0.0 && uv0.x <= 1.0 && uv0.y >= 0.0 && uv0.y <= 1.0) {
+                float d0 = texture(u_GBufferDepth, uv0).r;
+                if (d0 > 0.000001) {
+                    vec3 p0 = GetViewPos(uv0, d0);
+                    vec3 delta0 = p0 - view_pos;
+                    float dist0 = length(delta0);
+                    if (dist0 > 0.002) {
+                        float weight0 = clamp(1.0 - (dist0 / (u_Radius * 1.5)), 0.0, 1.0);
+                        float shc0 = dot(delta0 / dist0, view_dir);
+                        shc0 = mix(low_horizon_cos0, shc0, weight0);
+                        horizon_cos0 = max(horizon_cos0, shc0);
+                    }
+                }
             }
 
-            float sample_depth = texture(u_GBufferDepth, sample_uv).r;
-            if (sample_depth <= 0.000001) continue;
-
-            vec3 sample_pos = GetViewPos(sample_uv, sample_depth);
-            vec3 delta = sample_pos - view_pos;
-            float dist = length(delta);
-
-            if (dist < u_Radius * 2.0 && dist > 0.001) {
-                vec3 delta_dir = delta / dist;
-                // Cosine of angle between view direction and horizon
-                float h_cos = dot(delta_dir, view_dir);
-                // Weight by normal orientation
-                float norm_weight = max(dot(delta_dir, view_normal), 0.0);
-                // Falloff with distance
-                float falloff = clamp(1.0 - (dist / (u_Radius * 2.0)), 0.0, 1.0);
-                horizon_cos = max(horizon_cos, h_cos * norm_weight * falloff);
+            // Step along negative side
+            vec2 uv1 = v_UV - dir_2d * screen_radius_uv * alpha;
+            if (uv1.x >= 0.0 && uv1.x <= 1.0 && uv1.y >= 0.0 && uv1.y <= 1.0) {
+                float d1 = texture(u_GBufferDepth, uv1).r;
+                if (d1 > 0.000001) {
+                    vec3 p1 = GetViewPos(uv1, d1);
+                    vec3 delta1 = p1 - view_pos;
+                    float dist1 = length(delta1);
+                    if (dist1 > 0.002) {
+                        float weight1 = clamp(1.0 - (dist1 / (u_Radius * 1.5)), 0.0, 1.0);
+                        float shc1 = dot(delta1 / dist1, view_dir);
+                        shc1 = mix(low_horizon_cos1, shc1, weight1);
+                        horizon_cos1 = max(horizon_cos1, shc1);
+                    }
+                }
             }
         }
 
-        visibility += clamp(1.0 - max(horizon_cos, 0.0), 0.0, 1.0);
+        // Compute horizon angles
+        float h0 = -FastACos(clamp(horizon_cos1, -1.0, 1.0));
+        float h1 = FastACos(clamp(horizon_cos0, -1.0, 1.0));
+
+        h0 = n + clamp(h0 - n, -HALF_PI, HALF_PI);
+        h1 = n + clamp(h1 - n, -HALF_PI, HALF_PI);
+
+        // Jimenez analytical slice integral
+        float iarc0 = (cos_norm + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) * 0.25;
+        float iarc1 = (cos_norm + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) * 0.25;
+
+        visibility += proj_norm_len * (iarc0 + iarc1);
     }
 
-    float ao = visibility / num_directions;
-    ao = clamp(pow(ao, u_Power * u_Intensity), 0.0, 1.0);
+    visibility /= float(num_dirs);
+    float ao = clamp(pow(clamp(visibility, 0.0, 1.0), u_Power * u_Intensity), 0.0, 1.0);
     out_AO = ao;
 }

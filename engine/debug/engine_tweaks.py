@@ -19,9 +19,8 @@ class GBufferDebugMode(IntEnum):
     MATERIAL = 3       # RT2: Roughness, Metallic & Material parameters
     DEPTH = 4          # RT3: Reversed-Z Depth linearized
     SHADOW_ATLAS = 5   # Cascaded Shadow Maps depth atlas
-    SHADOW_CSM = 6     # Direct Cascaded Shadow Map occlusion mask
-    SHADOW_SSCS = 7    # Screen-Space Contact Shadow (SSCS) mask
-    SHADOW_COMBINED = 8# Final composite shadow factor (CSM + SSCS)
+    SHADOW_MASK = 6    # Direct Cascaded Shadow Map occlusion mask
+    AO = 7             # Ambient Occlusion (SSAO / HBAO / GTAO) mask
 
 
 class EngineTweaks:
@@ -53,6 +52,7 @@ class EngineTweaks:
         "sscs_max_distance",
         "ao_mode",
         "ao_intensity",
+        "ao_radius",
         "gi_mode",
         "ssgi_steps",
         "ssgi_intensity",
@@ -101,7 +101,8 @@ class EngineTweaks:
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
-        self.ao_intensity = 1.0
+        self.ao_intensity = 1.2
+        self.ao_radius = 0.75
         self.gi_mode = GIMode.HYBRID.value
         self.ssgi_steps = 12
         self.ssgi_intensity = 1.2

@@ -395,9 +395,9 @@ class DebugMenu:
                     et.lpv_intensity = lpv_in_val
                     et.mark_custom()
 
-            # AO Mode (OFF, SSAO, GTAO)
-            ao_modes = ["OFF", "SSAO", "GTAO"]
-            curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 2
+            # AO Mode (OFF, SSAO, HBAO, GTAO)
+            ao_modes = ["OFF", "SSAO", "HBAO", "GTAO"]
+            curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 3
             ao_changed, new_ao_idx = imgui.combo("AO Mode", curr_ao_idx, ao_modes)
             if ao_changed and new_ao_idx != curr_ao_idx:
                 et.ao_mode = ao_modes[new_ao_idx]
@@ -405,9 +405,14 @@ class DebugMenu:
                 self.toast.show(f"AO Mode: {et.ao_mode}", duration=2.0)
 
             if et.ao_mode != "OFF":
-                ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 2.5, "%.2f")
+                ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 3.0, "%.2f")
                 if ao_in_changed:
                     et.ao_intensity = ao_in_val
+                    et.mark_custom()
+
+                ao_rad_changed, ao_rad_val = imgui.slider_float("AO Radius", et.ao_radius, 0.1, 3.0, "%.2f")
+                if ao_rad_changed:
+                    et.ao_radius = ao_rad_val
                     et.mark_custom()
 
             imgui.separator()

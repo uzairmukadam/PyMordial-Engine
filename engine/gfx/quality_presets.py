@@ -47,8 +47,8 @@ class RenderConfig:
     # Depth Precision
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
 
-    # Ambient Occlusion (GTAO / SSAO)
-    ao_mode: str = "GTAO"          # "OFF", "SSAO", "GTAO"
+    # Ambient Occlusion (GTAO / HBAO / SSAO)
+    ao_mode: str = "GTAO"          # "OFF", "SSAO", "HBAO", "GTAO"
     ao_intensity: float = 1.0
     ao_radius: float = 0.75
 

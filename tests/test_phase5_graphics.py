@@ -350,3 +350,40 @@ class TestShadowsAndSSCS:
         pipeline.destroy()
 
 
+class TestAmbientOcclusionModes:
+    def test_ambient_occlusion_modes_render_execution(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(
+            position=(0.0, 0.0, 0.0),
+            scale=(1.0, 1.0, 1.0),
+            color=(0.8, 0.8, 0.8),
+            roughness=0.3,
+            metallic=0.1,
+        )
+
+        assert hasattr(pipeline.ao_pass, "ssao_prog")
+        assert hasattr(pipeline.ao_pass, "hbao_prog")
+        assert hasattr(pipeline.ao_pass, "gtao_prog")
+        assert hasattr(pipeline.ao_pass, "blur_prog")
+
+        for mode in ("OFF", "SSAO", "HBAO", "GTAO"):
+            pipeline.config.ao_mode = mode
+            pipeline.config.ao_intensity = 1.2
+            pipeline.config.ao_radius = 0.75
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 5.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.1,
+                sun_dir=(0.5, -0.7, 0.4),
+                sun_lux=4.0,
+            )
+            final_data = pipeline.post_process.final_texture.read()
+            assert len(final_data) == 320 * 240 * 4
+
+            if mode != "OFF":
+                ao_data = pipeline.ao_pass.raw_ao_tex.read()
+                assert len(ao_data) == (320 // 2) * (240 // 2)
+
+        pipeline.destroy()
