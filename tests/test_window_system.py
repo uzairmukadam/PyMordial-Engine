@@ -12,7 +12,11 @@ def test_window_initialization_headless():
     assert win.height == 768
     assert win.is_headless
     assert win.mode == WindowMode.WINDOWED
+    assert win.vsync == VSyncMode.OFF
+    win.set_vsync(VSyncMode.ON)
     assert win.vsync == VSyncMode.ON
+    win.set_vsync(VSyncMode.OFF)
+    assert win.vsync == VSyncMode.OFF
 
 
 def test_window_runtime_resolution_change():

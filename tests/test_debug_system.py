@@ -171,7 +171,7 @@ class TestDebugSystem:
 
         tweaks = EngineTweaks()
         assert tweaks.show_wireframe is False
-        assert tweaks.show_physics_colliders is True
+        assert tweaks.show_physics_colliders is False
 
         # Toggle wireframe
         w1 = tweaks.toggle_wireframe()
@@ -184,16 +184,17 @@ class TestDebugSystem:
 
         # Toggle physics colliders
         p1 = tweaks.toggle_physics_colliders()
-        assert p1 is False
-        assert tweaks.show_physics_colliders is False
+        assert p1 is True
+        assert tweaks.show_physics_colliders is True
 
         p2 = tweaks.toggle_physics_colliders()
-        assert p2 is True
-        assert tweaks.show_physics_colliders is True
+        assert p2 is False
+        assert tweaks.show_physics_colliders is False
 
         # Validate that DebugDraw per-frame vertices reset when toggled off
         drawer = DebugDraw(ctx=None)
         drawer.update(0.016)
+        tweaks.show_physics_colliders = True
         if tweaks.show_physics_colliders:
             drawer.draw_box((0, 0, 0), (1, 1, 1))
         assert drawer.vertex_count == 24

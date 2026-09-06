@@ -7,6 +7,7 @@ resolution changes, VSync toggling, DPI/monitor queries, and lifecycle event dis
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
+import sys
 import pygame
 
 from engine.events import (
@@ -51,7 +52,7 @@ class WindowConfig:
     height: int = 720
     title: str = "PyMordial Engine 3D"
     mode: WindowMode = WindowMode.WINDOWED
-    vsync: VSyncMode = VSyncMode.ON
+    vsync: VSyncMode = VSyncMode.OFF
     resizable: bool = False
     hidden: bool = False
     depth_bits: int = 24
@@ -128,6 +129,7 @@ class Window:
         self.surface = self._create_surface()
         if not self.is_headless:
             pygame.display.set_caption(self.title)
+            self.set_vsync(self.vsync)
 
         log_info(
             LogChannel.WINDOW,
@@ -237,13 +239,24 @@ class Window:
         publish_event(WindowResizeEvent(width=width, height=height))
 
     def set_vsync(self, vsync: VSyncMode) -> None:
-        """Toggles vertical synchronization at runtime."""
-        if self.vsync == vsync:
-            return
+        """Toggles vertical synchronization at runtime without surface recreation."""
         self.vsync = vsync
-        if not self.is_headless:
-            self.surface = self._create_surface()
-        log_info(LogChannel.WINDOW, f"VSync set to {vsync.name}")
+        interval = 1 if vsync == VSyncMode.ON else 0
+        applied = False
+        if sys.platform.startswith("win") and not self.is_headless:
+            try:
+                import ctypes
+                lib = ctypes.WinDLL("opengl32.dll")
+                wgl = lib.wglGetProcAddress
+                wgl.restype = ctypes.c_void_p
+                wgl.argtypes = [ctypes.c_char_p]
+                proc = wgl(b"wglSwapIntervalEXT")
+                if proc:
+                    fn = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int)(proc)
+                    applied = bool(fn(interval))
+            except Exception:
+                applied = False
+        log_info(LogChannel.WINDOW, f"VSync set to {vsync.name} (wgl={applied})")
 
     def toggle_fullscreen(self) -> None:
         """Toggles between Windowed and Borderless Fullscreen."""

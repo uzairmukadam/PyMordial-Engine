@@ -60,7 +60,7 @@ from engine.debug import (  # noqa: E402
 )
 from engine.camera import CameraManager, FreeFlyCamera  # noqa: E402
 from engine.audio import get_audio_engine  # noqa: E402
-from engine.window import WindowMode  # noqa: E402
+from engine.window import WindowMode, VSyncMode  # noqa: E402
 
 
 def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
@@ -211,11 +211,13 @@ def main() -> None:
     parser.add_argument("--headless", action="store_true", help="Run without window display")
     parser.add_argument("--frames", type=int, default=0, help="Exit after N frames")
     parser.add_argument("--screenshot", type=str, default="", help="Save screenshot to path")
-    parser.add_argument("--preset", type=str, default="high", choices=["low", "medium", "high", "ultra", "cinematic"], help="Initial quality preset")
+    parser.add_argument("--preset", type=str, default="custom", choices=["custom", "low", "medium", "high", "ultra", "cinematic"], help="Initial quality preset (default: custom)")
+    parser.add_argument("--vsync", action="store_true", default=False, help="Enable VSync (default: False/uncapped)")
     parser.add_argument("--width", type=int, default=1280, help="Window width")
     parser.add_argument("--height", type=int, default=720, help="Window height")
     parser.add_argument("--wireframe", action="store_true", help="Start with mesh wireframe enabled")
-    parser.add_argument("--no-physics-colliders", action="store_true", help="Start with physics colliders disabled")
+    parser.add_argument("--no-physics-colliders", action="store_true", default=True, help="Disable physics colliders wireframe (default: True/disabled)")
+    parser.add_argument("--show-physics-colliders", action="store_true", default=False, help="Enable physics colliders wireframe")
     parser.add_argument("--debug-menu", action="store_true", help="Start with debug menu open")
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
     args = parser.parse_args()
@@ -235,6 +237,11 @@ def main() -> None:
         hidden=args.headless,
         config=get_quality_preset(initial_preset_enum),
     )
+    if args.vsync:
+        render_ctx.window.set_vsync(VSyncMode.ON)
+    else:
+        render_ctx.window.set_vsync(VSyncMode.OFF)
+
     pipeline = RenderPipeline(render_ctx, get_quality_preset(initial_preset_enum))
     pipeline.apply_config(pipeline.config)
 
@@ -250,10 +257,11 @@ def main() -> None:
     monitor = SystemMonitor(history_size=120)
     engine_tweaks = EngineTweaks()
     engine_tweaks.quality_preset = initial_preset_enum
+    engine_tweaks.vsync_enabled = args.vsync
     if args.wireframe:
         engine_tweaks.show_wireframe = True
-    if args.no_physics_colliders:
-        engine_tweaks.show_physics_colliders = False
+    # Default to False (disabled) unless explicitly requested via --show-physics-colliders
+    engine_tweaks.show_physics_colliders = args.show_physics_colliders
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -272,6 +280,8 @@ def main() -> None:
         debug_menu.active_tab = max(0, min(2, args.debug_tab))
 
     def on_quality_changed(new_preset: GraphicsQuality) -> None:
+        if new_preset == GraphicsQuality.CUSTOM:
+            return
         cfg = get_quality_preset(new_preset)
         cfg.wireframe = engine_tweaks.show_wireframe
         pipeline.apply_config(cfg)
@@ -284,6 +294,7 @@ def main() -> None:
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
+    engine_tweaks.on_vsync_changed(lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF))
 
     # 3. Mount Cooked .pak Archive via Virtual File System (VFS)
     pipeline.resources.mount_pak(pak_path)
@@ -569,7 +580,7 @@ def main() -> None:
         on_changed=lambda val: setattr(engine_tweaks, "show_wireframe", val),
     )
     physics_wire_tweak = game_tweaks.add_bool(
-        "Rendering", "Physics Gizmos", default=True,
+        "Rendering", "Physics Gizmos", default=False,
         on_changed=lambda val: setattr(engine_tweaks, "show_physics_colliders", val),
     )
 
@@ -596,6 +607,12 @@ def main() -> None:
         mode_str = "BORDERLESS FULLSCREEN" if render_ctx.window.mode == WindowMode.BORDERLESS_FULLSCREEN else "WINDOWED"
         toast.show(f"Display Mode: {mode_str} (F11)", duration=2.0, color=(74, 222, 128))
 
+    def trigger_toggle_vsync() -> None:
+        new_vsync = VSyncMode.OFF if render_ctx.window.vsync == VSyncMode.ON else VSyncMode.ON
+        render_ctx.window.set_vsync(new_vsync)
+        engine_tweaks.vsync_enabled = (new_vsync == VSyncMode.ON)
+        toast.show(f"VSync: {new_vsync.name}", duration=2.0, color=(74, 222, 128))
+
     # Audio Tweaks
     game_tweaks.add_float("Audio", "Master Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("master", v))
     game_tweaks.add_float("Audio", "SFX Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("sfx", v))
@@ -606,6 +623,7 @@ def main() -> None:
     game_tweaks.add_action("Camera", "Center Camera View", trigger_reset_camera)
     game_tweaks.add_action("Camera", "Toggle Mode (Follow/Free)", trigger_toggle_camera)
     game_tweaks.add_action("Display", "Toggle Fullscreen (F11)", trigger_toggle_fullscreen)
+    game_tweaks.add_action("Display", "Toggle VSync", trigger_toggle_vsync)
     game_tweaks.add_action("Display", "Set 1280x720 (HD)", lambda: trigger_set_resolution(1280, 720))
     game_tweaks.add_action("Display", "Set 1600x900 (HD+)", lambda: trigger_set_resolution(1600, 900))
     game_tweaks.add_action("Display", "Set 1920x1080 (FHD)", lambda: trigger_set_resolution(1920, 1080))
@@ -618,6 +636,7 @@ def main() -> None:
     # Watches
     game_tweaks.add_watch("Display", "Resolution", lambda: f"{render_ctx.window.width}x{render_ctx.window.height}")
     game_tweaks.add_watch("Display", "Mode", lambda: render_ctx.window.mode.name)
+    game_tweaks.add_watch("Display", "VSync", lambda: render_ctx.window.vsync.name)
     game_tweaks.add_watch("Entities", "Active Count", lambda: ecs.active_count)
     game_tweaks.add_watch("KCC", "Grounded", lambda: motor.state.is_grounded)
     game_tweaks.add_watch("KCC", "Speed", lambda: f"{motor.state.horizontal_speed:.1f} m/s")

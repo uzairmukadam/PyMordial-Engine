@@ -6,6 +6,7 @@ from enum import Enum
 
 
 class GraphicsQuality(str, Enum):
+    CUSTOM = "custom"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -84,6 +85,7 @@ class RenderConfig:
 
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
+    GraphicsQuality.CUSTOM: RenderConfig(),
     GraphicsQuality.LOW: RenderConfig(
         shadow_resolution=1024,
         csm_cascades=2,

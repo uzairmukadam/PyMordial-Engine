@@ -335,13 +335,19 @@ class DebugMenu:
             et = self.engine_tweaks
 
             # 1. Quality Preset
-            preset_names = ["low", "medium", "high", "ultra", "cinematic"]
+            preset_names = ["custom", "low", "medium", "high", "ultra", "cinematic"]
             current_preset = et.quality_preset.value.lower()
-            current_idx = preset_names.index(current_preset) if current_preset in preset_names else 2
+            current_idx = preset_names.index(current_preset) if current_preset in preset_names else 0
             changed, new_idx = imgui.combo("Quality Preset", current_idx, [p.upper() for p in preset_names])
             if changed and new_idx != current_idx:
                 et.set_quality_preset(GraphicsQuality(preset_names[new_idx]))
                 self.toast.show(f"Quality Preset: {preset_names[new_idx].upper()}", duration=2.0)
+
+            # VSync Toggle
+            vsync_changed, vsync_val = imgui.checkbox("VSync (Vertical Sync)", et.vsync_enabled)
+            if vsync_changed:
+                et.set_vsync(vsync_val)
+                self.toast.show(f"VSync: {'ON' if vsync_val else 'OFF'}", duration=1.5)
 
             # 2. Tonemapper
             tonemap_options = ["ACES", "AgX", "Reinhard"]
@@ -349,6 +355,7 @@ class DebugMenu:
             t_changed, new_t_idx = imgui.combo("Tonemapper", t_idx, tonemap_options)
             if t_changed and new_t_idx != t_idx:
                 et.tonemap_mode = tonemap_options[new_t_idx]
+                et.mark_custom()
                 self.toast.show(f"Tonemapper: {et.tonemap_mode}", duration=2.0)
 
             # 3. G-Buffer Debug Mode
@@ -368,21 +375,25 @@ class DebugMenu:
             gi_changed, new_gi_idx = imgui.combo("GI Mode", curr_gi_idx, gi_modes)
             if gi_changed and new_gi_idx != curr_gi_idx:
                 et.gi_mode = gi_modes[new_gi_idx]
+                et.mark_custom()
                 self.toast.show(f"GI Mode: {et.gi_mode}", duration=2.0)
 
             if et.gi_mode in ("SSGI", "HYBRID"):
                 ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 24)
                 if ssgi_st_changed:
                     et.ssgi_steps = ssgi_st_val
+                    et.mark_custom()
 
                 ssgi_in_changed, ssgi_in_val = imgui.slider_float("SSGI Intensity", et.ssgi_intensity, 0.1, 3.0, "%.2f")
                 if ssgi_in_changed:
                     et.ssgi_intensity = ssgi_in_val
+                    et.mark_custom()
 
             if et.gi_mode in ("LPV", "HYBRID"):
                 lpv_in_changed, lpv_in_val = imgui.slider_float("LPV Intensity", et.lpv_intensity, 0.1, 3.0, "%.2f")
                 if lpv_in_changed:
                     et.lpv_intensity = lpv_in_val
+                    et.mark_custom()
 
             # AO Mode (OFF, SSAO, GTAO)
             ao_modes = ["OFF", "SSAO", "GTAO"]
@@ -390,12 +401,14 @@ class DebugMenu:
             ao_changed, new_ao_idx = imgui.combo("AO Mode", curr_ao_idx, ao_modes)
             if ao_changed and new_ao_idx != curr_ao_idx:
                 et.ao_mode = ao_modes[new_ao_idx]
+                et.mark_custom()
                 self.toast.show(f"AO Mode: {et.ao_mode}", duration=2.0)
 
             if et.ao_mode != "OFF":
                 ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 2.5, "%.2f")
                 if ao_in_changed:
                     et.ao_intensity = ao_in_val
+                    et.mark_custom()
 
             imgui.separator()
             imgui.text("Reflections & Anti-Aliasing")
@@ -404,29 +417,34 @@ class DebugMenu:
             ibl_changed, ibl_val = imgui.checkbox("Image-Based Lighting (IBL)", et.ibl_enabled)
             if ibl_changed:
                 et.ibl_enabled = ibl_val
+                et.mark_custom()
                 self.toast.show(f"IBL: {'ON' if ibl_val else 'OFF'}", duration=1.5)
 
             # SSR
             ssr_changed, ssr_val = imgui.checkbox("Screen-Space Reflections (SSR)", et.ssr_enabled)
             if ssr_changed:
                 et.ssr_enabled = ssr_val
+                et.mark_custom()
                 self.toast.show(f"SSR: {'ON' if ssr_val else 'OFF'}", duration=1.5)
 
             if et.ssr_enabled:
                 ssr_st_changed, ssr_st_val = imgui.slider_int("SSR Steps", et.ssr_steps, 8, 48)
                 if ssr_st_changed:
                     et.ssr_steps = ssr_st_val
+                    et.mark_custom()
 
             # TAA
             taa_changed, taa_val = imgui.checkbox("Temporal Anti-Aliasing (TAA)", et.taa_enabled)
             if taa_changed:
                 et.taa_enabled = taa_val
+                et.mark_custom()
                 self.toast.show(f"TAA: {'ON' if taa_val else 'OFF'}", duration=1.5)
 
             # Dynamic Local Point Lights
             pl_changed, pl_val = imgui.checkbox("Dynamic Local Lights (SSBO 3)", et.point_lights_enabled)
             if pl_changed:
                 et.point_lights_enabled = pl_val
+                et.mark_custom()
                 self.toast.show(f"Point Lights: {'ON' if pl_val else 'OFF'}", duration=1.5)
 
             imgui.separator()
@@ -436,6 +454,7 @@ class DebugMenu:
             sscs_changed, sscs_val = imgui.checkbox("Contact Shadows (SSCS)", et.sscs_enabled)
             if sscs_changed:
                 et.sscs_enabled = sscs_val
+                et.mark_custom()
                 self.toast.show(f"Contact Shadows: {'ON' if sscs_val else 'OFF'}", duration=1.5)
 
             # Sun Angle (Azimuth)

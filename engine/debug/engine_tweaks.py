@@ -50,18 +50,22 @@ class EngineTweaks:
         "ssr_steps",
         "taa_enabled",
         "point_lights_enabled",
+        "vsync_enabled",
         "uncapped_fps",
         "_on_quality_changed",
+        "_on_vsync_changed",
     )
 
     def __init__(self) -> None:
-        self.quality_preset = GraphicsQuality.HIGH
+        # Default to CUSTOM so individual element tweaks are not overridden
+        self.quality_preset = GraphicsQuality.CUSTOM
         self.tonemap_mode = "ACES"
         self.exposure = 1.0
         self.gbuffer_debug = GBufferDebugMode.DISABLED
 
         self.show_wireframe = False
-        self.show_physics_colliders = True
+        # Disabled by default per user request
+        self.show_physics_colliders = False
         self.show_bounds = False
         self.show_sun_ray = False
 
@@ -73,7 +77,7 @@ class EngineTweaks:
         self.sscs_steps = 16
         self.sscs_thickness = 0.05
 
-        # Phase 5 High-End Graphics Settings
+        # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
         self.ao_intensity = 1.0
         self.gi_mode = GIMode.HYBRID.value
@@ -86,8 +90,11 @@ class EngineTweaks:
         self.taa_enabled = True
         self.point_lights_enabled = True
 
+        # VSync disabled by default per user request
+        self.vsync_enabled = False
         self.uncapped_fps = True
         self._on_quality_changed: list[Callable[[GraphicsQuality], None]] = []
+        self._on_vsync_changed: list[Callable[[bool], None]] = []
 
     def set_quality_preset(self, preset: GraphicsQuality) -> None:
         """Updates the graphics preset and triggers registered reconfigure listeners."""
@@ -97,16 +104,31 @@ class EngineTweaks:
 
     set_preset = set_quality_preset
 
+    def mark_custom(self) -> None:
+        """Switches quality preset mode to CUSTOM when individual elements are modified."""
+        self.quality_preset = GraphicsQuality.CUSTOM
+
+    def set_vsync(self, enabled: bool) -> None:
+        """Toggles VSync and notifies registered listeners."""
+        self.vsync_enabled = enabled
+        for cb in self._on_vsync_changed:
+            cb(enabled)
+
+    def on_vsync_changed(self, listener: Callable[[bool], None]) -> None:
+        """Registers a listener called whenever VSync is toggled."""
+        self._on_vsync_changed.append(listener)
+
     def cycle_quality_preset(self) -> GraphicsQuality:
-        """Cycles to the next preset: LOW -> MED -> HIGH -> ULTRA -> CINEMATIC."""
+        """Cycles to the next preset: CUSTOM -> LOW -> MED -> HIGH -> ULTRA -> CINEMATIC."""
         presets = [
+            GraphicsQuality.CUSTOM,
             GraphicsQuality.LOW,
             GraphicsQuality.MEDIUM,
             GraphicsQuality.HIGH,
             GraphicsQuality.ULTRA,
             GraphicsQuality.CINEMATIC,
         ]
-        curr_idx = presets.index(self.quality_preset)
+        curr_idx = presets.index(self.quality_preset) if self.quality_preset in presets else 0
         next_preset = presets[(curr_idx + 1) % len(presets)]
         self.set_quality_preset(next_preset)
         return next_preset
