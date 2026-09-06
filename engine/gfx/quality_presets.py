@@ -30,16 +30,19 @@ class RenderConfig:
     shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS"
     shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
     shadow_bias: float = 0.0015    # Base depth bias
+    shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
+    shadow_offset_x: float = 0.0   # Light-space alignment offset X (delta from calibrated base)
+    shadow_offset_y: float = 0.0   # Light-space alignment offset Y (delta from calibrated base)
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
-    pcf_samples: int = 16          # Poisson PCF taps (4, 8, 16)
+    pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 150.0 # Maximum shadow distance in meters
 
-    # Screen-Space Contact Shadows (SSCS)
-    sscs_enabled: bool = True
+    # Screen-Space Contact Shadows (Deprecated/Removed in favor of GTAO)
+    sscs_enabled: bool = False
     sscs_steps: int = 16           # Depth raymarching steps (4 to 32)
-    sscs_ray_distance: float = 1.0 # Metric trace distance (0.2m to 3.0m)
+    sscs_ray_distance: float = 0.20 # Metric trace distance (0.05m to 1.5m)
     sscs_max_distance: float = 50.0# Camera distance fade out (10.0m to 100.0m)
-    sscs_thickness: float = 0.15   # Physical metric thickness in meters
+    sscs_thickness: float = 0.10   # Physical metric thickness in meters
 
     # Depth Precision
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
@@ -117,9 +120,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_softness=1.0,
         shadow_bias=0.0018,
         csm_cascades=3,
-        pcf_samples=8,
+        pcf_samples=16,
         shadow_distance=100.0,
-        sscs_enabled=True,
+        sscs_enabled=False,
         sscs_steps=8,
         ao_mode="SSAO",
         gi_mode="SSGI",
@@ -134,14 +137,14 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         fog_density=0.010,
     ),
     GraphicsQuality.HIGH: RenderConfig(
-        shadow_resolution=2048,
+        shadow_resolution=4096,
         shadow_mode="PCSS",
         shadow_softness=1.2,
         shadow_bias=0.0015,
         csm_cascades=4,
-        pcf_samples=16,
+        pcf_samples=24,
         shadow_distance=150.0,
-        sscs_enabled=True,
+        sscs_enabled=False,
         sscs_steps=12,
         ao_mode="GTAO",
         gi_mode="SSGI",
@@ -162,9 +165,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_softness=1.2,
         shadow_bias=0.0015,
         csm_cascades=4,
-        pcf_samples=16,
+        pcf_samples=32,
         shadow_distance=200.0,
-        sscs_enabled=True,
+        sscs_enabled=False,
         sscs_steps=16,
         ao_mode="GTAO",
         gi_mode="HYBRID",
@@ -185,9 +188,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_softness=1.4,
         shadow_bias=0.0012,
         csm_cascades=4,
-        pcf_samples=16,
+        pcf_samples=32,
         shadow_distance=300.0,
-        sscs_enabled=True,
+        sscs_enabled=False,
         sscs_steps=24,
         ao_mode="GTAO",
         gi_mode="HYBRID",

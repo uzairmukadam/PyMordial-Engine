@@ -87,11 +87,8 @@ class RenderPipeline:
         "_u_shadow_mode",
         "_u_shadow_softness",
         "_u_shadow_bias",
-        "_u_sscs_enabled",
-        "_u_sscs_steps",
-        "_u_sscs_thickness",
-        "_u_sscs_ray_distance",
-        "_u_sscs_max_distance",
+        "_u_shadow_normal_bias",
+        "_u_shadow_offset",
         "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_ao_enabled",
@@ -222,11 +219,8 @@ class RenderPipeline:
         self._u_shadow_mode = self.resolve_prog.get("u_ShadowMode", None)
         self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
         self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
-        self._u_sscs_enabled = self.resolve_prog.get("u_SSCS_Enabled", None)
-        self._u_sscs_steps = self.resolve_prog.get("u_SSCS_Steps", None)
-        self._u_sscs_thickness = self.resolve_prog.get("u_SSCS_Thickness", None)
-        self._u_sscs_ray_distance = self.resolve_prog.get("u_SSCS_RayDistance", None)
-        self._u_sscs_max_distance = self.resolve_prog.get("u_SSCS_MaxDistance", None)
+        self._u_shadow_normal_bias = self.resolve_prog.get("u_ShadowNormalBias", None)
+        self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
 
@@ -427,6 +421,7 @@ class RenderPipeline:
         self.csm.clear()
         self.ctx.depth_func = "<"
         self.ctx.enable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
 
         for c in range(self.config.csm_cascades):
             self.csm.begin_cascade(c)
@@ -438,6 +433,7 @@ class RenderPipeline:
         self.g_buffer.clear()
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.depth_func = ">" if self.config.reverse_z else "<"
+        self.ctx.enable(moderngl.CULL_FACE)
         is_wireframe = getattr(self.config, "wireframe", False)
         if is_wireframe:
             self.ctx.wireframe = True
@@ -495,16 +491,13 @@ class RenderPipeline:
             self._u_shadow_softness.value = float(self.config.shadow_softness)
         if self._u_shadow_bias is not None:
             self._u_shadow_bias.value = float(self.config.shadow_bias)
-        if self._u_sscs_enabled is not None:
-            self._u_sscs_enabled.value = 1 if self.config.sscs_enabled else 0
-        if self._u_sscs_steps is not None:
-            self._u_sscs_steps.value = self.config.sscs_steps
-        if self._u_sscs_thickness is not None:
-            self._u_sscs_thickness.value = self.config.sscs_thickness
-        if self._u_sscs_ray_distance is not None:
-            self._u_sscs_ray_distance.value = float(self.config.sscs_ray_distance)
-        if self._u_sscs_max_distance is not None:
-            self._u_sscs_max_distance.value = float(self.config.sscs_max_distance)
+        if self._u_shadow_normal_bias is not None:
+            self._u_shadow_normal_bias.value = float(getattr(self.config, "shadow_normal_bias", 0.0010))
+        if self._u_shadow_offset is not None:
+            self._u_shadow_offset.value = (
+                float(getattr(self.config, "shadow_offset_x", 0.0)),
+                float(getattr(self.config, "shadow_offset_y", 0.0)),
+            )
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_gbuffer_debug is not None:

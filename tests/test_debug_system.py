@@ -69,7 +69,7 @@ class TestDebugSystem:
         assert tweaks.shadow_mode in ("HARD", "PCF", "PCSS")
         assert tweaks.shadow_softness > 0.0
         assert tweaks.shadow_bias > 0.0
-        assert tweaks.sscs_enabled is True
+        assert tweaks.sscs_enabled is False
         assert tweaks.sscs_thickness > 0.0
         assert tweaks.sscs_ray_distance > 0.0
         assert tweaks.sscs_max_distance > 0.0

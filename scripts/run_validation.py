@@ -72,25 +72,31 @@ def make_quat_rot_x(angle_rad: float) -> tuple[float, float, float, float]:
 
 
 def generate_monolith_obj(filepath: Path) -> None:
-    """Generates an intricate, beveled 3D monolith pillar model in Wavefront .obj format."""
+    """Generates an intricate, beveled 3D monolith pillar model with solid architectural plinth."""
     obj_lines = [
-        "# PyMordial Master Validation: Beveled Monolith Pillar",
-        # Base vertices (Y = 0.0 to Y = 0.4)
-        "v -1.0 0.0 -1.0",
-        "v  1.0 0.0 -1.0",
-        "v  1.0 0.0  1.0",
-        "v -1.0 0.0  1.0",
-        "v -0.8 0.4 -0.8",
-        "v  0.8 0.4 -0.8",
-        "v  0.8 0.4  0.8",
-        "v -0.8 0.4  0.8",
-        # Shaft vertices (Y = 0.4 to Y = 3.6, tapering slightly)
-        "v -0.6 3.6 -0.6",
-        "v  0.6 3.6 -0.6",
-        "v  0.6 3.6  0.6",
-        "v -0.6 3.6  0.6",
+        "# PyMordial Master Validation: Architectural Beveled Monolith Pillar",
+        # Plinth bottom Y=0.0
+        "v -1.0 0.0 -1.0",  # 1
+        "v  1.0 0.0 -1.0",  # 2
+        "v  1.0 0.0  1.0",  # 3
+        "v -1.0 0.0  1.0",  # 4
+        # Plinth top Y=0.25 (vertical sides)
+        "v -1.0 0.25 -1.0", # 5
+        "v  1.0 0.25 -1.0", # 6
+        "v  1.0 0.25  1.0", # 7
+        "v -1.0 0.25  1.0", # 8
+        # Shaft bottom Y=0.45 (beveled inward transition)
+        "v -0.8 0.45 -0.8", # 9
+        "v  0.8 0.45 -0.8", # 10
+        "v  0.8 0.45  0.8", # 11
+        "v -0.8 0.45  0.8", # 12
+        # Shaft top Y=3.6
+        "v -0.6 3.6 -0.6",  # 13
+        "v  0.6 3.6 -0.6",  # 14
+        "v  0.6 3.6  0.6",  # 15
+        "v -0.6 3.6  0.6",  # 16
         # Pyramidion apex vertex (Y = 4.2)
-        "v  0.0 4.2  0.0",
+        "v  0.0 4.2  0.0",  # 17
         # Texture coordinates
         "vt 0.0 0.0",
         "vt 1.0 0.0",
@@ -98,42 +104,51 @@ def generate_monolith_obj(filepath: Path) -> None:
         "vt 0.0 1.0",
         "vt 0.5 1.0",
         # Normals
-        "vn  0.0 -1.0  0.0",
-        "vn  0.0  1.0  0.0",
-        "vn  0.0  0.0 -1.0",
-        "vn  1.0  0.0  0.0",
-        "vn  0.0  0.0  1.0",
-        "vn -1.0  0.0  0.0",
-        "vn  0.0  0.6 -0.8",
-        "vn  0.8  0.6  0.0",
-        "vn  0.0  0.6  0.8",
-        "vn -0.8  0.6  0.0",
+        "vn  0.0 -1.0  0.0",   # 1 Bottom
+        "vn  0.0  1.0  0.0",   # 2 Top
+        "vn  0.0  0.0 -1.0",   # 3 North
+        "vn  1.0  0.0  0.0",   # 4 East
+        "vn  0.0  0.0  1.0",   # 5 South
+        "vn -1.0  0.0  0.0",   # 6 West
+        "vn  0.0  0.707 -0.707", # 7 Bevel North
+        "vn  0.707 0.707 0.0",   # 8 Bevel East
+        "vn  0.0  0.707  0.707", # 9 Bevel South
+        "vn -0.707 0.707 0.0",   # 10 Bevel West
         # Faces: Bottom
         "f 1/1/1 2/2/1 3/3/1",
         "f 1/1/1 3/3/1 4/4/1",
-        # Base beveled sides
-        "f 1/1/7 6/3/7 2/2/7",
-        "f 1/1/7 5/4/7 6/3/7",
-        "f 2/1/8 7/3/8 3/2/8",
-        "f 2/1/8 6/4/8 7/3/8",
-        "f 3/1/9 8/3/9 4/2/9",
-        "f 3/1/9 7/4/9 8/3/9",
-        "f 4/1/10 5/3/10 1/2/10",
-        "f 4/1/10 8/4/10 5/3/10",
-        # Main Shaft faces
-        "f 5/1/3 10/3/3 6/2/3",
-        "f 5/1/3 9/4/3 10/3/3",
-        "f 6/1/4 11/3/4 7/2/4",
-        "f 6/1/4 10/4/4 11/3/4",
-        "f 7/1/5 12/3/5 8/2/5",
-        "f 7/1/5 11/4/5 12/3/5",
-        "f 8/1/6 9/3/6 5/2/6",
-        "f 8/1/6 12/4/6 9/3/6",
+        # Plinth vertical sides (Y=0.0 to Y=0.25)
+        "f 1/1/3 6/3/3 2/2/3",
+        "f 1/1/3 5/4/3 6/3/3",
+        "f 2/1/4 7/3/4 3/2/4",
+        "f 2/1/4 6/4/4 7/3/4",
+        "f 3/1/5 8/3/5 4/2/5",
+        "f 3/1/5 7/4/5 8/3/5",
+        "f 4/1/6 5/3/6 1/2/6",
+        "f 4/1/6 8/4/6 5/3/6",
+        # Bevel transition (Y=0.25 to Y=0.45)
+        "f 5/1/7 10/3/7 6/2/7",
+        "f 5/1/7 9/4/7 10/3/7",
+        "f 6/1/8 11/3/8 7/2/8",
+        "f 6/1/8 10/4/8 11/3/8",
+        "f 7/1/9 12/3/9 8/2/9",
+        "f 7/1/9 11/4/9 12/3/9",
+        "f 8/1/10 9/3/10 5/2/10",
+        "f 8/1/10 12/4/10 9/3/10",
+        # Main Shaft faces (Y=0.45 to Y=3.6)
+        "f 9/1/3 14/3/3 10/2/3",
+        "f 9/1/3 13/4/3 14/3/3",
+        "f 10/1/4 15/3/4 11/2/4",
+        "f 10/1/4 14/4/4 15/3/4",
+        "f 11/1/5 16/3/5 12/2/5",
+        "f 11/1/5 15/4/5 16/3/5",
+        "f 12/1/6 13/3/6 9/2/6",
+        "f 12/1/6 16/4/6 13/3/6",
         # Pyramidion Cap
-        "f 9/1/7 13/5/7 10/2/7",
-        "f 10/1/8 13/5/8 11/2/8",
-        "f 11/1/9 13/5/9 12/2/9",
-        "f 12/1/10 13/5/10 9/2/10",
+        "f 13/1/7 17/5/7 14/2/7",
+        "f 14/1/8 17/5/8 15/2/8",
+        "f 15/1/9 17/5/9 16/2/9",
+        "f 16/1/10 17/5/10 13/2/10",
     ]
     filepath.parent.mkdir(parents=True, exist_ok=True)
     filepath.write_text("\n".join(obj_lines), encoding="utf-8")
@@ -608,6 +623,9 @@ def main() -> None:
         "Rendering", "Physics Gizmos", default=False,
         on_changed=lambda val: setattr(engine_tweaks, "show_physics_colliders", val),
     )
+    game_tweaks.add_float("Shadows", "Align X", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_x", v))
+    game_tweaks.add_float("Shadows", "Align Y", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_y", v))
+    game_tweaks.add_float("Shadows", "Normal Bias", default=0.0010, min_val=0.0, max_val=0.0050, step=0.0001, on_changed=lambda v: setattr(engine_tweaks, "shadow_normal_bias", v))
 
     def trigger_reset_camera() -> None:
         cam.yaw_deg = 45.0
@@ -891,6 +909,9 @@ def main() -> None:
         pipeline.config.shadow_mode = engine_tweaks.shadow_mode
         pipeline.config.shadow_softness = engine_tweaks.shadow_softness
         pipeline.config.shadow_bias = engine_tweaks.shadow_bias
+        pipeline.config.shadow_normal_bias = engine_tweaks.shadow_normal_bias
+        pipeline.config.shadow_offset_x = engine_tweaks.shadow_offset_x
+        pipeline.config.shadow_offset_y = engine_tweaks.shadow_offset_y
         pipeline.config.sscs_enabled = engine_tweaks.sscs_enabled
         pipeline.config.sscs_steps = engine_tweaks.sscs_steps
         pipeline.config.sscs_thickness = engine_tweaks.sscs_thickness

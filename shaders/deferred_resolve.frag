@@ -49,19 +49,19 @@ layout (std430, binding = 3) buffer PointLightBuffer {
 };
 
 // Configurable quality & feature uniforms
-uniform int u_PCF_Samples;       // 4, 8, 16
-uniform int u_SSCS_Enabled;      // 0 or 1
-uniform int u_SSCS_Steps;        // 8 to 32
-uniform float u_SSCS_Thickness;  // Metric thickness in meters (e.g. 0.15)
-uniform int u_CascadeCount;      // 1 to 4
-uniform int u_GBufferDebug;      // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
+uniform int u_PCF_Samples = 24;  // 16 to 32 samples (Default: 24)
+uniform int u_CascadeCount = 4;  // 1 to 4
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask
 
 // AAA Shadow Parametrization
 uniform int u_ShadowMode = 2;          // 0=Hard, 1=PCF, 2=PCSS (Default: PCSS)
 uniform float u_ShadowSoftness = 1.2;  // Penumbra scale & PCF radius
 uniform float u_ShadowBias = 0.0015;   // Base shadow depth bias
-uniform float u_SSCS_RayDistance = 1.0;// World metric trace distance for contact shadows
-uniform float u_SSCS_MaxDistance = 50.0;// Camera view distance fade-out limit
+uniform float u_ShadowNormalBias = 0.0010; // Normal offset bias scale
+uniform vec2 u_ShadowOffset = vec2(0.0);   // Manual alignment offset (delta from calibrated base)
+
+// Calibrated base light-space alignment offset
+const vec2 CALIBRATED_SHADOW_OFFSET = vec2(-0.0004, 0.0011);
 
 // Phase 5 Toggles & Settings
 uniform int u_AOEnabled = 1;
@@ -74,17 +74,17 @@ uniform vec3 u_LPV_Size = vec3(64.0, 32.0, 64.0);
 
 const float PI = 3.14159265358979323846;
 
-// 16-tap Poisson Disk Distribution
-const vec2 POISSON_16[16] = vec2[](
-    vec2(-0.94201624, -0.39906216), vec2(0.94558609, -0.76890725),
-    vec2(-0.09418410, -0.92938870), vec2(0.34495938, 0.29387760),
-    vec2(-0.91588581, 0.45771432),  vec2(-0.81544232, -0.87912464),
-    vec2(-0.38277543, 0.27676845),  vec2(0.97484398, 0.75648379),
-    vec2(0.44323325, -0.97511554),  vec2(0.53742981, -0.47373420),
-    vec2(-0.26496911, -0.41893023), vec2(0.79197514, 0.19090188),
-    vec2(-0.24188840, 0.99706507),  vec2(-0.81409955, 0.91437590),
-    vec2(0.19984126, 0.78641367),   vec2(0.14383161, -0.14100790)
-);
+// Jorge Jimenez's Interleaved Gradient Noise (IGN) for uniform blue-noise spatial distribution
+float InterleavedGradientNoise(vec2 screen_pos) {
+    return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
+}
+
+// Vogel Disk Sampling with Golden Angle Spiral for low-discrepancy circular filtering
+vec2 VogelDiskSample(int sample_index, int sample_count, float phi) {
+    float r = sqrt((float(sample_index) + 0.5) / float(sample_count));
+    float theta = float(sample_index) * 2.39996323 + phi; // 2.39996323 rad = 137.507764 deg (Golden Angle)
+    return vec2(r * cos(theta), r * sin(theta));
+}
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -131,6 +131,28 @@ float LinearizeDepth(float depth, vec2 uv) {
     return -vpos.z / max(vpos.w, 0.000001);
 }
 
+// Bilinear Percentage-Closer Filter (PCF) over 4 discrete shadow texels
+// Anti-aliases hard shadow boundaries and provides pristine sub-texel smoothness without blur
+float SampleShadowBilinear(vec2 uv, float current_depth, float bias, vec2 uv_min, vec2 uv_max) {
+    vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
+    vec2 texel_size = 1.0 / full_size;
+    vec2 tex_coord = uv * full_size - 0.5;
+    vec2 base = floor(tex_coord);
+    vec2 f = fract(tex_coord);
+
+    vec2 uv00 = clamp((base + vec2(0.5, 0.5)) * texel_size, uv_min, uv_max);
+    vec2 uv10 = clamp(uv00 + vec2(texel_size.x, 0.0), uv_min, uv_max);
+    vec2 uv01 = clamp(uv00 + vec2(0.0, texel_size.y), uv_min, uv_max);
+    vec2 uv11 = clamp(uv00 + texel_size, uv_min, uv_max);
+
+    float s00 = (current_depth - bias <= texture(u_ShadowAtlas, uv00).r) ? 1.0 : 0.0;
+    float s10 = (current_depth - bias <= texture(u_ShadowAtlas, uv10).r) ? 1.0 : 0.0;
+    float s01 = (current_depth - bias <= texture(u_ShadowAtlas, uv01).r) ? 1.0 : 0.0;
+    float s11 = (current_depth - bias <= texture(u_ShadowAtlas, uv11).r) ? 1.0 : 0.0;
+
+    return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
+}
+
 // Evaluates shadow occlusion for a single cascade quadrant
 float SampleSingleCascade(
     int cascade,
@@ -139,16 +161,17 @@ float SampleSingleCascade(
     vec3 L,
     float cos_theta,
     float slope,
-    mat2 rot,
+    float ign_phi,
     float softness
 ) {
-    float normal_offset = (0.0025 * slope) * (float(cascade) * 0.35 + 1.0);
+    float normal_offset = (u_ShadowNormalBias * slope) * (float(cascade) * 0.35 + 1.0);
     vec3 biased_pos = world_pos + N * normal_offset;
 
     vec4 light_space_pos = u_LightViewProjection[cascade] * vec4(biased_pos, 1.0);
     vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
     // Remap NDC XY [-1, 1] to UV [0, 1]; Z is already in [0, 1] under GL_ZERO_TO_ONE clip control
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
+    proj_coords.xy += CALIBRATED_SHADOW_OFFSET + u_ShadowOffset;
 
     // Bounds check
     if (proj_coords.z < 0.0 || proj_coords.z > 1.0 ||
@@ -163,40 +186,41 @@ float SampleSingleCascade(
     vec2 uv_max = atlas_offset + vec2(0.4995);
 
     float current_depth = proj_coords.z;
-    float base_bias = (u_ShadowBias > 0.0) ? u_ShadowBias : 0.00025;
-    float bias = max(base_bias * (1.0 + slope * 1.5), base_bias);
+    float base_bias = max(u_ShadowBias, 0.0);
+    float bias = base_bias * (1.0 + slope * 0.5);
 
-    // MODE 0: HARD SHADOWS (1-Tap Direct Compare)
+    // MODE 0: ANTI-ALIASED HARD SHADOWS (4-Tap Bilinear PCF)
     if (u_ShadowMode == 0) {
-        float shadow_depth = texture(u_ShadowAtlas, uv).r;
-        return (current_depth - bias <= shadow_depth) ? 1.0 : 0.0;
+        return SampleShadowBilinear(uv, current_depth, bias, uv_min, uv_max);
     }
 
     float cascade_scale = float(cascade) * 0.65 + 1.0;
 
-    // MODE 1: UNIFORM PCF
+    // MODE 1: UNIFORM PCF (Vogel Disk)
     if (u_ShadowMode == 1) {
-        float filter_radius = (0.0010 * softness) / cascade_scale;
-        int samples = clamp(u_PCF_Samples, 4, 16);
+        float filter_radius = (0.0009 * softness) / cascade_scale;
+        int samples = clamp(u_PCF_Samples, 8, 32);
         float shadow = 0.0;
         for (int i = 0; i < samples; ++i) {
-            vec2 offset = rot * POISSON_16[i] * filter_radius;
+            vec2 offset = VogelDiskSample(i, samples, ign_phi) * filter_radius;
             vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
-            float pcf_depth = texture(u_ShadowAtlas, sample_uv).r;
-            shadow += (current_depth - bias <= pcf_depth) ? 1.0 : 0.0;
+            shadow += SampleShadowBilinear(sample_uv, current_depth, bias, uv_min, uv_max);
         }
         return shadow / float(samples);
     }
 
-    // MODE 2: AAA DIRECTIONAL PCSS (Contact-Hardening Soft Shadows)
-    // Step 1: Blocker Search (Scaled by cascade index for world-space consistency)
-    float search_radius = (0.0018 * softness) / cascade_scale;
+    // MODE 2: AAA DIRECTIONAL PCSS (Contact-Hardening Soft Shadows via Vogel Disk)
+    vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
+    vec2 texel_size = 1.0 / full_size;
+
+    // Step 1: Blocker Search (Vogel Spiral)
+    float search_radius = clamp(texel_size.x * 2.8 * softness, texel_size.x * 1.5, 0.0012) / cascade_scale;
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
-    int blocker_samples = clamp(u_PCF_Samples, 4, 16);
+    int blocker_samples = 16;
 
     for (int i = 0; i < blocker_samples; ++i) {
-        vec2 offset = rot * POISSON_16[i] * search_radius;
+        vec2 offset = VogelDiskSample(i, blocker_samples, ign_phi) * search_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
         float d = texture(u_ShadowAtlas, sample_uv).r;
         if (d < current_depth - bias) {
@@ -211,20 +235,26 @@ float SampleSingleCascade(
     }
 
     // Step 2: Physical Directional Penumbra Estimation
-    // For directional sun lighting, penumbra grows with caster-to-receiver distance
     float avg_blocker_depth = blocker_depth_sum / float(blocker_count);
     float depth_diff = max(current_depth - avg_blocker_depth, 0.0);
-    float penumbra = depth_diff * 45.0 * softness;
-    float filter_radius = clamp((penumbra * 0.0022) / cascade_scale, 0.00025, 0.0070);
+    float penumbra_ratio = clamp(depth_diff * 22.0 * softness, 0.0, 1.0);
+
+    // Immediate contact hardening: at contact points, bypass wide filtering for razor-sharp edge
+    if (penumbra_ratio < 0.03) {
+        return SampleShadowBilinear(uv, current_depth, bias, uv_min, uv_max);
+    }
 
     // Step 3: Filtered PCF with contact-hardening penumbra radius
-    int filter_samples = clamp(u_PCF_Samples, 4, 16);
+    float min_filter_radius = texel_size.x * 0.75;
+    float max_filter_radius = (0.0018 * softness) / cascade_scale;
+    float filter_radius = mix(min_filter_radius, max_filter_radius, penumbra_ratio);
+
+    int filter_samples = clamp(u_PCF_Samples, 12, 32);
     float pcss_shadow = 0.0;
     for (int i = 0; i < filter_samples; ++i) {
-        vec2 offset = rot * POISSON_16[i] * filter_radius;
+        vec2 offset = VogelDiskSample(i, filter_samples, ign_phi) * filter_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
-        float pcf_depth = texture(u_ShadowAtlas, sample_uv).r;
-        pcss_shadow += (current_depth - bias <= pcf_depth) ? 1.0 : 0.0;
+        pcss_shadow += SampleShadowBilinear(sample_uv, current_depth, bias, uv_min, uv_max);
     }
     return pcss_shadow / float(filter_samples);
 }
@@ -246,14 +276,11 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     float cos_theta = clamp(NdotL, 0.0, 1.0);
     float slope = clamp(sqrt(max(1.0 - cos_theta * cos_theta, 0.0)) / max(cos_theta, 0.001), 0.0, 3.5);
 
-    // Interleaved Poisson disk rotation
-    float angle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
-    float s = sin(angle);
-    float c = cos(angle);
-    mat2 rot = mat2(c, -s, s, c);
+    // Interleaved Gradient Noise rotation for smooth blue-noise spatial distribution
+    float ign_phi = InterleavedGradientNoise(gl_FragCoord.xy) * 6.2831853;
     float softness = clamp(u_ShadowSoftness, 0.1, 4.0);
 
-    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, rot, softness);
+    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness);
 
     // Smooth cascade split transition blending to eliminate seams
     if (cascade < u_CascadeCount - 1) {
@@ -262,104 +289,12 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
         float blend_start = split_val - blend_range;
         if (view_depth > blend_start) {
             float blend_t = clamp((view_depth - blend_start) / blend_range, 0.0, 1.0);
-            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, rot, softness);
+            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, ign_phi, softness);
             shadow = mix(shadow, next_shadow, blend_t);
         }
     }
 
     return shadow;
-}
-
-// Screen-Space Contact Shadows (SSCS) with perspective-correct 1/z raymarching, normal bias, and rejection
-float CalculateSSCS(vec3 world_pos, vec3 N, vec3 light_dir, float view_depth) {
-    if (u_SSCS_Enabled == 0 || view_depth > u_SSCS_MaxDistance) return 1.0;
-
-    float NdotL = dot(N, light_dir);
-    if (NdotL <= 0.001) return 1.0; // Already in shadow from surface orientation
-
-    // View-depth scaled normal bias to prevent acne at distance and peter-panning up close
-    float normal_bias = max(0.004, 0.0010 * view_depth);
-    vec3 ray_start = world_pos + N * normal_bias;
-    float trace_dist = max(u_SSCS_RayDistance, 0.1);
-    vec3 ray_end = ray_start + light_dir * trace_dist;
-
-    // Screen-space coordinates
-    vec4 p0_clip = u_ViewProjection * vec4(ray_start, 1.0);
-    vec4 p1_clip = u_ViewProjection * vec4(ray_end, 1.0);
-
-    if (p0_clip.w <= 0.0 || p1_clip.w <= 0.0) return 1.0;
-
-    vec2 uv0 = (p0_clip.xy / p0_clip.w) * 0.5 + 0.5;
-    vec2 uv1 = (p1_clip.xy / p1_clip.w) * 0.5 + 0.5;
-
-    // View-space linear Z for ray start and end
-    vec4 p0_view = u_View * vec4(ray_start, 1.0);
-    vec4 p1_view = u_View * vec4(ray_end, 1.0);
-    float z0 = max(-p0_view.z, 0.05);
-    float z1 = max(-p1_view.z, 0.05);
-    float inv_z0 = 1.0 / z0;
-    float inv_z1 = 1.0 / z1;
-
-    int steps = clamp(u_SSCS_Steps, 8, 32);
-    // Interleaved gradient noise for jittering
-    float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-    float step_dt = 1.0 / float(steps);
-
-    // Slope-adaptive minimum depth threshold to prevent self-shadowing on flat surfaces and ramps
-    float min_depth_thresh = 0.0020 * (1.0 + 1.2 * (1.0 - clamp(NdotL, 0.0, 1.0)));
-    float max_thickness = max(u_SSCS_Thickness, 0.04) * (1.0 + view_depth * 0.012);
-
-    float total_occlusion = 0.0;
-
-    for (int i = 0; i < steps; ++i) {
-        float t = (float(i) + dither * 0.5) * step_dt;
-        if (t <= 0.002) t = 0.002;
-        if (t >= 1.0) break;
-
-        vec2 sample_uv = mix(uv0, uv1, t);
-
-        // Screen boundary check
-        if (sample_uv.x < 0.001 || sample_uv.x > 0.999 || sample_uv.y < 0.001 || sample_uv.y > 0.999) {
-            break;
-        }
-
-        float sampled_raw = texture(u_GBufferDepth, sample_uv).r;
-        if (sampled_raw <= 0.00001) continue; // Sky pixel
-
-        float scene_z = LinearizeDepth(sampled_raw, sample_uv);
-        // Perspective-correct depth along screen ray
-        float ray_z = 1.0 / mix(inv_z0, inv_z1, t);
-
-        float depth_diff = ray_z - scene_z;
-
-        // Occlusion condition: scene surface is in front of the ray, within thickness
-        if (depth_diff > min_depth_thresh && depth_diff < max_thickness) {
-            // Sample normal of the occluding surface for coplanar rejection
-            vec4 occ_norm_metal = texture(u_GBufferNormalMetallic, sample_uv);
-            vec3 occ_N = OctahedralDecode(occ_norm_metal.rg);
-
-            // If the sampled point has nearly the same normal and is very close to the ray start,
-            // it is the receiver's own surface (acne) -> reject
-            float norm_dot = dot(occ_N, N);
-            if (norm_dot > 0.92 && depth_diff < 0.015) {
-                continue;
-            }
-
-            // Smooth contact fade (closer to ray origin = darker shadow)
-            float contact_fade = 1.0 - t;
-            // Screen edge vignette fade
-            vec2 edge = smoothstep(vec2(0.0), vec2(0.04), sample_uv) * smoothstep(vec2(1.0), vec2(0.96), sample_uv);
-            float edge_weight = edge.x * edge.y;
-
-            // Camera distance fade out
-            float dist_fade = clamp(1.0 - (view_depth / u_SSCS_MaxDistance), 0.0, 1.0);
-
-            total_occlusion = contact_fade * edge_weight * dist_fade;
-            break;
-        }
-    }
-
-    return mix(1.0, 0.15, clamp(total_occlusion, 0.0, 1.0));
 }
 
 void main() {
@@ -451,17 +386,9 @@ void main() {
     float NdotL = max(dot(N, L), 0.0);
     vec3 radiance = u_SunColor_Ambient.rgb * u_SunDirection_Intensity.w;
 
-    float csm_shadow = CalculateCSMShadow(world_pos.xyz, N, L, -view_pos.z);
-    float sscs_shadow = CalculateSSCS(world_pos.xyz, N, L, -view_pos.z);
-    float shadow = min(csm_shadow, sscs_shadow);
+    float shadow = CalculateCSMShadow(world_pos.xyz, N, L, -view_pos.z);
 
-    if (u_GBufferDebug == 6) {
-        out_HDRColor = vec4(vec3(csm_shadow), 1.0);
-        return;
-    } else if (u_GBufferDebug == 7) {
-        out_HDRColor = vec4(vec3(sscs_shadow), 1.0);
-        return;
-    } else if (u_GBufferDebug == 8) {
+    if (u_GBufferDebug == 6 || u_GBufferDebug == 7 || u_GBufferDebug == 8) {
         out_HDRColor = vec4(vec3(shadow), 1.0);
         return;
     }
@@ -547,8 +474,8 @@ void main() {
         indirect_specular = env_radiance * (F_env * brdf.x + brdf.y);
     }
 
-    // Total combine with Ambient Occlusion and Contact Shadow darkening
-    vec3 ambient = (ambient_base * sscs_shadow + indirect_diffuse + indirect_specular) * ao;
+    // Total combine with Ambient Occlusion (SSCS applied directly to direct sun, not doubled here)
+    vec3 ambient = (ambient_base + indirect_diffuse + indirect_specular) * ao;
     vec3 total_lit = direct_sun + point_lights_accum + ambient;
 
     // Atmospheric Fog

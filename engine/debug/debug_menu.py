@@ -477,38 +477,28 @@ class DebugMenu:
                     et.mark_custom()
 
             # 4. Shadow Depth Bias
-            bias_changed, bias_val = imgui.slider_float("Shadow Bias", et.shadow_bias, 0.0005, 0.0060, "%.4f")
+            bias_changed, bias_val = imgui.slider_float("Shadow Depth Bias", et.shadow_bias, 0.0000, 0.0050, "%.5f")
             if bias_changed:
                 et.shadow_bias = bias_val
                 et.mark_custom()
 
-            # 5. Screen-Space Contact Shadows (SSCS)
-            sscs_changed, sscs_val = imgui.checkbox("Contact Shadows (SSCS)", et.sscs_enabled)
-            if sscs_changed:
-                et.sscs_enabled = sscs_val
+            # 4b. Shadow Normal Bias
+            nb_changed, nb_val = imgui.slider_float("Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f")
+            if nb_changed:
+                et.shadow_normal_bias = nb_val
                 et.mark_custom()
-                self.toast.show(f"Contact Shadows: {'ON' if sscs_val else 'OFF'}", duration=1.5)
 
-            if et.sscs_enabled:
-                st_changed, st_val = imgui.slider_int("SSCS Steps", et.sscs_steps, 4, 32)
-                if st_changed:
-                    et.sscs_steps = st_val
-                    et.mark_custom()
+            # 4c. Shadow Alignment Sliders (Manual Offset Adjustment)
+            off_x_changed, off_x_val = imgui.slider_float("Shadow Align X", et.shadow_offset_x, -0.050, 0.050, "%.4f")
+            if off_x_changed:
+                et.shadow_offset_x = off_x_val
+                et.mark_custom()
 
-                th_changed, th_val = imgui.slider_float("SSCS Thickness (m)", et.sscs_thickness, 0.02, 0.40, "%.2f m")
-                if th_changed:
-                    et.sscs_thickness = th_val
-                    et.mark_custom()
+            off_y_changed, off_y_val = imgui.slider_float("Shadow Align Y", et.shadow_offset_y, -0.050, 0.050, "%.4f")
+            if off_y_changed:
+                et.shadow_offset_y = off_y_val
+                et.mark_custom()
 
-                rd_changed, rd_val = imgui.slider_float("SSCS Ray Dist (m)", et.sscs_ray_distance, 0.2, 2.5, "%.2f m")
-                if rd_changed:
-                    et.sscs_ray_distance = rd_val
-                    et.mark_custom()
-
-                md_changed, md_val = imgui.slider_float("SSCS Max Dist (m)", et.sscs_max_distance, 10.0, 100.0, "%.1f m")
-                if md_changed:
-                    et.sscs_max_distance = md_val
-                    et.mark_custom()
 
             # 6. Sun Angle (Azimuth)
             sun_changed, sun_val = imgui.slider_float("Sun Azimuth", et.sun_angle_deg, 0.0, 360.0, "%.1f deg")

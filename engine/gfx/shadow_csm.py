@@ -95,8 +95,10 @@ class CascadedShadowMap:
             center[1] = camera_pos[1] + camera_forward[1] * center_dist
             center[2] = camera_pos[2] + camera_forward[2] * center_dist
 
-            # Enclose cascade frustum slice with stable stepped bounding radius
-            raw_radius = max(dist * 0.92, (dist - prev_dist) * 0.85 + 7.5)
+            # Enclose cascade frustum slice with optimal tight bounding sphere (2x sharper near cascades)
+            half_span = (dist - prev_dist) * 0.5
+            far_half_w = dist * 0.65
+            raw_radius = math.sqrt(half_span * half_span + far_half_w * far_half_w) * 1.15
             # Round radius to 0.5m increments to prevent projection breathing
             radius = math.ceil(raw_radius * 2.0) * 0.5
 

@@ -43,6 +43,9 @@ class EngineTweaks:
         "shadow_mode",
         "shadow_softness",
         "shadow_bias",
+        "shadow_normal_bias",
+        "shadow_offset_x",
+        "shadow_offset_y",
         "sscs_enabled",
         "sscs_steps",
         "sscs_thickness",
@@ -82,15 +85,18 @@ class EngineTweaks:
         self.sun_elevation_deg = 65.0
         self.sun_lux = 4.0
 
-        # Shadow & Contact Shadow Settings
-        self.shadow_resolution = 2048
+        # Shadow Settings (AAA Default: 4096 Atlas, PCSS, zero delta offset)
+        self.shadow_resolution = 4096
         self.shadow_mode = "PCSS"
         self.shadow_softness = 1.2
         self.shadow_bias = 0.0015
-        self.sscs_enabled = True
+        self.shadow_normal_bias = 0.0010
+        self.shadow_offset_x = 0.0
+        self.shadow_offset_y = 0.0
+        self.sscs_enabled = False
         self.sscs_steps = 16
-        self.sscs_thickness = 0.15
-        self.sscs_ray_distance = 1.0
+        self.sscs_thickness = 0.10
+        self.sscs_ray_distance = 0.20
         self.sscs_max_distance = 50.0
 
         # Phase 5 High-End Graphics Settings (Individually customizable)

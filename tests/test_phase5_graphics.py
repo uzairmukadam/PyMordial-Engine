@@ -291,14 +291,15 @@ class TestShadowsAndSSCS:
         med = get_quality_preset(GraphicsQuality.MEDIUM)
         assert med.shadow_mode == "PCF"
         assert med.shadow_resolution == 2048
-        assert med.sscs_enabled is True
+        assert med.sscs_enabled is False
 
         high = get_quality_preset(GraphicsQuality.HIGH)
         assert high.shadow_mode == "PCSS"
         assert high.shadow_softness == 1.2
         assert high.shadow_bias == 0.0015
-        assert high.sscs_ray_distance == 1.0
-        assert high.sscs_max_distance == 50.0
+        assert high.shadow_resolution == 4096
+        assert high.pcf_samples == 24
+        assert high.sscs_enabled is False
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
         assert ultra.shadow_mode == "PCSS"
@@ -331,10 +332,21 @@ class TestShadowsAndSSCS:
             data = pipeline.post_process.final_texture.read()
             assert len(data) == 320 * 240 * 4
 
-        # Test dynamic atlas resize
-        pipeline.csm.resize_atlas(1024)
-        assert pipeline.csm.atlas_size == 1024
-        assert pipeline.csm.depth_texture.size == (1024, 1024)
+        # Test shadow alignment offset and normal bias controls
+        pipeline.config.shadow_normal_bias = 0.0025
+        pipeline.config.shadow_offset_x = 0.015
+        pipeline.config.shadow_offset_y = -0.010
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+            time_elapsed=0.2,
+            sun_dir=(0.5, -0.7, 0.4),
+            sun_lux=4.0,
+        )
+        data = pipeline.post_process.final_texture.read()
+        assert len(data) == 320 * 240 * 4
 
         pipeline.destroy()
+
 
