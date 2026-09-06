@@ -141,6 +141,14 @@ class CharacterMotor:
             self.state.is_jumping = False
             self.state.is_sliding = False
 
+    def teleport(
+        self,
+        position: tuple[float, float, float] | np.ndarray,
+        reset_velocity: bool = True,
+    ) -> None:
+        """Teleports the character to a target world position (alias for set_position)."""
+        self.set_position(position, reset_velocity=reset_velocity)
+
     def update(
         self,
         dt: float,

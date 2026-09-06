@@ -17,6 +17,7 @@ from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.post_process import PostProcessPipeline
 from engine.assets.resource_cache import ResourceCache
+from engine.debug.debug_draw import DebugDraw
 
 
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
@@ -41,6 +42,7 @@ class RenderPipeline:
         "csm",
         "post_process",
         "resources",
+        "debug",
         "ssbo_transforms",
         "ssbo_materials",
         "gbuffer_prog",
@@ -66,6 +68,7 @@ class RenderPipeline:
         "_u_sscs_steps",
         "_u_sscs_thickness",
         "_u_cascade_count",
+        "_u_gbuffer_debug",
     )
 
     def __init__(
@@ -78,6 +81,7 @@ class RenderPipeline:
         self.ctx = ctx_wrapper.ctx
         self.config = config if config is not None else ctx_wrapper.config
         self.resources = resources if resources is not None else ResourceCache()
+        self.debug = DebugDraw(self.ctx)
 
         # 1. Initialize UBO 0 (std140 binding 0)
         self.frame_context = FrameContext(self.ctx)
@@ -171,6 +175,7 @@ class RenderPipeline:
         self._u_sscs_steps = self.resolve_prog.get("u_SSCS_Steps", None)
         self._u_sscs_thickness = self.resolve_prog.get("u_SSCS_Thickness", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
+        self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
 
         # 7. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
@@ -224,6 +229,7 @@ class RenderPipeline:
         sun_lux: float = 4.0,
         fovy_deg: float = 60.0,
         draw_batches: list[tuple[MeshAllocation | str, int, int]] | None = None,
+        debug_draw: DebugDraw | None = None,
     ) -> None:
         """Executes full 4-pass deferred render pipeline."""
         active_count = ecs.active_count
@@ -321,9 +327,14 @@ class RenderPipeline:
         self.g_buffer.clear()
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.depth_func = ">" if self.config.reverse_z else "<"
-        self.ctx.enable(moderngl.DEPTH_TEST)
-
-        self.mdi.submit(self.gbuffer_vao, self.gbuffer_prog)
+        is_wireframe = getattr(self.config, "wireframe", False)
+        if is_wireframe:
+            self.ctx.wireframe = True
+        try:
+            self.mdi.submit(self.gbuffer_vao, self.gbuffer_prog)
+        finally:
+            if is_wireframe:
+                self.ctx.wireframe = False
 
         # ---- PASS 3: Deferred Lighting & Shadow Resolve ----
         self.post_process.hdr_fbo.use()
@@ -344,10 +355,20 @@ class RenderPipeline:
             self._u_sscs_thickness.value = self.config.sscs_thickness
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
+        if self._u_gbuffer_debug is not None:
+            self._u_gbuffer_debug.value = self.config.debug_gbuffer
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 
+        # ---- PASS 3.5: Immediate-Mode 3D Debug Wireframes ----
+        active_debug = debug_draw if debug_draw is not None else self.debug
+        if active_debug is not None and active_debug.vertex_count > 0:
+            self.post_process.hdr_fbo.use()
+            active_debug.render()
+            active_debug.clear()
+
         # ---- PASS 4: Post-Process & Tone-Mapping ----
+        self.ctx.disable(moderngl.DEPTH_TEST)
         # Blits to final texture and screen
         self.post_process.render(target_fbo=None)
         if not self.ctx_wrapper.is_headless:
@@ -360,6 +381,7 @@ class RenderPipeline:
         return self.post_process.output_texture_id
 
     def destroy(self) -> None:
+        self.debug.destroy()
         self.resources.close()
         self.frame_context.destroy()
         self.mega_buffer.destroy()

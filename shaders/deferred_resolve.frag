@@ -36,6 +36,7 @@ uniform int u_SSCS_Enabled;      // 0 or 1
 uniform int u_SSCS_Steps;        // 8 to 16
 uniform float u_SSCS_Thickness;  // 0.05
 uniform int u_CascadeCount;      // 1 to 4
+uniform int u_GBufferDebug;      // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
 
 const float PI = 3.14159265358979323846;
 
@@ -170,10 +171,25 @@ float CalculateSSCS(vec3 world_pos, vec3 light_dir, float view_depth) {
 }
 
 void main() {
+    if (u_GBufferDebug == 5) {
+        float s = texture(u_ShadowAtlas, v_UV).r;
+        out_HDRColor = vec4(vec3(s), 1.0);
+        return;
+    }
+
     float raw_depth = texture(u_GBufferDepth, v_UV).r;
+
+    if (u_GBufferDebug == 4) {
+        out_HDRColor = vec4(vec3(raw_depth), 1.0);
+        return;
+    }
 
     // In Reversed-Z, background clear is 0.0
     if (raw_depth <= 0.000001) {
+        if (u_GBufferDebug > 0) {
+            out_HDRColor = vec4(0.0, 0.0, 0.0, 1.0);
+            return;
+        }
         // Render rich atmospheric sky gradient
         vec3 sky_zenith = vec3(0.08, 0.22, 0.45);
         vec3 sky_horizon = vec3(0.65, 0.75, 0.88);
@@ -207,6 +223,17 @@ void main() {
     vec3 N = OctahedralDecode(normal_metal.rg);
     float metallic = normal_metal.b;
     float ao = normal_metal.a;
+
+    if (u_GBufferDebug == 1) {
+        out_HDRColor = vec4(albedo, 1.0);
+        return;
+    } else if (u_GBufferDebug == 2) {
+        out_HDRColor = vec4(N * 0.5 + 0.5, 1.0);
+        return;
+    } else if (u_GBufferDebug == 3) {
+        out_HDRColor = vec4(roughness, metallic, ao, 1.0);
+        return;
+    }
 
     vec3 V = normalize(u_CameraPos_Time.xyz - world_pos.xyz);
     vec3 L = normalize(-u_SunDirection_Intensity.xyz);

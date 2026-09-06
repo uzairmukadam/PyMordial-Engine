@@ -50,6 +50,10 @@ class RenderConfig:
     fog_density: float = 0.015
     fog_height_falloff: float = 0.10
 
+    # Debug Visualization
+    debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
+    wireframe: bool = False        # ModernGL polygon line rasterization mode
+
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.LOW: RenderConfig(

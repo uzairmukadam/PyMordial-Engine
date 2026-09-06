@@ -10,7 +10,7 @@ from typing import Callable, Optional
 import pygame
 
 from engine.core.ecs import EntityManager
-from engine.core.input import InputManager
+from engine.input import InputManager
 
 
 class EngineLoop:

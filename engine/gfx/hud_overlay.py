@@ -7,8 +7,12 @@ directly over the ModernGL framebuffer using zero-VBO screen-space quad renderin
 
 from __future__ import annotations
 import time
+from typing import TYPE_CHECKING
 import pygame
 import moderngl
+
+if TYPE_CHECKING:
+    from engine.debug.toast import DebugToast
 
 
 OVERLAY_VERT_GLSL = """#version 450 core
@@ -62,6 +66,7 @@ class HudOverlay:
         "title_surf",
         "controls_header_surf",
         "cached_shortcut_surfs",
+        "shortcut_desc_x",
         "_u_screen_size",
         "_u_rect",
     )
@@ -136,11 +141,13 @@ class HudOverlay:
         active_shortcuts = shortcuts if shortcuts is not None else default_shortcuts
         self.cached_shortcut_surfs = [
             (
-                self.font_bold.render(f"{key:<18}", True, (56, 189, 248)),
+                self.font_bold.render(key, True, (56, 189, 248)),
                 self.font.render(desc, True, (148, 163, 184)),
             )
             for key, desc in active_shortcuts
         ]
+        max_k_w = max((k.get_width() for k, _ in self.cached_shortcut_surfs), default=130)
+        self.shortcut_desc_x = max(150, max_k_w + 20)
 
     def update_screen_size(self, width: int, height: int) -> None:
         self.screen_width = width
@@ -162,6 +169,7 @@ class HudOverlay:
         panel_x: int = 16,
         panel_y: int = 16,
         extra_lines: list[tuple[str, tuple[int, int, int]]] | None = None,
+        toast: DebugToast | None = None,
     ) -> None:
         """Draws the HUD panel to the screen."""
         self.surface.fill((0, 0, 0, 0))
@@ -225,12 +233,18 @@ class HudOverlay:
 
         for k_surf, d_surf in self.cached_shortcut_surfs:
             self.surface.blit(k_surf, (14, y_offset))
-            self.surface.blit(d_surf, (150, y_offset))
+            self.surface.blit(d_surf, (self.shortcut_desc_x, y_offset))
             y_offset += line_height
 
         # 4. Status Notification Bar
         now = time.perf_counter()
+        toasts_to_draw: list[tuple[str, tuple[int, int, int]]] = []
         if status_message and (now - status_time < 5.0):
+            toasts_to_draw.append((status_message, (250, 204, 21)))
+        if toast is not None:
+            toasts_to_draw.extend(toast.get_active())
+
+        if toasts_to_draw:
             y_offset += 6
             pygame.draw.line(
                 self.surface,
@@ -240,8 +254,10 @@ class HudOverlay:
                 1,
             )
             y_offset += 6
-            msg_surf = self.font_bold.render(status_message, True, (250, 204, 21))
-            self.surface.blit(msg_surf, (14, y_offset))
+            for msg_text, msg_col in toasts_to_draw:
+                msg_surf = self.font_bold.render(msg_text, True, msg_col)
+                self.surface.blit(msg_surf, (14, y_offset))
+                y_offset += line_height
 
         # Upload surface to ModernGL texture
         raw_bytes = pygame.image.tobytes(self.surface, "RGBA")
@@ -266,8 +282,6 @@ class HudOverlay:
 
         # Restore defaults
         self.ctx.disable(moderngl.BLEND)
-        self.ctx.enable(moderngl.DEPTH_TEST)
-        self.ctx.enable(moderngl.CULL_FACE)
 
     def destroy(self) -> None:
         if self.texture:

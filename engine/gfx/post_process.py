@@ -94,6 +94,8 @@ class PostProcessPipeline:
         fbo = target_fbo if target_fbo is not None else self.final_fbo
         fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.BLEND)
 
         # Bind resolved HDR texture
         self.hdr_texture.use(location=0)

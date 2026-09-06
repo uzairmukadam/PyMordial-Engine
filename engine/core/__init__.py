@@ -7,7 +7,7 @@ semantic input system, and vectorized math routines.
 from engine.core.entity_pool import EntityPool
 from engine.core.ecs import EntityManager, TransformProxy
 from engine.core.loop import EngineLoop
-from engine.core.input import InputManager
+from engine.input import InputManager
 
 __all__ = [
     "EntityPool",
