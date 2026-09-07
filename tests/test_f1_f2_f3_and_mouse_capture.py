@@ -313,3 +313,42 @@ class TestDebugMenuAndMouseCapture:
 
         menu.destroy()
 
+    def test_debug_menu_headless_render_resilience_and_lazy_init(self):
+        """Validates that DebugMenu.render() operates safely when renderer is None and logs warnings cleanly."""
+        input_mgr = InputManager()
+        toast = DebugToast()
+        menu = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=toast,
+            input_mgr=input_mgr,
+            screen_width=1280,
+            screen_height=720,
+        )
+
+        # Initially renderer is None in headless / non-display testing
+        assert menu.renderer is None
+        assert menu._warned_no_renderer is False
+
+        # Calling render() when menu is hidden and no toasts: immediate return without warning
+        menu.render(None)
+        assert menu._warned_no_renderer is False
+
+        # Open F1 and F2 panels
+        menu.cycle_f1()
+        menu.toggle_graphics()
+        assert menu.visible is True
+
+        # Calling render() when visible triggers warning and early return safely
+        menu.render(None)
+        assert menu._warned_no_renderer is True
+
+        # Process event without renderer returns False safely
+        ev = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F1)
+        res = menu.process_event(ev)
+        assert res is False
+
+        menu.destroy()
+

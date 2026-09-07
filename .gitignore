@@ -220,6 +220,7 @@ __marimo__/
 # Temporary files
 scratch/
 artifacts/
+assets/
 
 # Engine logs & ImGui settings
 logs/

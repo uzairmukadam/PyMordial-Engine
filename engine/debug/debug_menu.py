@@ -12,7 +12,11 @@ import numpy as np
 import pygame
 import moderngl
 from imgui_bundle import imgui
-from imgui_bundle.python_backends.pygame_backend import PygameRenderer
+try:
+    from imgui_bundle.python_backends.pygame_backend import PygameRenderer
+except (ImportError, ModuleNotFoundError):
+    PygameRenderer = None
+from engine.logging import log_warn, log_error, log_info
 from engine.debug.monitor import SystemMonitor
 from engine.debug.engine_tweaks import EngineTweaks, GBufferDebugMode
 from engine.debug.game_tweaks import GameTweaks, TweakType
@@ -45,6 +49,7 @@ class DebugMenu:
         "imgui_ctx",
         "io",
         "renderer",
+        "_warned_no_renderer",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -84,11 +89,20 @@ class DebugMenu:
 
         # Initialize Pygame OpenGL backend if display surface and context are available
         self.renderer: PygameRenderer | None = None
+        self._warned_no_renderer: bool = False
         if self.ctx is not None and pygame.display.get_surface() is not None:
-            try:
-                self.renderer = PygameRenderer()
-            except Exception:
-                self.renderer = None
+            if PygameRenderer is not None:
+                try:
+                    self.renderer = PygameRenderer()
+                except Exception as e:
+                    log_warn("DebugMenu", f"PygameRenderer backend failed to initialize: {e}")
+                    self.renderer = None
+            else:
+                log_warn(
+                    "DebugMenu",
+                    "PygameRenderer backend unavailable (PyOpenGL missing). "
+                    "Install 'PyOpenGL' to enable Dear ImGui debug overlays.",
+                )
 
         self._apply_theme()
 
@@ -534,6 +548,50 @@ class DebugMenu:
                 self.toast.show(f"Point Lights: {'ON' if pl_val else 'OFF'}", duration=1.5)
 
             imgui.separator()
+            imgui.text("Micro-Geometry & Displacement")
+
+            # POM
+            pom_c, pom_v = imgui.checkbox("Parallax Occlusion Mapping (POM)", et.pom_enabled)
+            if pom_c:
+                et.pom_enabled = pom_v
+                et.mark_custom()
+            if et.pom_enabled:
+                ps_c, ps_v = imgui.slider_float("POM Height Scale", et.pom_height_scale, 0.01, 0.20, "%.3f")
+                if ps_c:
+                    et.pom_height_scale = ps_v
+                    et.mark_custom()
+                pss_c, pss_v = imgui.checkbox("POM Sun Self-Shadowing", et.pom_self_shadow)
+                if pss_c:
+                    et.pom_self_shadow = pss_v
+                    et.mark_custom()
+
+            # Hardware Tessellation
+            tess_c, tess_v = imgui.checkbox("Hardware GPU Tessellation", et.tess_enabled)
+            if tess_c:
+                et.tess_enabled = tess_v
+                et.mark_custom()
+            if et.tess_enabled:
+                tl_c, tl_v = imgui.slider_float("Max Tess Level", et.tess_max_level, 1.0, 32.0, "%.0f")
+                if tl_c:
+                    et.tess_max_level = tl_v
+                    et.mark_custom()
+                tds_c, tds_v = imgui.slider_float("Tess Displacement Scale", et.tess_displacement_scale, 0.01, 0.25, "%.3f")
+                if tds_c:
+                    et.tess_displacement_scale = tds_v
+                    et.mark_custom()
+
+            # SSDM
+            ssdm_c, ssdm_v = imgui.checkbox("Screen-Space Displacement (SSDM)", et.ssdm_enabled)
+            if ssdm_c:
+                et.ssdm_enabled = ssdm_v
+                et.mark_custom()
+            if et.ssdm_enabled:
+                sc_c, sc_v = imgui.slider_float("SSDM Scale", et.ssdm_scale, 0.01, 0.15, "%.3f")
+                if sc_c:
+                    et.ssdm_scale = sc_v
+                    et.mark_custom()
+
+            imgui.separator()
             imgui.text("Lighting & Shadows")
 
             # 1. Shadow Map Resolution (1024, 2048, 4096)
@@ -696,7 +754,33 @@ class DebugMenu:
 
     def render(self, target_fbo: moderngl.Framebuffer | None = None) -> None:
         """Draws active ImGui debug panels and notifications."""
+        # Attempt lazy initialization if renderer was not ready during __init__
+        if (
+            self.renderer is None
+            and self.ctx is not None
+            and pygame.display.get_surface() is not None
+            and PygameRenderer is not None
+        ):
+            try:
+                self.renderer = PygameRenderer()
+            except Exception as e:
+                if not self._warned_no_renderer:
+                    log_warn("DebugMenu", f"PygameRenderer lazy initialization failed: {e}")
+                    self._warned_no_renderer = True
+                self.renderer = None
+
         if self.renderer is None:
+            has_toasts = self.toast is not None and len(self.toast.get_active()) > 0
+            if not self._warned_no_renderer and (self.visible or has_toasts):
+                if PygameRenderer is None:
+                    log_warn(
+                        "DebugMenu",
+                        "Cannot render debug menu because PyOpenGL is not installed. "
+                        "Run 'pip install PyOpenGL' to enable Dear ImGui debug overlays.",
+                    )
+                else:
+                    log_warn("DebugMenu", "PygameRenderer is unavailable or display surface is missing.")
+                self._warned_no_renderer = True
             return
 
         has_toasts = self.toast is not None and len(self.toast.get_active()) > 0

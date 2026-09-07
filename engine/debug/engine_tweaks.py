@@ -73,6 +73,14 @@ class EngineTweaks:
         "taa_feedback",
         "taa_sharpness",
         "point_lights_enabled",
+        "pom_enabled",
+        "pom_height_scale",
+        "pom_self_shadow",
+        "tess_enabled",
+        "tess_max_level",
+        "tess_displacement_scale",
+        "ssdm_enabled",
+        "ssdm_scale",
         "vsync_enabled",
         "uncapped_fps",
         "_on_quality_changed",
@@ -95,6 +103,18 @@ class EngineTweaks:
         self.sun_angle_deg = 45.0
         self.sun_elevation_deg = 65.0
         self.sun_lux = 4.0
+
+        # Phase 6: Micro-Geometry Displacement Controls
+        self.pom_enabled = True
+        self.pom_height_scale = 0.08
+        self.pom_self_shadow = True
+
+        self.tess_enabled = True
+        self.tess_max_level = 16.0
+        self.tess_displacement_scale = 0.10
+
+        self.ssdm_enabled = True
+        self.ssdm_scale = 0.05
 
         # Shadow Settings (AAA Default: 4096 Atlas, PCSS, zero delta offset)
         self.shadow_resolution = 4096

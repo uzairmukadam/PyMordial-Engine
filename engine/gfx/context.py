@@ -60,8 +60,14 @@ class RenderContext:
         try:
             self.ctx = moderngl.create_context(require=450)
         except Exception:
-            # Fallback if driver requires auto-detect
-            self.ctx = moderngl.create_context()
+            try:
+                # Fallback if driver requires auto-detect
+                self.ctx = moderngl.create_context()
+            except Exception:
+                if self.is_headless:
+                    self.ctx = moderngl.create_context(standalone=True)
+                else:
+                    raise
 
         # Configure standard 3D state
         self.ctx.enable(moderngl.DEPTH_TEST)

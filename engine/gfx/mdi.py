@@ -66,18 +66,20 @@ class MultiDrawIndirect:
         self,
         vao: moderngl.VertexArray,
         program: moderngl.Program,
+        mode: int | None = None,
     ) -> None:
         """Uploads commands and submits via hardware Multi-Draw Indirect."""
         if self.command_count == 0:
             return
 
+        render_mode = mode if mode is not None else vao.mode
         base_inst_uniform = program.get("u_BaseInstance", None)
         for i in range(self.command_count):
             cmd = self.command_buffer[i]
             if base_inst_uniform is not None:
                 base_inst_uniform.value = int(cmd["base_instance"])
             vao.render(
-                mode=moderngl.TRIANGLES,
+                mode=render_mode,
                 vertices=int(cmd["count"]),
                 first=int(cmd["first_index"]),
                 instances=int(cmd["instance_count"]),

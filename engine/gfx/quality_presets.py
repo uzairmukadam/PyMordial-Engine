@@ -100,6 +100,25 @@ class RenderConfig:
     debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
     wireframe: bool = False        # ModernGL polygon line rasterization mode
 
+    # Phase 6: Parallax Occlusion Mapping (POM)
+    pom_enabled: bool = True
+    pom_min_samples: int = 8       # Min raymarch steps (glancing)
+    pom_max_samples: int = 64      # Max raymarch steps (head-on)
+    pom_height_scale: float = 0.08 # Displacement depth in world units
+    pom_self_shadow: bool = True   # Enable self-shadowing from sun direction
+
+    # Phase 6: Screen-Space Displacement Mapping (SSDM)
+    ssdm_enabled: bool = True
+    ssdm_scale: float = 0.05       # Displacement scale
+    ssdm_max_distance: float = 30.0  # Camera distance fade-out
+
+    # Phase 6: Hardware Tessellation
+    tess_enabled: bool = True
+    tess_max_level: float = 16.0          # Max hardware tessellation subdivision level (1..32)
+    tess_displacement_scale: float = 0.10 # Physical 3D displacement distance along normal
+    tess_distance_min: float = 2.0        # Near distance for max tessellation
+    tess_distance_max: float = 30.0       # Far distance where tessellation drops to 1.0
+
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
@@ -124,6 +143,12 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_iterations=3,
         volumetric_fog_enabled=False,
         fog_density=0.005,
+        pom_enabled=False,
+        pom_min_samples=4,
+        pom_max_samples=16,
+        pom_self_shadow=False,
+        ssdm_enabled=False,
+        tess_enabled=False,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
@@ -146,6 +171,12 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_iterations=4,
         volumetric_fog_enabled=True,
         fog_density=0.010,
+        pom_enabled=True,
+        pom_min_samples=8,
+        pom_max_samples=32,
+        pom_self_shadow=False,
+        ssdm_enabled=False,
+        tess_enabled=False,
     ),
     GraphicsQuality.HIGH: RenderConfig(
         shadow_resolution=4096,
@@ -169,6 +200,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_iterations=5,
         volumetric_fog_enabled=True,
         fog_density=0.015,
+        pom_enabled=True,
+        pom_min_samples=8,
+        pom_max_samples=64,
+        pom_self_shadow=True,
+        ssdm_enabled=True,
+        ssdm_scale=0.04,
+        tess_enabled=True,
+        tess_max_level=16.0,
+        tess_displacement_scale=0.10,
     ),
     GraphicsQuality.ULTRA: RenderConfig(
         shadow_resolution=4096,
@@ -192,6 +232,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_iterations=6,
         volumetric_fog_enabled=True,
         fog_density=0.018,
+        pom_enabled=True,
+        pom_min_samples=12,
+        pom_max_samples=80,
+        pom_self_shadow=True,
+        ssdm_enabled=True,
+        ssdm_scale=0.05,
+        tess_enabled=True,
+        tess_max_level=24.0,
+        tess_displacement_scale=0.10,
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
         shadow_resolution=4096,
@@ -216,6 +265,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_intensity=0.06,
         volumetric_fog_enabled=True,
         fog_density=0.022,
+        pom_enabled=True,
+        pom_min_samples=16,
+        pom_max_samples=128,
+        pom_self_shadow=True,
+        ssdm_enabled=True,
+        ssdm_scale=0.06,
+        tess_enabled=True,
+        tess_max_level=32.0,
+        tess_displacement_scale=0.12,
     ),
 }
 

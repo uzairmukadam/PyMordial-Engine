@@ -123,7 +123,7 @@ class MegaBuffer:
         self.vbo = self.ctx.buffer(all_verts.tobytes())
         self.ibo = self.ctx.buffer(all_indices.tobytes())
 
-    def get_vao(self, program: moderngl.Program) -> moderngl.VertexArray:
+    def get_vao(self, program: moderngl.Program, mode: int | None = None) -> moderngl.VertexArray:
         """Binds Mega-Buffer into a VertexArray matching active attributes in program (32-byte layout)."""
         if self.vbo is None or self.ibo is None:
             raise RuntimeError("MegaBuffer has not been baked.")
@@ -145,11 +145,15 @@ class MegaBuffer:
                 fmt_parts.append(f"{byte_size}x")
 
         fmt_str = " ".join(fmt_parts)
+        kwargs = {}
+        if mode is not None:
+            kwargs["mode"] = mode
         return self.ctx.vertex_array(
             program,
             [(self.vbo, fmt_str, *attribs)],
             index_buffer=self.ibo,
             index_element_size=4,
+            **kwargs,
         )
 
     # ---------------- Primitive Generators ----------------

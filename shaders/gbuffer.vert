@@ -45,6 +45,11 @@ out vec4 v_CurrClip;
 out vec4 v_PrevClip;
 out flat uint v_EntityID;
 
+// Phase 6: TBN Matrix and Tangent-Space Directions for POM
+out mat3 v_TBN;
+out vec3 v_TangentViewDir;
+out vec3 v_TangentSunDir;
+
 uniform uint u_BaseInstance; // Set per draw batch or via indirect command
 uniform mat4 u_PrevViewProjection;
 
@@ -62,6 +67,24 @@ void main() {
 
     v_CurrClip = u_ViewProjection * world_pos;
     v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * world_pos) : v_CurrClip;
+
+    // Phase 6: Compute TBN matrix from vertex tangent + normal
+    vec3 T = normalize(normal_matrix * in_tangent.xyz);
+    vec3 N = v_Normal;
+    // Re-orthogonalize T with respect to N (Gram-Schmidt)
+    T = normalize(T - dot(T, N) * N);
+    vec3 B = cross(N, T) * in_tangent.w; // Bitangent sign from tangent.w
+
+    v_TBN = mat3(T, B, N);
+
+    // Tangent-space view direction (from surface toward camera)
+    mat3 TBN_inv = transpose(v_TBN); // orthogonal => transpose == inverse
+    vec3 view_dir = u_CameraPos_Time.xyz - world_pos.xyz;
+    v_TangentViewDir = TBN_inv * view_dir;
+
+    // Tangent-space sun direction (toward the sun = -sun_dir)
+    vec3 sun_to_surface = -u_SunDirection_Intensity.xyz;
+    v_TangentSunDir = TBN_inv * sun_to_surface;
 
     gl_Position = v_CurrClip;
 }

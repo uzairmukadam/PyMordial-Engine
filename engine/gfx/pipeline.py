@@ -30,6 +30,8 @@ from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
 from engine.gfx.passes.fxaa_pass import FXAAPass
 from engine.gfx.passes.smaa_pass import SMAAPass
+from engine.gfx.texture_atlas import TextureArrayAtlas
+from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
 from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
@@ -81,6 +83,13 @@ class RenderPipeline:
         "resolve_vao",
         "gbuffer_vao",
         "csm_vao",
+        "texture_atlas",
+        "ssdm_pass",
+        "tess_mdi",
+        "gbuffer_tess_prog",
+        "gbuffer_tess_vao",
+        "csm_tess_prog",
+        "csm_tess_vao",
         "_view_mat",
         "_proj_mat",
         "_vp_mat",
@@ -200,6 +209,36 @@ class RenderPipeline:
         )
         self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
 
+        # Hardware Tessellation Programs & VAOs (mode=PATCHES)
+        gbuffer_tess_vert = _load_shader("gbuffer_tess.vert")
+        gbuffer_tess_tesc = _load_shader("gbuffer_tess.tesc")
+        gbuffer_tess_tese = _load_shader("gbuffer_tess.tese")
+        self.gbuffer_tess_prog = self.ctx.program(
+            vertex_shader=gbuffer_tess_vert,
+            tess_control_shader=gbuffer_tess_tesc,
+            tess_evaluation_shader=gbuffer_tess_tese,
+            fragment_shader=gbuffer_frag,
+        )
+        self.gbuffer_tess_vao = self.mega_buffer.get_vao(self.gbuffer_tess_prog, mode=self.ctx.PATCHES)
+
+        csm_tess_vert = _load_shader("csm_tess.vert")
+        csm_tess_tesc = _load_shader("csm_tess.tesc")
+        csm_tess_tese = _load_shader("csm_tess.tese")
+        self.csm_tess_prog = self.ctx.program(
+            vertex_shader=csm_tess_vert,
+            tess_control_shader=csm_tess_tesc,
+            tess_evaluation_shader=csm_tess_tese,
+            fragment_shader=csm_frag,
+        )
+        self.csm_tess_vao = self.mega_buffer.get_vao(self.csm_tess_prog, mode=self.ctx.PATCHES)
+        self.tess_mdi = MultiDrawIndirect(self.ctx)
+
+        # Texture Array Atlas for PBR Materials
+        self.texture_atlas = TextureArrayAtlas(self.ctx, width=2048, height=2048, max_layers=32)
+
+        # SSDM Post-G-Buffer Pass
+        self.ssdm_pass = SSDMPass(self.ctx, w, h)
+
         self.resolve_prog = self.ctx.program(
             vertex_shader=quad_vert,
             fragment_shader=resolve_frag,
@@ -300,6 +339,7 @@ class RenderPipeline:
         self._graph_context.height = height
 
         self.g_buffer.resize(width, height)
+        self.ssdm_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(width, height)
         self.ssr_pass.resize(width, height)
@@ -328,10 +368,23 @@ class RenderPipeline:
         self.resources.register_gpu_mesh(name, alloc)
         self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
         self.gbuffer_vao = self.mega_buffer.get_vao(self.gbuffer_prog)
+        self.gbuffer_tess_vao = self.mega_buffer.get_vao(self.gbuffer_tess_prog, mode=self.ctx.PATCHES)
+        self.csm_tess_vao = self.mega_buffer.get_vao(self.csm_tess_prog, mode=self.ctx.PATCHES)
         return alloc
 
     def load_cooked_texture(self, vpath: str) -> moderngl.Texture:
         return self.resources.load_gpu_texture(vpath, self.ctx)
+
+    def load_materials(
+        self,
+        textures_dir: str | Path = "assets/textures",
+        resolution: int = 4096,
+    ) -> dict[str, int]:
+        """Loads PBR material textures from folder into the texture array atlas."""
+        if self.texture_atlas.width != resolution or self.texture_atlas.height != resolution:
+            self.texture_atlas.destroy()
+            self.texture_atlas = TextureArrayAtlas(self.ctx, width=resolution, height=resolution, max_layers=32)
+        return self.texture_atlas.load_materials_from_folder(textures_dir)
 
     def render_frame(
         self,
@@ -342,7 +395,7 @@ class RenderPipeline:
         sun_dir: tuple[float, float, float] = (0.35, -0.85, 0.40),
         sun_lux: float = 4.0,
         fovy_deg: float = 60.0,
-        draw_batches: list[tuple[MeshAllocation | str, int, int]] | None = None,
+        draw_batches: list[tuple] | None = None,
         debug_draw: DebugDraw | None = None,
     ) -> None:
         """Executes full multi-pass high-fidelity deferred rendering pipeline."""
@@ -363,6 +416,7 @@ class RenderPipeline:
         self._cam_pos[2] = float(camera_pos[2])
 
         matrix_look_at(camera_pos, camera_target, up=(0.0, 1.0, 0.0), out=self._view_mat)
+
         matrix_perspective(
             math.radians(fovy_deg),
             aspect,
@@ -372,7 +426,6 @@ class RenderPipeline:
             out=self._proj_mat,
         )
 
-        # Sub-pixel projection jitter for TAA, SMAA 2x, SMAA 4x
         jitter_x, jitter_y = 0.0, 0.0
         aa_mode = getattr(self.config, "aa_mode", "TAA" if self.config.taa_enabled else "OFF")
         if aa_mode == "TAA":
@@ -396,7 +449,7 @@ class RenderPipeline:
         self._cam_fwd[1] = fy * inv_fwd_len
         self._cam_fwd[2] = fz * inv_fwd_len
 
-        # 3. Cascaded Shadow Maps Matrices
+        # 3. Calculate CSM Cascade Matrices
         self._sun_v[0] = float(sun_dir[0])
         self._sun_v[1] = float(sun_dir[1])
         self._sun_v[2] = float(sun_dir[2])
@@ -421,17 +474,27 @@ class RenderPipeline:
             fog_height_falloff=self.config.fog_height_falloff,
         )
 
-        # Prepare MDI batch commands
+        # Prepare MDI batch commands (standard and tessellated)
         self.mdi.begin_frame()
+        self.tess_mdi.begin_frame()
         if draw_batches is not None:
-            for mesh_item, count, base_inst in draw_batches:
+            for item in draw_batches:
+                if len(item) == 4:
+                    mesh_item, count, base_inst, is_tess = item
+                else:
+                    mesh_item, count, base_inst = item
+                    is_tess = False
+
                 if count > 0:
                     alloc = (
                         self.mega_buffer.allocations[mesh_item]
                         if isinstance(mesh_item, str)
                         else mesh_item
                     )
-                    self.mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+                    if is_tess:
+                        self.tess_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+                    else:
+                        self.mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
         else:
             self.mdi.add_command(self._cube_alloc, instance_count=1, base_instance=0)
             if active_count > 1:
@@ -458,12 +521,33 @@ class RenderPipeline:
             if self._csm_cascade_idx_uniform is not None:
                 self._csm_cascade_idx_uniform.value = c
             self.mdi.submit(self.csm_vao, self.csm_prog)
+            if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
+                self.ctx.patch_vertices = 3
+                if "u_CascadeIndex" in self.csm_tess_prog:
+                    self.csm_tess_prog["u_CascadeIndex"].value = c
+                self.tess_mdi.submit(self.csm_tess_vao, self.csm_tess_prog)
 
         # ---- PASS 2: G-Buffer Pass (Reversed-Z) ----
         self.g_buffer.clear()
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.depth_func = ">" if self.config.reverse_z else "<"
         self.ctx.enable(moderngl.CULL_FACE)
+
+        # Bind PBR texture array atlases to units 10..13
+        self.texture_atlas.bind(10, 11, 12, 13)
+
+        # Set POM uniforms on gbuffer_prog
+        if "u_POMEnabled" in self.gbuffer_prog:
+            self.gbuffer_prog["u_POMEnabled"].value = 1 if getattr(self.config, "pom_enabled", True) else 0
+        if "u_POMMinSamples" in self.gbuffer_prog:
+            self.gbuffer_prog["u_POMMinSamples"].value = getattr(self.config, "pom_min_samples", 8)
+        if "u_POMMaxSamples" in self.gbuffer_prog:
+            self.gbuffer_prog["u_POMMaxSamples"].value = getattr(self.config, "pom_max_samples", 64)
+        if "u_POMHeightScale" in self.gbuffer_prog:
+            self.gbuffer_prog["u_POMHeightScale"].value = getattr(self.config, "pom_height_scale", 0.08)
+        if "u_POMSelfShadow" in self.gbuffer_prog:
+            self.gbuffer_prog["u_POMSelfShadow"].value = 1 if getattr(self.config, "pom_self_shadow", True) else 0
+
         is_wireframe = getattr(self.config, "wireframe", False)
         if is_wireframe:
             self.ctx.wireframe = True
@@ -471,16 +555,42 @@ class RenderPipeline:
             if self._u_gbuffer_prev_vp is not None:
                 self._u_gbuffer_prev_vp.write(self._prev_vp_mat.tobytes())
             self.mdi.submit(self.gbuffer_vao, self.gbuffer_prog)
+
+            # Submit Hardware Tessellation batches (mode=PATCHES)
+            if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
+                self.ctx.patch_vertices = 3
+                if "u_TessEnabled" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_TessEnabled"].value = 1
+                if "u_TessMaxLevel" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_TessMaxLevel"].value = getattr(self.config, "tess_max_level", 16.0)
+                if "u_TessDistanceMin" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_TessDistanceMin"].value = getattr(self.config, "tess_distance_min", 2.0)
+                if "u_TessDistanceMax" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_TessDistanceMax"].value = getattr(self.config, "tess_distance_max", 30.0)
+                if "u_TessDisplacementScale" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_TessDisplacementScale"].value = getattr(self.config, "tess_displacement_scale", 0.10)
+                if "u_PrevViewProjection" in self.gbuffer_tess_prog:
+                    self.gbuffer_tess_prog["u_PrevViewProjection"].write(self._prev_vp_mat.tobytes())
+                self.tess_mdi.submit(self.gbuffer_tess_vao, self.gbuffer_tess_prog)
         finally:
             if is_wireframe:
                 self.ctx.wireframe = False
+
+        # ---- PASS 2.5: Screen-Space Displacement Mapping (SSDM) ----
+        if getattr(self.config, "ssdm_enabled", True):
+            self.ssdm_pass.execute(
+                ctx=ctx,
+                g_buffer=self.g_buffer,
+                displacement_array=self.texture_atlas.displacement_array,
+                enabled=self.config.ssdm_enabled,
+                scale=getattr(self.config, "ssdm_scale", 0.05),
+                max_distance=getattr(self.config, "ssdm_max_distance", 30.0),
+            )
 
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
         self.ao_pass.execute(ctx)
 
         # ---- PASS 4: Clustered Dynamic Local Lights (SSBO 3) ----
-        self.lights_pass.execute(ctx)
-
         # ---- PASS 5: Global Illumination (SSGI + LPV) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssgi_pass.execute(ctx)
@@ -637,4 +747,11 @@ class RenderPipeline:
         self.resolve_prog.release()
         self.gbuffer_vao.release()
         self.csm_vao.release()
+        self.texture_atlas.destroy()
+        self.ssdm_pass.destroy()
+        self.tess_mdi.destroy()
+        self.gbuffer_tess_prog.release()
+        self.gbuffer_tess_vao.release()
+        self.csm_tess_prog.release()
+        self.csm_tess_vao.release()
         self.resolve_vao.release()

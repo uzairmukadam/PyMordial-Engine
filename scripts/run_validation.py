@@ -52,6 +52,10 @@ from engine.gfx import (  # noqa: E402
     GIMode,
     get_quality_preset,
 )
+from engine.gfx.texture_atlas import (  # noqa: E402
+    DisplacementMode,
+    encode_mat_flags,
+)
 from engine.gfx.mega_buffer import MeshAllocation  # noqa: E402
 from engine.debug import (  # noqa: E402
     SystemMonitor,
@@ -291,7 +295,7 @@ def main() -> None:
         "--camera",
         type=str,
         default="follow",
-        choices=["follow", "free", "cinematic", "inspection", "courtyard"],
+        choices=["follow", "free", "cinematic", "inspection", "microgeom", "courtyard"],
         help="Initial active camera viewpoint (default: follow)",
     )
     args = parser.parse_args()
@@ -367,12 +371,11 @@ def main() -> None:
         screen_width=width,
         screen_height=height,
     )
-    if args.debug_menu:
+    if args.debug_menu and not args.headless:
         debug_menu.show_graphics = True
         debug_menu.f1_style = 1
-        if not args.headless:
-            input_mgr.set_mouse_grab(False)
-            input_mgr._was_mouse_grabbed = False
+        input_mgr.set_mouse_grab(False)
+        input_mgr._was_mouse_grabbed = False
 
     toast.show("Press [F1] or [F2] for Graphics Options | [F9] Mouse Grab", duration=6.0, color=(56, 189, 248))
 
@@ -409,6 +412,14 @@ def main() -> None:
     # 4. Load Cooked 32-Byte .pm_mesh Directly from .pak into GPU MegaBuffer
     alloc_monolith = pipeline.load_cooked_mesh("monolith", "models/monolith.pm_mesh")
     cooked_mesh = pipeline.resources.load_mesh("models/monolith.pm_mesh")
+
+    # 4.5 Load 4K Poly Haven PBR Material Texture Arrays for Micro-Geometry Showcase
+    mat_layers: dict[str, int] = {}
+    textures_dir = ROOT_DIR / "assets" / "textures"
+    if textures_dir.is_dir():
+        print("Loading 4K PBR material texture arrays...")
+        mat_layers = pipeline.load_materials(textures_dir, resolution=4096)
+        print(f"Loaded {len(mat_layers)} material layers into GPU texture array atlas.")
 
     # 5. Construct PyMordial Architecture & Material Testbed (PAMT) Scene
     cube_ids: list[int] = []
@@ -493,16 +504,32 @@ def main() -> None:
         cube_ids.append(ped)
         step_boxes.append(((14.0, 0.45, pz), (1.0, 0.90, 1.0)))
 
-    # 3 Advanced Feature Exhibition Slabs (POM, SSDM, Decals)
+    # 3 Advanced Feature Exhibition Slabs (POM, SSDM, Hardware Tessellation)
     slab_pom = spawn_static_box(ecs, physics, (17.5, 0.60, -17.0), (2.0, 1.20, 2.0), color=(0.55, 0.50, 0.45), roughness=0.4, metallic=0.1)
     slab_ssdm = spawn_static_box(ecs, physics, (17.5, 0.60, -11.0), (2.0, 1.20, 2.0), color=(0.45, 0.50, 0.55), roughness=0.4, metallic=0.1)
-    slab_decal = spawn_static_box(ecs, physics, (17.5, 1.25, -5.0), (0.4, 2.50, 3.0), color=(0.60, 0.60, 0.60), roughness=0.7, metallic=0.05)
-    cube_ids.extend([slab_pom, slab_ssdm, slab_decal])
+    slab_tess = spawn_static_box(ecs, physics, (17.5, 0.60, -5.0), (2.0, 1.20, 2.0), color=(0.60, 0.60, 0.60), roughness=0.7, metallic=0.05)
+    cube_ids.extend([slab_pom, slab_ssdm, slab_tess])
     step_boxes.extend([
         ((17.5, 0.60, -17.0), (2.0, 1.20, 2.0)),
         ((17.5, 0.60, -11.0), (2.0, 1.20, 2.0)),
-        ((17.5, 1.25, -5.0), (0.4, 2.50, 3.0)),
+        ((17.5, 0.60, -5.0), (2.0, 1.20, 2.0)),
     ])
+
+    # Assign Poly Haven PBR Materials & Mutually Exclusive Displacement Modes to Slabs
+    d_pom = ecs.pool.get_dense_index(slab_pom)
+    l_pom = mat_layers.get("castle_brick_02_red", 0)
+    ecs.material_data[d_pom, 6] = float(l_pom)
+    ecs.material_data[d_pom, 7] = encode_mat_flags(l_pom > 0, DisplacementMode.POM)
+
+    d_ssdm = ecs.pool.get_dense_index(slab_ssdm)
+    l_ssdm = mat_layers.get("mud_cracked_dry_03", 0)
+    ecs.material_data[d_ssdm, 6] = float(l_ssdm)
+    ecs.material_data[d_ssdm, 7] = encode_mat_flags(l_ssdm > 0, DisplacementMode.SSDM)
+
+    d_tess = ecs.pool.get_dense_index(slab_tess)
+    l_tess = mat_layers.get("clay_roof_tiles_02", 0)
+    ecs.material_data[d_tess, 6] = float(l_tess)
+    ecs.material_data[d_tess, 7] = encode_mat_flags(l_tess > 0, DisplacementMode.TESSELLATION)
 
     # F. West Wing — Gameplay Parkour & Obstacle Zone
     pk_floor = spawn_static_box(ecs, physics, (-14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1)
@@ -547,14 +574,14 @@ def main() -> None:
     # H. Monolith Columns: 8 Colonnade Pillars + 1 Golden Altar Relic Monolith
     monolith_ids: list[int] = []
     colonnade_positions = [
-        (-4.5, 0.05, -2.0),
-        (4.5, 0.05, -2.0),
-        (-4.5, 0.05, -8.0),
-        (4.5, 0.05, -8.0),
-        (-4.5, 0.05, -14.0),
-        (4.5, 0.05, -14.0),
-        (-4.5, 0.05, -20.0),
-        (4.5, 0.05, -20.0),
+        (-4.5, 0.0, -2.0),
+        (4.5, 0.0, -2.0),
+        (-4.5, 0.0, -8.0),
+        (4.5, 0.0, -8.0),
+        (-4.5, 0.0, -14.0),
+        (4.5, 0.0, -14.0),
+        (-4.5, 0.0, -20.0),
+        (4.5, 0.0, -20.0),
     ]
     for pos in colonnade_positions:
         ent = ecs.create_entity(
@@ -564,7 +591,7 @@ def main() -> None:
             roughness=0.32,
             metallic=0.18,
         )
-        physics.create_body(ent, body_type="fixed", position=(pos[0], pos[1] + 2.1, pos[2]))
+        physics.create_body(ent, body_type="fixed", position=pos)
         physics.attach_box_collider(ent, half_x=0.8, half_y=2.1, half_z=0.8)
         monolith_ids.append(ent)
 
@@ -577,7 +604,7 @@ def main() -> None:
         roughness=0.18,
         metallic=0.75,
     )
-    physics.create_body(altar_ent, body_type="fixed", position=(altar_pos[0], altar_pos[1] + 2.1, altar_pos[2]))
+    physics.create_body(altar_ent, body_type="fixed", position=altar_pos)
     physics.attach_box_collider(altar_ent, half_x=0.8, half_y=2.1, half_z=0.8)
     monolith_ids.append(altar_ent)
     monolith_positions = colonnade_positions + [altar_pos]
@@ -607,16 +634,17 @@ def main() -> None:
 
     # J. Fixed Calibrated Material Gallery Inspection Spheres (7 Spheres atop Pedestals)
     gallery_sphere_ids: list[int] = []
-    GALLERY_MATERIALS = [
-        ((0.95, 0.78, 0.25), 0.12, 0.95),  # 1. Polished Gold
-        ((0.92, 0.94, 0.96), 0.05, 0.98),  # 2. Chrome / Mirror
-        ((0.92, 0.55, 0.35), 0.32, 0.90),  # 3. Brushed Copper
-        ((0.88, 0.08, 0.12), 0.15, 0.05),  # 4. Glossy Ruby
-        ((0.12, 0.40, 0.92), 0.22, 0.10),  # 5. Cobalt Glass
-        ((0.15, 0.75, 0.35), 0.55, 0.00),  # 6. Matte Emerald
-        ((0.85, 0.85, 0.85), 0.95, 0.00),  # 7. Chalk / Plaster
+    GALLERY_PBR_SPECS = [
+        # (material_name, displacement_mode, fallback_rgb, fallback_rough, fallback_metal)
+        ("castle_brick_02_red", DisplacementMode.POM, (0.85, 0.45, 0.35), 0.65, 0.05),
+        ("clay_roof_tiles_02", DisplacementMode.TESSELLATION, (0.80, 0.40, 0.25), 0.55, 0.05),
+        ("mud_cracked_dry_03", DisplacementMode.SSDM, (0.65, 0.55, 0.42), 0.85, 0.02),
+        ("floor_pattern_02", DisplacementMode.POM, (0.75, 0.70, 0.65), 0.35, 0.10),
+        ("metal_grate_rusty", DisplacementMode.TESSELLATION, (0.45, 0.45, 0.48), 0.40, 0.85),
+        ("ribbed_corduroy", DisplacementMode.SSDM, (0.35, 0.45, 0.65), 0.75, 0.02),
+        ("concrete_floor_worn_02", DisplacementMode.NONE, (0.60, 0.60, 0.62), 0.70, 0.05),
     ]
-    for pz, (mat_col, mat_rough, mat_metal) in zip(pedestal_z, GALLERY_MATERIALS):
+    for pz, (mat_name, disp_mode, mat_col, mat_rough, mat_metal) in zip(pedestal_z, GALLERY_PBR_SPECS):
         s_pos = (14.0, 1.35, pz)
         s_radius = 0.45
         sph_ent = ecs.create_entity(
@@ -629,6 +657,12 @@ def main() -> None:
         physics.create_body(sph_ent, body_type="fixed", position=s_pos)
         physics.attach_sphere_collider(sph_ent, radius=s_radius)
         gallery_sphere_ids.append(sph_ent)
+
+        # Set texture array layer and material flags
+        d_idx = ecs.pool.get_dense_index(sph_ent)
+        layer_idx = mat_layers.get(mat_name, 0)
+        ecs.material_data[d_idx, 6] = float(layer_idx)
+        ecs.material_data[d_idx, 7] = encode_mat_flags(layer_idx > 0, disp_mode)
 
     # K. Dynamic PBR Physics Spheres Cluster
     PBR_PALETTE = [
@@ -699,13 +733,21 @@ def main() -> None:
     )
     camera_mgr.register_camera("cinematic", cinematic_cam)
 
-    # 4. Material Gallery Inspection Camera (Close-up of calibrated spheres)
+    # 4. Material Gallery Inspection Camera (Showcases PBR spheres & displacement slabs)
     inspection_cam = VirtualCamera(
-        position=(18.5, 2.2, -11.0),
-        target=(14.0, 1.35, -11.0),
+        position=(11.5, 2.8, 1.5),
+        target=(15.5, 1.4, -9.0),
         fov=65.0,
     )
     camera_mgr.register_camera("inspection", inspection_cam)
+
+    # 4b. Micro-Geometry Closeup Camera (Direct view of POM, SSDM, and Tessellation spheres & slabs)
+    microgeom_cam = VirtualCamera(
+        position=(16.8, 1.9, -12.5),
+        target=(14.0, 1.35, -12.5),
+        fov=55.0,
+    )
+    camera_mgr.register_camera("microgeom", microgeom_cam)
 
     # 5. Courtyard High Overview Camera (Bird's eye view of full testbed)
     courtyard_cam = VirtualCamera(
@@ -807,7 +849,7 @@ def main() -> None:
     walk_spd_tweak = game_tweaks.add_float("Character", "Walk Speed", default=6.0, min_val=2.0, max_val=15.0, step=0.5)
     run_spd_tweak = game_tweaks.add_float("Character", "Sprint Speed", default=11.5, min_val=5.0, max_val=25.0, step=1.0)
     jump_force_tweak = game_tweaks.add_float("Character", "Jump Force", default=8.5, min_val=4.0, max_val=20.0, step=0.5)
-    invert_pitch_tweak = game_tweaks.add_bool("Controls", "Invert Look Y", default=False)
+    invert_pitch_tweak = game_tweaks.add_bool("Controls", "Invert Look Y", default=True)
     cam_sens_tweak = game_tweaks.add_float("Controls", "Camera Sensitivity", default=1.0, min_val=0.2, max_val=3.0, step=0.1)
     sphere_batch_tweak = game_tweaks.add_int("Physics", "Batch Spawn Count", default=8, min_val=1, max_val=32)
 
@@ -823,6 +865,16 @@ def main() -> None:
     game_tweaks.add_float("Shadows", "Align X", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_x", v))
     game_tweaks.add_float("Shadows", "Align Y", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_y", v))
     game_tweaks.add_float("Shadows", "Normal Bias", default=0.0010, min_val=0.0, max_val=0.0050, step=0.0001, on_changed=lambda v: setattr(engine_tweaks, "shadow_normal_bias", v))
+
+    # Phase 6: Micro-Geometry Tweaks (POM, SSDM, Hardware Tessellation)
+    game_tweaks.add_bool("MicroGeometry", "POM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_enabled", v))
+    game_tweaks.add_float("MicroGeometry", "POM Height Scale", default=0.08, min_val=0.01, max_val=0.25, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "pom_height_scale", v))
+    game_tweaks.add_bool("MicroGeometry", "POM Self-Shadow", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_self_shadow", v))
+    game_tweaks.add_bool("MicroGeometry", "GPU Tessellation", default=True, on_changed=lambda v: setattr(engine_tweaks, "tess_enabled", v))
+    game_tweaks.add_float("MicroGeometry", "Max Tess Level", default=16.0, min_val=1.0, max_val=32.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_max_level", v))
+    game_tweaks.add_float("MicroGeometry", "Tess Disp Scale", default=0.10, min_val=0.01, max_val=0.30, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "tess_displacement_scale", v))
+    game_tweaks.add_bool("MicroGeometry", "SSDM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "ssdm_enabled", v))
+    game_tweaks.add_float("MicroGeometry", "SSDM Scale", default=0.05, min_val=0.01, max_val=0.20, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "ssdm_scale", v))
 
     def trigger_reset_camera() -> None:
         cam.yaw_deg = 0.0
@@ -899,12 +951,35 @@ def main() -> None:
     total_spheres = len(gallery_sphere_ids) + len(dynamic_sphere_ids)
 
     # Zero-allocation MDI batch list: cubes, monoliths, character capsule, all spheres
-    draw_batches: list[tuple[MeshAllocation, int, int]] = [
-        (alloc_cube, num_cubes, 0),
-        (alloc_monolith, num_monoliths, num_cubes),
-        (alloc_capsule, 1, num_cubes + num_monoliths),
-        (alloc_sphere, total_spheres, num_cubes + num_monoliths + 1),
-    ]
+    # Tag tessellated commands with is_tess=True (4th tuple element)
+    sph_base = num_cubes + num_monoliths + 1
+    d_tess = ecs.pool.get_dense_index(slab_tess)
+
+    draw_batches: list[tuple[MeshAllocation, int, int, bool]] = []
+    if d_tess > 0:
+        draw_batches.append((alloc_cube, d_tess, 0, False))
+    # Hardware Tessellated Exhibition Slab
+    draw_batches.append((alloc_cube, 1, d_tess, True))
+    cubes_after = num_cubes - d_tess - 1
+    if cubes_after > 0:
+        draw_batches.append((alloc_cube, cubes_after, d_tess + 1, False))
+
+    # Monoliths & Character Capsule (Standard TRIANGLES)
+    draw_batches.append((alloc_monolith, num_monoliths, num_cubes, False))
+    draw_batches.append((alloc_capsule, 1, num_cubes + num_monoliths, False))
+
+    # Gallery Spheres (Mutually Exclusive Micro-Geometry Showcase)
+    # Sphere 0: POM
+    draw_batches.append((alloc_sphere, 1, sph_base + 0, False))
+    # Sphere 1: Hardware Tessellation
+    draw_batches.append((alloc_sphere, 1, sph_base + 1, True))
+    # Spheres 2..3: SSDM & POM
+    draw_batches.append((alloc_sphere, 2, sph_base + 2, False))
+    # Sphere 4: Hardware Tessellation
+    draw_batches.append((alloc_sphere, 1, sph_base + 4, True))
+    # Spheres 5..total: SSDM, None, and Dynamic physics spheres
+    sph_count_rest = max(0, total_spheres - 5)
+    draw_batches.append((alloc_sphere, sph_count_rest, sph_base + 5, False))
 
     # Simulation State
 
@@ -1105,7 +1180,8 @@ def main() -> None:
 
                 dx, dy = input_mgr.mouse_delta
                 if dx != 0 or dy != 0:
-                    cam.handle_mouse_orbit(dx, dy)
+                    orbit_pitch_mult = -1.0 if invert_pitch_tweak.value else 1.0
+                    cam.handle_mouse_orbit(dx, dy * orbit_pitch_mult)
 
                 if input_mgr.mouse_wheel != 0.0:
                     cam.handle_zoom(input_mgr.mouse_wheel)
@@ -1172,6 +1248,17 @@ def main() -> None:
         pipeline.config.taa_feedback = getattr(engine_tweaks, "taa_feedback", 0.92)
         pipeline.config.taa_sharpness = getattr(engine_tweaks, "taa_sharpness", 0.35)
         pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
+
+        # Micro-Geometry (POM, SSDM, Hardware Tessellation)
+        pipeline.config.pom_enabled = engine_tweaks.pom_enabled
+        pipeline.config.pom_height_scale = engine_tweaks.pom_height_scale
+        pipeline.config.pom_self_shadow = engine_tweaks.pom_self_shadow
+        pipeline.config.tess_enabled = engine_tweaks.tess_enabled
+        pipeline.config.tess_max_level = engine_tweaks.tess_max_level
+        pipeline.config.tess_displacement_scale = engine_tweaks.tess_displacement_scale
+        pipeline.config.ssdm_enabled = engine_tweaks.ssdm_enabled
+        pipeline.config.ssdm_scale = engine_tweaks.ssdm_scale
+
         wireframe_tweak.value = engine_tweaks.show_wireframe
         physics_wire_tweak.value = engine_tweaks.show_physics_colliders
 
@@ -1301,8 +1388,9 @@ def main() -> None:
 
         # Dynamic Sphere Batch Count Update
         total_spheres = len(gallery_sphere_ids) + len(dynamic_sphere_ids)
-        if draw_batches[3][1] != total_spheres:
-            draw_batches[3] = (alloc_sphere, total_spheres, num_cubes + num_monoliths + 1)
+        sph_count_rest = max(0, total_spheres - 5)
+        if draw_batches[-1][1] != sph_count_rest:
+            draw_batches[-1] = (alloc_sphere, sph_count_rest, sph_base + 5, False)
 
         # Update Clustered Dynamic Local Lights (SSBO 3)
         pipeline.clear_point_lights()

@@ -5,7 +5,15 @@ import moderngl
 
 
 class GBuffer:
-    """Manages the Multi-Render-Target (MRT) G-Buffer Framebuffer."""
+    """Manages the Multi-Render-Target (MRT) G-Buffer Framebuffer.
+
+    Attachments:
+    - RT0: Albedo (RGB) + Roughness (A) (RGBA8)
+    - RT1: Octahedral Normal (RG) + Metallic (B) + AO (A) (RGBA16F)
+    - RT2: Velocity Vectors (RG16F)
+    - RT3: Displacement Info (RG16F) -> R=TextureLayerIndex, G=DisplacementMode
+    - Depth: 32-bit Floating Point Depth (Reversed-Z)
+    """
 
     __slots__ = (
         "ctx",
@@ -15,6 +23,7 @@ class GBuffer:
         "rt_albedo_roughness",
         "rt_normal_metallic",
         "rt_velocity",
+        "rt_displacement",
         "depth_texture",
         "fbo",
     )
@@ -30,6 +39,10 @@ class GBuffer:
     @property
     def velocity_texture(self) -> moderngl.Texture:
         return self.rt_velocity
+
+    @property
+    def displacement_texture(self) -> moderngl.Texture:
+        return self.rt_displacement
 
     def __init__(
         self,
@@ -64,9 +77,14 @@ class GBuffer:
         )
         self.rt_velocity.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
+        # RT3: Displacement Info (RGBA16F) -> RG=Mesh UV, B=TexLayerIndex, A=DisplacementMode
+        self.rt_displacement = self.ctx.texture(
+            (self.width, self.height), 4, dtype="f2"
+        )
+        self.rt_displacement.filter = (moderngl.NEAREST, moderngl.NEAREST)
+
         # Depth: 32-bit Floating Point Depth (Reversed-Z)
         self.depth_texture = self.ctx.depth_texture((self.width, self.height))
-        # Ensure nearest filtering and clamp to edge
         self.depth_texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
         self.depth_texture.repeat_x = False
         self.depth_texture.repeat_y = False
@@ -76,6 +94,7 @@ class GBuffer:
                 self.rt_albedo_roughness,
                 self.rt_normal_metallic,
                 self.rt_velocity,
+                self.rt_displacement,
             ],
             depth_attachment=self.depth_texture,
         )
@@ -93,7 +112,6 @@ class GBuffer:
     def clear(self) -> None:
         """Clears G-Buffer attachments. In Reversed-Z, depth is cleared to 0.0."""
         self.fbo.use()
-        # In Reversed-Z, clear depth to 0.0 (infinity/sky)
         clear_depth = 0.0 if self.reverse_z else 1.0
         self.fbo.clear(0.0, 0.0, 0.0, 0.0, depth=clear_depth)
 
@@ -107,5 +125,6 @@ class GBuffer:
         self.rt_albedo_roughness.release()
         self.rt_normal_metallic.release()
         self.rt_velocity.release()
+        self.rt_displacement.release()
         self.depth_texture.release()
         self.fbo.release()
