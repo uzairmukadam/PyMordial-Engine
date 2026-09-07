@@ -94,6 +94,9 @@ class TestTextureArrayAtlas:
             assert atlas.normal_array is not None
             assert atlas.displacement_array is not None
             assert atlas.arm_array is not None
+            assert hasattr(atlas, "material_depths")
+            assert len(atlas.material_depths) == 4
+            assert atlas.material_depths[0] == 0.0
         finally:
             atlas.destroy()
 
@@ -142,7 +145,10 @@ class TestQualityPresetsMicroGeometry:
             assert hasattr(cfg, "ssdm_scale")
             assert hasattr(cfg, "tess_enabled")
             assert hasattr(cfg, "tess_max_level")
+            assert hasattr(cfg, "tess_med_level")
             assert hasattr(cfg, "tess_displacement_scale")
+            assert hasattr(cfg, "disp_near_radius")
+            assert hasattr(cfg, "disp_mid_radius")
 
     def test_low_preset_disables_heavy_microgeometry(self):
         cfg = get_quality_preset(GraphicsQuality.LOW)

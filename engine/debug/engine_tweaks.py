@@ -76,9 +76,13 @@ class EngineTweaks:
         "pom_enabled",
         "pom_height_scale",
         "pom_self_shadow",
+        "disp_near_radius",
+        "disp_mid_radius",
         "tess_enabled",
         "tess_max_level",
+        "tess_med_level",
         "tess_displacement_scale",
+        "frustum_cull_enabled",
         "ssdm_enabled",
         "ssdm_scale",
         "vsync_enabled",
@@ -106,15 +110,19 @@ class EngineTweaks:
 
         # Phase 6: Micro-Geometry Displacement Controls
         self.pom_enabled = True
-        self.pom_height_scale = 0.08
+        self.pom_height_scale = 1.0
         self.pom_self_shadow = True
 
+        self.disp_near_radius = 8.0
+        self.disp_mid_radius = 25.0
         self.tess_enabled = True
-        self.tess_max_level = 16.0
-        self.tess_displacement_scale = 0.10
+        self.tess_max_level = 24.0
+        self.tess_med_level = 8.0
+        self.tess_displacement_scale = 1.0
+        self.frustum_cull_enabled = True
 
         self.ssdm_enabled = True
-        self.ssdm_scale = 0.05
+        self.ssdm_scale = 1.0
 
         # Shadow Settings (AAA Default: 4096 Atlas, PCSS, zero delta offset)
         self.shadow_resolution = 4096

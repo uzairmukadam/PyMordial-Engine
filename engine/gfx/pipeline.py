@@ -118,6 +118,29 @@ class RenderPipeline:
         "_u_point_light_count",
         "_u_lpv_min",
         "_u_lpv_size",
+        "_u_gbuffer_pom_enabled",
+        "_u_gbuffer_pom_min_samples",
+        "_u_gbuffer_pom_max_samples",
+        "_u_gbuffer_pom_height_scale",
+        "_u_gbuffer_pom_scale_mult",
+        "_u_gbuffer_pom_self_shadow",
+        "_u_gbuffer_disp_near_radius",
+        "_u_gbuffer_disp_mid_radius",
+        "_u_tess_enabled",
+        "_u_tess_frustum_cull",
+        "_u_tess_near_radius",
+        "_u_tess_mid_radius",
+        "_u_tess_max_level",
+        "_u_tess_med_level",
+        "_u_tess_disp_scale",
+        "_u_tess_pom_scale_mult",
+        "_u_tess_prev_vp",
+        "_u_csm_tess_cascade_idx",
+        "_u_csm_tess_near_radius",
+        "_u_csm_tess_mid_radius",
+        "_u_csm_tess_max_level",
+        "_u_csm_tess_med_level",
+        "_u_csm_tess_disp_scale",
         "_graph_context",
     )
 
@@ -285,6 +308,33 @@ class RenderPipeline:
         self._u_point_light_count = self.resolve_prog.get("u_PointLightCount", None)
         self._u_lpv_min = self.resolve_prog.get("u_LPV_Min", None)
         self._u_lpv_size = self.resolve_prog.get("u_LPV_Size", None)
+
+        # Pre-cache POM and micro-geometry uniform handles
+        self._u_gbuffer_pom_enabled = self.gbuffer_prog.get("u_POMEnabled", None)
+        self._u_gbuffer_pom_min_samples = self.gbuffer_prog.get("u_POMMinSamples", None)
+        self._u_gbuffer_pom_max_samples = self.gbuffer_prog.get("u_POMMaxSamples", None)
+        self._u_gbuffer_pom_height_scale = self.gbuffer_prog.get("u_POMHeightScale", None)
+        self._u_gbuffer_pom_scale_mult = self.gbuffer_prog.get("u_POMScaleMultiplier", None)
+        self._u_gbuffer_pom_self_shadow = self.gbuffer_prog.get("u_POMSelfShadow", None)
+        self._u_gbuffer_disp_near_radius = self.gbuffer_prog.get("u_DispNearRadius", None)
+        self._u_gbuffer_disp_mid_radius = self.gbuffer_prog.get("u_DispMidRadius", None)
+
+        self._u_tess_enabled = self.gbuffer_tess_prog.get("u_TessEnabled", None)
+        self._u_tess_frustum_cull = self.gbuffer_tess_prog.get("u_FrustumCullEnabled", None)
+        self._u_tess_near_radius = self.gbuffer_tess_prog.get("u_DispNearRadius", None)
+        self._u_tess_mid_radius = self.gbuffer_tess_prog.get("u_DispMidRadius", None)
+        self._u_tess_max_level = self.gbuffer_tess_prog.get("u_TessMaxLevel", None)
+        self._u_tess_med_level = self.gbuffer_tess_prog.get("u_TessMedLevel", None)
+        self._u_tess_disp_scale = self.gbuffer_tess_prog.get("u_TessDisplacementScale", None)
+        self._u_tess_pom_scale_mult = self.gbuffer_tess_prog.get("u_POMScaleMultiplier", None)
+        self._u_tess_prev_vp = self.gbuffer_tess_prog.get("u_PrevViewProjection", None)
+
+        self._u_csm_tess_cascade_idx = self.csm_tess_prog.get("u_CascadeIndex", None)
+        self._u_csm_tess_near_radius = self.csm_tess_prog.get("u_DispNearRadius", None)
+        self._u_csm_tess_mid_radius = self.csm_tess_prog.get("u_DispMidRadius", None)
+        self._u_csm_tess_max_level = self.csm_tess_prog.get("u_TessMaxLevel", None)
+        self._u_csm_tess_med_level = self.csm_tess_prog.get("u_TessMedLevel", None)
+        self._u_csm_tess_disp_scale = self.csm_tess_prog.get("u_TessDisplacementScale", None)
 
         # 8. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
@@ -517,6 +567,9 @@ class RenderPipeline:
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.CULL_FACE)
 
+        # Bind PBR texture array atlases to units 10..13 (essential for csm_tess_prog displacement sampling)
+        self.texture_atlas.bind(10, 11, 12, 13)
+
         for c in range(self.config.csm_cascades):
             self.csm.begin_cascade(c)
             if self._csm_cascade_idx_uniform is not None:
@@ -524,8 +577,19 @@ class RenderPipeline:
             self.mdi.submit(self.csm_vao, self.csm_prog)
             if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
                 self.ctx.patch_vertices = 3
-                if "u_CascadeIndex" in self.csm_tess_prog:
-                    self.csm_tess_prog["u_CascadeIndex"].value = c
+                if self._u_csm_tess_cascade_idx is not None:
+                    self._u_csm_tess_cascade_idx.value = c
+                if self._u_csm_tess_near_radius is not None:
+                    self._u_csm_tess_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+                if self._u_csm_tess_mid_radius is not None:
+                    self._u_csm_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+                if self._u_csm_tess_max_level is not None:
+                    self._u_csm_tess_max_level.value = getattr(self.config, "tess_max_level", 24.0)
+                if self._u_csm_tess_med_level is not None:
+                    self._u_csm_tess_med_level.value = getattr(self.config, "tess_med_level", 8.0)
+                if self._u_csm_tess_disp_scale is not None:
+                    self._u_csm_tess_disp_scale.value = getattr(self.config, "tess_displacement_scale", 1.0)
+                self.texture_atlas.upload_depths(self.csm_tess_prog)
                 self.tess_mdi.submit(self.csm_tess_vao, self.csm_tess_prog)
 
         # ---- PASS 2: G-Buffer Pass (Reversed-Z) ----
@@ -537,17 +601,24 @@ class RenderPipeline:
         # Bind PBR texture array atlases to units 10..13
         self.texture_atlas.bind(10, 11, 12, 13)
 
-        # Set POM uniforms on gbuffer_prog
-        if "u_POMEnabled" in self.gbuffer_prog:
-            self.gbuffer_prog["u_POMEnabled"].value = 1 if getattr(self.config, "pom_enabled", True) else 0
-        if "u_POMMinSamples" in self.gbuffer_prog:
-            self.gbuffer_prog["u_POMMinSamples"].value = getattr(self.config, "pom_min_samples", 8)
-        if "u_POMMaxSamples" in self.gbuffer_prog:
-            self.gbuffer_prog["u_POMMaxSamples"].value = getattr(self.config, "pom_max_samples", 64)
-        if "u_POMHeightScale" in self.gbuffer_prog:
-            self.gbuffer_prog["u_POMHeightScale"].value = getattr(self.config, "pom_height_scale", 0.08)
-        if "u_POMSelfShadow" in self.gbuffer_prog:
-            self.gbuffer_prog["u_POMSelfShadow"].value = 1 if getattr(self.config, "pom_self_shadow", True) else 0
+        # Set POM and Radius uniforms on gbuffer_prog
+        if self._u_gbuffer_pom_enabled is not None:
+            self._u_gbuffer_pom_enabled.value = 1 if getattr(self.config, "pom_enabled", True) else 0
+        if self._u_gbuffer_pom_min_samples is not None:
+            self._u_gbuffer_pom_min_samples.value = getattr(self.config, "pom_min_samples", 8)
+        if self._u_gbuffer_pom_max_samples is not None:
+            self._u_gbuffer_pom_max_samples.value = getattr(self.config, "pom_max_samples", 64)
+        if self._u_gbuffer_pom_height_scale is not None:
+            self._u_gbuffer_pom_height_scale.value = getattr(self.config, "pom_height_scale", 1.0)
+        if self._u_gbuffer_pom_scale_mult is not None:
+            self._u_gbuffer_pom_scale_mult.value = getattr(self.config, "pom_height_scale", 1.0)
+        if self._u_gbuffer_pom_self_shadow is not None:
+            self._u_gbuffer_pom_self_shadow.value = 1 if getattr(self.config, "pom_self_shadow", True) else 0
+        if self._u_gbuffer_disp_near_radius is not None:
+            self._u_gbuffer_disp_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+        if self._u_gbuffer_disp_mid_radius is not None:
+            self._u_gbuffer_disp_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+        self.texture_atlas.upload_depths(self.gbuffer_prog)
 
         is_wireframe = getattr(self.config, "wireframe", False)
         if is_wireframe:
@@ -560,18 +631,25 @@ class RenderPipeline:
             # Submit Hardware Tessellation batches (mode=PATCHES)
             if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
                 self.ctx.patch_vertices = 3
-                if "u_TessEnabled" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_TessEnabled"].value = 1
-                if "u_TessMaxLevel" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_TessMaxLevel"].value = getattr(self.config, "tess_max_level", 16.0)
-                if "u_TessDistanceMin" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_TessDistanceMin"].value = getattr(self.config, "tess_distance_min", 2.0)
-                if "u_TessDistanceMax" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_TessDistanceMax"].value = getattr(self.config, "tess_distance_max", 30.0)
-                if "u_TessDisplacementScale" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_TessDisplacementScale"].value = getattr(self.config, "tess_displacement_scale", 0.10)
-                if "u_PrevViewProjection" in self.gbuffer_tess_prog:
-                    self.gbuffer_tess_prog["u_PrevViewProjection"].write(self._prev_vp_mat.tobytes())
+                if self._u_tess_enabled is not None:
+                    self._u_tess_enabled.value = 1
+                if self._u_tess_frustum_cull is not None:
+                    self._u_tess_frustum_cull.value = 1 if getattr(self.config, "frustum_cull_enabled", True) else 0
+                if self._u_tess_near_radius is not None:
+                    self._u_tess_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+                if self._u_tess_mid_radius is not None:
+                    self._u_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+                if self._u_tess_max_level is not None:
+                    self._u_tess_max_level.value = getattr(self.config, "tess_max_level", 24.0)
+                if self._u_tess_med_level is not None:
+                    self._u_tess_med_level.value = getattr(self.config, "tess_med_level", 8.0)
+                if self._u_tess_disp_scale is not None:
+                    self._u_tess_disp_scale.value = getattr(self.config, "tess_displacement_scale", 1.0)
+                if self._u_tess_pom_scale_mult is not None:
+                    self._u_tess_pom_scale_mult.value = getattr(self.config, "pom_height_scale", 1.0)
+                self.texture_atlas.upload_depths(self.gbuffer_tess_prog)
+                if self._u_tess_prev_vp is not None:
+                    self._u_tess_prev_vp.write(self._prev_vp_mat.tobytes())
                 self.tess_mdi.submit(self.gbuffer_tess_vao, self.gbuffer_tess_prog)
         finally:
             if is_wireframe:
@@ -584,8 +662,10 @@ class RenderPipeline:
                 g_buffer=self.g_buffer,
                 displacement_array=self.texture_atlas.displacement_array,
                 enabled=self.config.ssdm_enabled,
-                scale=getattr(self.config, "ssdm_scale", 0.05),
+                scale=getattr(self.config, "ssdm_scale", 1.0),
                 max_distance=getattr(self.config, "ssdm_max_distance", 30.0),
+                disp_mid_radius=getattr(self.config, "disp_mid_radius", 25.0),
+                material_depths=self.texture_atlas.material_depths,
             )
 
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----

@@ -66,6 +66,18 @@ def decode_mat_flags(flag_val: float | int) -> tuple[bool, DisplacementMode]:
     return has_texture, disp_mode
 
 
+DEFAULT_MATERIAL_DEPTHS: dict[str, float] = {
+    "identity": 0.0,
+    "clay_roof_tiles_02": 0.040,      # Terracotta roof tiles (4.0 cm physical depth)
+    "metal_grate_rusty": 0.015,       # Metal floor grate (1.5 cm physical depth)
+    "castle_brick_02_red": 0.035,     # Exterior masonry brick (3.5 cm depth)
+    "mud_cracked_dry_03": 0.045,      # Dry cracked ground fissures (4.5 cm depth)
+    "floor_pattern_02": 0.025,        # Decorative stone floor tiles (2.5 cm depth)
+    "ribbed_corduroy": 0.008,         # Fabric corduroy micro-ribs (0.8 cm depth)
+    "concrete_floor_worn_02": 0.005,  # Worn industrial concrete (0.5 cm depth)
+}
+
+
 def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:
     if img.size == (w, h):
         return img
@@ -168,6 +180,8 @@ class TextureArrayAtlas:
         "_next_layer",
         "material_names",
         "name_to_layer",
+        "material_depths",
+        "_material_depths_bytes",
         "diffuse_array",
         "normal_array",
         "displacement_array",
@@ -188,6 +202,9 @@ class TextureArrayAtlas:
         self._next_layer = 0
         self.material_names: list[str] = ["identity"]
         self.name_to_layer: dict[str, int] = {"identity": 0}
+        self.material_depths: np.ndarray = np.zeros(max_layers, dtype=np.float32)
+        self.material_depths[0] = 0.0
+        self._material_depths_bytes: bytes = self.material_depths.tobytes()
 
         # Create 2D array textures (sampler2DArray) with pre-allocated layers
         # Diffuse: RGBA8 (sRGB albedo)
@@ -337,6 +354,7 @@ class TextureArrayAtlas:
         mat_name = name or f"material_{layer}"
         self.material_names.append(mat_name)
         self.name_to_layer[mat_name] = layer
+        self.material_depths[layer] = DEFAULT_MATERIAL_DEPTHS.get(mat_name, 0.030)
         self._next_layer = layer + 1
 
         if rebuild_mipmaps:
@@ -381,12 +399,20 @@ class TextureArrayAtlas:
         mat_name = decoded.name or f"material_{layer}"
         self.material_names.append(mat_name)
         self.name_to_layer[mat_name] = layer
+        self.material_depths[layer] = DEFAULT_MATERIAL_DEPTHS.get(mat_name, 0.030)
+        self._material_depths_bytes = self.material_depths.tobytes()
         self._next_layer = layer + 1
 
         if rebuild_mipmaps:
             self.rebuild_all_mipmaps()
 
         return layer
+
+    def upload_depths(self, program: moderngl.Program, uniform_name: str = "u_MaterialDispDepth") -> None:
+        """Uploads per-material displacement depths (in meters) to shader uniform array."""
+        u = program.get(uniform_name, None)
+        if u is not None:
+            u.write(self._material_depths_bytes)
 
     def load_materials_from_folder(
         self,

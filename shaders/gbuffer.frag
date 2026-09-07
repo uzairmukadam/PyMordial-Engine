@@ -18,6 +18,27 @@ in mat3 v_TBN;
 in vec3 v_TangentViewDir;
 in vec3 v_TangentSunDir;
 
+// Common Frame Data UBO (binding 0)
+layout (std140, binding = 0) uniform FrameData {
+    mat4 u_View;
+    mat4 u_Projection;
+    mat4 u_ViewProjection;
+    mat4 u_InvProjection;
+    mat4 u_InvView;
+
+    vec4 u_CameraPos_Time;
+    vec4 u_ScreenSize_Jitter;
+
+    vec4 u_SunDirection_Intensity;
+    vec4 u_SunColor_Ambient;
+
+    mat4 u_LightViewProjection[4];
+    vec4 u_CascadeSplits;
+
+    vec4 u_FogColor_Density;
+    vec4 u_FogParams;
+};
+
 // SSBO 2: Material Data (two vec4 per entity)
 layout (std430, binding = 2) readonly buffer MaterialBuffer {
     vec4 u_MaterialData[];
@@ -29,12 +50,16 @@ layout (binding = 11) uniform sampler2DArray u_NormalArray;
 layout (binding = 12) uniform sampler2DArray u_DisplacementArray;
 layout (binding = 13) uniform sampler2DArray u_ARMArray;
 
-// Phase 6: POM Uniforms
+// Phase 6: POM Uniforms & Radius Culling
 uniform int u_POMEnabled = 1;
 uniform int u_POMMinSamples = 8;
 uniform int u_POMMaxSamples = 64;
 uniform float u_POMHeightScale = 0.08;
 uniform int u_POMSelfShadow = 1;
+uniform float u_DispNearRadius = 8.0;
+uniform float u_DispMidRadius = 25.0;
+uniform float u_MaterialDispDepth[32];
+uniform float u_POMScaleMultiplier = 1.0;
 
 // Displacement modes (matches DisplacementMode enum in texture_atlas.py)
 const uint DISP_MODE_NONE = 0u;
@@ -55,16 +80,17 @@ vec2 OctahedralEncode(vec3 n) {
 
 // Steep Parallax Occlusion Mapping with binary refinement
 // Returns displaced UV and final height at the intersection
-vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, out float out_height) {
+vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float height_scale, int target_samples, out float out_height) {
     float v_dot_n = max(dot(normalize(view_dir_ts), vec3(0.0, 0.0, 1.0)), 0.0);
-    int num_steps = int(mix(float(u_POMMaxSamples), float(u_POMMinSamples), v_dot_n));
+    int num_steps = int(mix(float(target_samples), float(u_POMMinSamples), v_dot_n));
+    num_steps = max(num_steps, 4);
 
     float layer_depth = 1.0 / float(num_steps);
     float current_layer_depth = 0.0;
 
     // View vector projected onto surface in tangent space
     vec2 view_dir_2d = view_dir_ts.xy / max(abs(view_dir_ts.z), 0.001);
-    vec2 delta_uv = view_dir_2d * u_POMHeightScale / float(num_steps);
+    vec2 delta_uv = view_dir_2d * height_scale / float(num_steps);
 
     vec2 current_uv = uv;
     float current_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
@@ -104,14 +130,14 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, out float 
 }
 
 // POM Self-Shadowing: secondary raymarch toward sun in tangent space
-float POMSelfShadow(vec2 uv, float surface_height, vec3 sun_dir_ts, float layer_idx) {
+float POMSelfShadow(vec2 uv, float surface_height, vec3 sun_dir_ts, float layer_idx, float height_scale) {
     if (sun_dir_ts.z <= 0.0) return 0.0; // Below horizon
 
     int num_steps = 16;
     float layer_depth = surface_height / float(num_steps);
 
     vec2 sun_dir_2d = sun_dir_ts.xy / max(abs(sun_dir_ts.z), 0.001);
-    vec2 delta_uv = sun_dir_2d * u_POMHeightScale / float(num_steps);
+    vec2 delta_uv = sun_dir_2d * height_scale / float(num_steps);
 
     float current_layer_depth = surface_height - layer_depth;
     vec2 current_uv = uv + delta_uv;
@@ -152,19 +178,30 @@ void main() {
     vec2 final_uv = v_UV;
     float pom_shadow = 1.0;
 
-    // Strict Mutual Exclusivity: POM runs ONLY when disp_mode == DISP_MODE_POM (1)
+    // Strict Mutual Exclusivity & Camera Radius Culling: POM runs ONLY when disp_mode == DISP_MODE_POM (1) and within u_DispMidRadius
     if (has_texture && tex_layer > 0.0) {
         float layer_idx = tex_layer;
+        float cam_dist = length(u_CameraPos_Time.xyz - v_WorldPos);
 
-        if (u_POMEnabled == 1 && disp_mode == DISP_MODE_POM) {
+        // Deactivated outside medium radius
+        if (u_POMEnabled == 1 && disp_mode == DISP_MODE_POM && cam_dist <= u_DispMidRadius) {
             vec3 view_ts = normalize(v_TangentViewDir);
             float pom_height;
-            final_uv = ParallaxOcclusionMap(v_UV, view_ts, layer_idx, pom_height);
+            int mat_i = clamp(int(layer_idx), 0, 31);
+            float mat_depth = u_MaterialDispDepth[mat_i];
+            if (mat_depth <= 0.0) mat_depth = 0.035;
+            float effective_scale = mat_depth * u_POMScaleMultiplier;
 
-            // Sun self-shadowing
-            if (u_POMSelfShadow == 1) {
+            // Taper sample count between Near and Mid radius
+            float dist_factor = clamp((u_DispMidRadius - cam_dist) / max(u_DispMidRadius - u_DispNearRadius, 0.001), 0.0, 1.0);
+            int target_samples = int(mix(float(u_POMMinSamples), float(u_POMMaxSamples), dist_factor));
+
+            final_uv = ParallaxOcclusionMap(v_UV, view_ts, layer_idx, effective_scale, target_samples, pom_height);
+
+            // Sun self-shadowing (within near radius for efficiency)
+            if (u_POMSelfShadow == 1 && cam_dist <= u_DispNearRadius) {
                 vec3 sun_ts = normalize(v_TangentSunDir);
-                pom_shadow = POMSelfShadow(final_uv, pom_height, sun_ts, layer_idx);
+                pom_shadow = POMSelfShadow(final_uv, pom_height, sun_ts, layer_idx, effective_scale);
             }
         }
 

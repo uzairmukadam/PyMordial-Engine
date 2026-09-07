@@ -1,6 +1,6 @@
 #version 450 core
 
-layout (triangles, equal_spacing, ccw) in;
+layout (triangles, fractional_odd_spacing, ccw) in;
 
 in vec3 te_Position[];
 in vec3 te_Normal[];
@@ -32,9 +32,9 @@ layout (std430, binding = 2) readonly buffer MaterialBuffer {
 };
 
 layout (binding = 12) uniform sampler2DArray u_DisplacementArray;
-
+uniform float u_MaterialDispDepth[32];
 uniform uint u_CascadeIndex;
-uniform float u_TessDisplacementScale = 0.10;
+uniform float u_TessDisplacementScale = 1.0;
 
 void main() {
     vec3 tc = gl_TessCoord;
@@ -46,8 +46,22 @@ void main() {
     float tex_layer = u_MaterialData[entity_idx * 2 + 1].b;
 
     if (tex_layer > 0.0) {
-        float height = texture(u_DisplacementArray, vec3(uv, tex_layer)).r;
-        float disp = (height - 0.5) * 2.0 * u_TessDisplacementScale;
+        float height = textureLod(u_DisplacementArray, vec3(uv, tex_layer), 0.0).r;
+        int layer_idx = clamp(int(tex_layer), 0, 31);
+        float mat_depth = u_MaterialDispDepth[layer_idx];
+        if (mat_depth <= 0.0) {
+            mat_depth = 0.030;
+        }
+        float disp = (height - 0.5) * mat_depth * u_TessDisplacementScale;
+
+        // Seam healing for flat patches
+        bool is_flat_patch = (dot(te_Normal[0], te_Normal[1]) > 0.999 && dot(te_Normal[1], te_Normal[2]) > 0.999);
+        if (is_flat_patch) {
+            float seam = smoothstep(0.0, 0.04, uv.x) * (1.0 - smoothstep(0.96, 1.0, uv.x)) *
+                         smoothstep(0.0, 0.04, uv.y) * (1.0 - smoothstep(0.96, 1.0, uv.y));
+            disp *= seam;
+        }
+
         pos += norm * disp;
     }
 

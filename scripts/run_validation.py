@@ -902,13 +902,17 @@ def main() -> None:
 
     # Phase 6: Micro-Geometry Tweaks (POM, SSDM, Hardware Tessellation)
     game_tweaks.add_bool("MicroGeometry", "POM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "POM Height Scale", default=0.08, min_val=0.01, max_val=0.25, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "pom_height_scale", v))
+    game_tweaks.add_float("MicroGeometry", "POM Scale Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "pom_height_scale", v))
     game_tweaks.add_bool("MicroGeometry", "POM Self-Shadow", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_self_shadow", v))
+    game_tweaks.add_float("MicroGeometry", "Near Radius", default=8.0, min_val=2.0, max_val=25.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "disp_near_radius", v))
+    game_tweaks.add_float("MicroGeometry", "Mid Radius", default=25.0, min_val=10.0, max_val=60.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "disp_mid_radius", v))
     game_tweaks.add_bool("MicroGeometry", "GPU Tessellation", default=True, on_changed=lambda v: setattr(engine_tweaks, "tess_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "Max Tess Level", default=16.0, min_val=1.0, max_val=32.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_max_level", v))
-    game_tweaks.add_float("MicroGeometry", "Tess Disp Scale", default=0.10, min_val=0.01, max_val=0.30, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "tess_displacement_scale", v))
+    game_tweaks.add_bool("MicroGeometry", "Frustum Culling", default=True, on_changed=lambda v: setattr(engine_tweaks, "frustum_cull_enabled", v))
+    game_tweaks.add_float("MicroGeometry", "Max Tess Level", default=24.0, min_val=1.0, max_val=32.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_max_level", v))
+    game_tweaks.add_float("MicroGeometry", "Med Tess Level", default=8.0, min_val=1.0, max_val=16.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_med_level", v))
+    game_tweaks.add_float("MicroGeometry", "Tess Disp Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "tess_displacement_scale", v))
     game_tweaks.add_bool("MicroGeometry", "SSDM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "ssdm_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "SSDM Scale", default=0.05, min_val=0.01, max_val=0.20, step=0.01, on_changed=lambda v: setattr(engine_tweaks, "ssdm_scale", v))
+    game_tweaks.add_float("MicroGeometry", "SSDM Scale Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "ssdm_scale", v))
 
     def trigger_reset_camera() -> None:
         cam.yaw_deg = 0.0
@@ -1292,11 +1296,14 @@ def main() -> None:
         pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
 
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
+        pipeline.config.disp_near_radius = engine_tweaks.disp_near_radius
+        pipeline.config.disp_mid_radius = engine_tweaks.disp_mid_radius
         pipeline.config.pom_enabled = engine_tweaks.pom_enabled
         pipeline.config.pom_height_scale = engine_tweaks.pom_height_scale
         pipeline.config.pom_self_shadow = engine_tweaks.pom_self_shadow
         pipeline.config.tess_enabled = engine_tweaks.tess_enabled
         pipeline.config.tess_max_level = engine_tweaks.tess_max_level
+        pipeline.config.tess_med_level = engine_tweaks.tess_med_level
         pipeline.config.tess_displacement_scale = engine_tweaks.tess_displacement_scale
         pipeline.config.ssdm_enabled = engine_tweaks.ssdm_enabled
         pipeline.config.ssdm_scale = engine_tweaks.ssdm_scale

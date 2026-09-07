@@ -80,6 +80,9 @@ class SSDMPass(RenderPass):
         self._u_ssdm_scale = self.prog.get("u_SSDMScale", None)
         self._u_ssdm_max_distance = self.prog.get("u_SSDMMaxDistance", None)
         self._u_ssdm_tiling = self.prog.get("u_SSDMTiling", None)
+        self._u_disp_mid_radius = self.prog.get("u_DispMidRadius", None)
+        self._u_ssdm_scale_multiplier = self.prog.get("u_SSDMScaleMultiplier", None)
+        self._u_material_disp_depth = self.prog.get("u_MaterialDispDepth", None)
 
         # Scratch normal texture and FBOs to prevent read-write feedback hazards
         self.perturbed_normal_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
@@ -115,9 +118,11 @@ class SSDMPass(RenderPass):
         g_buffer,
         displacement_array: moderngl.Texture,
         enabled: bool = True,
-        scale: float = 0.05,
+        scale: float = 1.0,
         max_distance: float = 30.0,
         tiling: float = 8.0,
+        disp_mid_radius: float = 25.0,
+        material_depths: np.ndarray | None = None,
     ) -> None:
         """Executes the SSDM pass."""
         if not enabled:
@@ -154,10 +159,16 @@ class SSDMPass(RenderPass):
             self._u_ssdm_enabled.value = 1 if enabled else 0
         if self._u_ssdm_scale is not None:
             self._u_ssdm_scale.value = scale
+        if self._u_ssdm_scale_multiplier is not None:
+            self._u_ssdm_scale_multiplier.value = scale
         if self._u_ssdm_max_distance is not None:
             self._u_ssdm_max_distance.value = max_distance
         if self._u_ssdm_tiling is not None:
             self._u_ssdm_tiling.value = tiling
+        if self._u_disp_mid_radius is not None:
+            self._u_disp_mid_radius.value = disp_mid_radius
+        if material_depths is not None and self._u_material_disp_depth is not None:
+            self._u_material_disp_depth.write(material_depths.tobytes())
 
         self.vao.render(mode=moderngl.TRIANGLES, vertices=3)
 

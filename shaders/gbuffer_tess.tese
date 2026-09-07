@@ -1,6 +1,6 @@
 #version 450 core
 
-layout (triangles, equal_spacing, ccw) in;
+layout (triangles, fractional_odd_spacing, ccw) in;
 
 in vec3 te_Position[];
 in vec3 te_Normal[];
@@ -46,10 +46,10 @@ layout (std430, binding = 2) readonly buffer MaterialBuffer {
     vec4 u_MaterialData[];
 };
 
-// Phase 6: Displacement Texture Array
+// Phase 6: Displacement Texture Array & Per-Material Depths
 layout (binding = 12) uniform sampler2DArray u_DisplacementArray;
-
-uniform float u_TessDisplacementScale = 0.10;
+uniform float u_MaterialDispDepth[32];
+uniform float u_TessDisplacementScale = 1.0;
 uniform mat4 u_PrevViewProjection;
 
 void main() {
@@ -84,10 +84,25 @@ void main() {
     vec4 mat1 = u_MaterialData[entity_idx * 2 + 1];
     float tex_layer = mat1.b;
 
-    // Sample displacement heightfield and displace along normal
+    // Sample displacement heightfield with explicit LOD 0 (GLSL non-fragment requirement)
     if (tex_layer > 0.0) {
-        float height = texture(u_DisplacementArray, vec3(uv, tex_layer)).r;
-        float disp = (height - 0.5) * 2.0 * u_TessDisplacementScale;
+        float height = textureLod(u_DisplacementArray, vec3(uv, tex_layer), 0.0).r;
+        int layer_idx = clamp(int(tex_layer), 0, 31);
+        float mat_depth = u_MaterialDispDepth[layer_idx];
+        if (mat_depth <= 0.0) {
+            mat_depth = 0.030; // Physical fallback default (3 cm)
+        }
+        float disp = (height - 0.5) * mat_depth * u_TessDisplacementScale;
+
+        // Seam-healing protection for flat-face primitives (e.g. cubes with split normals)
+        // Displacements smoothly fade to 0 at the UV perimeter so adjacent faces meet seamlessly without tears
+        bool is_flat_patch = (dot(n0, n1) > 0.999 && dot(n1, n2) > 0.999);
+        if (is_flat_patch) {
+            float seam = smoothstep(0.0, 0.04, uv.x) * (1.0 - smoothstep(0.96, 1.0, uv.x)) *
+                         smoothstep(0.0, 0.04, uv.y) * (1.0 - smoothstep(0.96, 1.0, uv.y));
+            disp *= seam;
+        }
+
         pos += norm * disp;
     }
 

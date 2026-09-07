@@ -573,11 +573,27 @@ class DebugMenu:
                 et.tess_enabled = tess_v
                 et.mark_custom()
             if et.tess_enabled:
-                tl_c, tl_v = imgui.slider_float("Max Tess Level", et.tess_max_level, 1.0, 32.0, "%.0f")
+                fc_c, fc_v = imgui.checkbox("GPU Frustum Culling", et.frustum_cull_enabled)
+                if fc_c:
+                    et.frustum_cull_enabled = fc_v
+                    et.mark_custom()
+                dnr_c, dnr_v = imgui.slider_float("Near Quality Radius (m)", et.disp_near_radius, 2.0, 20.0, "%.1f m")
+                if dnr_c:
+                    et.disp_near_radius = dnr_v
+                    et.mark_custom()
+                dmr_c, dmr_v = imgui.slider_float("Mid Radius Cutoff (m)", et.disp_mid_radius, 10.0, 50.0, "%.1f m")
+                if dmr_c:
+                    et.disp_mid_radius = dmr_v
+                    et.mark_custom()
+                tl_c, tl_v = imgui.slider_float("Near Tess Level", et.tess_max_level, 1.0, 32.0, "%.0f")
                 if tl_c:
                     et.tess_max_level = tl_v
                     et.mark_custom()
-                tds_c, tds_v = imgui.slider_float("Tess Displacement Scale", et.tess_displacement_scale, 0.01, 0.25, "%.3f")
+                tml_c, tml_v = imgui.slider_float("Mid Tess Level", et.tess_med_level, 1.0, 16.0, "%.0f")
+                if tml_c:
+                    et.tess_med_level = tml_v
+                    et.mark_custom()
+                tds_c, tds_v = imgui.slider_float("Disp Depth Multiplier", et.tess_displacement_scale, 0.1, 3.0, "%.2fx")
                 if tds_c:
                     et.tess_displacement_scale = tds_v
                     et.mark_custom()

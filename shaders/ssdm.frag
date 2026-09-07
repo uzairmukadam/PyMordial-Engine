@@ -47,11 +47,14 @@ layout (std140, binding = 0) uniform FrameData {
 // Output: modified G-Buffer normal + metallic (re-writes RT1)
 layout (location = 0) out vec4 out_NormalMetallic;
 
-// SSDM Configuration
+// SSDM Configuration & Radius Culling
 uniform int u_SSDMEnabled = 1;
 uniform float u_SSDMScale = 0.05;
 uniform float u_SSDMMaxDistance = 30.0;
 uniform float u_SSDMTiling = 1.0;
+uniform float u_DispMidRadius = 25.0;
+uniform float u_MaterialDispDepth[32];
+uniform float u_SSDMScaleMultiplier = 1.0;
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -102,7 +105,16 @@ void main() {
     vec3 view_pos = view_pos_h.xyz / max(view_pos_h.w, 1e-6);
 
     float linear_z = -view_pos.z;
-    float dist_fade = clamp(1.0 - (linear_z / u_SSDMMaxDistance), 0.0, 1.0);
+
+    // Radius-based deactivation beyond u_DispMidRadius
+    if (linear_z > u_DispMidRadius) {
+        gl_FragDepth = raw_depth;
+        out_NormalMetallic = orig_nm;
+        return;
+    }
+
+    float max_d = min(u_SSDMMaxDistance, u_DispMidRadius);
+    float dist_fade = clamp(1.0 - (linear_z / max_d), 0.0, 1.0);
     if (dist_fade <= 0.001) {
         gl_FragDepth = raw_depth;
         out_NormalMetallic = orig_nm;
@@ -116,8 +128,13 @@ void main() {
     // Sample displacement heightfield at this pixel's mesh UV
     float height = texture(u_DisplacementArray, vec3(mesh_uv, tex_layer)).r;
 
+    // Per-material depth lookup
+    int mat_i = clamp(int(tex_layer), 0, 31);
+    float mat_depth = u_MaterialDispDepth[mat_i];
+    if (mat_depth <= 0.0) mat_depth = 0.035;
+
     // Displace 3D view position along view-space normal
-    float disp = (height - 0.5) * 2.0 * u_SSDMScale * dist_fade;
+    float disp = (height - 0.5) * mat_depth * u_SSDMScaleMultiplier * dist_fade;
     vec3 displaced_view_pos = view_pos + N_view * disp;
 
     // Project displaced view position back to clip space
