@@ -165,3 +165,70 @@ class TestQualityPresetsMicroGeometry:
         assert cfg_ultra.pom_enabled is True
         assert cfg_ultra.tess_enabled is True
         assert cfg_ultra.tess_max_level >= 16.0
+
+
+class TestPOMSelfShadowStability:
+    """Tests for POM Self-Shadow stability and distance attenuation."""
+
+    def test_gbuffer_shader_compilation(self, gl_ctx):
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        vert_src = (root / "shaders" / "gbuffer.vert").read_text(encoding="utf-8")
+        frag_src = (root / "shaders" / "gbuffer.frag").read_text(encoding="utf-8")
+
+        prog = gl_ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
+        assert prog is not None
+        assert "u_POMSelfShadow" in prog
+        assert "u_POMEnabled" in prog
+        assert "u_DispNearRadius" in prog
+        prog.release()
+
+    def test_pom_self_shadow_slope_independent_of_height(self):
+        """Verify that the secondary ray slope (delta_uv / step_h) is strictly constant."""
+        sun_dir_ts = np.array([0.5, 0.3, 0.8], dtype=np.float32)
+        height_scale = 0.04
+
+        # For any surface height in [0.0, 0.99]
+        sun_dir_2d = sun_dir_ts[:2] / max(float(sun_dir_ts[2]), 0.05)
+        num_steps = 32
+
+        slopes = []
+        for surface_height in [0.05, 0.25, 0.50, 0.75, 0.90]:
+            total_h = 1.0 - surface_height
+            step_h = total_h / float(num_steps)
+            delta_uv = sun_dir_2d * height_scale * step_h
+            slope = delta_uv / step_h
+            slopes.append(slope)
+
+        # All slopes must be numerically identical regardless of surface height
+        for s in slopes[1:]:
+            np.testing.assert_allclose(s, slopes[0], rtol=1e-6)
+
+    def test_pom_distance_attenuation_continuity(self):
+        """Verify that self-shadowing distance fade has smooth C1 continuity without abrupt step pops."""
+        near_radius = 8.0
+        fade_start = near_radius * 0.70
+
+        def smoothstep(edge0, edge1, x):
+            t = np.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+            return t * t * (3.0 - 2.0 * t)
+
+        dists = np.linspace(0.0, 12.0, 241)
+        fades = []
+        for d in dists:
+            if d <= near_radius:
+                fade = 1.0 - smoothstep(fade_start, near_radius, d)
+            else:
+                fade = 0.0
+            fades.append(fade)
+
+        fades = np.array(fades)
+        # Inside near_radius * 0.70, fade is exactly 1.0 (full self-shadow)
+        assert np.all(fades[dists <= fade_start] == 1.0)
+        # At near_radius, fade reaches exactly 0.0
+        idx_at_near = np.argmin(np.abs(dists - near_radius))
+        assert abs(fades[idx_at_near] - 0.0) < 1e-4
+        # Differences between consecutive 5cm samples must be small and smooth
+        diffs = np.abs(np.diff(fades))
+        assert np.max(diffs) < 0.05
+

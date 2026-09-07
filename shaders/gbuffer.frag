@@ -78,84 +78,92 @@ vec2 OctahedralEncode(vec3 n) {
     return oct * 0.5 + 0.5;
 }
 
-// Steep Parallax Occlusion Mapping with binary refinement
-// Returns displaced UV and final height at the intersection
+// Steep Parallax Occlusion Mapping with 6-iteration binary refinement
+// Returns displaced UV and final height at the intersection (1.0 = peak, 0.0 = valley)
 vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float height_scale, int target_samples, out float out_height) {
-    float v_dot_n = max(dot(normalize(view_dir_ts), vec3(0.0, 0.0, 1.0)), 0.0);
+    float v_dot_n = clamp(normalize(view_dir_ts).z, 0.0, 1.0);
     int num_steps = int(mix(float(target_samples), float(u_POMMinSamples), v_dot_n));
-    num_steps = max(num_steps, 4);
+    num_steps = clamp(num_steps, 16, 64);
 
-    float layer_depth = 1.0 / float(num_steps);
-    float current_layer_depth = 0.0;
+    float step_h = 1.0 / float(num_steps);
+    float ray_h = 1.0;
 
-    // View vector projected onto surface in tangent space
-    vec2 view_dir_2d = view_dir_ts.xy / max(abs(view_dir_ts.z), 0.001);
-    vec2 delta_uv = view_dir_2d * height_scale / float(num_steps);
+    // View vector projected onto surface in tangent space (clamped divisor prevents horizon divergence)
+    vec2 view_dir_2d = view_dir_ts.xy / max(abs(view_dir_ts.z), 0.15);
+    vec2 delta_uv = view_dir_2d * height_scale * step_h;
 
     vec2 current_uv = uv;
     float current_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
 
-    // Steep Parallax: step until ray penetrates heightfield
+    // Steep Parallax: step downward from 1.0 toward 0.0 until ray penetrates heightfield
     for (int i = 0; i < u_POMMaxSamples; ++i) {
-        if (current_layer_depth >= current_height || i >= num_steps) {
+        if (ray_h <= current_height || i >= num_steps) {
             break;
         }
         current_uv -= delta_uv;
+        ray_h -= step_h;
         current_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
-        current_layer_depth += layer_depth;
     }
 
-    // Binary refinement (5 iterations)
+    // Binary refinement (6 iterations for sub-texel depth stability)
     vec2 prev_uv = current_uv + delta_uv;
-    float prev_height = texture(u_DisplacementArray, vec3(prev_uv, layer_idx)).r;
-    float prev_layer_depth = current_layer_depth - layer_depth;
+    float prev_ray_h = ray_h + step_h;
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         vec2 mid_uv = (current_uv + prev_uv) * 0.5;
+        float mid_ray_h = (ray_h + prev_ray_h) * 0.5;
         float mid_height = texture(u_DisplacementArray, vec3(mid_uv, layer_idx)).r;
-        float mid_layer_depth = (current_layer_depth + prev_layer_depth) * 0.5;
 
-        if (mid_height > mid_layer_depth) {
+        if (mid_ray_h > mid_height) {
+            // Ray is still above the surface, search deeper half
             prev_uv = mid_uv;
-            prev_layer_depth = mid_layer_depth;
+            prev_ray_h = mid_ray_h;
         } else {
+            // Ray is below or on surface, search upper half
             current_uv = mid_uv;
-            current_layer_depth = mid_layer_depth;
-            current_height = mid_height;
+            ray_h = mid_ray_h;
         }
     }
 
-    out_height = current_height;
+    // Exact ground-truth surface height at the refined intersection UV
+    out_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
     return current_uv;
 }
 
-// POM Self-Shadowing: secondary raymarch toward sun in tangent space
+// POM Self-Shadowing: secondary raymarch upward toward sun in tangent space
 float POMSelfShadow(vec2 uv, float surface_height, vec3 sun_dir_ts, float layer_idx, float height_scale) {
-    if (sun_dir_ts.z <= 0.0) return 0.0; // Below horizon
+    if (sun_dir_ts.z <= 0.0) return 0.0; // Facing away from sun
 
-    int num_steps = 16;
-    float layer_depth = surface_height / float(num_steps);
+    // At top peak ceiling, no microgeometry can occlude the sun from above
+    float total_h = 1.0 - surface_height;
+    if (total_h <= 0.005) return 1.0;
 
-    vec2 sun_dir_2d = sun_dir_ts.xy / max(abs(sun_dir_ts.z), 0.001);
-    vec2 delta_uv = sun_dir_2d * height_scale / float(num_steps);
+    int num_steps = clamp(u_POMMinSamples * 3, 24, 48);
+    float step_h = total_h / float(num_steps);
 
-    float current_layer_depth = surface_height - layer_depth;
+    // Tangent-space sun direction in UV space: fixed physical slope independent of starting height
+    vec2 sun_dir_2d = sun_dir_ts.xy / max(sun_dir_ts.z, 0.05);
+    vec2 delta_uv = sun_dir_2d * height_scale * step_h;
+
     vec2 current_uv = uv + delta_uv;
+    float current_h = surface_height + step_h;
+    float max_occlusion = 0.0;
 
-    float shadow = 0.0;
     for (int i = 0; i < num_steps; ++i) {
-        if (current_layer_depth <= 0.0) break;
+        if (current_h >= 1.0) break;
 
         float h = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
-        if (h > current_layer_depth) {
-            shadow = max(shadow, (h - current_layer_depth) / (1.0 - current_layer_depth + 0.001));
+        if (h > current_h) {
+            float diff = h - current_h;
+            float weight = 1.0 - (float(i) / float(num_steps));
+            max_occlusion = max(max_occlusion, diff * weight);
         }
 
         current_uv += delta_uv;
-        current_layer_depth -= layer_depth;
+        current_h += step_h;
     }
 
-    return clamp(1.0 - shadow * 1.5, 0.0, 1.0);
+    return clamp(1.0 - max_occlusion * 2.5, 0.0, 1.0);
 }
 
 void main() {
@@ -198,10 +206,12 @@ void main() {
 
             final_uv = ParallaxOcclusionMap(v_UV, view_ts, layer_idx, effective_scale, target_samples, pom_height);
 
-            // Sun self-shadowing (within near radius for efficiency)
+            // Sun self-shadowing with smooth distance attenuation (eliminates boundary popping)
             if (u_POMSelfShadow == 1 && cam_dist <= u_DispNearRadius) {
                 vec3 sun_ts = normalize(v_TangentSunDir);
-                pom_shadow = POMSelfShadow(final_uv, pom_height, sun_ts, layer_idx, effective_scale);
+                float raw_shadow = POMSelfShadow(final_uv, pom_height, sun_ts, layer_idx, effective_scale);
+                float shadow_fade = 1.0 - smoothstep(u_DispNearRadius * 0.70, u_DispNearRadius, cam_dist);
+                pom_shadow = mix(1.0, raw_shadow, shadow_fade);
             }
         }
 

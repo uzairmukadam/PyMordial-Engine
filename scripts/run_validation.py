@@ -314,6 +314,13 @@ def main() -> None:
         choices=["follow", "free", "cinematic", "inspection", "microgeom", "courtyard"],
         help="Initial active camera viewpoint (default: follow)",
     )
+    parser.add_argument(
+        "--camera-pos",
+        nargs=3,
+        type=float,
+        default=None,
+        help="Optional override for active camera position (X Y Z)",
+    )
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -816,6 +823,8 @@ def main() -> None:
     camera_mgr.register_camera("courtyard", courtyard_cam)
     if args.camera and args.camera.lower() != "follow":
         camera_mgr.switch_to(args.camera.lower())
+    if args.camera_pos is not None:
+        camera_mgr.active_camera.position = (float(args.camera_pos[0]), float(args.camera_pos[1]), float(args.camera_pos[2]))
 
     # 6. Configure Unified Input Bindings (AAA Standard)
     # Character actions
