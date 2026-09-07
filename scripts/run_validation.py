@@ -45,7 +45,7 @@ from engine.input import (  # noqa: E402
 from engine.physics.rapier_world import PhysicsManager  # noqa: E402
 from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig  # noqa: E402
 from engine.core.character_camera import CharacterCamera, CharacterCameraConfig  # noqa: E402
-from engine.assets.cooker import cook_mesh, cook_texture, pack_directory  # noqa: E402
+from engine.assets.cooker import cook_mesh, cook_texture, cook_all_materials, pack_directory  # noqa: E402
 from engine.gfx import (  # noqa: E402
     RenderContext,
     RenderPipeline,
@@ -212,7 +212,19 @@ def bake_asset_package(build_dir: Path) -> Path:
     # 2. Cook raw .png -> mipmapped .pm_tex
     cook_texture(raw_tex, cooked_tex_path)
 
-    # 3. Pack cooked directory into contiguous .pak archive container
+    # 3. Cook Poly Haven PBR materials into .pm_tex for fast binary streaming
+    raw_materials_dir = ROOT_DIR / "assets" / "textures"
+    cooked_materials_dir = ROOT_DIR / "build" / "cooked_assets" / "textures"
+    if raw_materials_dir.is_dir():
+        cook_all_materials(
+            raw_materials_dir,
+            cooked_materials_dir,
+            target_size=(4096, 4096),
+            generate_mips=True,
+            force=False,
+        )
+
+    # 4. Pack cooked directory into contiguous .pak archive container
     pack_directory(cooked_dir, pak_path, compress=False)
     return pak_path
 
@@ -270,6 +282,8 @@ def main() -> None:
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
     parser.add_argument("--shadow-mode", type=str, default="pcss", choices=["hard", "pcf", "pcss"], help="Shadow filtering mode (default: pcss)")
     parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
+    parser.add_argument("--shadow-distance", type=float, default=500.0, help="Maximum shadow draw distance in meters (default: 500.0)")
+    parser.add_argument("--shadow-cascades", type=int, default=4, choices=[1, 2, 3, 4], help="Number of CSM cascades (default: 4)")
     parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 9=LPV, 10=GI_Total)")
     parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "hbao", "gtao"], help="AO mode override (off, ssao, hbao, gtao)")
     parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ssgi", "lpv", "hybrid"], help="GI mode override (off, ssgi, lpv, hybrid)")
@@ -350,6 +364,8 @@ def main() -> None:
     engine_tweaks.vsync_enabled = args.vsync
     engine_tweaks.shadow_mode = args.shadow_mode.upper()
     engine_tweaks.shadow_resolution = args.shadow_res
+    engine_tweaks.shadow_distance = args.shadow_distance
+    engine_tweaks.csm_cascades = args.shadow_cascades
     engine_tweaks.gbuffer_debug = GBufferDebugMode(args.gbuffer_debug)
     if args.wireframe:
         engine_tweaks.show_wireframe = True
@@ -401,6 +417,8 @@ def main() -> None:
         engine_tweaks.shadow_mode = cfg.shadow_mode
         engine_tweaks.shadow_softness = cfg.shadow_softness
         engine_tweaks.shadow_bias = cfg.shadow_bias
+        engine_tweaks.shadow_distance = cfg.shadow_distance
+        engine_tweaks.csm_cascades = cfg.csm_cascades
         engine_tweaks.sscs_enabled = cfg.sscs_enabled
         engine_tweaks.sscs_steps = cfg.sscs_steps
         engine_tweaks.sscs_thickness = cfg.sscs_thickness
@@ -434,6 +452,7 @@ def main() -> None:
     # 4.5 Load 4K Poly Haven PBR Material Texture Arrays for Micro-Geometry Showcase
     mat_layers: dict[str, int] = {}
     textures_dir = ROOT_DIR / "assets" / "textures"
+    cooked_materials_dir = ROOT_DIR / "build" / "cooked_assets" / "textures"
     if textures_dir.is_dir():
         print("Streaming 4K PBR material texture arrays via BackgroundAssetLoader...")
         target_res = 4096
@@ -443,7 +462,12 @@ def main() -> None:
             pipeline.texture_atlas = TextureArrayAtlas(pipeline.ctx, width=target_res, height=target_res, max_layers=32)
 
         async_loader = BackgroundAssetLoader()
-        async_loader.start_material_loading(textures_dir, width=target_res, height=target_res)
+        async_loader.start_material_loading(
+            textures_dir,
+            width=target_res,
+            height=target_res,
+            cooked_dir=cooked_materials_dir if cooked_materials_dir.is_dir() else None,
+        )
         mat_layers = loading_screen.stream_materials(
             atlas=pipeline.texture_atlas,
             loader=async_loader,
@@ -1258,7 +1282,14 @@ def main() -> None:
         # Synchronize EngineTweaks to pipeline & dev tweaks
         if engine_tweaks.shadow_resolution != pipeline.csm.atlas_size:
             pipeline.csm.resize_atlas(engine_tweaks.shadow_resolution)
+        if (
+            engine_tweaks.shadow_distance != pipeline.csm.max_distance
+            or engine_tweaks.csm_cascades != pipeline.csm.cascade_count
+        ):
+            pipeline.csm.update_splits(engine_tweaks.shadow_distance, engine_tweaks.csm_cascades)
         pipeline.config.shadow_resolution = engine_tweaks.shadow_resolution
+        pipeline.config.shadow_distance = engine_tweaks.shadow_distance
+        pipeline.config.csm_cascades = engine_tweaks.csm_cascades
         pipeline.config.shadow_mode = engine_tweaks.shadow_mode
         pipeline.config.shadow_softness = engine_tweaks.shadow_softness
         pipeline.config.shadow_bias = engine_tweaks.shadow_bias

@@ -20,6 +20,8 @@ from typing import Callable, TYPE_CHECKING
 import numpy as np
 from PIL import Image
 
+from engine.assets.texture_format import PMTex
+
 if TYPE_CHECKING:
     import moderngl
 
@@ -85,73 +87,109 @@ def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:
     return img.resize((w, h), resample)
 
 
+def _get_pm_tex_bytes(pm_path: Path, width: int, height: int, expected_channels: int) -> bytes | None:
+    """Fast-path reads raw level-0 (or matching mip) bytes from a .pm_tex file."""
+    if not pm_path.is_file():
+        return None
+    try:
+        tex = PMTex.load(pm_path)
+        for lvl in range(tex.mip_count):
+            desc = tex.mip_levels[lvl]
+            if desc.width == width and desc.height == height:
+                raw = bytes(tex.get_mip_bytes(lvl))
+                if len(raw) == width * height * expected_channels:
+                    return raw
+        return None
+    except Exception:
+        return None
+
+
 def decode_material_folder(
     folder: str | Path,
     width: int,
     height: int,
     name: str | None = None,
+    cooked_folder: str | Path | None = None,
 ) -> DecodedMaterialLayer:
     """Pure CPU worker function to read and decode all 4 PBR texture maps.
 
+    Checks for pre-baked .pm_tex files first for instantaneous zero-CPU-decoding loading.
+    Falls back to raw .png decoding and resizing if .pm_tex files are not found.
     Safe to execute on background worker threads without OpenGL/ModernGL context.
     """
     p = Path(folder)
+    c_p = Path(cooked_folder) if cooked_folder else p
     mat_name = name or p.name
-    diff_path = p / "diff.png"
-    nor_path = p / "nor.png"
-    disp_path = p / "disp.png"
-    arm_path = p / "arm.png"
+
+    # Try fast-path .pm_tex binary reading
+    diff_pm = c_p / "diff.pm_tex"
+    nor_pm = c_p / "nor.pm_tex"
+    disp_pm = c_p / "disp.pm_tex"
+    arm_pm = c_p / "arm.pm_tex"
+
+    diff_bytes = _get_pm_tex_bytes(diff_pm, width, height, 4)
+    nor_bytes = _get_pm_tex_bytes(nor_pm, width, height, 4)
+    disp_bytes = _get_pm_tex_bytes(disp_pm, width, height, 1)
+    arm_bytes = _get_pm_tex_bytes(arm_pm, width, height, 4)
 
     # 1. Diffuse (RGBA)
-    if diff_path.is_file():
-        img = Image.open(diff_path).convert("RGBA")
-        img = _fit_image(img, width, height)
-        diff_bytes = img.tobytes()
-    else:
-        diff_bytes = np.full(width * height * 4, 255, dtype=np.uint8).tobytes()
+    if diff_bytes is None:
+        diff_path = p / "diff.png"
+        if diff_path.is_file():
+            img = Image.open(diff_path).convert("RGBA")
+            img = _fit_image(img, width, height)
+            diff_bytes = img.tobytes()
+        else:
+            diff_bytes = np.full(width * height * 4, 255, dtype=np.uint8).tobytes()
 
     # 2. Normal (RGBA tangent space)
-    if nor_path.is_file():
-        img = Image.open(nor_path).convert("RGBA")
-        img = _fit_image(img, width, height)
-        nor_bytes = img.tobytes()
-    else:
-        flat = np.zeros(width * height * 4, dtype=np.uint8)
-        flat[0::4] = 128
-        flat[1::4] = 128
-        flat[2::4] = 255
-        flat[3::4] = 255
-        nor_bytes = flat.tobytes()
+    if nor_bytes is None:
+        nor_path = p / "nor.png"
+        if nor_path.is_file():
+            img = Image.open(nor_path).convert("RGBA")
+            img = _fit_image(img, width, height)
+            nor_bytes = img.tobytes()
+        else:
+            flat = np.zeros(width * height * 4, dtype=np.uint8)
+            flat[0::4] = 128
+            flat[1::4] = 128
+            flat[2::4] = 255
+            flat[3::4] = 255
+            nor_bytes = flat.tobytes()
 
     # 3. Displacement (R8)
-    if disp_path.is_file():
-        raw_disp = Image.open(disp_path)
-        if raw_disp.mode == "I;16":
-            arr = np.array(raw_disp, dtype=np.uint16)
-            arr_8 = (arr / 256).astype(np.uint8)
-            disp_img = Image.fromarray(arr_8, mode="L")
-        elif raw_disp.mode in ("RGBA", "RGB"):
-            arr = np.array(raw_disp)
-            disp_img = Image.fromarray(arr[..., 0], mode="L")
+    if disp_bytes is None:
+        disp_path = p / "disp.png"
+        if disp_path.is_file():
+            raw_disp = Image.open(disp_path)
+            if raw_disp.mode == "I;16":
+                arr = np.array(raw_disp, dtype=np.uint16)
+                arr_8 = (arr / 256).astype(np.uint8)
+                disp_img = Image.fromarray(arr_8, mode="L")
+            elif raw_disp.mode in ("RGBA", "RGB"):
+                arr = np.array(raw_disp)
+                disp_img = Image.fromarray(arr[..., 0], mode="L")
+            else:
+                disp_img = raw_disp.convert("L")
+            disp_img = _fit_image(disp_img, width, height)
+            disp_bytes = disp_img.tobytes()
         else:
-            disp_img = raw_disp.convert("L")
-        disp_img = _fit_image(disp_img, width, height)
-        disp_bytes = disp_img.tobytes()
-    else:
-        disp_bytes = np.full(width * height, 128, dtype=np.uint8).tobytes()
+            disp_bytes = np.full(width * height, 128, dtype=np.uint8).tobytes()
 
     # 4. ARM (AO, Roughness, Metallic, Unused)
-    if arm_path.is_file():
-        img = Image.open(arm_path).convert("RGBA")
-        img = _fit_image(img, width, height)
-        arm_bytes = img.tobytes()
-    else:
-        arm = np.zeros(width * height * 4, dtype=np.uint8)
-        arm[0::4] = 255
-        arm[1::4] = 128
-        arm[2::4] = 0
-        arm[3::4] = 255
-        arm_bytes = arm.tobytes()
+    if arm_bytes is None:
+        arm_path = p / "arm.png"
+        if arm_path.is_file():
+            img = Image.open(arm_path).convert("RGBA")
+            img = _fit_image(img, width, height)
+            arm_bytes = img.tobytes()
+        else:
+            arm = np.zeros(width * height * 4, dtype=np.uint8)
+            arm[0::4] = 255
+            arm[1::4] = 128
+            arm[2::4] = 0
+            arm[3::4] = 255
+            arm_bytes = arm.tobytes()
 
     return DecodedMaterialLayer(
         name=mat_name,

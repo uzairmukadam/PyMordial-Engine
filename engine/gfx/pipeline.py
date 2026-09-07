@@ -376,6 +376,11 @@ class RenderPipeline:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
         self.csm.resize_atlas(new_config.shadow_resolution)
+        self.csm.update_splits(
+            new_config.shadow_distance,
+            new_config.csm_cascades,
+            getattr(new_config, "csm_split_lambda", 0.85),
+        )
         self.post_process.config = new_config
         self.ctx_wrapper.config = new_config
         self.ctx_wrapper.ctx.depth_func = ">" if new_config.reverse_z else "<"
@@ -468,11 +473,22 @@ class RenderPipeline:
 
         matrix_look_at(camera_pos, camera_target, up=(0.0, 1.0, 0.0), out=self._view_mat)
 
+        # Synchronize CSM splits with active shadow distance and cascade count
+        if (
+            self.csm.max_distance != self.config.shadow_distance
+            or self.csm.cascade_count != self.config.csm_cascades
+        ):
+            self.csm.update_splits(
+                self.config.shadow_distance,
+                self.config.csm_cascades,
+                getattr(self.config, "csm_split_lambda", 0.85),
+            )
+
         matrix_perspective(
             math.radians(fovy_deg),
             aspect,
             near=0.1,
-            far=self.config.shadow_distance * 2.0,
+            far=max(2000.0, self.config.shadow_distance * 3.0),
             reverse_z=self.config.reverse_z,
             out=self._proj_mat,
         )

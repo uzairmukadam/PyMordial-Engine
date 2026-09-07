@@ -370,11 +370,13 @@ class TestShadowsAndSSCS:
         low = get_quality_preset(GraphicsQuality.LOW)
         assert low.shadow_mode == "HARD"
         assert low.shadow_resolution == 1024
+        assert low.shadow_distance == 120.0
         assert low.sscs_enabled is False
 
         med = get_quality_preset(GraphicsQuality.MEDIUM)
         assert med.shadow_mode == "PCF"
         assert med.shadow_resolution == 2048
+        assert med.shadow_distance == 250.0
         assert med.sscs_enabled is False
 
         high = get_quality_preset(GraphicsQuality.HIGH)
@@ -382,12 +384,43 @@ class TestShadowsAndSSCS:
         assert high.shadow_softness == 1.2
         assert high.shadow_bias == 0.0015
         assert high.shadow_resolution == 4096
+        assert high.shadow_distance == 500.0
         assert high.pcf_samples == 24
         assert high.sscs_enabled is False
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
         assert ultra.shadow_mode == "PCSS"
         assert ultra.shadow_resolution == 4096
+        assert ultra.shadow_distance == 800.0
+
+        cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
+        assert cinematic.shadow_distance == 1200.0
+
+    def test_shadow_distance_parameterization_and_dynamic_splits(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        csm = pipeline.csm
+
+        # Default shadow distance
+        assert csm.max_distance >= 500.0
+        assert len(csm.split_distances) == 4
+        assert csm.split_distances[-1] >= 500.0
+
+        # Dynamically increase shadow draw distance
+        pipeline.config.shadow_distance = 1200.0
+        csm.update_splits(1200.0, cascade_count=4)
+        assert csm.max_distance == 1200.0
+        assert csm.split_distances[-1] == 1200.0
+        assert csm.split_distances[0] < csm.split_distances[1] < csm.split_distances[2] < csm.split_distances[3]
+
+        # Verify preset scaling across presets
+        low = get_quality_preset(GraphicsQuality.LOW)
+        med = get_quality_preset(GraphicsQuality.MEDIUM)
+        high = get_quality_preset(GraphicsQuality.HIGH)
+        ultra = get_quality_preset(GraphicsQuality.ULTRA)
+        cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
+        assert low.shadow_distance < med.shadow_distance < high.shadow_distance < ultra.shadow_distance < cinematic.shadow_distance
+
+        pipeline.destroy()
 
     def test_pipeline_shadow_modes_render_execution(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)

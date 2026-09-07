@@ -65,6 +65,7 @@ class BackgroundAssetLoader:
         width: int = 4096,
         height: int = 4096,
         preferred_order: list[str] | None = None,
+        cooked_dir: str | Path | None = None,
     ) -> list[str]:
         """Discovers material directories and dispatches parallel decode workers."""
         p = Path(textures_dir)
@@ -99,8 +100,10 @@ class BackgroundAssetLoader:
             f"Dispatching {self._total_materials} material layers across {self._max_workers} worker threads...",
         )
 
+        cooked_p = Path(cooked_dir) if cooked_dir else None
         for d in subdirs:
-            future = self._executor.submit(decode_material_folder, d, width, height, d.name)
+            c_folder = (cooked_p / d.name) if (cooked_p and (cooked_p / d.name).is_dir()) else None
+            future = self._executor.submit(decode_material_folder, d, width, height, d.name, c_folder)
             future.add_done_callback(self._on_material_decoded)
             self._material_futures.append(future)
 

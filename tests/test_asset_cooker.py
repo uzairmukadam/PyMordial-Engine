@@ -29,9 +29,15 @@ from engine.assets.vfs import (
     PakReader,
     VFS,
 )
-from engine.assets.cooker import cook_mesh
+from engine.assets.cooker import (
+    cook_mesh,
+    cook_texture,
+    cook_material,
+    cook_all_materials,
+)
 from engine.assets.resource_cache import ResourceCache
 from engine.gfx.mega_buffer import MegaBuffer
+from engine.gfx.texture_atlas import decode_material_folder
 
 
 class TestAssetCooker:
@@ -314,4 +320,92 @@ f 2/2/2 4/4/2 3/3/2
                 assert bytes(data) == b"SAMPLE_PAYLOAD_BYTES"
                 if isinstance(data, memoryview):
                     data.release()
+
+    def test_pm_tex_r8_single_channel_format(self):
+        """Validates R8_UNORM format cooking, single-channel byte size, and roundtrip."""
+        img = Image.new("L", (64, 64), color=128)
+        pm_tex = cook_image_to_pm_tex(img, target_format=TextureFormat.R8_UNORM, generate_mips=True)
+
+        assert pm_tex.width == 64
+        assert pm_tex.height == 64
+        assert pm_tex.mip_count == 7
+        assert pm_tex.format == TextureFormat.R8_UNORM
+        # Mip 0 for R8 single-channel is 64*64*1 bytes
+        assert len(pm_tex.get_mip_bytes(0)) == 64 * 64 * 1
+        assert len(pm_tex.get_mip_bytes(6)) == 1 * 1 * 1
+
+        serialized = pm_tex.serialize()
+        restored = PMTex.from_bytes(serialized)
+        assert restored.format == TextureFormat.R8_UNORM
+        assert len(restored.get_mip_bytes(0)) == 4096
+        assert restored.get_mip_bytes(0)[0] == 128
+
+    def test_cook_texture_with_target_size(self):
+        """Validates that cook_texture and cook_image_to_pm_tex resize non-square images."""
+        img = Image.new("RGBA", (128, 64), color=(100, 150, 200, 255))
+        pm_tex = cook_image_to_pm_tex(
+            img,
+            target_format=TextureFormat.RGBA8_UNORM,
+            target_size=(32, 32),
+            generate_mips=True,
+        )
+        assert pm_tex.width == 32
+        assert pm_tex.height == 32
+        assert len(pm_tex.get_mip_bytes(0)) == 32 * 32 * 4
+
+    def test_cook_material_and_fast_path_decoding(self):
+        """Validates full PBR material folder cooking and pure-binary fast path loading."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src_mat = Path(tmp_dir) / "test_stone"
+            src_mat.mkdir()
+            out_mat = Path(tmp_dir) / "cooked_test_stone"
+
+            # Create mock source images
+            Image.new("RGBA", (32, 32), (200, 100, 50, 255)).save(src_mat / "diff.png")
+            Image.new("RGBA", (32, 32), (128, 128, 255, 255)).save(src_mat / "nor.png")
+            Image.new("L", (32, 32), 180).save(src_mat / "disp.png")
+            # arm.png intentionally omitted to test fallback handling
+
+            cook_material(src_mat, out_mat, target_size=(32, 32), generate_mips=True)
+
+            assert (out_mat / "diff.pm_tex").exists()
+            assert (out_mat / "nor.pm_tex").exists()
+            assert (out_mat / "disp.pm_tex").exists()
+            assert (out_mat / "arm.pm_tex").exists()
+
+            # Test fast-path decoding
+            layer = decode_material_folder(src_mat, 32, 32, cooked_folder=out_mat)
+            assert layer.name == "test_stone"
+            assert len(layer.diffuse_bytes) == 32 * 32 * 4
+            assert len(layer.normal_bytes) == 32 * 32 * 4
+            assert len(layer.disp_bytes) == 32 * 32 * 1
+            assert len(layer.arm_bytes) == 32 * 32 * 4
+            # Verify displacement byte content
+            assert layer.disp_bytes[0] == 180
+
+    def test_cook_all_materials_incremental(self):
+        """Validates batch material cooking and incremental mtime skipping."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root_src = Path(tmp_dir) / "materials_src"
+            root_out = Path(tmp_dir) / "materials_out"
+            mat1 = root_src / "mat_a"
+            mat2 = root_src / "mat_b"
+            mat1.mkdir(parents=True)
+            mat2.mkdir(parents=True)
+
+            Image.new("RGBA", (16, 16), (255, 0, 0, 255)).save(mat1 / "diff.png")
+            Image.new("RGBA", (16, 16), (0, 255, 0, 255)).save(mat2 / "diff.png")
+
+            count = cook_all_materials(root_src, root_out, target_size=(16, 16), generate_mips=False)
+            assert count == 2
+            assert (root_out / "mat_a" / "diff.pm_tex").exists()
+            assert (root_out / "mat_b" / "diff.pm_tex").exists()
+
+            mtime_before = (root_out / "mat_a" / "diff.pm_tex").stat().st_mtime
+
+            # Second call without force should skip re-cooking
+            count2 = cook_all_materials(root_src, root_out, target_size=(16, 16), generate_mips=False, force=False)
+            assert count2 == 2
+            mtime_after = (root_out / "mat_a" / "diff.pm_tex").stat().st_mtime
+            assert mtime_before == mtime_after
 

@@ -275,6 +275,11 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
         return 0.0;
     }
 
+    float max_shadow_dist = u_CascadeSplits[u_CascadeCount - 1];
+    if (view_depth >= max_shadow_dist) {
+        return 1.0;
+    }
+
     int cascade = 0;
     for (int i = 0; i < u_CascadeCount - 1; ++i) {
         if (view_depth > u_CascadeSplits[i]) {
@@ -300,6 +305,14 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
             float blend_t = clamp((view_depth - blend_start) / blend_range, 0.0, 1.0);
             float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, ign_phi, softness);
             shadow = mix(shadow, next_shadow, blend_t);
+        }
+    } else {
+        // Final cascade: smooth distance fade-out towards max shadow distance
+        float fade_range = max_shadow_dist * 0.15;
+        float fade_start = max_shadow_dist - fade_range;
+        if (view_depth > fade_start) {
+            float fade_t = clamp((view_depth - fade_start) / max(fade_range, 0.001), 0.0, 1.0);
+            shadow = mix(shadow, 1.0, fade_t);
         }
     }
 

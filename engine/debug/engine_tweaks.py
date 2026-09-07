@@ -48,6 +48,8 @@ class EngineTweaks:
         "shadow_normal_bias",
         "shadow_offset_x",
         "shadow_offset_y",
+        "shadow_distance",
+        "csm_cascades",
         "sscs_enabled",
         "sscs_steps",
         "sscs_thickness",
@@ -132,6 +134,8 @@ class EngineTweaks:
         self.shadow_normal_bias = 0.0010
         self.shadow_offset_x = 0.0
         self.shadow_offset_y = 0.0
+        self.shadow_distance = 500.0
+        self.csm_cascades = 4
         self.sscs_enabled = False
         self.sscs_steps = 16
         self.sscs_thickness = 0.10

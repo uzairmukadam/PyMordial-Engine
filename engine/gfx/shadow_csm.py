@@ -15,6 +15,7 @@ class CascadedShadowMap:
         "ctx",
         "atlas_size",
         "cascade_count",
+        "max_distance",
         "depth_texture",
         "fbo",
         "split_distances",
@@ -30,11 +31,12 @@ class CascadedShadowMap:
         ctx: moderngl.Context,
         atlas_size: int = 4096,
         cascade_count: int = 4,
-        max_distance: float = 150.0,
+        max_distance: float = 500.0,
     ) -> None:
         self.ctx = ctx
         self.atlas_size = atlas_size
         self.cascade_count = cascade_count
+        self.max_distance = float(max_distance)
 
         # Depth texture atlas and framebuffer
         self.depth_texture = None  # type: ignore[assignment]
@@ -42,13 +44,27 @@ class CascadedShadowMap:
         self._create_atlas()
 
         # Compute cascade split distances (log-linear blend)
+        self.update_splits(max_distance=max_distance, cascade_count=cascade_count)
+        self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
+
+    def update_splits(
+        self,
+        max_distance: float,
+        cascade_count: int | None = None,
+        lambda_val: float = 0.85,
+    ) -> None:
+        """Dynamically recomputes cascade split distances for a new max shadow distance."""
+        if cascade_count is not None:
+            self.cascade_count = cascade_count
+        self.max_distance = float(max_distance)
+
         near = 0.1
-        far = max_distance
-        lambda_val = 0.85
+        far = max(self.max_distance, 1.0)
         splits = []
 
-        for i in range(1, cascade_count + 1):
-            p = i / cascade_count
+        count = max(1, min(4, self.cascade_count))
+        for i in range(1, count + 1):
+            p = i / count
             log_split = near * ((far / near) ** p)
             lin_split = near + (far - near) * p
             splits.append(lambda_val * log_split + (1.0 - lambda_val) * lin_split)
@@ -58,7 +74,6 @@ class CascadedShadowMap:
             splits.append(far)
 
         self.split_distances = tuple(splits[:4])
-        self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
 
         # Pre-allocated scratch buffers
         self._proj_scratch = np.zeros(16, dtype=np.float32)

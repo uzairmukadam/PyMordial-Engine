@@ -661,6 +661,20 @@ class DebugMenu:
                 et.shadow_offset_y = off_y_val
                 et.mark_custom()
 
+            # 5. Shadow Draw Distance Slider
+            sd_changed, sd_val = imgui.slider_float("Shadow Draw Distance", et.shadow_distance, 50.0, 2000.0, "%.0f m")
+            if sd_changed:
+                et.shadow_distance = sd_val
+                et.mark_custom()
+
+            # 5b. Shadow Cascades (1 to 4)
+            casc_options = ["1 Cascade", "2 Cascades", "3 Cascades", "4 Cascades"]
+            curr_casc_idx = max(0, min(3, et.csm_cascades - 1))
+            casc_changed, new_casc_idx = imgui.combo("Shadow Cascades", curr_casc_idx, casc_options)
+            if casc_changed and new_casc_idx != curr_casc_idx:
+                et.csm_cascades = new_casc_idx + 1
+                et.mark_custom()
+                self.toast.show(f"Shadow Cascades: {et.csm_cascades}", duration=2.0)
 
             # 6. Sun Angle (Azimuth)
             sun_changed, sun_val = imgui.slider_float("Sun Azimuth", et.sun_angle_deg, 0.0, 360.0, "%.1f deg")

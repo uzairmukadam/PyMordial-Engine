@@ -291,19 +291,121 @@ def cook_texture(
     output_path: str | Path,
     target_format: TextureFormat = TextureFormat.RGBA8_UNORM,
     generate_mips: bool = True,
+    target_size: tuple[int, int] | None = None,
 ) -> None:
     """Ingests a source image (.png, .jpg, etc.) and bakes it into a mipmapped .pm_tex."""
     in_p = Path(input_path)
     out_p = Path(output_path)
 
     with Image.open(in_p) as img:
-        tex = cook_image_to_pm_tex(img, target_format=target_format, generate_mips=generate_mips)
+        tex = cook_image_to_pm_tex(
+            img,
+            target_format=target_format,
+            generate_mips=generate_mips,
+            target_size=target_size,
+        )
         tex.save(out_p)
 
     print(
         f"[Cooker] Baked '{in_p.name}' -> '{out_p.name}': "
         f"{tex.width}x{tex.height}, {tex.mip_count} mips, Format={tex.format.name}"
     )
+
+
+def cook_material(
+    material_dir: str | Path,
+    output_dir: str | Path,
+    target_size: tuple[int, int] = (4096, 4096),
+    generate_mips: bool = True,
+    force: bool = False,
+) -> None:
+    """Bakes all 4 PBR channels of a material folder into pre-filtered .pm_tex files.
+
+    Channels:
+    - diff.png -> diff.pm_tex (RGBA8_UNORM)
+    - nor.png  -> nor.pm_tex  (RGBA8_UNORM)
+    - disp.png -> disp.pm_tex (R8_UNORM)
+    - arm.png  -> arm.pm_tex  (RGBA8_UNORM)
+    """
+    in_d = Path(material_dir)
+    out_d = Path(output_dir)
+    out_d.mkdir(parents=True, exist_ok=True)
+
+    channel_configs = [
+        ("diff.png", "diff.pm_tex", TextureFormat.RGBA8_UNORM, "RGBA", (255, 255, 255, 255)),
+        ("nor.png", "nor.pm_tex", TextureFormat.RGBA8_UNORM, "RGBA", (128, 128, 255, 255)),
+        ("disp.png", "disp.pm_tex", TextureFormat.R8_UNORM, "L", 128),
+        ("arm.png", "arm.pm_tex", TextureFormat.RGBA8_UNORM, "RGBA", (255, 128, 0, 255)),
+    ]
+
+    for src_name, out_name, fmt, fallback_mode, fallback_color in channel_configs:
+        src_path = in_d / src_name
+        out_path = out_d / out_name
+
+        # Incremental check: skip if output exists and is newer than source
+        if not force and out_path.is_file():
+            if src_path.is_file():
+                if out_path.stat().st_mtime >= src_path.stat().st_mtime:
+                    continue
+            else:
+                continue
+
+        if src_path.is_file():
+            with Image.open(src_path) as img:
+                tex = cook_image_to_pm_tex(
+                    img,
+                    target_format=fmt,
+                    generate_mips=generate_mips,
+                    target_size=target_size,
+                )
+        else:
+            fallback_img = Image.new(fallback_mode, target_size, fallback_color)
+            tex = cook_image_to_pm_tex(
+                fallback_img,
+                target_format=fmt,
+                generate_mips=generate_mips,
+                target_size=target_size,
+            )
+
+        tex.save(out_path)
+        print(f"[Cooker] Material '{in_d.name}' baked '{out_name}' ({tex.width}x{tex.height}, {fmt.name})")
+
+
+def cook_all_materials(
+    materials_root: str | Path,
+    output_root: str | Path,
+    target_size: tuple[int, int] = (4096, 4096),
+    generate_mips: bool = True,
+    force: bool = False,
+) -> int:
+    """Discovers and cooks all PBR material folders under materials_root.
+
+    Returns the count of material folders cooked/verified.
+    """
+    in_root = Path(materials_root)
+    out_root = Path(output_root)
+
+    if not in_root.is_dir():
+        print(f"[Cooker] Materials root '{in_root}' not found.")
+        return 0
+
+    subdirs = [d for d in in_root.iterdir() if d.is_dir()]
+    subdirs.sort(key=lambda d: d.name)
+
+    cooked_count = 0
+    for d in subdirs:
+        out_dir = out_root / d.name
+        cook_material(
+            material_dir=d,
+            output_dir=out_dir,
+            target_size=target_size,
+            generate_mips=generate_mips,
+            force=force,
+        )
+        cooked_count += 1
+
+    print(f"[Cooker] Processed {cooked_count} materials in '{output_root}'")
+    return cooked_count
 
 
 def pack_directory(
@@ -346,8 +448,26 @@ def main() -> None:
     p_tex = subparsers.add_parser("cook-tex", help="Cooks an image into a .pm_tex")
     p_tex.add_argument("input", help="Source image path")
     p_tex.add_argument("output", help="Destination .pm_tex path")
-    p_tex.add_argument("--format", default="rgba8", choices=["rgba8", "bc7", "bc5"], help="Target GPU format")
+    p_tex.add_argument("--format", default="rgba8", choices=["rgba8", "bc7", "bc5", "r8"], help="Target GPU format")
     p_tex.add_argument("--no-mips", action="store_true", help="Disable pre-baked mipmap chain")
+    p_tex.add_argument("--width", type=int, default=None, help="Target width resize")
+    p_tex.add_argument("--height", type=int, default=None, help="Target height resize")
+
+    # cook-material
+    p_mat = subparsers.add_parser("cook-material", help="Cooks a PBR material folder into .pm_tex files")
+    p_mat.add_argument("input", help="Source material folder")
+    p_mat.add_argument("output", help="Destination material folder")
+    p_mat.add_argument("--size", type=int, default=4096, help="Target resolution (default: 4096)")
+    p_mat.add_argument("--no-mips", action="store_true", help="Disable pre-baked mipmap chain")
+    p_mat.add_argument("--force", action="store_true", help="Force re-bake regardless of timestamps")
+
+    # cook-materials
+    p_mats = subparsers.add_parser("cook-materials", help="Cooks all PBR material folders in a directory")
+    p_mats.add_argument("input_root", help="Source materials root directory (e.g. assets/textures)")
+    p_mats.add_argument("output_root", help="Destination materials root directory")
+    p_mats.add_argument("--size", type=int, default=4096, help="Target resolution (default: 4096)")
+    p_mats.add_argument("--no-mips", action="store_true", help="Disable pre-baked mipmap chain")
+    p_mats.add_argument("--force", action="store_true", help="Force re-bake regardless of timestamps")
 
     # pack
     p_pack = subparsers.add_parser("pack", help="Packs a directory of cooked assets into a .pak")
@@ -364,8 +484,32 @@ def main() -> None:
             "rgba8": TextureFormat.RGBA8_UNORM,
             "bc7": TextureFormat.BC7_UNORM,
             "bc5": TextureFormat.BC5_UNORM,
+            "r8": TextureFormat.R8_UNORM,
         }
-        cook_texture(args.input, args.output, target_format=fmt_map[args.format], generate_mips=not args.no_mips)
+        target_sz = (args.width, args.height) if (args.width and args.height) else None
+        cook_texture(
+            args.input,
+            args.output,
+            target_format=fmt_map[args.format],
+            generate_mips=not args.no_mips,
+            target_size=target_sz,
+        )
+    elif args.command == "cook-material":
+        cook_material(
+            args.input,
+            args.output,
+            target_size=(args.size, args.size),
+            generate_mips=not args.no_mips,
+            force=args.force,
+        )
+    elif args.command == "cook-materials":
+        cook_all_materials(
+            args.input_root,
+            args.output_root,
+            target_size=(args.size, args.size),
+            generate_mips=not args.no_mips,
+            force=args.force,
+        )
     elif args.command == "pack":
         pack_directory(args.input_dir, args.output_pak, compress=args.compress)
 

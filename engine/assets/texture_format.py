@@ -13,6 +13,7 @@ from enum import IntEnum
 from pathlib import Path
 import struct
 from typing import TYPE_CHECKING
+import numpy as np
 from PIL import Image
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ class TextureFormat(IntEnum):
     BC7_UNORM = 2       # BPTC 8-bit/channel block compression (1 byte/pixel)
     BC5_UNORM = 3       # RGTC2 dual-channel normal compression (1 byte/pixel)
     RGB8_UNORM = 4      # Standard 24-bit RGB (3 bytes/pixel)
+    R8_UNORM = 5        # Single-channel 8-bit luminance/height (1 byte/pixel)
 
 
 @dataclass(slots=True)
@@ -155,7 +157,12 @@ class PMTex:
 
     def upload_to_gpu(self, ctx: moderngl.Context) -> moderngl.Texture:
         """Streams pre-filtered mipmap levels directly into a ModernGL Texture handle."""
-        components = 4 if self.format in (TextureFormat.RGBA8_UNORM, TextureFormat.BC7_UNORM) else 3
+        if self.format == TextureFormat.R8_UNORM:
+            components = 1
+        elif self.format in (TextureFormat.RGBA8_UNORM, TextureFormat.BC7_UNORM):
+            components = 4
+        else:
+            components = 3
         # Create base texture using Level 0 dimensions
         tex = ctx.texture((self.width, self.height), components=components)
         if self.mip_count > 1:
@@ -172,15 +179,38 @@ def cook_image_to_pm_tex(
     img: Image.Image,
     target_format: TextureFormat = TextureFormat.RGBA8_UNORM,
     generate_mips: bool = True,
+    target_size: tuple[int, int] | None = None,
 ) -> PMTex:
     """Cooks a PIL Image into a complete PMTex structure with pre-filtered mipmaps."""
-    rgba_img = img.convert("RGBA")
-    w, h = rgba_img.size
+    if target_size is not None and img.size != target_size:
+        resample = (
+            Image.Resampling.BOX
+            if (img.width >= target_size[0] and img.height >= target_size[1])
+            else Image.Resampling.BILINEAR
+        )
+        img = img.resize(target_size, resample)
 
-    mip_images: list[Image.Image] = [rgba_img]
+    if target_format == TextureFormat.R8_UNORM:
+        if img.mode == "I;16":
+            arr = np.array(img, dtype=np.uint16)
+            arr_8 = (arr / 256).astype(np.uint8)
+            base_img = Image.fromarray(arr_8, mode="L")
+        elif img.mode in ("RGBA", "RGB"):
+            arr = np.array(img)
+            base_img = Image.fromarray(arr[..., 0], mode="L")
+        else:
+            base_img = img.convert("L")
+    elif target_format == TextureFormat.RGB8_UNORM:
+        base_img = img.convert("RGB")
+    else:
+        base_img = img.convert("RGBA")
+
+    w, h = base_img.size
+
+    mip_images: list[Image.Image] = [base_img]
     if generate_mips:
         curr_w, curr_h = w, h
-        curr_img = rgba_img
+        curr_img = base_img
         while curr_w > 1 or curr_h > 1:
             curr_w = max(1, curr_w // 2)
             curr_h = max(1, curr_h // 2)
