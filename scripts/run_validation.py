@@ -35,6 +35,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from engine.core.ecs import EntityManager  # noqa: E402
 from engine.core.loop import EngineLoop  # noqa: E402
+from engine.core.async_loader import BackgroundAssetLoader  # noqa: E402
 from engine.input import (  # noqa: E402
     InputManager,
     Key,
@@ -51,6 +52,7 @@ from engine.gfx import (  # noqa: E402
     GraphicsQuality,
     GIMode,
     get_quality_preset,
+    LoadingScreen,
 )
 from engine.gfx.texture_atlas import (  # noqa: E402
     DisplacementMode,
@@ -320,6 +322,16 @@ def main() -> None:
     else:
         render_ctx.window.set_vsync(VSyncMode.OFF)
 
+    loading_screen = LoadingScreen(
+        ctx=render_ctx.ctx,
+        width=width,
+        height=height,
+        is_headless=args.headless,
+    )
+    loading_screen.set_progress(0.05, status="Initializing Engine & GPU Render Pipeline...")
+    loading_screen.update(0.016)
+    loading_screen.render(render_ctx=render_ctx)
+
     pipeline = RenderPipeline(render_ctx, get_quality_preset(initial_preset_enum))
     pipeline.apply_config(pipeline.config)
 
@@ -407,9 +419,15 @@ def main() -> None:
     engine_tweaks.on_vsync_changed(lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF))
 
     # 3. Mount Cooked .pak Archive via Virtual File System (VFS)
+    loading_screen.set_progress(0.10, status="Mounting Cooked Asset Archive (.pak)...")
+    loading_screen.update(0.016)
+    loading_screen.render(render_ctx=render_ctx)
     pipeline.resources.mount_pak(pak_path)
 
     # 4. Load Cooked 32-Byte .pm_mesh Directly from .pak into GPU MegaBuffer
+    loading_screen.set_progress(0.15, status="Loading Cooked Geometry Assets...")
+    loading_screen.update(0.016)
+    loading_screen.render(render_ctx=render_ctx)
     alloc_monolith = pipeline.load_cooked_mesh("monolith", "models/monolith.pm_mesh")
     cooked_mesh = pipeline.resources.load_mesh("models/monolith.pm_mesh")
 
@@ -417,11 +435,27 @@ def main() -> None:
     mat_layers: dict[str, int] = {}
     textures_dir = ROOT_DIR / "assets" / "textures"
     if textures_dir.is_dir():
-        print("Loading 4K PBR material texture arrays...")
-        mat_layers = pipeline.load_materials(textures_dir, resolution=4096)
+        print("Streaming 4K PBR material texture arrays via BackgroundAssetLoader...")
+        target_res = 4096
+        if pipeline.texture_atlas.width != target_res or pipeline.texture_atlas.height != target_res:
+            pipeline.texture_atlas.destroy()
+            from engine.gfx.texture_atlas import TextureArrayAtlas
+            pipeline.texture_atlas = TextureArrayAtlas(pipeline.ctx, width=target_res, height=target_res, max_layers=32)
+
+        async_loader = BackgroundAssetLoader()
+        async_loader.start_material_loading(textures_dir, width=target_res, height=target_res)
+        mat_layers = loading_screen.stream_materials(
+            atlas=pipeline.texture_atlas,
+            loader=async_loader,
+            render_ctx=render_ctx,
+        )
+        async_loader.shutdown(wait=False)
         print(f"Loaded {len(mat_layers)} material layers into GPU texture array atlas.")
 
     # 5. Construct PyMordial Architecture & Material Testbed (PAMT) Scene
+    loading_screen.set_progress(0.95, status="Constructing Architecture & Material Testbed Scene...")
+    loading_screen.update(0.016)
+    loading_screen.render(render_ctx=render_ctx)
     cube_ids: list[int] = []
     step_boxes: list[tuple[tuple[float, float, float], tuple[float, float, float]]] = []
 
@@ -1026,6 +1060,14 @@ def main() -> None:
             args.frames = 300
         debug_menu.visible = False
         debug_menu.show_graphics = False
+
+    # Finalize Loading Screen & Fade Transition into Scene
+    loading_screen.set_progress(1.0, status="Ready. Launching PyMordial Engine...")
+    for _ in range(5):
+        loading_screen.update(0.016)
+        loading_screen.render(render_ctx=render_ctx)
+    loading_screen.fade_out(duration=0.35, render_ctx=render_ctx)
+    loading_screen.destroy()
 
     # Zero-allocation reusable per-frame vectors
     scratch_fwd_vec = [0.0, 0.0, 0.0]

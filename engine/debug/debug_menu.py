@@ -235,6 +235,8 @@ class DebugMenu:
             return True
 
         if self.renderer is not None:
+            if self.imgui_ctx is not None and imgui is not None:
+                imgui.set_current_context(self.imgui_ctx)
             return bool(self.renderer.process_event(event))
         return False
 
@@ -802,6 +804,8 @@ class DebugMenu:
             except Exception:
                 pass
 
+        if self.imgui_ctx is not None and imgui is not None:
+            imgui.set_current_context(self.imgui_ctx)
         self.io.display_size = imgui.ImVec2(float(self.width), float(self.height))
         self.renderer.process_inputs()
         imgui.new_frame()

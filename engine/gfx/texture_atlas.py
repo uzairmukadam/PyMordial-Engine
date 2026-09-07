@@ -13,14 +13,27 @@ and their displacement mode via material_data[entity, 7].
 """
 
 from __future__ import annotations
+from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Callable, TYPE_CHECKING
 import numpy as np
 from PIL import Image
 
 if TYPE_CHECKING:
     import moderngl
+
+
+@dataclass(slots=True)
+class DecodedMaterialLayer:
+    """Pre-decoded raw pixel buffers for all 4 PBR channels ready for GPU upload."""
+    name: str
+    diffuse_bytes: bytes
+    normal_bytes: bytes
+    disp_bytes: bytes
+    arm_bytes: bytes
+    width: int
+    height: int
 
 
 class DisplacementMode(IntEnum):
@@ -58,6 +71,86 @@ def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:
         return img
     resample = Image.Resampling.BOX if (img.width >= w and img.height >= h) else Image.Resampling.BILINEAR
     return img.resize((w, h), resample)
+
+
+def decode_material_folder(
+    folder: str | Path,
+    width: int,
+    height: int,
+    name: str | None = None,
+) -> DecodedMaterialLayer:
+    """Pure CPU worker function to read and decode all 4 PBR texture maps.
+
+    Safe to execute on background worker threads without OpenGL/ModernGL context.
+    """
+    p = Path(folder)
+    mat_name = name or p.name
+    diff_path = p / "diff.png"
+    nor_path = p / "nor.png"
+    disp_path = p / "disp.png"
+    arm_path = p / "arm.png"
+
+    # 1. Diffuse (RGBA)
+    if diff_path.is_file():
+        img = Image.open(diff_path).convert("RGBA")
+        img = _fit_image(img, width, height)
+        diff_bytes = img.tobytes()
+    else:
+        diff_bytes = np.full(width * height * 4, 255, dtype=np.uint8).tobytes()
+
+    # 2. Normal (RGBA tangent space)
+    if nor_path.is_file():
+        img = Image.open(nor_path).convert("RGBA")
+        img = _fit_image(img, width, height)
+        nor_bytes = img.tobytes()
+    else:
+        flat = np.zeros(width * height * 4, dtype=np.uint8)
+        flat[0::4] = 128
+        flat[1::4] = 128
+        flat[2::4] = 255
+        flat[3::4] = 255
+        nor_bytes = flat.tobytes()
+
+    # 3. Displacement (R8)
+    if disp_path.is_file():
+        raw_disp = Image.open(disp_path)
+        if raw_disp.mode == "I;16":
+            arr = np.array(raw_disp, dtype=np.uint16)
+            arr_8 = (arr / 256).astype(np.uint8)
+            disp_img = Image.fromarray(arr_8, mode="L")
+        elif raw_disp.mode in ("RGBA", "RGB"):
+            arr = np.array(raw_disp)
+            disp_img = Image.fromarray(arr[..., 0], mode="L")
+        else:
+            disp_img = raw_disp.convert("L")
+        disp_img = _fit_image(disp_img, width, height)
+        disp_bytes = disp_img.tobytes()
+    else:
+        disp_bytes = np.full(width * height, 128, dtype=np.uint8).tobytes()
+
+    # 4. ARM (AO, Roughness, Metallic, Unused)
+    if arm_path.is_file():
+        img = Image.open(arm_path).convert("RGBA")
+        img = _fit_image(img, width, height)
+        arm_bytes = img.tobytes()
+    else:
+        arm = np.zeros(width * height * 4, dtype=np.uint8)
+        arm[0::4] = 255
+        arm[1::4] = 128
+        arm[2::4] = 0
+        arm[3::4] = 255
+        arm_bytes = arm.tobytes()
+
+    return DecodedMaterialLayer(
+        name=mat_name,
+        diffuse_bytes=diff_bytes,
+        normal_bytes=nor_bytes,
+        disp_bytes=disp_bytes,
+        arm_bytes=arm_bytes,
+        width=width,
+        height=height,
+    )
+
 
 
 class TextureArrayAtlas:
@@ -251,10 +344,55 @@ class TextureArrayAtlas:
 
         return layer
 
+    def upload_decoded_layer(
+        self,
+        decoded: DecodedMaterialLayer,
+        rebuild_mipmaps: bool = False,
+    ) -> int:
+        """Uploads pre-decoded PBR texture buffers into the GPU texture array on the main thread."""
+        if self._next_layer >= self.max_layers:
+            raise RuntimeError(
+                f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers"
+            )
+
+        layer = self._next_layer
+        w, h = self.width, self.height
+
+        diff_bytes = decoded.diffuse_bytes
+        norm_bytes = decoded.normal_bytes
+        disp_bytes = decoded.disp_bytes
+        arm_bytes = decoded.arm_bytes
+
+        if decoded.width != w or decoded.height != h:
+            img_diff = Image.frombytes("RGBA", (decoded.width, decoded.height), diff_bytes)
+            diff_bytes = _fit_image(img_diff, w, h).tobytes()
+            img_norm = Image.frombytes("RGBA", (decoded.width, decoded.height), norm_bytes)
+            norm_bytes = _fit_image(img_norm, w, h).tobytes()
+            img_disp = Image.frombytes("L", (decoded.width, decoded.height), disp_bytes)
+            disp_bytes = _fit_image(img_disp, w, h).tobytes()
+            img_arm = Image.frombytes("RGBA", (decoded.width, decoded.height), arm_bytes)
+            arm_bytes = _fit_image(img_arm, w, h).tobytes()
+
+        self.diffuse_array.write(diff_bytes, viewport=(0, 0, layer, w, h, 1))
+        self.normal_array.write(norm_bytes, viewport=(0, 0, layer, w, h, 1))
+        self.displacement_array.write(disp_bytes, viewport=(0, 0, layer, w, h, 1))
+        self.arm_array.write(arm_bytes, viewport=(0, 0, layer, w, h, 1))
+
+        mat_name = decoded.name or f"material_{layer}"
+        self.material_names.append(mat_name)
+        self.name_to_layer[mat_name] = layer
+        self._next_layer = layer + 1
+
+        if rebuild_mipmaps:
+            self.rebuild_all_mipmaps()
+
+        return layer
+
     def load_materials_from_folder(
         self,
         textures_dir: str | Path,
         preferred_order: list[str] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> dict[str, int]:
         """Loads all Poly Haven material folders from directory into atlas layers."""
         p = Path(textures_dir)
@@ -276,7 +414,8 @@ class TextureArrayAtlas:
         else:
             subdirs.sort(key=lambda d: d.name)
 
-        for d in subdirs:
+        total = len(subdirs)
+        for i, d in enumerate(subdirs):
             diff = d / "diff.png"
             nor = d / "nor.png"
             disp = d / "disp.png"
@@ -289,6 +428,8 @@ class TextureArrayAtlas:
                 name=d.name,
                 rebuild_mipmaps=False,
             )
+            if progress_callback is not None:
+                progress_callback(i + 1, total, d.name)
 
         self.rebuild_all_mipmaps()
         return self.name_to_layer

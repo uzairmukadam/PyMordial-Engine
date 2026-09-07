@@ -379,12 +379,13 @@ class RenderPipeline:
         self,
         textures_dir: str | Path = "assets/textures",
         resolution: int = 4096,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> dict[str, int]:
         """Loads PBR material textures from folder into the texture array atlas."""
         if self.texture_atlas.width != resolution or self.texture_atlas.height != resolution:
             self.texture_atlas.destroy()
             self.texture_atlas = TextureArrayAtlas(self.ctx, width=resolution, height=resolution, max_layers=32)
-        return self.texture_atlas.load_materials_from_folder(textures_dir)
+        return self.texture_atlas.load_materials_from_folder(textures_dir, progress_callback=progress_callback)
 
     def render_frame(
         self,

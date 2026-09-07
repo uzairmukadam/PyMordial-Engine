@@ -16,6 +16,7 @@ from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.post_process import PostProcessPipeline
 from engine.gfx.pipeline import RenderPipeline
 from engine.gfx.hud_overlay import HudOverlay
+from engine.gfx.loading_screen import LoadingScreen
 
 __all__ = [
     "GraphicsQuality",
@@ -33,4 +34,6 @@ __all__ = [
     "PostProcessPipeline",
     "RenderPipeline",
     "HudOverlay",
+    "LoadingScreen",
 ]
+
