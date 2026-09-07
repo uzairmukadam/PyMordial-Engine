@@ -14,6 +14,7 @@ from engine.gfx.texture_atlas import (
 )
 from engine.core.async_loader import BackgroundAssetLoader
 from engine.gfx.loading_screen import LoadingScreen
+from engine.events import publish_event, WindowResizeEvent
 
 
 @pytest.fixture
@@ -130,3 +131,89 @@ class TestAsyncLoaderAndLoadingScreen:
         screen.destroy()
         assert screen.prog is None
         assert screen.vao is None
+
+    def test_loading_screen_resize_adaptation(self, gl_ctx):
+        """Validates that LoadingScreen dynamically adapts resolution, textures, and uniforms."""
+        screen = LoadingScreen(gl_ctx, width=1280, height=720, is_headless=True)
+        assert screen.width == 1280
+        assert screen.height == 720
+        assert screen.text_texture.size == (1280, 720)
+
+        # Resize to 1920x1080 (16:9 Full HD)
+        screen.resize(1920, 1080)
+        assert screen.width == 1920
+        assert screen.height == 1080
+        assert screen.text_texture.size == (1920, 1080)
+        assert screen.u_resolution.value == (1920.0, 1080.0)
+
+        # Resize to 2560x1080 (21:9 Ultrawide)
+        screen.resize(2560, 1080)
+        assert screen.width == 2560
+        assert screen.height == 1080
+        assert screen.text_texture.size == (2560, 1080)
+        assert screen.u_resolution.value == (2560.0, 1080.0)
+
+        screen.destroy()
+
+    def test_loading_screen_window_resize_event(self, gl_ctx):
+        """Validates that LoadingScreen handles WindowResizeEvent from the central event bus."""
+        screen = LoadingScreen(gl_ctx, width=1280, height=720, is_headless=True)
+        assert screen.width == 1280
+
+        # Dispatch resize event
+        publish_event(WindowResizeEvent(width=1600, height=900))
+        assert screen.width == 1600
+        assert screen.height == 900
+        assert screen.text_texture.size == (1600, 900)
+
+        screen.destroy()
+
+    def test_loading_screen_target_fbo_auto_adaptation(self, gl_ctx):
+        """Validates that render() automatically detects target_fbo dimensions and resizes."""
+        screen = LoadingScreen(gl_ctx, width=1280, height=720, is_headless=True)
+        
+        # Create an 800x600 FBO
+        tex = gl_ctx.texture((800, 600), 4)
+        fbo = gl_ctx.framebuffer(color_attachments=[tex])
+
+        screen.render(target_fbo=fbo)
+        assert screen.width == 800
+        assert screen.height == 600
+        assert screen.text_texture.size == (800, 600)
+
+        fbo.release()
+        tex.release()
+        screen.destroy()
+
+    def test_loading_screen_pure_black_background(self, gl_ctx):
+        """Validates that the loading screen renders pure black background with corner icon."""
+        w, h = 800, 600
+        tex = gl_ctx.texture((w, h), 4)
+        fbo = gl_ctx.framebuffer(color_attachments=[tex])
+
+        screen = LoadingScreen(gl_ctx, width=w, height=h, is_headless=True)
+        screen.set_progress(0.5, status="Loading world chunks...")
+        screen.update(0.1)
+        screen.render(target_fbo=fbo)
+
+        raw = fbo.read(components=4, dtype="f1")
+        arr = np.frombuffer(raw, dtype=np.uint8).reshape((h, w, 4))
+
+        # Top-left, center, and middle-left regions must be pure black (0, 0, 0)
+        # Remember OpenGL FBO row 0 is bottom
+        center_pixel = arr[h // 2, w // 2, :3]
+        top_left_pixel = arr[h - 50, 50, :3]
+        np.testing.assert_array_equal(center_pixel, [0, 0, 0])
+        np.testing.assert_array_equal(top_left_pixel, [0, 0, 0])
+
+        # Bottom-right corner region (around iconCenter) must have non-zero luminance
+        scale = max(0.70, min(1.8, h / 1080.0))
+        margin_x = int(56.0 * scale)
+        margin_y = int(56.0 * scale)
+        corner_region = arr[margin_y - 10:margin_y + 10, (w - margin_x) - 10:(w - margin_x) + 10, :3]
+        assert np.max(corner_region) > 0, "Expected animated loading icon in bottom-right corner"
+
+        fbo.release()
+        tex.release()
+        screen.destroy()
+

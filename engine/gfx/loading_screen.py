@@ -7,6 +7,8 @@ from typing import Callable, TYPE_CHECKING
 import pygame
 import moderngl
 
+from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+
 if TYPE_CHECKING:
     from engine.gfx.context import RenderContext
     from engine.gfx.texture_atlas import TextureArrayAtlas
@@ -16,7 +18,7 @@ SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
 
 
 class LoadingScreen:
-    """Renders a procedural 60 FPS cinematic loading screen with live background asset streaming."""
+    """Renders a minimalist, fully black cinematic loading screen with a bottom-right corner animated icon."""
 
     __slots__ = (
         "ctx",
@@ -31,8 +33,6 @@ class LoadingScreen:
         "u_text_texture",
         "text_texture",
         "_text_surface",
-        "_font_title",
-        "_font_subtitle",
         "_font_status",
         "_font_pct",
         "_last_rendered_text_key",
@@ -43,6 +43,7 @@ class LoadingScreen:
         "elapsed_time",
         "fade_alpha",
         "is_headless",
+        "_subscribed_resize",
     )
 
     def __init__(
@@ -59,8 +60,8 @@ class LoadingScreen:
 
         self.current_progress: float = 0.0
         self.target_progress: float = 0.0
-        self.status_text: str = "Initializing Engine..."
-        self.substatus_text: str = "PYMORDIAL ENGINE 3D"
+        self.status_text: str = "Loading..."
+        self.substatus_text: str = ""
         self.elapsed_time: float = 0.0
         self.fade_alpha: float = 1.0
 
@@ -74,26 +75,12 @@ class LoadingScreen:
         self.text_texture: moderngl.Texture | None = None
 
         self._text_surface: pygame.Surface | None = None
-        self._font_title = None
-        self._font_subtitle = None
         self._font_status = None
         self._font_pct = None
-        self._last_rendered_text_key: tuple[str, int] = ("", -1)
+        self._last_rendered_text_key: tuple[str, int, int, int] = ("", -1, -1, -1)
 
-        # Initialize typography fonts if Pygame is available
-        if pygame.font and not pygame.font.get_init():
-            try:
-                pygame.font.init()
-            except Exception:
-                pass
-
-        try:
-            self._font_title = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 30, bold=True)
-            self._font_subtitle = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 15, bold=False)
-            self._font_status = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 14, bold=False)
-            self._font_pct = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 20, bold=True)
-        except Exception:
-            pass
+        # Initialize typography fonts
+        self._init_fonts()
 
         if self.ctx is not None:
             vert_src = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
@@ -118,6 +105,50 @@ class LoadingScreen:
             self._text_surface = pygame.Surface((width, height), pygame.SRCALPHA)
             self._update_text_texture(force=True)
 
+        self._subscribed_resize: bool = False
+        try:
+            subscribe_event(WindowResizeEvent, self._on_window_resize, priority=90)
+            self._subscribed_resize = True
+        except Exception:
+            self._subscribed_resize = False
+
+    def _on_window_resize(self, event: WindowResizeEvent) -> None:
+        """Automatically adapts loading screen viewport and typography when window resizes."""
+        self.resize(event.width, event.height)
+
+    def _init_fonts(self) -> None:
+        """Initializes typography fonts for corner status and percentage."""
+        if pygame.font and not pygame.font.get_init():
+            try:
+                pygame.font.init()
+            except Exception:
+                pass
+        try:
+            self._font_status = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 13, bold=False)
+            self._font_pct = pygame.font.SysFont("Segoe UI, Arial, sans-serif", 12, bold=True)
+        except Exception:
+            self._font_status = None
+            self._font_pct = None
+
+    def resize(self, width: int, height: int) -> None:
+        """Adapts loading screen and dynamic text texture to new window dimensions."""
+        if width <= 0 or height <= 0 or (width == self.width and height == self.height):
+            return
+        self.width = width
+        self.height = height
+
+        if self.u_resolution is not None:
+            self.u_resolution.value = (float(width), float(height))
+
+        if self.ctx is not None:
+            if self.text_texture is not None:
+                self.text_texture.release()
+            self.text_texture = self.ctx.texture((width, height), 4, dtype="f1")
+            self.text_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+
+        self._text_surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        self._update_text_texture(force=True)
+
     def set_progress(self, target: float, status: str | None = None, substatus: str | None = None) -> None:
         """Sets target progress and updates status labels."""
         self.target_progress = max(0.0, min(1.0, float(target)))
@@ -134,12 +165,12 @@ class LoadingScreen:
         self.current_progress += (self.target_progress - self.current_progress) * alpha
 
     def _update_text_texture(self, force: bool = False) -> None:
-        """Renders crisp typography onto text_surface and uploads to text_texture."""
+        """Renders subtle corner typography beside the bottom-right loading icon."""
         if self._text_surface is None or self.text_texture is None:
             return
 
         pct_val = int(round(self.current_progress * 100.0))
-        key = (self.status_text, pct_val)
+        key = (self.status_text, pct_val, self.width, self.height)
         if not force and key == self._last_rendered_text_key:
             return
         self._last_rendered_text_key = key
@@ -148,38 +179,38 @@ class LoadingScreen:
         surf.fill((0, 0, 0, 0))
 
         w, h = self.width, self.height
+        scale = max(0.70, min(1.8, h / 1080.0))
+        margin_x = 56.0 * scale
+        margin_y = 56.0 * scale
 
-        # 1. Title: P Y M O R D I A L   E N G I N E
-        if self._font_title is not None:
-            title_txt = "P Y M O R D I A L   E N G I N E"
-            title_surf = self._font_title.render(title_txt, True, (245, 250, 255))
-            title_x = (w - title_surf.get_width()) // 2
-            title_y = int(h * 0.16)
-            surf.blit(title_surf, (title_x, title_y))
+        # Icon is at (w - margin_x, h - margin_y) in Pygame window coordinates
+        icon_x = w - margin_x
+        icon_y = h - margin_y
 
-        # 2. Subtitle: ARCHITECTURE & MATERIAL TESTBED
-        if self._font_subtitle is not None:
-            sub_txt = "ARCHITECTURE & MATERIAL TESTBED"
-            sub_surf = self._font_subtitle.render(sub_txt, True, (56, 189, 248))
-            sub_x = (w - sub_surf.get_width()) // 2
-            sub_y = int(h * 0.16) + 40
-            surf.blit(sub_surf, (sub_x, sub_y))
+        # Right-aligned text boundary placed to the left of the loading icon
+        text_anchor_x = int(icon_x - 28.0 * scale)
 
-        # 3. Progress Percentage (e.g. 54%)
-        # Progress bar is centered at Y = (1.0 - 0.26) * h = 0.74 * h in Pygame coordinates
-        if self._font_pct is not None:
-            pct_txt = f"{pct_val}%"
-            pct_surf = self._font_pct.render(pct_txt, True, (56, 189, 248))
-            pct_x = (w - pct_surf.get_width()) // 2
-            pct_y = int(h * 0.74) + 16
-            surf.blit(pct_surf, (pct_x, pct_y))
-
-        # 4. Status Text (e.g. Streaming 4K PBR Materials...)
+        # 1. Subtle stage status message (e.g. Streaming 4K PBR Materials...)
         if self._font_status is not None and self.status_text:
-            stat_surf = self._font_status.render(self.status_text, True, (186, 210, 235))
-            stat_x = (w - stat_surf.get_width()) // 2
-            stat_y = int(h * 0.74) + 46
-            surf.blit(stat_surf, (stat_x, stat_y))
+            status_display = self.status_text
+            stat_surf = self._font_status.render(status_display, True, (155, 170, 190))
+            stat_x = text_anchor_x - stat_surf.get_width()
+            while len(status_display) > 10 and stat_x < 10:
+                status_display = status_display[:-4] + "..."
+                stat_surf = self._font_status.render(status_display, True, (155, 170, 190))
+                stat_x = text_anchor_x - stat_surf.get_width()
+            stat_y = int(icon_y - 15.0 * scale)
+            if stat_x >= 10:
+                surf.blit(stat_surf, (stat_x, stat_y))
+
+        # 2. Percentage indicator (e.g. LOADING 62%)
+        if self._font_pct is not None:
+            pct_txt = f"LOADING {pct_val}%"
+            pct_surf = self._font_pct.render(pct_txt, True, (56, 189, 248))
+            pct_x = text_anchor_x - pct_surf.get_width()
+            pct_y = int(icon_y + 3.0 * scale)
+            if pct_x >= 10:
+                surf.blit(pct_surf, (pct_x, pct_y))
 
         # Flip vertically to match ModernGL texture coordinates
         flipped = pygame.transform.flip(surf, False, True)
@@ -190,10 +221,22 @@ class LoadingScreen:
         target_fbo: moderngl.Framebuffer | None = None,
         render_ctx: RenderContext | None = None,
     ) -> None:
-        """Draws the animated loading screen, energy rings, progress bar, and typography."""
-        # 1. Pump OS window events to keep Windows responsive
-        if pygame.display.get_init() and not self.is_headless:
+        """Draws the fully black loading screen with bottom-right animated loading icon."""
+        # 1. Adapt automatically to target FBO, render context, or window resize
+        if target_fbo is not None:
+            fbo_w, fbo_h = target_fbo.size
+            if fbo_w > 0 and fbo_h > 0 and (fbo_w != self.width or fbo_h != self.height):
+                self.resize(fbo_w, fbo_h)
+        elif render_ctx is not None and (render_ctx.width != self.width or render_ctx.height != self.height):
+            self.resize(render_ctx.width, render_ctx.height)
+        elif pygame.display.get_init() and not self.is_headless:
             pygame.event.pump()
+            try:
+                win_w, win_h = pygame.display.get_window_size()
+                if win_w > 0 and win_h > 0 and (win_w != self.width or win_h != self.height):
+                    self.resize(win_w, win_h)
+            except Exception:
+                pass
 
         if self.ctx is None or self.prog is None or self.vao is None:
             return
@@ -201,11 +244,13 @@ class LoadingScreen:
         # 2. Update dynamic text texture
         self._update_text_texture()
 
-        # 3. Bind screen or target FBO
+        # 3. Bind screen or target FBO and ensure full viewport coverage
         if target_fbo is not None:
             target_fbo.use()
         elif hasattr(self.ctx, "screen") and self.ctx.screen is not None:
             self.ctx.screen.use()
+
+        self.ctx.viewport = (0, 0, self.width, self.height)
 
         # 4. Bind text texture to texture unit 0
         if self.text_texture is not None:
@@ -221,7 +266,7 @@ class LoadingScreen:
         if self.u_fade_alpha is not None:
             self.u_fade_alpha.value = float(self.fade_alpha)
 
-        # 6. Render procedural shader background & glowing progress bar
+        # 6. Render procedural black background & corner loading animation
         self.ctx.disable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.CULL_FACE)
         self.vao.render(moderngl.TRIANGLES, vertices=3)
@@ -293,7 +338,7 @@ class LoadingScreen:
 
         return atlas.name_to_layer
 
-    def fade_out(self, duration: float = 0.4, render_ctx: RenderContext | None = None) -> None:
+    def fade_out(self, duration: float = 0.3, render_ctx: RenderContext | None = None) -> None:
         """Smoothly fades out loading screen overlay before launching the main scene."""
         if self.is_headless or duration <= 0.0:
             return
@@ -309,6 +354,13 @@ class LoadingScreen:
 
     def destroy(self) -> None:
         """Releases GPU shader program, vertex array, and text overlay texture."""
+        if getattr(self, "_subscribed_resize", False):
+            try:
+                unsubscribe_event(WindowResizeEvent, self._on_window_resize)
+            except Exception:
+                pass
+            self._subscribed_resize = False
+
         if self.text_texture is not None:
             self.text_texture.release()
             self.text_texture = None
