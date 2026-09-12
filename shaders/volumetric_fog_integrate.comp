@@ -1,0 +1,47 @@
+#version 450 core
+// ============================================================
+//  Froxel Volumetric Fog: Raymarching Accumulation Pass
+//  Integrates transmittance and in-scattering front-to-back along camera rays.
+// ============================================================
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout (binding = 0, rgba16f) uniform readonly image3D u_ScatterExtinctionVol;
+layout (binding = 1, rgba16f) uniform writeonly image3D u_IntegratedVol;
+
+uniform float u_FogNear = 0.1;
+uniform float u_FogFar = 400.0;
+uniform ivec3 u_GridSize = ivec3(160, 90, 64);
+
+void main() {
+    ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
+    if (xy.x >= u_GridSize.x || xy.y >= u_GridSize.y) {
+        return;
+    }
+
+    vec3 accumulatedScattering = vec3(0.0);
+    float accumulatedTransmittance = 1.0;
+
+    float logRatio = log(u_FogFar / u_FogNear);
+
+    for (int z = 0; z < u_GridSize.z; ++z) {
+        ivec3 voxelCoord = ivec3(xy, z);
+        vec4 sampleData = imageLoad(u_ScatterExtinctionVol, voxelCoord);
+        vec3 scattering = sampleData.rgb;
+        float extinction = sampleData.a;
+
+        // Slice thickness in view-space meters
+        float z0 = u_FogNear * exp((float(z) / float(u_GridSize.z)) * logRatio);
+        float z1 = u_FogNear * exp((float(z + 1) / float(u_GridSize.z)) * logRatio);
+        float deltaZ = max(z1 - z0, 0.001);
+
+        // Analytical integration of Beer-Lambert law over slice deltaZ
+        float stepTransmittance = exp(-extinction * deltaZ);
+        vec3 stepScattering = scattering * ((1.0 - stepTransmittance) / max(extinction, 1e-6));
+
+        accumulatedScattering += stepScattering * accumulatedTransmittance;
+        accumulatedTransmittance *= stepTransmittance;
+
+        imageStore(u_IntegratedVol, voxelCoord, vec4(accumulatedScattering, accumulatedTransmittance));
+    }
+}

@@ -30,6 +30,7 @@ from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
 from engine.gfx.passes.fxaa_pass import FXAAPass
 from engine.gfx.passes.smaa_pass import SMAAPass
+from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.assets.resource_cache import ResourceCache
@@ -71,6 +72,7 @@ class RenderPipeline:
         "taa_pass",
         "fxaa_pass",
         "smaa_pass",
+        "volumetric_fog_pass",
         "_prev_vp_mat",
         "post_process",
         "resources",
@@ -199,6 +201,7 @@ class RenderPipeline:
         self.taa_pass = TAAPass(self.ctx, w, h)
         self.fxaa_pass = FXAAPass(self.ctx, w, h)
         self.smaa_pass = SMAAPass(self.ctx, w, h)
+        self.volumetric_fog_pass = VolumetricFogPass(self.ctx, w, h)
         self._prev_vp_mat = np.identity(4, dtype=np.float32).flatten()
 
         # Pre-allocated scratch buffers for zero-allocation frame rendering
@@ -401,6 +404,7 @@ class RenderPipeline:
         self.taa_pass.resize(width, height)
         self.fxaa_pass.resize(width, height)
         self.smaa_pass.resize(width, height)
+        self.volumetric_fog_pass.resize(width, height)
         self.post_process.resize(width, height)
 
         if gl is not None:
@@ -494,10 +498,8 @@ class RenderPipeline:
         )
 
         jitter_x, jitter_y = 0.0, 0.0
-        aa_mode = getattr(self.config, "aa_mode", "TAA" if self.config.taa_enabled else "OFF")
-        if aa_mode == "TAA":
-            jitter_x, jitter_y = self.taa_pass.get_jitter(w, h)
-        elif aa_mode in ("SMAA_2X", "SMAA_4X"):
+        aa_mode = getattr(self.config, "aa_mode", "OFF")
+        if aa_mode in ("SMAA_2X", "SMAA_4X"):
             jitter_x, jitter_y = self.smaa_pass.get_jitter(w, h, aa_mode)
 
         if jitter_x != 0.0 or jitter_y != 0.0:
@@ -778,34 +780,28 @@ class RenderPipeline:
             active_debug.render()
             active_debug.clear()
 
+        # ---- PASS 7.6: Froxel Volumetric Fog & Atmospheric Scattering ----
+        ctx.resources["csm"] = self.csm
+        ctx.resources["g_buffer"] = self.g_buffer
+        ctx.resources["hdr_fbo"] = self.post_process.hdr_fbo
+        self.volumetric_fog_pass.execute(ctx)
+
         # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
-        aa_mode = getattr(self.config, "aa_mode", "TAA" if self.config.taa_enabled else "OFF")
+        aa_mode = getattr(self.config, "aa_mode", "OFF")
 
-        if aa_mode == "TAA":
-            ctx.resources["hdr_color"] = self.post_process.hdr_texture
-            self.taa_pass.execute(ctx)
-            resolved_hdr = ctx.resources.get("taa_output", self.post_process.hdr_texture)
-            prev_hdr = self.post_process.hdr_texture
-            if resolved_hdr is not None and resolved_hdr is not prev_hdr:
-                self.post_process.hdr_texture = resolved_hdr
-            try:
-                self.post_process.render(target_fbo=self.post_process.final_fbo)
-            finally:
-                self.post_process.hdr_texture = prev_hdr
-        else:
-            self.post_process.render(target_fbo=self.post_process.final_fbo)
-            ctx.resources["ldr_color"] = self.post_process.final_texture
+        self.post_process.render(target_fbo=self.post_process.final_fbo)
+        ctx.resources["ldr_color"] = self.post_process.final_texture
 
-            if aa_mode == "FXAA":
-                self.fxaa_pass.execute(ctx)
-                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.fxaa_pass.fbo)
-            elif aa_mode in ("SMAA_1X", "SMAA_2X", "SMAA_4X"):
-                self.smaa_pass.execute(ctx)
-                if aa_mode == "SMAA_1X":
-                    self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass.fbo_smaa)
-                else:
-                    self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass._write_fbo)
+        if aa_mode == "FXAA":
+            self.fxaa_pass.execute(ctx)
+            self.ctx.copy_framebuffer(self.post_process.final_fbo, self.fxaa_pass.fbo)
+        elif aa_mode in ("SMAA_1X", "SMAA_2X", "SMAA_4X"):
+            self.smaa_pass.execute(ctx)
+            if aa_mode == "SMAA_1X":
+                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass.fbo_smaa)
+            else:
+                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass._write_fbo)
 
         if not self.ctx_wrapper.is_headless:
             self.ctx.copy_framebuffer(self.ctx.screen, self.post_process.final_fbo)
@@ -836,6 +832,7 @@ class RenderPipeline:
         self.taa_pass.destroy()
         self.fxaa_pass.destroy()
         self.smaa_pass.destroy()
+        self.volumetric_fog_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()

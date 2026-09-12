@@ -438,6 +438,15 @@ def main() -> None:
         engine_tweaks.aa_mode = cfg.aa_mode
         engine_tweaks.taa_enabled = cfg.taa_enabled
         engine_tweaks.point_lights_enabled = cfg.clustered_lights_enabled
+        engine_tweaks.volumetric_fog_enabled = getattr(cfg, "volumetric_fog_enabled", True)
+        engine_tweaks.fog_resolution = getattr(cfg, "fog_resolution", "HIGH")
+        engine_tweaks.fog_point_lights = getattr(cfg, "fog_point_lights", True)
+        engine_tweaks.fog_density = getattr(cfg, "fog_density", 0.005)
+        engine_tweaks.fog_height_falloff = getattr(cfg, "fog_height_falloff", 0.10)
+        engine_tweaks.fog_anisotropy = getattr(cfg, "fog_anisotropy", 0.65)
+        engine_tweaks.fog_distance = getattr(cfg, "fog_distance", 400.0)
+        engine_tweaks.fog_ambient = getattr(cfg, "fog_ambient", 0.35)
+        engine_tweaks.fog_debug_mode = getattr(cfg, "fog_debug_mode", 0)
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
@@ -1329,11 +1338,18 @@ def main() -> None:
         pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
         pipeline.config.ssr_steps = engine_tweaks.ssr_steps
         pipeline.config.ssr_thickness = engine_tweaks.ssr_thickness
-        pipeline.config.aa_mode = getattr(engine_tweaks, "aa_mode", "TAA" if engine_tweaks.taa_enabled else "OFF")
-        pipeline.config.taa_enabled = (pipeline.config.aa_mode == "TAA")
-        pipeline.config.taa_feedback = getattr(engine_tweaks, "taa_feedback", 0.92)
-        pipeline.config.taa_sharpness = getattr(engine_tweaks, "taa_sharpness", 0.35)
+        pipeline.config.aa_mode = getattr(engine_tweaks, "aa_mode", "OFF")
+        pipeline.config.taa_enabled = False
         pipeline.config.clustered_lights_enabled = engine_tweaks.point_lights_enabled
+
+        # Froxel Volumetric Fog & Atmospheric Scattering
+        pipeline.config.volumetric_fog_enabled = engine_tweaks.volumetric_fog_enabled
+        pipeline.config.fog_density = engine_tweaks.fog_density
+        pipeline.config.fog_height_falloff = engine_tweaks.fog_height_falloff
+        pipeline.config.fog_anisotropy = engine_tweaks.fog_anisotropy
+        pipeline.config.fog_distance = engine_tweaks.fog_distance
+        pipeline.config.fog_ambient = engine_tweaks.fog_ambient
+        pipeline.config.fog_debug_mode = engine_tweaks.fog_debug_mode
 
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.disp_near_radius = engine_tweaks.disp_near_radius

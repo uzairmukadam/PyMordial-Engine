@@ -21,6 +21,15 @@ class GIMode(str, Enum):
     HYBRID = "HYBRID"
 
 
+FROXEL_RESOLUTIONS: dict[str, tuple[int, int, int]] = {
+    "LOW": (80, 45, 32),
+    "MEDIUM": (120, 68, 48),
+    "HIGH": (160, 90, 64),
+    "ULTRA": (200, 112, 80),
+    "CINEMATIC": (240, 135, 96),
+}
+
+
 @dataclass
 class RenderConfig:
     """Configurable graphics and shader parameters for AAA quality and player scaling."""
@@ -70,9 +79,9 @@ class RenderConfig:
     ssr_thickness: float = 0.40
     ssr_max_distance: float = 20.0
 
-    # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
-    aa_mode: str = "TAA"
-    taa_enabled: bool = True
+    # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X")
+    aa_mode: str = "OFF"
+    taa_enabled: bool = False
     taa_feedback: float = 0.92
     taa_sharpness: float = 0.35
     fxaa_subpixel: float = 0.75
@@ -94,8 +103,14 @@ class RenderConfig:
     exposure: float = 1.0
 
     volumetric_fog_enabled: bool = True
-    fog_density: float = 0.015
+    fog_resolution: str = "HIGH"    # "LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"
+    fog_point_lights: bool = True   # Volumetric local point light scattering
+    fog_density: float = 0.005
     fog_height_falloff: float = 0.10
+    fog_anisotropy: float = 0.65
+    fog_distance: float = 400.0
+    fog_ambient: float = 0.35
+    fog_debug_mode: int = 0         # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
     # Debug Visualization
     debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
@@ -146,7 +161,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         bloom_enabled=False,
         bloom_iterations=3,
         volumetric_fog_enabled=False,
-        fog_density=0.005,
+        fog_resolution="LOW",
+        fog_point_lights=False,
+        fog_density=0.002,
         pom_enabled=False,
         pom_min_samples=4,
         pom_max_samples=16,
@@ -169,12 +186,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ssgi_steps=8,
         ibl_enabled=True,
         ssr_enabled=False,
-        taa_enabled=True,
+        aa_mode="OFF",
+        taa_enabled=False,
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=4,
         volumetric_fog_enabled=True,
-        fog_density=0.010,
+        fog_resolution="MEDIUM",
+        fog_point_lights=True,
+        fog_density=0.004,
         pom_enabled=True,
         pom_min_samples=8,
         pom_max_samples=32,
@@ -198,12 +218,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_steps=20,
-        taa_enabled=True,
+        aa_mode="OFF",
+        taa_enabled=False,
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=5,
         volumetric_fog_enabled=True,
-        fog_density=0.015,
+        fog_resolution="HIGH",
+        fog_point_lights=True,
+        fog_density=0.005,
         pom_enabled=True,
         pom_min_samples=8,
         pom_max_samples=64,
@@ -230,12 +253,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_steps=28,
-        taa_enabled=True,
+        aa_mode="OFF",
+        taa_enabled=False,
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
         volumetric_fog_enabled=True,
-        fog_density=0.018,
+        fog_resolution="ULTRA",
+        fog_point_lights=True,
+        fog_density=0.006,
         pom_enabled=True,
         pom_min_samples=12,
         pom_max_samples=80,
@@ -262,13 +288,16 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_steps=40,
-        taa_enabled=True,
+        aa_mode="OFF",
+        taa_enabled=False,
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
         bloom_intensity=0.06,
         volumetric_fog_enabled=True,
-        fog_density=0.022,
+        fog_resolution="CINEMATIC",
+        fog_point_lights=True,
+        fog_density=0.008,
         pom_enabled=True,
         pom_min_samples=16,
         pom_max_samples=128,

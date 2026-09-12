@@ -534,10 +534,5 @@ void main() {
     vec3 ambient = (ambient_base + indirect_diffuse) * bounce_ao + indirect_specular;
     vec3 total_lit = direct_sun + point_lights_accum + ambient;
 
-    // Atmospheric Fog
-    float dist = length(world_pos.xyz - u_CameraPos_Time.xyz);
-    float fog_factor = 1.0 - exp(-dist * u_FogColor_Density.w);
-    vec3 final_color = mix(total_lit, u_FogColor_Density.rgb, fog_factor);
-
-    out_HDRColor = vec4(final_color, 1.0);
+    out_HDRColor = vec4(total_lit, 1.0);
 }

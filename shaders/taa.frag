@@ -1,4 +1,12 @@
 #version 450 core
+// ============================================================
+//  AAA Temporal Anti-Aliasing (TAA) Resolve
+//
+//  References:
+//  - Brian Karis, "High Quality Temporal Supersampling" (SIGGRAPH 2014)
+//  - Playdead, "Temporal Reprojection Anti-Aliasing in INSIDE" (GDC 2016)
+//  - Marco Salvi, "An Excursion in Temporal Supersampling" (GDC 2016)
+// ============================================================
 
 in vec2 v_UV;
 layout (location = 0) out vec4 out_ResolvedColor;
@@ -29,202 +37,221 @@ layout (std140, binding = 0) uniform FrameData {
 };
 
 uniform mat4 u_PrevViewProjection;
-uniform float u_Feedback = 0.92;   // Base temporal accumulation factor
-uniform float u_Sharpness = 0.35;  // Subtle contrast-adaptive unsharp mask
+uniform float u_Feedback = 0.95;   // Base temporal feedback (higher = more stable)
 
-vec3 RGBToYCoCg(vec3 c) {
+// ============================================================
+//  Color-space utilities
+// ============================================================
+
+vec3 RGBtoYCoCg(vec3 c) {
     return vec3(
-        c.r * 0.25 + c.g * 0.5 + c.b * 0.25,
-        c.r * 0.5 - c.b * 0.5,
-        -c.r * 0.25 + c.g * 0.5 - c.b * 0.25
+         0.25 * c.r + 0.5 * c.g + 0.25 * c.b,
+         0.5  * c.r              - 0.5  * c.b,
+        -0.25 * c.r + 0.5 * c.g - 0.25 * c.b
     );
 }
 
-vec3 YCoCgToRGB(vec3 c) {
+vec3 YCoCgtoRGB(vec3 c) {
     return vec3(
         c.x + c.y - c.z,
-        c.x + c.z,
+        c.x        + c.z,
         c.x - c.y - c.z
     );
 }
 
-// Perceptual luma for HDR tone-weighting
-float Luma(vec3 color) {
-    return dot(color, vec3(0.299, 0.587, 0.114));
+float Luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 
-// 5-tap Catmull-Rom bicubic history filter (eliminates texture blur)
-vec4 SampleCatmullRom5(sampler2D tex, vec2 uv, vec2 tex_size) {
-    vec2 sample_pos = uv * tex_size;
-    vec2 tc = floor(sample_pos - 0.5) + 0.5;
-    vec2 f = sample_pos - tc;
-    vec2 f2 = f * f;
-    vec2 f3 = f2 * f;
+// ============================================================
+//  Catmull-Rom 5-tap bicubic filter
+//  Uses bilinear-combined taps for efficient sharp history lookup.
+//  Eliminates the softening of bilinear-only sampling which causes
+//  temporal blur buildup over many frames.
+// ============================================================
 
+vec3 SampleHistoryCR(sampler2D tex, vec2 uv, vec2 texSize) {
+    vec2 pos = uv * texSize;
+    vec2 tc  = floor(pos - 0.5) + 0.5;
+    vec2 f   = pos - tc;
+    vec2 f2  = f * f;
+    vec2 f3  = f2 * f;
+
+    // Catmull-Rom spline weights
     vec2 w0 = f2 - 0.5 * (f3 + f);
     vec2 w1 = 1.5 * f3 - 2.5 * f2 + 1.0;
     vec2 w3 = 0.5 * (f3 - f2);
     vec2 w2 = 1.0 - w0 - w1 - w3;
 
-    vec2 w12 = w1 + w2;
-    vec2 tc12 = tc + (w2 / max(w12, vec2(1e-5)));
+    // Combine inner pair for bilinear optimization (5 taps instead of 16)
+    vec2 w12  = w1 + w2;
+    vec2 tc12 = (tc + w2 / max(w12, vec2(1e-6))) / texSize;
+    vec2 tc0  = (tc - 1.0) / texSize;
+    vec2 tc3  = (tc + 2.0) / texSize;
 
-    vec2 tc0 = tc - 1.0;
-    vec2 tc3 = tc + 2.0;
+    float wC = w12.x * w12.y;
+    float wT = w12.x * w0.y;
+    float wB = w12.x * w3.y;
+    float wL = w0.x  * w12.y;
+    float wR = w3.x  * w12.y;
 
-    vec4 c12 = texture(tex, vec2(tc12.x, tc12.y) / tex_size);
-    vec4 c0 = texture(tex, vec2(tc12.x, tc0.y) / tex_size);
-    vec4 c1 = texture(tex, vec2(tc0.x, tc12.y) / tex_size);
-    vec4 c2 = texture(tex, vec2(tc3.x, tc12.y) / tex_size);
-    vec4 c3 = texture(tex, vec2(tc12.x, tc3.y) / tex_size);
+    vec3 result =
+        texture(tex, vec2(tc12.x, tc12.y)).rgb * wC +
+        texture(tex, vec2(tc12.x, tc0.y )).rgb * wT +
+        texture(tex, vec2(tc12.x, tc3.y )).rgb * wB +
+        texture(tex, vec2(tc0.x,  tc12.y)).rgb * wL +
+        texture(tex, vec2(tc3.x,  tc12.y)).rgb * wR;
 
-    float weight_center = w12.x * w12.y;
-    float weight_top = w12.x * w0.y;
-    float weight_left = w0.x * w12.y;
-    float weight_right = w3.x * w12.y;
-    float weight_bottom = w12.x * w3.y;
-
-    vec4 result = c12 * weight_center + c0 * weight_top + c1 * weight_left + c2 * weight_right + c3 * weight_bottom;
-    float sum = weight_center + weight_top + weight_left + weight_right + weight_bottom;
-    return max(result / max(sum, 1e-5), vec4(0.0));
+    return max(result / max(wC + wT + wB + wL + wR, 1e-6), vec3(0.0));
 }
 
-// Karis / PlayStation AABB Line Segment Clipping in YCoCg
-vec3 ClipToAABB(vec3 aabb_min, vec3 aabb_max, vec3 p, vec3 q) {
-    vec3 r = q - p;
-    vec3 rmax = aabb_max - p;
-    vec3 rmin = aabb_min - p;
+// ============================================================
+//  AABB ray clipping (Playdead / Karis)
+//  Clips point p toward the AABB center along the ray from
+//  center → p, finding the closest point on the AABB surface.
+//  More stable than hard clamping because it preserves the
+//  direction of the history-to-current color difference.
+// ============================================================
 
-    const float eps = 1e-7;
-    vec3 tmax = vec3(1.0);
-    vec3 tmin = vec3(0.0);
-
-    if (abs(r.x) > eps) {
-        float t1 = rmin.x / r.x;
-        float t2 = rmax.x / r.x;
-        tmax.x = max(t1, t2);
-        tmin.x = min(t1, t2);
-    }
-    if (abs(r.y) > eps) {
-        float t1 = rmin.y / r.y;
-        float t2 = rmax.y / r.y;
-        tmax.y = max(t1, t2);
-        tmin.y = min(t1, t2);
-    }
-    if (abs(r.z) > eps) {
-        float t1 = rmin.z / r.z;
-        float t2 = rmax.z / r.z;
-        tmax.z = max(t1, t2);
-        tmin.z = min(t1, t2);
-    }
-
-    float t_enter = max(max(tmin.x, tmin.y), tmin.z);
-    float t_exit = min(min(tmax.x, tmax.y), tmax.z);
-
-    if (t_enter <= t_exit && t_enter >= 0.0 && t_enter <= 1.0) {
-        return p + r * t_enter;
-    }
-    return clamp(q, aabb_min, aabb_max);
+vec3 ClipToAABB(vec3 boxMin, vec3 boxMax, vec3 p) {
+    vec3 center   = 0.5 * (boxMax + boxMin);
+    vec3 halfSize = 0.5 * (boxMax - boxMin) + 1e-7;
+    vec3 d        = p - center;
+    vec3 dNorm    = d / halfSize;
+    float maxComp = max(abs(dNorm.x), max(abs(dNorm.y), abs(dNorm.z)));
+    if (maxComp > 1.0)
+        return center + d / maxComp;
+    return p;
 }
+
+// ============================================================
+//  Main TAA Resolve
+// ============================================================
 
 void main() {
-    vec2 texel_size = 1.0 / u_ScreenSize_Jitter.xy;
-    vec4 current_sample = texture(u_CurrentFrame, v_UV);
+    vec2 res   = u_ScreenSize_Jitter.xy;
+    vec2 texel = 1.0 / res;
 
-    // 1. Find closest depth in 3x3 neighborhood (Reversed-Z: max depth is closest to camera)
-    float closest_depth = -1.0;
-    vec2 closest_offset = vec2(0.0);
+    // ========== 1. DEPTH-DILATED VELOCITY LOOKUP (3x3) ==========
+    // Use the closest-to-camera depth in the 3x3 neighborhood for the
+    // velocity fetch. This "dilates" moving foreground edges outward so
+    // their velocity properly covers the silhouette region, preventing
+    // ghost trails behind moving objects.
 
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            vec2 off = vec2(float(dx), float(dy)) * texel_size;
-            float d = texture(u_GBufferDepth, v_UV + off).r;
-            if (d > closest_depth) {
-                closest_depth = d;
-                closest_offset = off;
+    float closestDepth = 0.0;
+    vec2  closestUV    = v_UV;
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2  sUV = v_UV + vec2(x, y) * texel;
+            float d   = texture(u_GBufferDepth, sUV).r;
+            if (d > closestDepth) {     // Reversed-Z: larger = closer
+                closestDepth = d;
+                closestUV    = sUV;
             }
         }
     }
 
-    // 2. Fetch velocity from closest depth neighbor (dilates moving foreground edges)
-    vec2 velocity = texture(u_VelocityTexture, v_UV + closest_offset).xy;
+    // ========== 2. VELOCITY & REPROJECTION ==========
+    // The gbuffer velocity = (curr_jittered_uv - prev_jittered_uv).
+    // This naturally maps between jittered screen positions across frames,
+    // which is exactly what we need since the history buffer was written
+    // at the previous frame's fullscreen quad positions.
 
-    // Fallback camera reprojection if velocity is zero or on background/sky
-    if (closest_depth <= 1e-6 || length(velocity) <= 1e-6) {
-        vec4 clip_pos = vec4(v_UV * 2.0 - 1.0, max(closest_depth, 0.0), 1.0);
-        vec4 view_pos = u_InvProjection * clip_pos;
-        view_pos /= max(view_pos.w, 1e-6);
-        vec4 world_pos = u_InvView * vec4(view_pos.xyz, 1.0);
+    vec2 velocity = texture(u_VelocityTexture, closestUV).xy;
 
-        vec4 prev_clip = u_PrevViewProjection * world_pos;
-        vec2 prev_uv = (prev_clip.xy / max(prev_clip.w, 1e-6)) * 0.5 + 0.5;
-        if (length(prev_uv - v_UV) > 1e-6) {
-            velocity = v_UV - prev_uv;
-        }
+    // Sky / unwritten-velocity fallback: reproject via camera matrices.
+    // v_UV is consistent with u_InvProjection (both are in jittered space),
+    // so the reconstruction produces correct world positions.
+    if (closestDepth < 1e-6 || dot(velocity, velocity) < 1e-12) {
+        vec4 clipPos = vec4(v_UV * 2.0 - 1.0, closestDepth, 1.0);
+        vec4 viewPos = u_InvProjection * clipPos;
+        viewPos     /= max(viewPos.w, 1e-6);
+        vec4 wPos    = u_InvView * vec4(viewPos.xyz, 1.0);
+
+        vec4 prevClip = u_PrevViewProjection * wPos;
+        vec2 prevUV   = (prevClip.xy / max(prevClip.w, 1e-6)) * 0.5 + 0.5;
+        velocity      = v_UV - prevUV;
     }
 
-    // Previous UV where this surface was located
-    vec2 prev_uv = v_UV - velocity;
+    vec2 histUV = v_UV - velocity;
 
-    // Disocclusion / boundary check
-    if (prev_uv.x < 0.0 || prev_uv.x > 1.0 || prev_uv.y < 0.0 || prev_uv.y > 1.0) {
-        out_ResolvedColor = current_sample;
+    // Out-of-screen rejection → output raw current frame
+    if (any(lessThan(histUV, vec2(0.0))) || any(greaterThan(histUV, vec2(1.0)))) {
+        out_ResolvedColor = texture(u_CurrentFrame, v_UV);
         return;
     }
 
-    // 3. Sample history buffer with 5-tap Catmull-Rom filter
-    vec4 history_sample = SampleCatmullRom5(u_HistoryFrame, prev_uv, u_ScreenSize_Jitter.xy);
+    // ========== 3. SAMPLE CURRENT & HISTORY ==========
+    // Current frame is sampled at v_UV (jittered position).
+    // The jitter IS the temporal supersampling signal — each frame samples
+    // a different sub-pixel offset, and the TAA accumulation converges to
+    // a supersampled result. Unjittering would defeat this purpose.
 
-    // 4. Compute 3x3 neighborhood statistics in YCoCg color space
+    vec3 current = texture(u_CurrentFrame, v_UV).rgb;
+    vec3 history = SampleHistoryCR(u_HistoryFrame, histUV, res);
+
+    // ========== 4. NEIGHBORHOOD AABB IN YCoCg ==========
+    // Gather 3x3 neighborhood statistics. Operating in YCoCg separates
+    // luminance from chroma, giving tighter, more perceptually correct
+    // bounding boxes than RGB.
+
     vec3 m1 = vec3(0.0);
     vec3 m2 = vec3(0.0);
-    vec3 box_min = vec3(1e6);
-    vec3 box_max = vec3(-1e6);
-    vec3 cross_blur = vec3(0.0);
 
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            vec3 neighbor = texture(u_CurrentFrame, v_UV + vec2(float(dx), float(dy)) * texel_size).rgb;
-            vec3 ycocg = RGBToYCoCg(neighbor);
-
-            box_min = min(box_min, ycocg);
-            box_max = max(box_max, ycocg);
-            m1 += ycocg;
-            m2 += ycocg * ycocg;
-
-            if (abs(dx) + abs(dy) <= 1) {
-                cross_blur += neighbor;
-            }
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec3 s  = texture(u_CurrentFrame, v_UV + vec2(x, y) * texel).rgb;
+            vec3 yc = RGBtoYCoCg(s);
+            m1 += yc;
+            m2 += yc * yc;
         }
     }
 
-    // Variance-based clipping box (1.25 sigma)
-    vec3 mean = m1 / 9.0;
-    vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3(0.0)));
-    vec3 var_min = max(box_min, mean - 1.25 * sigma);
-    vec3 var_max = min(box_max, mean + 1.25 * sigma);
+    vec3 mu    = m1 / 9.0;
+    vec3 sigma = sqrt(max(m2 / 9.0 - mu * mu, vec3(0.0)));
 
-    // 5. Line clipping: clip history color along ray to current neighborhood center
-    vec3 current_ycocg = RGBToYCoCg(current_sample.rgb);
-    vec3 history_ycocg = RGBToYCoCg(history_sample.rgb);
-    vec3 clipped_ycocg = ClipToAABB(var_min, var_max, current_ycocg, history_ycocg);
-    vec3 history_clipped = max(YCoCgToRGB(clipped_ycocg), vec3(0.0));
+    // --- MINIMUM AABB EXTENT (critical for stability) ---
+    // On smooth / uniform surfaces all 9 taps return near-identical colors,
+    // driving sigma → 0 and collapsing the AABB to a degenerate point.
+    // This forces the history to exactly match the current jittered sample,
+    // DESTROYING temporal accumulation and causing visible per-frame shimmer
+    // and color instability. A sigma floor keeps the box wide enough for the
+    // accumulated history to survive the clip unchanged.
+    sigma = max(sigma, vec3(0.005));
 
-    // 6. Luminance-Weighted Accumulation (Karis Weighting) to eliminate fireflies and specular jitter
-    float w_curr = 1.0 / (1.0 + max(Luma(current_sample.rgb), 0.0));
-    float w_hist = 1.0 / (1.0 + max(Luma(history_clipped), 0.0));
+    float gamma   = 1.25;          // ±1.25σ ≈ 79% coverage — good balance
+    vec3  aabbMin = mu - gamma * sigma;
+    vec3  aabbMax = mu + gamma * sigma;
 
-    // Dynamic feedback: responsive during fast motion, stable when stationary
-    float speed = length(velocity * u_ScreenSize_Jitter.xy);
-    float feedback = clamp(u_Feedback - speed * 0.04, 0.70, u_Feedback);
+    // ========== 5. CLIP HISTORY TO AABB ==========
+    vec3 histYCoCg = RGBtoYCoCg(history);
+    vec3 clipYCoCg = ClipToAABB(aabbMin, aabbMax, histYCoCg);
+    vec3 clipped   = max(YCoCgtoRGB(clipYCoCg), vec3(0.0));
 
-    vec3 blended_color = (current_sample.rgb * w_curr * (1.0 - feedback) + history_clipped * w_hist * feedback)
-                       / max(w_curr * (1.0 - feedback) + w_hist * feedback, 1e-5);
+    // ========== 6. DYNAMIC FEEDBACK ==========
+    // High feedback (0.95) while stationary for maximum temporal accumulation;
+    // ramp down to ~0.80 during fast motion for responsiveness.
+    // The smoothstep threshold at 2px safely separates sub-pixel Halton jitter
+    // (always < 1px) from real object motion.
 
-    // 7. Subtle adaptive unsharp mask to maintain razor-sharp texture details
-    cross_blur /= 5.0;
-    vec3 detail = current_sample.rgb - cross_blur;
-    vec3 final_color = blended_color + detail * u_Sharpness;
+    float speedPx = length(velocity * res);
+    float fb      = mix(u_Feedback, max(u_Feedback - 0.15, 0.75),
+                        smoothstep(2.0, 8.0, speedPx));
 
-    out_ResolvedColor = vec4(max(final_color, vec3(0.0)), 1.0);
+    // ========== 7. LUMINANCE-WEIGHTED BLEND (Karis) ==========
+    // Per-sample inverse-luminance weighting suppresses firefly artifacts
+    // from bright specular highlights in HDR. The weighting preserves
+    // chromaticity exactly: w = 1/(1+L) scales all channels equally,
+    // so the r:g:b ratio is maintained through the blend.
+
+    float wC  = 1.0 / (1.0 + Luminance(current));
+    float wH  = 1.0 / (1.0 + Luminance(clipped));
+    float bC  = (1.0 - fb) * wC;
+    float bH  = fb          * wH;
+    float inv = 1.0 / max(bC + bH, 1e-6);
+
+    vec3 result = (current * bC + clipped * bH) * inv;
+
+    out_ResolvedColor = vec4(max(result, vec3(0.0)), 1.0);
 }

@@ -89,6 +89,15 @@ class EngineTweaks:
         "ssdm_scale",
         "vsync_enabled",
         "uncapped_fps",
+        "volumetric_fog_enabled",
+        "fog_resolution",
+        "fog_point_lights",
+        "fog_density",
+        "fog_height_falloff",
+        "fog_anisotropy",
+        "fog_distance",
+        "fog_ambient",
+        "fog_debug_mode",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -158,11 +167,21 @@ class EngineTweaks:
         self.ssr_steps = 32
         self.ssr_thickness = 0.40
         self.ssr_max_roughness = 0.65
-        self.aa_mode = "TAA"
-        self.taa_enabled = True
+        self.aa_mode = "OFF"
+        self.taa_enabled = False
         self.taa_feedback = 0.92
-        self.taa_sharpness = 0.35
         self.point_lights_enabled = True
+
+        # Froxel Volumetric Fog & Atmospheric Light Scattering
+        self.volumetric_fog_enabled = True
+        self.fog_resolution = "HIGH"
+        self.fog_point_lights = True
+        self.fog_density = 0.005
+        self.fog_height_falloff = 0.10
+        self.fog_anisotropy = 0.65
+        self.fog_distance = 400.0
+        self.fog_ambient = 0.35
+        self.fog_debug_mode = 0
 
         # VSync disabled by default per user request
         self.vsync_enabled = False

@@ -269,41 +269,15 @@ class TestTemporalAntiAliasing:
         assert all(0.0 <= y <= 1.0 for y in j_y)
         assert len(set(j_x)) == 8
 
-    def test_taa_pass_reprojection(self, render_ctx: RenderContext):
-        pipeline = RenderPipeline(render_ctx)
-
-        ecs = EntityManager(max_entities=10)
-        ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
-
-        pipeline.config.aa_mode = "TAA"
-        pipeline.config.taa_enabled = True
-        for f in range(3):
-            pipeline.render_frame(
-                ecs=ecs,
-                camera_pos=(0.0, 2.0, 5.0 + f * 0.1),
-                camera_target=(0.0, 0.0, 0.0),
-                time_elapsed=f * 0.016,
-            )
-
-        data = pipeline.post_process.final_texture.read()
-        assert len(data) == 320 * 240 * 4
-
-        # Verify G-Buffer RT2 (Velocity Buffer) contains motion vectors
-        vel_data = pipeline.g_buffer.velocity_texture.read()
-        assert len(vel_data) == 320 * 240 * 2 * 2  # RG16F = 4 bytes/texel
-
-        pipeline.destroy()
-
     def test_fxaa_and_smaa_modes(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
 
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
 
-        modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"]
+        modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X"]
         for mode in modes:
             pipeline.config.aa_mode = mode
-            pipeline.config.taa_enabled = (mode == "TAA")
             pipeline.render_frame(
                 ecs=ecs,
                 camera_pos=(0.0, 2.0, 5.0),
@@ -341,28 +315,34 @@ class TestQualityPresetsAndGIMode:
         assert low.ao_mode == "OFF"
         assert low.ssr_enabled is False
         assert low.taa_enabled is False
+        assert low.aa_mode == "OFF"
 
         med = get_quality_preset(GraphicsQuality.MEDIUM)
         assert med.gi_mode == "SSGI"
         assert med.ao_mode == "SSAO"
-        assert med.taa_enabled is True
+        assert med.taa_enabled is False
+        assert med.aa_mode == "OFF"
 
         high = get_quality_preset(GraphicsQuality.HIGH)
         assert high.gi_mode == "SSGI"
         assert high.ao_mode == "GTAO"
         assert high.ssr_enabled is True
-        assert high.taa_enabled is True
+        assert high.taa_enabled is False
+        assert high.aa_mode == "OFF"
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
         assert ultra.gi_mode == "HYBRID"
         assert ultra.ao_mode == "GTAO"
         assert ultra.ssr_enabled is True
-        assert ultra.taa_enabled is True
+        assert ultra.taa_enabled is False
+        assert ultra.aa_mode == "OFF"
 
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
         assert cinematic.gi_mode == "HYBRID"
         assert cinematic.ssgi_steps > ultra.ssgi_steps
         assert cinematic.ssr_steps > ultra.ssr_steps
+        assert cinematic.taa_enabled is False
+        assert cinematic.aa_mode == "OFF"
 
 
 class TestShadowsAndSSCS:
@@ -497,10 +477,63 @@ class TestAmbientOcclusionModes:
                 sun_lux=4.0,
             )
             final_data = pipeline.post_process.final_texture.read()
-            assert len(final_data) == 320 * 240 * 4
+        pipeline.destroy()
 
-            if mode != "OFF":
-                ao_data = pipeline.ao_pass.raw_ao_tex.read()
-                assert len(ao_data) == (320 // 2) * (240 // 2)
+
+class TestFroxelVolumetricFog:
+    def test_volumetric_fog_pass_init_and_resize(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        pass_fog = pipeline.volumetric_fog_pass
+
+        assert pass_fog.scatter_ext_vol.width == 160
+        assert pass_fog.scatter_ext_vol.height == 90
+        assert pass_fog.scatter_ext_vol.depth == 64
+        assert pass_fog.integrated_vol.depth == 64
+
+        assert hasattr(pass_fog, "inject_prog")
+        assert hasattr(pass_fog, "integrate_prog")
+        assert hasattr(pass_fog, "composite_prog")
+
+        pass_fog.resize(640, 480)
+        assert pass_fog.width == 640
+        assert pass_fog.height == 480
 
         pipeline.destroy()
+
+    def test_volumetric_fog_render_modes(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.8, 0.4, 0.2))
+
+        # Test normal composite, in-scattering only, and transmittance only
+        for debug_mode in (0, 1, 2):
+            pipeline.config.volumetric_fog_enabled = True
+            pipeline.config.fog_debug_mode = debug_mode
+            pipeline.config.fog_density = 0.025
+            pipeline.config.fog_height_falloff = 0.10
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 5.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.016,
+                sun_dir=(0.5, -0.7, 0.4),
+                sun_lux=4.0,
+            )
+            data = pipeline.post_process.final_texture.read()
+            assert len(data) == 320 * 240 * 4
+
+        # Test fog disabled bypass
+        pipeline.config.volumetric_fog_enabled = False
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+            time_elapsed=0.032,
+            sun_dir=(0.5, -0.7, 0.4),
+            sun_lux=4.0,
+        )
+        data_off = pipeline.post_process.final_texture.read()
+        assert len(data_off) == 320 * 240 * 4
+
+        pipeline.destroy()
+

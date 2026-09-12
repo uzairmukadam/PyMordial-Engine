@@ -517,30 +517,19 @@ class DebugMenu:
                     et.ssr_max_roughness = ssr_mr_val
                     et.mark_custom()
 
-            # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
-            aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x", "TAA"]
-            aa_internal_modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"]
-            curr_mode = getattr(et, "aa_mode", "TAA" if et.taa_enabled else "OFF")
-            curr_aa_idx = aa_internal_modes.index(curr_mode) if curr_mode in aa_internal_modes else 5
+            # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x)
+            aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x"]
+            aa_internal_modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X"]
+            curr_mode = getattr(et, "aa_mode", "OFF")
+            curr_aa_idx = aa_internal_modes.index(curr_mode) if curr_mode in aa_internal_modes else 0
 
             aa_changed, aa_idx = imgui.combo("Anti-Aliasing", curr_aa_idx, aa_modes)
             if aa_changed:
                 chosen_internal = aa_internal_modes[aa_idx]
                 et.aa_mode = chosen_internal
-                et.taa_enabled = (chosen_internal == "TAA")
+                et.taa_enabled = False
                 et.mark_custom()
                 self.toast.show(f"Anti-Aliasing: {aa_modes[aa_idx]}", duration=1.5)
-
-            if getattr(et, "aa_mode", "TAA") == "TAA":
-                fb_changed, fb_val = imgui.slider_float("TAA Feedback", et.taa_feedback, 0.70, 0.98, "%.2f")
-                if fb_changed:
-                    et.taa_feedback = fb_val
-                    et.mark_custom()
-
-                sp_changed, sp_val = imgui.slider_float("TAA Sharpness", et.taa_sharpness, 0.0, 1.0, "%.2f")
-                if sp_changed:
-                    et.taa_sharpness = sp_val
-                    et.mark_custom()
 
             # Dynamic Local Point Lights
             pl_changed, pl_val = imgui.checkbox("Dynamic Local Lights (SSBO 3)", et.point_lights_enabled)
@@ -548,6 +537,65 @@ class DebugMenu:
                 et.point_lights_enabled = pl_val
                 et.mark_custom()
                 self.toast.show(f"Point Lights: {'ON' if pl_val else 'OFF'}", duration=1.5)
+
+            imgui.separator()
+            imgui.text("Atmosphere & Volumetric Fog")
+
+            fog_c, fog_v = imgui.checkbox("Froxel Volumetric Fog", et.volumetric_fog_enabled)
+            if fog_c:
+                et.volumetric_fog_enabled = fog_v
+                et.mark_custom()
+                self.toast.show(f"Volumetric Fog: {'ON' if fog_v else 'OFF'}", duration=1.5)
+
+            if et.volumetric_fog_enabled:
+                res_names = ["LOW (80x45x32)", "MEDIUM (120x68x48)", "HIGH (160x90x64)", "ULTRA (200x112x80)", "CINEMATIC (240x135x96)"]
+                res_keys = ["LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"]
+                cur_res_str = getattr(et, "fog_resolution", "HIGH").upper()
+                cur_res_idx = res_keys.index(cur_res_str) if cur_res_str in res_keys else 2
+                res_c, res_idx = imgui.combo("Froxel Resolution", cur_res_idx, res_names)
+                if res_c:
+                    et.fog_resolution = res_keys[res_idx]
+                    et.mark_custom()
+                    self.toast.show(f"Froxel Resolution: {res_names[res_idx]}", duration=1.5)
+
+                fpl_c, fpl_v = imgui.checkbox("Point Light Volumetrics", getattr(et, "fog_point_lights", True))
+                if fpl_c:
+                    et.fog_point_lights = fpl_v
+                    et.mark_custom()
+                    self.toast.show(f"Point Light Volumetrics: {'ON' if fpl_v else 'OFF'}", duration=1.5)
+
+                fd_c, fd_v = imgui.slider_float("Fog Density", et.fog_density, 0.001, 0.10, "%.3f")
+                if fd_c:
+                    et.fog_density = fd_v
+                    et.mark_custom()
+
+                fh_c, fh_v = imgui.slider_float("Height Falloff", et.fog_height_falloff, 0.01, 0.50, "%.2f")
+                if fh_c:
+                    et.fog_height_falloff = fh_v
+                    et.mark_custom()
+
+                fa_c, fa_v = imgui.slider_float("Anisotropy (Phase g)", et.fog_anisotropy, 0.0, 0.95, "%.2f")
+                if fa_c:
+                    et.fog_anisotropy = fa_v
+                    et.mark_custom()
+
+                fdist_c, fdist_v = imgui.slider_float("Max Distance", et.fog_distance, 50.0, 1000.0, "%.0f m")
+                if fdist_c:
+                    et.fog_distance = fdist_v
+                    et.mark_custom()
+
+                famb_c, famb_v = imgui.slider_float("Ambient Light", et.fog_ambient, 0.0, 1.0, "%.2f")
+                if famb_c:
+                    et.fog_ambient = famb_v
+                    et.mark_custom()
+
+                debug_modes = ["Normal Composite", "In-Scattering Only", "Transmittance Only"]
+                cur_dbg_idx = max(0, min(2, et.fog_debug_mode))
+                dbg_c, dbg_idx = imgui.combo("Fog Visualizer", cur_dbg_idx, debug_modes)
+                if dbg_c:
+                    et.fog_debug_mode = dbg_idx
+                    et.mark_custom()
+                    self.toast.show(f"Fog Visualizer: {debug_modes[dbg_idx]}", duration=1.5)
 
             imgui.separator()
             imgui.text("Micro-Geometry & Displacement")

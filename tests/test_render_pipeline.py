@@ -210,3 +210,38 @@ class TestRenderPipelineHeadless:
         data = pipeline.post_process.final_texture.read()
         assert len(data) == 400 * 300 * 4
         pipeline.destroy()
+
+    def test_volumetric_fog_resolution_scaling(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        ecs = EntityManager(max_entities=10)
+        ecs.create_entity(position=(0.0, 0.0, 0.0))
+
+        # Check default resolution (HIGH -> 160x90x64)
+        fog_pass = pipeline.volumetric_fog_pass
+        assert (fog_pass.grid_w, fog_pass.grid_h, fog_pass.grid_d) == (160, 90, 64)
+
+        # Dynamically scale to LOW (80x45x32)
+        fog_pass.set_grid_resolution(80, 45, 32)
+        assert (fog_pass.grid_w, fog_pass.grid_h, fog_pass.grid_d) == (80, 45, 32)
+
+        # Render frame with point lights and fog
+        pipeline.add_point_light(position=(0.0, 2.0, 0.0), radius=10.0, color=(1.0, 0.8, 0.4), intensity=3.0)
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+        )
+
+        # Scale to ULTRA (200x112x80) via config
+        ultra_config = get_quality_preset(GraphicsQuality.ULTRA)
+        pipeline.apply_config(ultra_config)
+        pipeline.render_frame(
+            ecs=ecs,
+            camera_pos=(0.0, 2.0, 5.0),
+            camera_target=(0.0, 0.0, 0.0),
+        )
+        assert (fog_pass.grid_w, fog_pass.grid_h, fog_pass.grid_d) == (200, 112, 80)
+
+        data = pipeline.post_process.final_texture.read()
+        assert len(data) == render_ctx.width * render_ctx.height * 4
+        pipeline.destroy()

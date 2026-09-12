@@ -101,5 +101,25 @@ class FrameContext:
         # Upload to GPU in a single subdata call
         self.ubo.write(buf)
 
+    @property
+    def view_mat(self) -> np.ndarray:
+        return self.buffer[0:16]
+
+    @property
+    def proj_mat(self) -> np.ndarray:
+        return self.buffer[16:32]
+
+    @property
+    def view_proj_mat(self) -> np.ndarray:
+        return self.buffer[32:48]
+
+    @property
+    def inv_proj_mat(self) -> np.ndarray:
+        return self.buffer[48:64]
+
+    @property
+    def inv_view_mat(self) -> np.ndarray:
+        return self.buffer[64:80]
+
     def destroy(self) -> None:
         self.ubo.release()
