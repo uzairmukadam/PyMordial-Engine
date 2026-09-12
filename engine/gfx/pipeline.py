@@ -33,6 +33,7 @@ from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.passes.ssdm_pass import SSDMPass
+from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
 from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
@@ -143,6 +144,21 @@ class RenderPipeline:
         "_u_csm_tess_max_level",
         "_u_csm_tess_med_level",
         "_u_csm_tess_disp_scale",
+        "atmosphere",
+        "_u_rayleigh_beta",
+        "_u_mie_beta",
+        "_u_mie_g",
+        "_u_ozone_beta",
+        "_u_atmo_ground_col",
+        "_u_night_zenith",
+        "_u_night_horizon",
+        "_u_sun_disc_size",
+        "_u_moon_disc_size",
+        "_u_moon_color",
+        "_u_star_intensity",
+        "_u_star_density",
+        "_u_atmo_turbidity",
+        "_prev_time",
         "_graph_context",
     )
 
@@ -157,6 +173,7 @@ class RenderPipeline:
         self.config = config if config is not None else ctx_wrapper.config
         self.resources = resources if resources is not None else ResourceCache()
         self.debug = DebugDraw(self.ctx)
+        self._prev_time = 0.0
 
         w, h = self.ctx_wrapper.width, self.ctx_wrapper.height
 
@@ -339,7 +356,23 @@ class RenderPipeline:
         self._u_csm_tess_med_level = self.csm_tess_prog.get("u_TessMedLevel", None)
         self._u_csm_tess_disp_scale = self.csm_tess_prog.get("u_TessDisplacementScale", None)
 
-        # 8. Post-Processing & Tonemapping Pipeline
+        # 8. Physical Atmosphere & Day-Night Simulation
+        self.atmosphere = AtmosphereSystem()
+        self._u_rayleigh_beta = self.resolve_prog.get("u_RayleighBeta", None)
+        self._u_mie_beta = self.resolve_prog.get("u_MieBeta", None)
+        self._u_mie_g = self.resolve_prog.get("u_MieG", None)
+        self._u_ozone_beta = self.resolve_prog.get("u_OzoneBeta", None)
+        self._u_atmo_ground_col = self.resolve_prog.get("u_AtmosphereGroundColor", None)
+        self._u_night_zenith = self.resolve_prog.get("u_NightZenithColor", None)
+        self._u_night_horizon = self.resolve_prog.get("u_NightHorizonColor", None)
+        self._u_sun_disc_size = self.resolve_prog.get("u_SunDiscSize", None)
+        self._u_moon_disc_size = self.resolve_prog.get("u_MoonDiscSize", None)
+        self._u_moon_color = self.resolve_prog.get("u_MoonColor", None)
+        self._u_star_intensity = self.resolve_prog.get("u_StarIntensity", None)
+        self._u_star_density = self.resolve_prog.get("u_StarDensity", None)
+        self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
+
+        # 9. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
             self.ctx,
             w,
@@ -457,6 +490,7 @@ class RenderPipeline:
         fovy_deg: float = 60.0,
         draw_batches: list[tuple] | None = None,
         debug_draw: DebugDraw | None = None,
+        dt: float | None = None,
     ) -> None:
         """Executes full multi-pass high-fidelity deferred rendering pipeline."""
         active_count = ecs.active_count
@@ -518,10 +552,25 @@ class RenderPipeline:
         self._cam_fwd[1] = fy * inv_fwd_len
         self._cam_fwd[2] = fz * inv_fwd_len
 
-        # 3. Calculate CSM Cascade Matrices
-        self._sun_v[0] = float(sun_dir[0])
-        self._sun_v[1] = float(sun_dir[1])
-        self._sun_v[2] = float(sun_dir[2])
+        # 3. Advance atmosphere day-night simulation and synchronise lighting
+        if dt is None:
+            calc_dt = max(0.0, min(0.1, time_elapsed - self._prev_time)) if self._prev_time > 0.0 else 0.016
+        else:
+            calc_dt = dt
+        self._prev_time = time_elapsed
+
+        if calc_dt > 0.0:
+            self.atmosphere.update(calc_dt)
+
+        atmo_dir, atmo_lux, atmo_col, atmo_ambient = self.atmosphere.compute_lighting()
+        active_sun_dir = sun_dir if (sun_dir != (0.35, -0.85, 0.40) and self.atmosphere.config.day_speed == 0.0 and self.atmosphere.config.time_of_day == 12.0) else atmo_dir
+        active_sun_lux = sun_lux if (sun_lux != 4.0 and self.atmosphere.config.day_speed == 0.0 and self.atmosphere.config.time_of_day == 12.0) else atmo_lux
+        active_sun_col = atmo_col
+        active_ambient = atmo_ambient
+
+        self._sun_v[0] = float(active_sun_dir[0])
+        self._sun_v[1] = float(active_sun_dir[1])
+        self._sun_v[2] = float(active_sun_dir[2])
         csm_matrices = self.csm.compute_cascade_matrices(self._cam_pos, self._cam_fwd, self._sun_v)
 
         # 4. Upload to UBO 0
@@ -535,8 +584,10 @@ class RenderPipeline:
             time_elapsed=time_elapsed,
             screen_size=(float(w), float(h)),
             jitter=(jitter_x, jitter_y),
-            sun_dir=sun_dir,
-            sun_lux=sun_lux,
+            sun_dir=active_sun_dir,
+            sun_lux=active_sun_lux,
+            sun_color=active_sun_col,
+            ambient_factor=active_ambient,
             csm_matrices=csm_matrices,
             cascade_splits=self.csm.split_distances,
             fog_density=self.config.fog_density,
@@ -770,6 +821,35 @@ class RenderPipeline:
             self._u_lpv_min.value = ctx.resources["lpv_min"]
         if self._u_lpv_size is not None and "lpv_size" in ctx.resources:
             self._u_lpv_size.value = ctx.resources["lpv_size"]
+
+        # Upload Parameterized Physical Atmosphere Uniforms
+        atmo = self.atmosphere.config
+        if self._u_rayleigh_beta is not None:
+            self._u_rayleigh_beta.value = atmo.rayleigh_beta
+        if self._u_mie_beta is not None:
+            self._u_mie_beta.value = (atmo.mie_beta, atmo.mie_beta, atmo.mie_beta)
+        if self._u_mie_g is not None:
+            self._u_mie_g.value = atmo.mie_asymmetry
+        if self._u_ozone_beta is not None:
+            self._u_ozone_beta.value = atmo.ozone_beta
+        if self._u_atmo_ground_col is not None:
+            self._u_atmo_ground_col.value = atmo.ground_color
+        if self._u_night_zenith is not None:
+            self._u_night_zenith.value = atmo.night_zenith
+        if self._u_night_horizon is not None:
+            self._u_night_horizon.value = atmo.night_horizon
+        if self._u_sun_disc_size is not None:
+            self._u_sun_disc_size.value = atmo.sun_disc_size
+        if self._u_moon_disc_size is not None:
+            self._u_moon_disc_size.value = atmo.moon_disc_size
+        if self._u_moon_color is not None:
+            self._u_moon_color.value = atmo.moon_color
+        if self._u_star_intensity is not None:
+            self._u_star_intensity.value = atmo.star_intensity
+        if self._u_star_density is not None:
+            self._u_star_density.value = atmo.star_density
+        if self._u_atmo_turbidity is not None:
+            self._u_atmo_turbidity.value = atmo.turbidity
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 

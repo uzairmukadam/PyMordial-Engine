@@ -98,6 +98,15 @@ class EngineTweaks:
         "fog_distance",
         "fog_ambient",
         "fog_debug_mode",
+        "time_of_day",
+        "day_speed",
+        "atmo_preset",
+        "rayleigh_r",
+        "rayleigh_g",
+        "rayleigh_b",
+        "mie_coeff",
+        "turbidity",
+        "star_intensity",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -183,11 +192,42 @@ class EngineTweaks:
         self.fog_ambient = 0.35
         self.fog_debug_mode = 0
 
+        # Physical Atmosphere & Day-Night Cycle
+        self.time_of_day = 12.0
+        self.day_speed = 0.0          # 0.0 = manual / paused
+        self.atmo_preset = "EARTH_DAY"
+        self.rayleigh_r = 5.8         # m^-1 * 1e6
+        self.rayleigh_g = 13.5
+        self.rayleigh_b = 33.1
+        self.mie_coeff = 21.0         # m^-1 * 1e6
+        self.turbidity = 2.0
+        self.star_intensity = 1.0
+
         # VSync disabled by default per user request
         self.vsync_enabled = False
         self.uncapped_fps = True
         self._on_quality_changed: list[Callable[[GraphicsQuality], None]] = []
         self._on_vsync_changed: list[Callable[[bool], None]] = []
+
+    def apply_atmo_preset(self, preset_name: str) -> None:
+        """Applies a named planet atmosphere preset to tweak fields."""
+        from engine.gfx.atmosphere import ATMOSPHERE_PRESETS
+        preset = ATMOSPHERE_PRESETS.get(preset_name.upper())
+        if preset is not None:
+            self.atmo_preset = preset_name.upper()
+            if "time_of_day" in preset:
+                self.time_of_day = float(preset["time_of_day"])
+            if "rayleigh_beta" in preset:
+                rb = preset["rayleigh_beta"]
+                self.rayleigh_r = float(rb[0] * 1e6)
+                self.rayleigh_g = float(rb[1] * 1e6)
+                self.rayleigh_b = float(rb[2] * 1e6)
+            if "mie_beta" in preset:
+                self.mie_coeff = float(preset["mie_beta"] * 1e6)
+            if "turbidity" in preset:
+                self.turbidity = float(preset["turbidity"])
+            if "star_intensity" in preset:
+                self.star_intensity = float(preset["star_intensity"])
 
     def set_quality_preset(self, preset: GraphicsQuality) -> None:
         """Updates the graphics preset and triggers registered reconfigure listeners."""

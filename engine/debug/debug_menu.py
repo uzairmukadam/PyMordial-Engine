@@ -539,7 +539,81 @@ class DebugMenu:
                 self.toast.show(f"Point Lights: {'ON' if pl_val else 'OFF'}", duration=1.5)
 
             imgui.separator()
-            imgui.text("Atmosphere & Volumetric Fog")
+            imgui.text("Physical Atmosphere & Day-Night Cycle")
+
+            # Atmosphere Presets
+            atmo_presets = ["EARTH_DAY", "EARTH_SUNSET", "EARTH_NIGHT", "ALIEN_CYAN_PURPLE", "ALIEN_CRIMSON_MARS", "CUSTOM"]
+            preset_labels = ["Earth Day (Noon)", "Earth Sunset / Golden Hour", "Earth Night / Starlight", "Alien: Cyan & Purple", "Alien: Crimson Mars", "Custom"]
+            cur_p_name = getattr(et, "atmo_preset", "EARTH_DAY").upper()
+            cur_p_idx = atmo_presets.index(cur_p_name) if cur_p_name in atmo_presets else 5
+            ap_c, ap_idx = imgui.combo("Atmosphere Preset", cur_p_idx, preset_labels)
+            if ap_c and ap_idx != cur_p_idx:
+                chosen_p = atmo_presets[ap_idx]
+                if chosen_p != "CUSTOM":
+                    et.apply_atmo_preset(chosen_p)
+                else:
+                    et.atmo_preset = "CUSTOM"
+                self.toast.show(f"Atmosphere: {preset_labels[ap_idx]}", duration=2.0)
+
+            # Time of Day (24h clock)
+            tod_hours = int(et.time_of_day)
+            tod_mins = int((et.time_of_day - tod_hours) * 60.0)
+            time_str = f"{tod_hours:02d}:{tod_mins:02d}"
+            tod_c, tod_v = imgui.slider_float(f"Time of Day ({time_str})", et.time_of_day, 0.0, 24.0, "%.2f h")
+            if tod_c:
+                et.time_of_day = tod_v
+
+            # Day-Night Orbital Cycle Speed
+            speed_labels = "Paused" if et.day_speed == 0.0 else f"{et.day_speed:.1f}x"
+            ds_c, ds_v = imgui.slider_float(f"Cycle Speed ({speed_labels})", et.day_speed, 0.0, 10.0, "%.1fx")
+            if ds_c:
+                et.day_speed = ds_v
+
+            # Quick pause / play button
+            if et.day_speed == 0.0:
+                if imgui.button("Play Day-Night Cycle (1.0x)"):
+                    et.day_speed = 1.0
+            else:
+                if imgui.button("Pause Cycle"):
+                    et.day_speed = 0.0
+
+            # Collapsible Alien & Physical Scattering Tuning
+            if imgui.tree_node("Atmospheric Scattering & Sky Colors"):
+                imgui.text_disabled("Rayleigh Wavelength Multipliers (Alien Sky Tuning):")
+                rr_c, rr_v = imgui.slider_float("Rayleigh Red (680nm)", et.rayleigh_r, 0.1, 50.0, "%.1f")
+                if rr_c:
+                    et.rayleigh_r = rr_v
+                    et.atmo_preset = "CUSTOM"
+
+                rg_c, rg_v = imgui.slider_float("Rayleigh Green (550nm)", et.rayleigh_g, 0.1, 50.0, "%.1f")
+                if rg_c:
+                    et.rayleigh_g = rg_v
+                    et.atmo_preset = "CUSTOM"
+
+                rb_c, rb_v = imgui.slider_float("Rayleigh Blue (440nm)", et.rayleigh_b, 0.1, 50.0, "%.1f")
+                if rb_c:
+                    et.rayleigh_b = rb_v
+                    et.atmo_preset = "CUSTOM"
+
+                mie_c, mie_v = imgui.slider_float("Mie Aerosol Scattering", et.mie_coeff, 1.0, 80.0, "%.1f")
+                if mie_c:
+                    et.mie_coeff = mie_v
+                    et.atmo_preset = "CUSTOM"
+
+                turb_c, turb_v = imgui.slider_float("Atmospheric Turbidity (Haze)", et.turbidity, 1.0, 10.0, "%.2f")
+                if turb_c:
+                    et.turbidity = turb_v
+                    et.atmo_preset = "CUSTOM"
+
+                star_c, star_v = imgui.slider_float("Starfield Brightness", et.star_intensity, 0.0, 5.0, "%.2f")
+                if star_c:
+                    et.star_intensity = star_v
+                    et.atmo_preset = "CUSTOM"
+
+                imgui.tree_pop()
+
+            imgui.separator()
+            imgui.text("Froxel Volumetric Fog")
 
             fog_c, fog_v = imgui.checkbox("Froxel Volumetric Fog", et.volumetric_fog_enabled)
             if fog_c:

@@ -321,6 +321,15 @@ def main() -> None:
         default=None,
         help="Optional override for active camera position (X Y Z)",
     )
+    parser.add_argument(
+        "--atmo-preset",
+        type=str,
+        default="",
+        choices=["", "earth_day", "earth_sunset", "earth_night", "alien_cyan_purple", "alien_crimson_mars"],
+        help="Initial physical atmosphere preset (earth_day, earth_sunset, earth_night, alien_cyan_purple, alien_crimson_mars)",
+    )
+    parser.add_argument("--time-of-day", type=float, default=None, help="Initial time of day in hours (0.0 to 24.0)")
+    parser.add_argument("--day-speed", type=float, default=None, help="Day-night orbital speed multiplier (0.0 = paused)")
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -393,6 +402,12 @@ def main() -> None:
     if args.aa_mode:
         engine_tweaks.aa_mode = args.aa_mode.upper()
         engine_tweaks.taa_enabled = (args.aa_mode.upper() == "TAA")
+    if args.atmo_preset:
+        engine_tweaks.apply_atmo_preset(args.atmo_preset)
+    if args.time_of_day is not None:
+        engine_tweaks.time_of_day = float(args.time_of_day)
+    if args.day_speed is not None:
+        engine_tweaks.day_speed = float(args.day_speed)
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -1351,6 +1366,22 @@ def main() -> None:
         pipeline.config.fog_ambient = engine_tweaks.fog_ambient
         pipeline.config.fog_debug_mode = engine_tweaks.fog_debug_mode
 
+        # Physical Atmosphere & Dynamic Day-Night Cycle
+        pipeline.atmosphere.config.day_speed = engine_tweaks.day_speed
+        if engine_tweaks.day_speed > 0.0:
+            engine_tweaks.time_of_day = pipeline.atmosphere.config.time_of_day
+        else:
+            pipeline.atmosphere.config.time_of_day = engine_tweaks.time_of_day
+
+        pipeline.atmosphere.config.rayleigh_beta = (
+            engine_tweaks.rayleigh_r * 1e-6,
+            engine_tweaks.rayleigh_g * 1e-6,
+            engine_tweaks.rayleigh_b * 1e-6,
+        )
+        pipeline.atmosphere.config.mie_beta = engine_tweaks.mie_coeff * 1e-6
+        pipeline.atmosphere.config.turbidity = engine_tweaks.turbidity
+        pipeline.atmosphere.config.star_intensity = engine_tweaks.star_intensity
+
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.disp_near_radius = engine_tweaks.disp_near_radius
         pipeline.config.disp_mid_radius = engine_tweaks.disp_mid_radius
@@ -1521,6 +1552,7 @@ def main() -> None:
                 sun_lux=pipeline.config.sun_intensity,
                 draw_batches=draw_batches,
                 debug_draw=pipeline.debug,
+                dt=dt,
             )
 
         # Render 3-Tier Glassmorphic Debug Menu if visible
