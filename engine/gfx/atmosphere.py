@@ -21,24 +21,23 @@ class AtmosphereConfig:
     latitude_deg: float = 35.0      # Earth/planetary latitude affecting sun tilt
 
     # Wavelength-dependent scattering coefficients (m^-1)
-    # Earth default: Red scatters least (5.8e-6), Blue scatters most (33.1e-6) -> Blue Sky
-    # Customizing these allows creating alien planet skies (green, purple, golden)
-    rayleigh_beta: tuple[float, float, float] = (5.8e-6, 13.5e-6, 33.1e-6)
-    mie_beta: float = 21.0e-6
-    mie_asymmetry: float = 0.78     # Mie forward scattering factor (g)
-    ozone_beta: tuple[float, float, float] = (0.65e-6, 1.88e-6, 0.085e-6)
-    turbidity: float = 2.0          # Atmospheric aerosol turbidity / haziness
+    # Earth physical constants (Sébastien Hillaire Eurographics 2020)
+    rayleigh_beta: tuple[float, float, float] = (5.802e-6, 13.558e-6, 33.100e-6)
+    mie_beta: float = 3.996e-6
+    mie_asymmetry: float = 0.80     # Mie forward scattering factor (g)
+    ozone_beta: tuple[float, float, float] = (0.650e-6, 1.881e-6, 0.085e-6)
+    turbidity: float = 1.0          # Atmospheric aerosol turbidity / haziness
 
     # Celestial Bodies
     sun_intensity: float = 4.0
-    sun_color: tuple[float, float, float] = (1.0, 0.96, 0.88)
+    sun_color: tuple[float, float, float] = (1.0, 0.98, 0.92)
     sun_disc_size: float = 0.045
     moon_intensity: float = 0.40
     moon_color: tuple[float, float, float] = (0.70, 0.82, 1.0)
     moon_disc_size: float = 0.040
 
     # Night Sky & Ground Ambient
-    ground_color: tuple[float, float, float] = (0.20, 0.18, 0.15)
+    ground_color: tuple[float, float, float] = (0.15, 0.15, 0.15)
     night_zenith: tuple[float, float, float] = (0.012, 0.025, 0.050)
     night_horizon: tuple[float, float, float] = (0.035, 0.055, 0.090)
     star_intensity: float = 1.0
@@ -50,36 +49,36 @@ class AtmosphereConfig:
 ATMOSPHERE_PRESETS: dict[str, dict[str, Any]] = {
     "EARTH_DAY": {
         "time_of_day": 12.0,
-        "rayleigh_beta": (5.8e-6, 13.5e-6, 33.1e-6),
-        "mie_beta": 21.0e-6,
-        "mie_asymmetry": 0.78,
-        "turbidity": 2.0,
+        "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
+        "mie_beta": 3.996e-6,
+        "mie_asymmetry": 0.80,
+        "turbidity": 1.0,
         "sun_intensity": 4.0,
-        "sun_color": (1.0, 0.96, 0.88),
-        "ground_color": (0.20, 0.18, 0.15),
+        "sun_color": (1.0, 0.98, 0.92),
+        "ground_color": (0.15, 0.15, 0.15),
         "night_zenith": (0.012, 0.025, 0.050),
         "night_horizon": (0.035, 0.055, 0.090),
         "star_intensity": 1.0,
     },
     "EARTH_SUNSET": {
-        "time_of_day": 18.2,
-        "rayleigh_beta": (5.8e-6, 13.5e-6, 33.1e-6),
-        "mie_beta": 32.0e-6,
-        "mie_asymmetry": 0.82,
-        "turbidity": 3.5,
-        "sun_intensity": 2.8,
-        "sun_color": (1.0, 0.65, 0.35),
-        "ground_color": (0.15, 0.10, 0.08),
+        "time_of_day": 18.0,
+        "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
+        "mie_beta": 6.0e-6,
+        "mie_asymmetry": 0.80,
+        "turbidity": 1.2,
+        "sun_intensity": 3.5,
+        "sun_color": (1.0, 0.70, 0.40),
+        "ground_color": (0.15, 0.12, 0.10),
         "night_zenith": (0.015, 0.02, 0.04),
         "night_horizon": (0.06, 0.04, 0.03),
-        "star_intensity": 1.2,
+        "star_intensity": 1.0,
     },
     "EARTH_NIGHT": {
         "time_of_day": 0.0,
-        "rayleigh_beta": (5.8e-6, 13.5e-6, 33.1e-6),
-        "mie_beta": 15.0e-6,
-        "mie_asymmetry": 0.75,
-        "turbidity": 1.5,
+        "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
+        "mie_beta": 3.996e-6,
+        "mie_asymmetry": 0.80,
+        "turbidity": 1.0,
         "sun_intensity": 0.0,
         "sun_color": (0.70, 0.82, 1.0),
         "ground_color": (0.05, 0.06, 0.08),

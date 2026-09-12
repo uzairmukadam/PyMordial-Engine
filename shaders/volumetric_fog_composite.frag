@@ -70,10 +70,17 @@ void main() {
     float transmittance = clamp(fogSample.a, 0.0, 1.0);
 
     // Atmospheric preservation for the sky:
-    // Ground fog should NOT black out the sky dome; the sky retains its luminosity
-    // while receiving volumetric sun god rays and horizon haze.
+    // The high-altitude sky dome is physically rendered by Hillaire atmosphere;
+    // local froxel ground fog only softly blends in near the horizon.
     if (isSky) {
-        transmittance = max(transmittance, 0.70);
+        vec3 ray_ndc = vec3(v_UV * 2.0 - 1.0, 1.0);
+        vec4 ray_view = u_InvProjection * vec4(ray_ndc, 1.0);
+        ray_view.z = -1.0;
+        ray_view.w = 0.0;
+        vec3 worldRay = normalize((u_InvView * ray_view).xyz);
+        float horizonMistFactor = smoothstep(0.18, 0.01, worldRay.y);
+        inScattering *= horizonMistFactor;
+        transmittance = mix(1.0, transmittance, horizonMistFactor);
     }
 
     if (u_DebugMode == 1) {

@@ -1,215 +1,126 @@
-// ============================================================
-//  Bruneton Spherical Atmospheric Scattering (GLSL)
-//  Eric Bruneton & Sebastien Hillaire spherical atmosphere model
-//  Rayleigh & Mie barometric integration with Earth shadow & MS
-// ============================================================
+// ============================================================================
+//  Sébastien Hillaire (Eurographics 2020) Physically Based Sky & Atmosphere
+//  Real-time O(1) Sky-View LUT Sampling, Solar Disc & Night Celestial Shading
+// ============================================================================
 
 #ifndef ATMOSPHERE_GLSL
 #define ATMOSPHERE_GLSL
 
-#ifndef PI
-#define PI 3.14159265358979323846
-#endif
+#include "shaders/hillaire_common.glsl"
 
-// Planetary Spherical Shell Geometry (Units: meters)
-const float RG_EARTH = 6360000.0;   // Planet ground radius: 6360 km
-const float RT_EARTH = 6420000.0;   // Atmosphere top radius: 6420 km (60 km shell)
-const float HR_EARTH = 8000.0;      // Rayleigh scale height: 8.0 km
-const float HM_EARTH = 1200.0;      // Mie scale height: 1.2 km
-const float HO_CENTER = 25000.0;    // Ozone layer center altitude: 25.0 km
-const float HO_WIDTH = 15000.0;     // Ozone layer half-width: 15.0 km
+// Sébastien Hillaire 2020 Atmospheric LUT Samplers
+layout (binding = 10) uniform sampler2D u_SkyViewLUT;
+layout (binding = 11) uniform sampler2D u_TransmittanceLUT;
 
-// Parameterized Atmosphere Uniforms
-uniform vec3 u_RayleighBeta = vec3(5.8e-6, 13.5e-6, 33.1e-6); // Scattering coefficients (m^-1)
-uniform vec3 u_MieBeta = vec3(21.0e-6);
-uniform float u_MieG = 0.78;                                   // Mie forward asymmetry
-uniform vec3 u_OzoneBeta = vec3(0.65e-6, 1.88e-6, 0.085e-6);   // Ozone Chappuis band
-uniform vec3 u_AtmosphereGroundColor = vec3(0.20, 0.18, 0.15); // Planet surface ambient bounce
-uniform vec3 u_NightZenithColor = vec3(0.012, 0.025, 0.05);   // Midnight zenith tint
-uniform vec3 u_NightHorizonColor = vec3(0.035, 0.055, 0.09);  // Midnight horizon tint
-uniform float u_SunDiscSize = 0.045;                           // Angular radius in radians
-uniform float u_MoonDiscSize = 0.040;
+// Parameterized Atmospheric Visual Options
+uniform vec3 u_NightZenithColor = vec3(0.012, 0.025, 0.050);  // Night zenith tint
+uniform vec3 u_NightHorizonColor = vec3(0.035, 0.055, 0.090); // Night horizon tint
+uniform vec3 u_AtmosphereSunDir = vec3(0.35, -0.85, 0.40);    // True astronomical sun vector
+uniform float u_SunDiscSize = 0.045;                           // Solar disc angular radius (radians)
+uniform float u_MoonDiscSize = 0.040;                          // Lunar disc angular radius (radians)
 uniform vec3 u_MoonColor = vec3(0.70, 0.82, 1.0);
 uniform float u_StarIntensity = 1.0;
 uniform float u_StarDensity = 1.0;
-uniform float u_AtmosphereTurbidity = 2.0;                      // Haze / turbidity multiplier
 
-// Ray-Sphere intersection helper
-bool BrunetonRaySphere(vec3 r0, vec3 rd, float rad, out float t1, out float t2) {
-    float b = dot(r0, rd);
-    float c = dot(r0, r0) - rad * rad;
-    float d = b * b - c;
-    if (d < 0.0) return false;
-    float s = sqrt(d);
-    t1 = -b - s;
-    t2 = -b + s;
-    return true;
-}
-
-// Barometric exponential density distributions
-void BrunetonGetDensities(vec3 p, out float dR, out float dM, out float dO) {
-    float h = max(0.0, length(p) - RG_EARTH);
-    dR = exp(-h / HR_EARTH);
-    dM = exp(-h / HM_EARTH);
-    dO = max(0.0, 1.0 - abs(h - HO_CENTER) / HO_WIDTH);
-}
-
-// Optical depth integration along Sun ray with planetary self-shadowing
-bool BrunetonSunOpticalDepth(vec3 p, vec3 sun_dir, out vec3 tau_sun) {
-    float tg1, tg2;
-    // Check if planet ground blocks the sun (Earth twilight shadow)
-    if (BrunetonRaySphere(p, sun_dir, RG_EARTH, tg1, tg2)) {
-        if (tg1 > 0.0) {
-            tau_sun = vec3(1e6);
-            return false;
-        }
-    }
-    float tt1, tt2;
-    BrunetonRaySphere(p, sun_dir, RT_EARTH, tt1, tt2);
-    float t_exit = max(0.0, tt2);
-
-    int sun_steps = 4;
-    float ds = t_exit / float(sun_steps);
-    float od_r = 0.0, od_m = 0.0, od_o = 0.0;
-    for (int j = 0; j < sun_steps; ++j) {
-        float sj = (float(j) + 0.5) * ds;
-        vec3 ps = p + sun_dir * sj;
-        float dr, dm, doo;
-        BrunetonGetDensities(ps, dr, dm, doo);
-        od_r += dr * ds;
-        od_m += dm * ds;
-        od_o += doo * ds;
-    }
-    tau_sun = (u_RayleighBeta * od_r + u_MieBeta * 1.1 * od_m + u_OzoneBeta * od_o) * u_AtmosphereTurbidity;
-    return true;
-}
-
-vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, float time) {
+vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, float time, vec3 cameraPos) {
     vec3 d = normalize(rayDir);
-    vec3 L = normalize(-sunDir);
+    vec3 L = normalize(-sunDir); // direction pointing toward the sun
     float sunElevation = -sunDir.y;
 
-    // Observer position on planet surface (100m elevation above sea level)
-    vec3 P0 = vec3(0.0, RG_EARTH + 100.0, 0.0);
+    // Altitude of observer relative to planet center
+    float r = clamp(u_RBottom + max(1.0, cameraPos.y), u_RBottom + 1.0, u_RTop - 10.0);
 
-    // Night Sky foundation (Moon & Stars)
-    float dayFactor = clamp(sunElevation * 6.0 + 0.25, 0.0, 1.0);
+    vec3 N = vec3(0.0, 1.0, 0.0); // Local zenith vector
+
+    // 1. Calculate View Zenith and Sun Relative Azimuth for Sky-View LUT
+    float cosZenith = clamp(dot(d, N), -1.0, 1.0);
+    float viewZenith = acos(cosZenith);
+
+    vec3 d_horiz = d - cosZenith * N;
+    vec3 L_horiz = L - dot(L, N) * N;
+    float len_dh = length(d_horiz);
+    float len_lh = length(L_horiz);
+
+    float sunAzimuth = 0.0;
+    if (len_dh > 1e-5 && len_lh > 1e-5) {
+        float cosAz = clamp(dot(d_horiz / len_dh, L_horiz / len_lh), -1.0, 1.0);
+        sunAzimuth = acos(cosAz);
+    }
+
+    vec2 skyViewUv = SkyViewParamsToUv(viewZenith, sunAzimuth, r);
+    vec3 skyRadiance = texture(u_SkyViewLUT, skyViewUv).rgb * 4.0;
+
+    // 2. Solar Disc with Limb Darkening & Atmospheric Transmittance
+    float cosTheta = dot(d, L);
+    float sunAng = acos(clamp(cosTheta, -1.0, 1.0));
+
+    // Sample solar transmittance through atmosphere
+    float mu_s = clamp(dot(N, L), -1.0, 1.0);
+    vec2 transUv = LutTransmittanceParamsToUv(r, mu_s);
+    vec3 T_sun = texture(u_TransmittanceLUT, transUv).rgb;
+    vec3 sunRadiance = sunColor * sunLux;
+
+    // Check if view ray intersects the planet terrain
+    float tg1, tg2;
+    bool hits_ground = RaySphereIntersect(vec3(0.0, r, 0.0), d, u_RBottom, tg1, tg2) && (tg1 > 0.0);
+
+    if (!hits_ground) {
+        if (sunAng < u_SunDiscSize && sunElevation > -0.05) {
+            float normDist = sunAng / u_SunDiscSize;
+            float limb = 1.0 - 0.35 * pow(normDist, 1.5);
+            vec3 disc = (sunRadiance * 35.0) * limb * T_sun;
+            float disc_edge = smoothstep(1.0, 0.85, normDist);
+            skyRadiance += disc * disc_edge;
+        }
+
+        // Forward Mie Corona Glow around sun
+        float corona = pow(max(cosTheta, 0.0), 48.0) * 0.35 + pow(max(cosTheta, 0.0), 256.0) * 1.5;
+        skyRadiance += sunRadiance * corona * T_sun * 0.25;
+    }
+
+    // 3. Night Sky foundation (Lunar disc & Twinkling Starfield)
+    float dayFactor = smoothstep(-0.06, 0.02, sunElevation);
     vec3 nightSky = mix(u_NightHorizonColor, u_NightZenithColor, pow(max(d.y, 0.0), 0.7));
 
-    // Lunar disc & halo
+    // Lunar disc & halo (facing opposite the sun)
     float moonCosTheta = dot(d, sunDir);
     float moonAng = acos(clamp(moonCosTheta, -1.0, 1.0));
     if (moonAng < u_MoonDiscSize && d.y > 0.0) {
         float mNorm = moonAng / u_MoonDiscSize;
-        nightSky += u_MoonColor * 3.5 * smoothstep(1.0, 0.85, mNorm);
+        nightSky += u_MoonColor * 12.0 * smoothstep(1.0, 0.85, mNorm);
     }
-    nightSky += u_MoonColor * pow(max(moonCosTheta, 0.0), 64.0) * 0.20;
+    nightSky += u_MoonColor * pow(max(moonCosTheta, 0.0), 64.0) * 0.80;
 
-    // Twinkling Starfield
-    if (d.y > 0.01 && u_StarIntensity > 0.0) {
-        vec3 starCoord = d * (260.0 * u_StarDensity);
-        vec3 starCell = floor(starCoord);
-        float starHash = fract(sin(dot(starCell, vec3(127.1, 311.7, 74.7))) * 43758.5453);
-        if (starHash > 0.985) {
-            float twinkle = 0.65 + 0.35 * sin(time * 3.0 + starHash * 100.0);
-            float starBrightness = pow((starHash - 0.985) / 0.015, 3.0) * twinkle * u_StarIntensity;
-            nightSky += vec3(starBrightness) * smoothstep(0.01, 0.15, d.y);
+    // Twinkling Starfield (naturally fades out in daylight)
+    float starDayFade = 1.0 - smoothstep(0.0, 0.12, dayFactor);
+    if (d.y > 0.02 && u_StarIntensity > 0.0 && starDayFade > 0.001) {
+        // High-frequency celestial spherical mapping
+        float phi = atan(d.z, d.x);
+        float theta = asin(clamp(d.y, -1.0, 1.0));
+        vec2 starCoord = vec2(phi, theta) * (180.0 * u_StarDensity);
+
+        vec2 cell = floor(starCoord);
+        vec2 f = fract(starCoord);
+
+        // Fast hash for this celestial grid cell
+        vec2 hash = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
+
+        if (hash.x > 0.92) {
+            vec2 starPos = 0.25 + 0.50 * hash; // jittered within cell interior
+            float dist = length(f - starPos);
+            float starPoint = exp(-dist * dist * 140.0); // Fine pinpoint star
+
+            float twinkle = 0.70 + 0.30 * sin(time * 3.5 + hash.y * 62.83);
+            float starMag = (hash.x - 0.92) / 0.08;
+            float starBrightness = (2.0 + 8.0 * starMag) * starPoint * twinkle * u_StarIntensity;
+
+            // Star color temperature variation (cool blue-white to warm amber)
+            vec3 starTint = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 0.82, 0.60), hash.y);
+            nightSky += starTint * starBrightness * smoothstep(0.02, 0.15, d.y) * starDayFade;
         }
     }
 
-    if (dayFactor <= 0.001) {
-        return nightSky;
-    }
-
-    // Intersect view ray with top of atmosphere
-    float tt1, tt2;
-    if (!BrunetonRaySphere(P0, d, RT_EARTH, tt1, tt2)) {
-        return nightSky;
-    }
-    float t_max = tt2;
-    bool hits_ground = false;
-    float tg1, tg2;
-    if (BrunetonRaySphere(P0, d, RG_EARTH, tg1, tg2)) {
-        if (tg1 > 0.0) {
-            t_max = min(t_max, tg1);
-            hits_ground = true;
-        }
-    }
-
-    // Numerical raymarching (16 primary sample steps)
-    const int STEPS = 16;
-    float dt = t_max / float(STEPS);
-    float od_r_view = 0.0, od_m_view = 0.0, od_o_view = 0.0;
-    vec3 I_R = vec3(0.0);
-    vec3 I_M = vec3(0.0);
-    vec3 I_MS = vec3(0.0);
-
-    for (int i = 0; i < STEPS; ++i) {
-        float ti = (float(i) + 0.5) * dt;
-        vec3 pi = P0 + d * ti;
-
-        float dr, dm, doo;
-        BrunetonGetDensities(pi, dr, dm, doo);
-        od_r_view += dr * dt;
-        od_m_view += dm * dt;
-        od_o_view += doo * dt;
-
-        vec3 tau_view = (u_RayleighBeta * od_r_view + u_MieBeta * 1.1 * od_m_view + u_OzoneBeta * od_o_view) * u_AtmosphereTurbidity;
-        vec3 T_view = exp(-tau_view);
-
-        vec3 tau_sun;
-        bool sun_vis = BrunetonSunOpticalDepth(pi, L, tau_sun);
-        vec3 T_sun = sun_vis ? exp(-tau_sun) : vec3(0.0);
-
-        // Single scattering accumulation
-        I_R += dr * T_view * T_sun * dt;
-        I_M += dm * T_view * T_sun * dt;
-
-        // Multiple scattering approximation (diffuse atmospheric ambient fill)
-        vec3 psi_ms = max(vec3(0.0), exp(-tau_sun * 0.35)) * 0.15;
-        I_MS += (dr * u_RayleighBeta + dm * u_MieBeta) * T_view * psi_ms * dt;
-    }
-
-    // Phase Functions
-    float cosTheta = dot(d, L);
-    // Rayleigh Cornette-Shanks phase
-    float PR = (3.0 / (16.0 * PI)) * (1.0 + cosTheta * cosTheta);
-    // Mie Cornette-Shanks phase with forward asymmetry g
-    float g = clamp(u_MieG, 0.0, 0.99);
-    float g2 = g * g;
-    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
-    float PM = (3.0 / (8.0 * PI)) * ((1.0 - g2) * (1.0 + cosTheta * cosTheta)) / ((2.0 + g2) * pow(max(denom, 0.0001), 1.5));
-
-    // Combine day sky radiance
-    vec3 sunRadiance = sunColor * sunLux;
-    vec3 daySky = (I_R * u_RayleighBeta * PR + I_M * u_MieBeta * PM) * (4.0 * PI) * sunRadiance + I_MS * (4.0 * PI) * sunRadiance;
-
-    // Solar Disc with smooth limb darkening
-    if (!hits_ground) {
-        float sunAng = acos(clamp(cosTheta, -1.0, 1.0));
-        if (sunAng < u_SunDiscSize && sunElevation > -0.05) {
-            float normDist = sunAng / u_SunDiscSize;
-            float limb = 1.0 - 0.35 * pow(normDist, 1.5);
-            vec3 tau_view_total = (u_RayleighBeta * od_r_view + u_MieBeta * 1.1 * od_m_view + u_OzoneBeta * od_o_view) * u_AtmosphereTurbidity;
-            vec3 T_disc = exp(-tau_view_total);
-            vec3 disc = sunRadiance * 35.0 * limb * T_disc;
-            daySky += disc * smoothstep(1.0, 0.85, normDist);
-        }
-        // Solar Corona glow
-        float corona = pow(max(cosTheta, 0.0), 48.0) * 0.4 + pow(max(cosTheta, 0.0), 256.0) * 1.8;
-        vec3 tau_view_total = (u_RayleighBeta * od_r_view + u_MieBeta * 1.1 * od_m_view + u_OzoneBeta * od_o_view) * u_AtmosphereTurbidity;
-        daySky += sunRadiance * corona * exp(-tau_view_total) * 0.20;
-    }
-
-    // Ground bounce reflection below horizon
-    if (hits_ground) {
-        vec3 tau_ground = (u_RayleighBeta * od_r_view + u_MieBeta * 1.1 * od_m_view + u_OzoneBeta * od_o_view) * u_AtmosphereTurbidity;
-        vec3 T_ground = exp(-tau_ground);
-        daySky += u_AtmosphereGroundColor * (sunRadiance * max(0.0, sunElevation) * 0.3 + 0.05) * T_ground;
-    }
-
-    // Final smooth twilight interpolation
-    return mix(nightSky, daySky, dayFactor);
+    return mix(nightSky, skyRadiance, dayFactor);
 }
 
 #endif // ATMOSPHERE_GLSL

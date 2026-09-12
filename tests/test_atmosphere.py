@@ -16,7 +16,7 @@ def test_atmosphere_config_defaults() -> None:
     assert config.day_speed == 0.0
     assert len(config.rayleigh_beta) == 3
     assert config.rayleigh_beta[0] < config.rayleigh_beta[2]  # Red scatters less than blue
-    assert config.turbidity == 2.0
+    assert config.turbidity == 1.0
     assert config.sun_intensity == 4.0
     assert config.moon_intensity == 0.40
 

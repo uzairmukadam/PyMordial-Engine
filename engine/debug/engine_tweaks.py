@@ -196,11 +196,11 @@ class EngineTweaks:
         self.time_of_day = 12.0
         self.day_speed = 0.0          # 0.0 = manual / paused
         self.atmo_preset = "EARTH_DAY"
-        self.rayleigh_r = 5.8         # m^-1 * 1e6
-        self.rayleigh_g = 13.5
-        self.rayleigh_b = 33.1
-        self.mie_coeff = 21.0         # m^-1 * 1e6
-        self.turbidity = 2.0
+        self.rayleigh_r = 5.802       # m^-1 * 1e6
+        self.rayleigh_g = 13.558
+        self.rayleigh_b = 33.100
+        self.mie_coeff = 3.996        # m^-1 * 1e6
+        self.turbidity = 1.0
         self.star_intensity = 1.0
 
         # VSync disabled by default per user request

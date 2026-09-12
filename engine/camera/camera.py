@@ -1,6 +1,7 @@
 """Abstract Virtual Camera Base for PyMordial Engine."""
 
 from __future__ import annotations
+import math
 import numpy as np
 
 from engine.core.math_utils import matrix_look_at, matrix_perspective
@@ -62,7 +63,7 @@ class VirtualCamera:
         """Computes and caches the standard 4x4 Projection matrix (Reversed-Z support)."""
         if self._dirty_proj:
             self._proj_matrix = matrix_perspective(
-                self.fov,
+                math.radians(self.fov),
                 self.aspect_ratio,
                 self.near,
                 self.far,

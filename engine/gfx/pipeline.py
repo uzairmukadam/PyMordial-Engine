@@ -33,6 +33,7 @@ from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.passes.ssdm_pass import SSDMPass
+from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
@@ -45,11 +46,38 @@ except ImportError:
 
 
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
+ROOT_DIR = SHADER_DIR.parent
 
 
-def _load_shader(rel_path: str) -> str:
-    path = SHADER_DIR / rel_path
-    return path.read_text(encoding="utf-8")
+def _load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
+    """Loads a GLSL shader file and recursively expands #include directives."""
+    if visited is None:
+        visited = set()
+    if isinstance(rel_path, str):
+        path = ROOT_DIR / rel_path if (ROOT_DIR / rel_path).is_file() else SHADER_DIR / rel_path
+    else:
+        path = rel_path
+    path = path.resolve()
+    if path in visited:
+        return ""
+    visited.add(path)
+    raw = path.read_text(encoding="utf-8")
+    lines: list[str] = []
+    for line in raw.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith("#include"):
+            start_q = line.find('"')
+            end_q = line.rfind('"')
+            if start_q != -1 and end_q > start_q:
+                inc_rel = line[start_q + 1 : end_q]
+                inc_path = ROOT_DIR / inc_rel if (ROOT_DIR / inc_rel).is_file() else SHADER_DIR / inc_rel
+                inc_content = _load_shader(inc_path, visited)
+                lines.append(inc_content)
+            else:
+                lines.append(line)
+        else:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 class RenderPipeline:
@@ -145,6 +173,7 @@ class RenderPipeline:
         "_u_csm_tess_med_level",
         "_u_csm_tess_disp_scale",
         "atmosphere",
+        "sky_atmosphere_pass",
         "_u_rayleigh_beta",
         "_u_mie_beta",
         "_u_mie_g",
@@ -158,6 +187,7 @@ class RenderPipeline:
         "_u_star_intensity",
         "_u_star_density",
         "_u_atmo_turbidity",
+        "_u_atmo_sun_dir",
         "_prev_time",
         "_graph_context",
     )
@@ -300,6 +330,8 @@ class RenderPipeline:
             "u_EnvironmentMap": 7,
             "u_SSRTexture": 8,
             "u_LPVVolume": 9,
+            "u_SkyViewLUT": 10,
+            "u_TransmittanceLUT": 11,
         }
         for name, unit in tex_uniforms.items():
             if name in self.resolve_prog:
@@ -356,8 +388,9 @@ class RenderPipeline:
         self._u_csm_tess_med_level = self.csm_tess_prog.get("u_TessMedLevel", None)
         self._u_csm_tess_disp_scale = self.csm_tess_prog.get("u_TessDisplacementScale", None)
 
-        # 8. Physical Atmosphere & Day-Night Simulation
+        # 8. Physical Atmosphere & Day-Night Simulation (Sébastien Hillaire Eurographics 2020)
         self.atmosphere = AtmosphereSystem()
+        self.sky_atmosphere_pass = SkyAtmospherePass(self.ctx)
         self._u_rayleigh_beta = self.resolve_prog.get("u_RayleighBeta", None)
         self._u_mie_beta = self.resolve_prog.get("u_MieBeta", None)
         self._u_mie_g = self.resolve_prog.get("u_MieG", None)
@@ -371,6 +404,7 @@ class RenderPipeline:
         self._u_star_intensity = self.resolve_prog.get("u_StarIntensity", None)
         self._u_star_density = self.resolve_prog.get("u_StarDensity", None)
         self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
+        self._u_atmo_sun_dir = self.resolve_prog.get("u_AtmosphereSunDir", None)
 
         # 9. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
@@ -562,9 +596,12 @@ class RenderPipeline:
         if calc_dt > 0.0:
             self.atmosphere.update(calc_dt)
 
+        atmo_sun_dir = self.atmosphere.compute_sun_vector()
         atmo_dir, atmo_lux, atmo_col, atmo_ambient = self.atmosphere.compute_lighting()
-        active_sun_dir = sun_dir if (sun_dir != (0.35, -0.85, 0.40) and self.atmosphere.config.day_speed == 0.0 and self.atmosphere.config.time_of_day == 12.0) else atmo_dir
-        active_sun_lux = sun_lux if (sun_lux != 4.0 and self.atmosphere.config.day_speed == 0.0 and self.atmosphere.config.time_of_day == 12.0) else atmo_lux
+        is_custom_sun = (sun_dir != (0.35, -0.85, 0.40) and self.atmosphere.config.day_speed == 0.0)
+        true_sun_dir = sun_dir if is_custom_sun else atmo_sun_dir
+        active_sun_dir = sun_dir if is_custom_sun else atmo_dir
+        active_sun_lux = sun_lux if (sun_lux != 4.0 and is_custom_sun) else atmo_lux
         active_sun_col = atmo_col
         active_ambient = atmo_ambient
 
@@ -750,6 +787,15 @@ class RenderPipeline:
         self.ibl_pass.execute(ctx)
         self.ssr_pass.execute(ctx)
 
+        # ---- PASS 6.5: Physical Sky & Atmosphere (Sébastien Hillaire Eurographics 2020) ----
+        self.sky_atmosphere_pass.update(
+            atmo_config=self.atmosphere.config,
+            camera_pos=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
+            sun_dir=true_sun_dir,
+            sun_color=self.atmosphere.config.sun_color,
+            sun_intensity=sun_lux,
+        )
+
         # ---- PASS 7: Consolidated Deferred Resolve ----
         self.post_process.hdr_fbo.use()
         self.ctx.viewport = (0, 0, w, h)
@@ -773,6 +819,9 @@ class RenderPipeline:
 
         lpv_vol = ctx.resources.get("lpv_volume", self.lpv_pass.black_fallback)
         lpv_vol.use(location=9)
+
+        self.sky_atmosphere_pass.sky_view_lut.use(location=10)
+        self.sky_atmosphere_pass.transmittance_lut.use(location=11)
 
         # Set resolve uniforms
         if self._u_pcf_samples is not None:
@@ -824,6 +873,7 @@ class RenderPipeline:
 
         # Upload Parameterized Physical Atmosphere Uniforms
         atmo = self.atmosphere.config
+        self.sky_atmosphere_pass._update_common_uniforms(self.resolve_prog, atmo)
         if self._u_rayleigh_beta is not None:
             self._u_rayleigh_beta.value = atmo.rayleigh_beta
         if self._u_mie_beta is not None:
@@ -850,6 +900,8 @@ class RenderPipeline:
             self._u_star_density.value = atmo.star_density
         if self._u_atmo_turbidity is not None:
             self._u_atmo_turbidity.value = atmo.turbidity
+        if self._u_atmo_sun_dir is not None:
+            self._u_atmo_sun_dir.value = (float(true_sun_dir[0]), float(true_sun_dir[1]), float(true_sun_dir[2]))
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 
