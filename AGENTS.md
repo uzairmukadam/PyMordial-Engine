@@ -17,8 +17,14 @@ This repository contains **PyMordial Engine**, a high-performance 3D engine in P
 4. **Dual-Target Packaging**:
    - `python -m engine.tools.packager --project <name> --target [pyinstaller|nuitka] --release`
    - Release builds strip `debug_overlay` and tree-shake unused modules into zero-copy `game.pak`.
+5. **Engine Lightness & Sacred Debug Subsystem**:
+   - The engine is intentionally kept light to provide only core foundational primitives without interfering with game design.
+   - Game projects must **NEVER** override, intercept, or swallow reserved engine debug hotkeys (`F1`: System Monitor/Profiler, `F2`: Engine Graphics & G-Buffer Tweaks, `F3`: Game Tweaks).
+   - Game-specific camera toggles, gameplay abilities, or HUD actions must use standard gameplay keys (`V`, `C`, `Tab`, `F10`) and never capture `F1-F3`.
+   - The central debug subsystem (`DebugMenu`, `DebugDraw`, `SystemMonitor`, `EngineTweaks`) must always remain functional in developer builds, being stripped only in final release packaging (`--release`).
 
 For the complete technical specification and rules, see:
 - [docs/LLM_INSTRUCTIONS.md](docs/LLM_INSTRUCTIONS.md)
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - [docs/ENGINE_FEATURES.md](docs/ENGINE_FEATURES.md)
+

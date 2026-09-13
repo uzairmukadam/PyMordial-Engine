@@ -56,6 +56,11 @@ class ProjectApp:
         # 1. Window & ModernGL Render Context
         preset_enum = GraphicsQuality(self.config.quality_preset.lower())
         quality_cfg = get_quality_preset(preset_enum)
+        if hasattr(self.config, "water_enabled") and not self.config.water_enabled:
+            quality_cfg.water_enabled = False
+        if hasattr(self.config, "particles_enabled") and not self.config.particles_enabled:
+            quality_cfg.particles_enabled = False
+            quality_cfg.particle_mode = "OFF"
 
         self.render_ctx = RenderContext(
             width=self.config.width,
@@ -69,6 +74,7 @@ class ProjectApp:
         # 2. ModernGL Deferred Pipeline
         self.pipeline = RenderPipeline(self.render_ctx, quality_cfg)
         self.pipeline.apply_config(self.pipeline.config)
+
 
         # 3. ECS & Native Rapier3D Physics
         self.ecs = EntityManager(max_entities=1000)
@@ -133,6 +139,11 @@ class ProjectApp:
 
         self.world_builder = builder
         self.world_builder.build_world(self)
+
+    @property
+    def waypoint_graph(self) -> Any:
+        """Retrieves the navigation waypoint graph from the active world builder, if present."""
+        return getattr(self.world_builder, "waypoint_graph", None)
 
     def register_draw_batch(
         self,
@@ -209,7 +220,18 @@ class ProjectApp:
                     m.on_ui(self)
 
             if not self.config.headless:
+                # Present any UI drawn to the final FBO onto the window backbuffer
+                if (
+                    hasattr(self.pipeline, "post_process")
+                    and self.pipeline.post_process is not None
+                    and self.pipeline.post_process.final_fbo is not None
+                ):
+                    self.render_ctx.ctx.copy_framebuffer(
+                        self.render_ctx.ctx.screen,
+                        self.pipeline.post_process.final_fbo,
+                    )
                 self.render_ctx.window.swap_buffers()
+
 
         self.engine_loop.on_fixed_update = on_fixed_step
         self.engine_loop.on_update = on_variable_step

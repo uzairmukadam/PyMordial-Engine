@@ -86,3 +86,19 @@ Avoid common hallucinated imports:
 1. Projects must support release builds where `enable_debug = False`.
 2. Release builds will strip `debug_overlay`. Ensure your game scripts do not hard-depend on debug overlay classes.
 3. Use `python -m engine.tools.packager --project <name> --dry-run` to test release staging and tree-shaking before finalizing changes.
+
+---
+
+## Rule 8: Engine Lightness & Non-Interference (No Overriding Core Debug Features)
+
+1. **Light Engine Philosophy**:
+   - The engine is intentionally kept light to provide only core foundational systems without imposing game-specific assumptions.
+2. **Never Override Engine Debug Hotkeys**:
+   - Game modules must **NEVER** capture or return `consumed = True` on reserved engine hotkeys:
+     * **`F1`**: System Performance Monitor, FPS, 1% lows, memory gauges.
+     * **`F2`**: Engine Graphics Tweaks, G-Buffer debug visualizer, tonemapping, wireframe.
+     * **`F3`**: Game Tweaks Developer Inspector.
+   - Gameplay camera toggles, abilities, or menus must strictly use standard gameplay keys (`V`, `C`, `Tab`, `F10`) and never capture `F1`-`F3`.
+3. **Decoupled Debug Stripping**:
+   - The engine debug subsystem is designed to be completely stripped in release packaging without leaving dangling references or breaking game logic. Game code must never mutate or bypass this decoupling.
+

@@ -22,8 +22,11 @@ class ProjectConfig:
     fixed_hz: float = 60.0
     gravity: tuple[float, float, float] = (0.0, -20.0, 0.0)
     enable_debug: bool = True
+    water_enabled: bool = True
+    particles_enabled: bool = True
     headless: bool = False
     max_frames: int | None = None
     asset_dir: Path | str | None = None
     screenshot: Path | str | None = None
     custom_settings: dict[str, object] = field(default_factory=dict)
+

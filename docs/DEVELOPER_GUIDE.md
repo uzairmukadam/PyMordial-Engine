@@ -198,3 +198,20 @@ python -m engine.tools.packager --project shotgun_escape_the_heat --target nuitk
 python -m engine.tools.packager --project shotgun_escape_the_heat --dry-run
 ```
 Output artifact location defaults to `dist/<project_name>/`.
+
+---
+
+## 6. Central Debug Subsystem & Non-Interference Rules
+
+PyMordial provides a built-in 3-tier glassmorphic Dear ImGui developer overlay:
+* **F1**: System Monitor (Real-time CPU/GPU frame times, FPS history, 1% low metrics, memory allocator gauges).
+* **F2**: Engine Graphics Tweaks (Direct G-Buffer visualization, tonemapping operators, wireframe overlay, shadow cascade inspection).
+* **F3**: Game Tweaks (Dynamic developer action and property inspector).
+
+### Developer Rule: Never Override Debug Keys
+The engine is intentionally kept light so it provides only foundational primitives without interfering with game design. In return:
+- Games must **NEVER** intercept, remap, or consume `F1`, `F2`, or `F3`.
+- Gameplay camera switching must use **`V`** or **`F10`**.
+- Abilities or menus must use gameplay keys (`Tab`, `Esc`, `M`, `C`, etc.).
+- When building in release mode (`--release`), the packager automatically tree-shakes and strips `debug_overlay`, ensuring zero debug code remains in the final distribution.
+
