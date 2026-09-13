@@ -35,6 +35,7 @@ from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
+from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
@@ -190,6 +191,7 @@ class RenderPipeline:
         "_u_atmo_turbidity",
         "_u_atmo_sun_dir",
         "particle_pass",
+        "camera_optics_pass",
         "_prev_time",
         "_graph_context",
     )
@@ -419,6 +421,9 @@ class RenderPipeline:
             mode=part_mode if part_enabled else "OFF",
         )
 
+        # 8.6. Cinematic Camera Optics & Lens Effects (Phase 3)
+        self.camera_optics_pass = CameraOpticsPass(self.ctx, w, h)
+
         # 9. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
             self.ctx,
@@ -494,6 +499,7 @@ class RenderPipeline:
         self.fxaa_pass.resize(width, height)
         self.smaa_pass.resize(width, height)
         self.volumetric_fog_pass.resize(width, height)
+        self.camera_optics_pass.resize(width, height)
         self.post_process.resize(width, height)
 
         if gl is not None:
@@ -951,11 +957,39 @@ class RenderPipeline:
                 depth_texture=self.g_buffer.depth_texture,
             )
 
+        # ---- PASS 7.8: Cinematic Camera Optics & Lens Flares (Phase 3) ----
+        flare_tex = None
+        if self.camera_optics_pass is not None:
+            optics_needed = (
+                getattr(self.config, "dof_enabled", True)
+                or getattr(self.config, "motion_blur_enabled", True)
+            )
+            if optics_needed:
+                scene_hdr_tex = self.post_process.hdr_fbo.color_attachments[0]
+                self.camera_optics_pass.render_optics(
+                    scene_hdr_texture=scene_hdr_tex,
+                    depth_texture=self.g_buffer.depth_texture,
+                    prev_vp_mat=self._prev_vp_mat,
+                    config=self.config,
+                )
+                self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.camera_optics_pass.optics_fbo)
+
+            if getattr(self.config, "lens_flare_enabled", True):
+                scene_hdr_tex = self.post_process.hdr_fbo.color_attachments[0]
+                flare_tex = self.camera_optics_pass.render_flare(
+                    scene_hdr_texture=scene_hdr_tex,
+                    config=self.config,
+                )
+
         # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
         aa_mode = getattr(self.config, "aa_mode", "OFF")
 
-        self.post_process.render(target_fbo=self.post_process.final_fbo)
+        self.post_process.render(
+            target_fbo=self.post_process.final_fbo,
+            flare_texture=flare_tex,
+            time_elapsed=time_elapsed,
+        )
         ctx.resources["ldr_color"] = self.post_process.final_texture
 
         if aa_mode == "FXAA":
@@ -1000,6 +1034,8 @@ class RenderPipeline:
         self.volumetric_fog_pass.destroy()
         if self.particle_pass is not None:
             self.particle_pass.destroy()
+        if self.camera_optics_pass is not None:
+            self.camera_optics_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()

@@ -145,6 +145,41 @@ class RenderConfig:
     particle_size: float = 1.0            # Multiplier for particle radius
     particle_turbulence: float = 0.85     # Curl noise turbulence strength
 
+    # Phase 3: Cinematic Camera Optics & Lens Effects
+    # Bokeh Depth of Field
+    dof_enabled: bool = True
+    dof_focus_distance: float = 5.0      # Focus plane distance in meters
+    dof_focal_length: float = 50.0       # Lens focal length in mm
+    dof_aperture: float = 2.8            # Aperture f-stop (e.g. 1.4, 2.8, 5.6)
+    dof_bokeh_shape: str = "CIRCULAR"    # "CIRCULAR", "HEXAGONAL", "ANAMORPHIC"
+    dof_anamorphic_ratio: float = 1.0    # Horizontal anamorphic squeeze ratio (1.0 to 2.0)
+    dof_max_coc: float = 24.0            # Max blur radius in pixels
+
+    # Velocity Motion Blur
+    motion_blur_enabled: bool = True
+    motion_blur_samples: int = 12        # Directional blur taps (4 to 32)
+    motion_blur_intensity: float = 1.0   # Shutter angle / blur strength scale
+    motion_blur_max_radius: float = 32.0 # Max blur vector in pixels
+
+    # Anamorphic Lens Flare & Ghost Reflections
+    lens_flare_enabled: bool = True
+    lens_flare_threshold: float = 1.8    # Luminance cutoff for specular streaks
+    lens_flare_streak_intensity: float = 0.6
+    lens_flare_streak_width: float = 32.0 # Horizontal spread in pixels
+    lens_flare_ghost_intensity: float = 0.35
+    lens_flare_halo_intensity: float = 0.25
+    lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0) # Anamorphic blue/cyan
+
+    # Optical Lens Imperfections
+    chromatic_aberration_enabled: bool = True
+    chromatic_aberration_intensity: float = 0.005 # Radial spectral separation
+    vignette_enabled: bool = True
+    vignette_intensity: float = 0.35
+    vignette_roundness: float = 0.85
+    vignette_smoothness: float = 0.50
+    film_grain_enabled: bool = True
+    film_grain_intensity: float = 0.04
+
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
@@ -180,6 +215,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=False,
         particle_count=4096,
         particle_mode="OFF",
+        dof_enabled=False,
+        motion_blur_enabled=False,
+        lens_flare_enabled=False,
+        chromatic_aberration_enabled=False,
+        vignette_enabled=True,
+        vignette_intensity=0.20,
+        film_grain_enabled=False,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
@@ -214,6 +256,15 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=8192,
         particle_mode="DUST_MOTES",
+        dof_enabled=False,
+        motion_blur_enabled=True,
+        motion_blur_samples=6,
+        lens_flare_enabled=False,
+        chromatic_aberration_enabled=True,
+        chromatic_aberration_intensity=0.003,
+        vignette_enabled=True,
+        film_grain_enabled=True,
+        film_grain_intensity=0.02,
     ),
     GraphicsQuality.HIGH: RenderConfig(
         shadow_resolution=4096,
@@ -252,6 +303,16 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=16384,
         particle_mode="DUST_MOTES",
+        dof_enabled=True,
+        dof_bokeh_shape="CIRCULAR",
+        motion_blur_enabled=True,
+        motion_blur_samples=12,
+        lens_flare_enabled=True,
+        chromatic_aberration_enabled=True,
+        chromatic_aberration_intensity=0.005,
+        vignette_enabled=True,
+        film_grain_enabled=True,
+        film_grain_intensity=0.04,
     ),
     GraphicsQuality.ULTRA: RenderConfig(
         shadow_resolution=4096,
@@ -290,6 +351,16 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=32768,
         particle_mode="DUST_MOTES",
+        dof_enabled=True,
+        dof_bokeh_shape="HEXAGONAL",
+        motion_blur_enabled=True,
+        motion_blur_samples=16,
+        lens_flare_enabled=True,
+        chromatic_aberration_enabled=True,
+        chromatic_aberration_intensity=0.007,
+        vignette_enabled=True,
+        film_grain_enabled=True,
+        film_grain_intensity=0.05,
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
         shadow_resolution=4096,
@@ -329,6 +400,17 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=65536,
         particle_mode="DUST_MOTES",
+        dof_enabled=True,
+        dof_bokeh_shape="ANAMORPHIC",
+        dof_anamorphic_ratio=2.0,
+        motion_blur_enabled=True,
+        motion_blur_samples=24,
+        lens_flare_enabled=True,
+        chromatic_aberration_enabled=True,
+        chromatic_aberration_intensity=0.008,
+        vignette_enabled=True,
+        film_grain_enabled=True,
+        film_grain_intensity=0.06,
     ),
 }
 

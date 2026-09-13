@@ -149,6 +149,14 @@ def main() -> None:
     parser.add_argument("--particles", action=argparse.BooleanOptionalAction, default=True, help="Enable volumetric particle system")
     parser.add_argument("--particle-count", type=int, default=16384, help="Particle count (1024 to 65536)")
     parser.add_argument("--particle-mode", type=str, default="DUST_MOTES", choices=["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"], help="Particle VFX mode")
+    parser.add_argument("--dof", action=argparse.BooleanOptionalAction, default=True, help="Enable Bokeh Depth of Field")
+    parser.add_argument("--focus-dist", type=float, default=5.0, help="DoF focus distance in meters")
+    parser.add_argument("--fstop", type=float, default=2.8, help="DoF aperture f-stop")
+    parser.add_argument("--motion-blur", action=argparse.BooleanOptionalAction, default=True, help="Enable Velocity Motion Blur")
+    parser.add_argument("--lens-flare", action=argparse.BooleanOptionalAction, default=True, help="Enable Anamorphic Lens Flare")
+    parser.add_argument("--chromatic-aberration", action=argparse.BooleanOptionalAction, default=True, help="Enable Chromatic Aberration")
+    parser.add_argument("--vignette", action=argparse.BooleanOptionalAction, default=True, help="Enable Physical Lens Vignette")
+    parser.add_argument("--film-grain", action=argparse.BooleanOptionalAction, default=True, help="Enable Filmic 35mm Grain")
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -313,6 +321,14 @@ def main() -> None:
     engine_tweaks.particles_enabled = args.particles
     engine_tweaks.particle_count = args.particle_count
     engine_tweaks.particle_mode = args.particle_mode
+    engine_tweaks.dof_enabled = args.dof
+    engine_tweaks.dof_focus_distance = float(args.focus_dist)
+    engine_tweaks.dof_aperture = float(args.fstop)
+    engine_tweaks.motion_blur_enabled = args.motion_blur
+    engine_tweaks.lens_flare_enabled = args.lens_flare
+    engine_tweaks.chromatic_aberration_enabled = args.chromatic_aberration
+    engine_tweaks.vignette_enabled = args.vignette
+    engine_tweaks.film_grain_enabled = args.film_grain
 
     game_tweaks = GameTweaks()
     toast = DebugToast()
@@ -380,6 +396,15 @@ def main() -> None:
         engine_tweaks.particle_mode = getattr(cfg, "particle_mode", "DUST_MOTES")
         engine_tweaks.particle_size = getattr(cfg, "particle_size", 0.04)
         engine_tweaks.particle_turbulence = getattr(cfg, "particle_turbulence", 1.0)
+        engine_tweaks.dof_enabled = getattr(cfg, "dof_enabled", True)
+        engine_tweaks.dof_bokeh_shape = getattr(cfg, "dof_bokeh_shape", "CIRCULAR")
+        engine_tweaks.motion_blur_enabled = getattr(cfg, "motion_blur_enabled", True)
+        engine_tweaks.motion_blur_samples = getattr(cfg, "motion_blur_samples", 12)
+        engine_tweaks.lens_flare_enabled = getattr(cfg, "lens_flare_enabled", True)
+        engine_tweaks.chromatic_aberration_enabled = getattr(cfg, "chromatic_aberration_enabled", True)
+        engine_tweaks.chromatic_aberration_intensity = getattr(cfg, "chromatic_aberration_intensity", 0.005)
+        engine_tweaks.vignette_enabled = getattr(cfg, "vignette_enabled", True)
+        engine_tweaks.film_grain_enabled = getattr(cfg, "film_grain_enabled", True)
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
@@ -399,6 +424,9 @@ def main() -> None:
     game_tweaks.add_watch("Wireframe", "Active", lambda: engine_tweaks.show_wireframe)
     game_tweaks.add_watch("VFX", "Particle Mode", lambda: engine_tweaks.particle_mode)
     game_tweaks.add_watch("VFX", "Particles Active", lambda: f"{engine_tweaks.particle_count:,}" if engine_tweaks.particles_enabled else "OFF")
+    game_tweaks.add_watch("Optics", "DoF", lambda: f"{engine_tweaks.dof_focus_distance:.1f}m (f/{engine_tweaks.dof_aperture:.1f})" if engine_tweaks.dof_enabled else "OFF")
+    game_tweaks.add_watch("Optics", "Motion Blur", lambda: f"{engine_tweaks.motion_blur_intensity:.1f}x" if engine_tweaks.motion_blur_enabled else "OFF")
+    game_tweaks.add_watch("Optics", "Lens Flare", lambda: "ON" if engine_tweaks.lens_flare_enabled else "OFF")
 
     toast.show("POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, F2 Graphics, F9 Free Mouse", duration=4.0, color=(56, 189, 248))
 
@@ -624,6 +652,33 @@ def main() -> None:
             pipeline.particle_pass.turbulence_strength = engine_tweaks.particle_turbulence
             pipeline.particle_pass.base_size_multiplier = engine_tweaks.particle_size
             pipeline.particle_pass.sun_scatter_intensity = engine_tweaks.particle_brightness
+
+        # Cinematic Camera Optics & Lens Effects (Phase 3)
+        pipeline.config.dof_enabled = engine_tweaks.dof_enabled
+        pipeline.config.dof_focus_distance = engine_tweaks.dof_focus_distance
+        pipeline.config.dof_focal_length = engine_tweaks.dof_focal_length
+        pipeline.config.dof_aperture = engine_tweaks.dof_aperture
+        pipeline.config.dof_bokeh_shape = engine_tweaks.dof_bokeh_shape
+        pipeline.config.dof_anamorphic_ratio = engine_tweaks.dof_anamorphic_ratio
+        pipeline.config.dof_max_coc = engine_tweaks.dof_max_coc
+        pipeline.config.motion_blur_enabled = engine_tweaks.motion_blur_enabled
+        pipeline.config.motion_blur_samples = engine_tweaks.motion_blur_samples
+        pipeline.config.motion_blur_intensity = engine_tweaks.motion_blur_intensity
+        pipeline.config.motion_blur_max_radius = engine_tweaks.motion_blur_max_radius
+        pipeline.config.lens_flare_enabled = engine_tweaks.lens_flare_enabled
+        pipeline.config.lens_flare_threshold = engine_tweaks.lens_flare_threshold
+        pipeline.config.lens_flare_streak_intensity = engine_tweaks.lens_flare_streak_intensity
+        pipeline.config.lens_flare_streak_width = engine_tweaks.lens_flare_streak_width
+        pipeline.config.lens_flare_ghost_intensity = engine_tweaks.lens_flare_ghost_intensity
+        pipeline.config.lens_flare_halo_intensity = engine_tweaks.lens_flare_halo_intensity
+        pipeline.config.chromatic_aberration_enabled = engine_tweaks.chromatic_aberration_enabled
+        pipeline.config.chromatic_aberration_intensity = engine_tweaks.chromatic_aberration_intensity
+        pipeline.config.vignette_enabled = engine_tweaks.vignette_enabled
+        pipeline.config.vignette_intensity = engine_tweaks.vignette_intensity
+        pipeline.config.vignette_roundness = engine_tweaks.vignette_roundness
+        pipeline.config.vignette_smoothness = engine_tweaks.vignette_smoothness
+        pipeline.config.film_grain_enabled = engine_tweaks.film_grain_enabled
+        pipeline.config.film_grain_intensity = engine_tweaks.film_grain_intensity
 
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.pom_enabled = engine_tweaks.pom_enabled

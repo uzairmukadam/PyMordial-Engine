@@ -113,6 +113,31 @@ class EngineTweaks:
         "particle_size",
         "particle_turbulence",
         "particle_brightness",
+        "dof_enabled",
+        "dof_focus_distance",
+        "dof_focal_length",
+        "dof_aperture",
+        "dof_bokeh_shape",
+        "dof_anamorphic_ratio",
+        "dof_max_coc",
+        "motion_blur_enabled",
+        "motion_blur_samples",
+        "motion_blur_intensity",
+        "motion_blur_max_radius",
+        "lens_flare_enabled",
+        "lens_flare_threshold",
+        "lens_flare_streak_intensity",
+        "lens_flare_streak_width",
+        "lens_flare_ghost_intensity",
+        "lens_flare_halo_intensity",
+        "chromatic_aberration_enabled",
+        "chromatic_aberration_intensity",
+        "vignette_enabled",
+        "vignette_intensity",
+        "vignette_roundness",
+        "vignette_smoothness",
+        "film_grain_enabled",
+        "film_grain_intensity",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -216,6 +241,36 @@ class EngineTweaks:
         self.particle_size = 1.0
         self.particle_turbulence = 0.85
         self.particle_brightness = 2.5
+
+        # Phase 3: Cinematic Camera Optics & Lens Effects
+        self.dof_enabled = True
+        self.dof_focus_distance = 5.0
+        self.dof_focal_length = 50.0
+        self.dof_aperture = 2.8
+        self.dof_bokeh_shape = "CIRCULAR"
+        self.dof_anamorphic_ratio = 1.0
+        self.dof_max_coc = 24.0
+
+        self.motion_blur_enabled = True
+        self.motion_blur_samples = 12
+        self.motion_blur_intensity = 1.0
+        self.motion_blur_max_radius = 32.0
+
+        self.lens_flare_enabled = True
+        self.lens_flare_threshold = 1.8
+        self.lens_flare_streak_intensity = 0.6
+        self.lens_flare_streak_width = 32.0
+        self.lens_flare_ghost_intensity = 0.35
+        self.lens_flare_halo_intensity = 0.25
+
+        self.chromatic_aberration_enabled = True
+        self.chromatic_aberration_intensity = 0.005
+        self.vignette_enabled = True
+        self.vignette_intensity = 0.35
+        self.vignette_roundness = 0.85
+        self.vignette_smoothness = 0.50
+        self.film_grain_enabled = True
+        self.film_grain_intensity = 0.04
 
         # VSync disabled by default per user request
         self.vsync_enabled = False

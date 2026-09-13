@@ -711,6 +711,122 @@ class DebugMenu:
                     et.mark_custom()
 
             imgui.separator()
+            imgui.text("Cinematic Camera Optics & Lens Effects (Phase 3)")
+
+            # Depth of Field
+            dof_c, dof_v = imgui.checkbox("Bokeh Depth of Field", getattr(et, "dof_enabled", True))
+            if dof_c:
+                et.dof_enabled = dof_v
+                et.mark_custom()
+                self.toast.show(f"Depth of Field: {'ON' if dof_v else 'OFF'}", duration=1.5)
+
+            if getattr(et, "dof_enabled", True):
+                fd_c, fd_v = imgui.slider_float("Focus Distance", et.dof_focus_distance, 0.5, 50.0, "%.1f m")
+                if fd_c:
+                    et.dof_focus_distance = fd_v
+                    et.mark_custom()
+
+                fl_c, fl_v = imgui.slider_float("Focal Length", et.dof_focal_length, 18.0, 135.0, "%.0f mm")
+                if fl_c:
+                    et.dof_focal_length = fl_v
+                    et.mark_custom()
+
+                ap_c, ap_v = imgui.slider_float("Aperture (f-stop)", et.dof_aperture, 1.2, 16.0, "f/%.1f")
+                if ap_c:
+                    et.dof_aperture = ap_v
+                    et.mark_custom()
+
+                shapes = ["CIRCULAR", "HEXAGONAL", "ANAMORPHIC"]
+                shape_labels = ["Circular Bokeh", "Hexagonal Diaphragm", "Anamorphic (2x Stretch)"]
+                cur_shape_str = getattr(et, "dof_bokeh_shape", "CIRCULAR").upper()
+                cur_s_idx = shapes.index(cur_shape_str) if cur_shape_str in shapes else 0
+                sh_c, sh_idx = imgui.combo("Bokeh Diaphragm", cur_s_idx, shape_labels)
+                if sh_c:
+                    et.dof_bokeh_shape = shapes[sh_idx]
+                    if et.dof_bokeh_shape == "ANAMORPHIC":
+                        et.dof_anamorphic_ratio = 2.0
+                    else:
+                        et.dof_anamorphic_ratio = 1.0
+                    et.mark_custom()
+
+                mc_c, mc_v = imgui.slider_float("Max Blur Radius", et.dof_max_coc, 4.0, 48.0, "%.0f px")
+                if mc_c:
+                    et.dof_max_coc = mc_v
+                    et.mark_custom()
+
+            # Motion Blur
+            mb_c, mb_v = imgui.checkbox("Velocity Motion Blur", getattr(et, "motion_blur_enabled", True))
+            if mb_c:
+                et.motion_blur_enabled = mb_v
+                et.mark_custom()
+                self.toast.show(f"Motion Blur: {'ON' if mb_v else 'OFF'}", duration=1.5)
+
+            if getattr(et, "motion_blur_enabled", True):
+                mbi_c, mbi_v = imgui.slider_float("Shutter Blur Intensity", et.motion_blur_intensity, 0.1, 3.0, "%.2fx")
+                if mbi_c:
+                    et.motion_blur_intensity = mbi_v
+                    et.mark_custom()
+
+                mbs_c, mbs_v = imgui.slider_int("Motion Blur Taps", et.motion_blur_samples, 4, 32)
+                if mbs_c:
+                    et.motion_blur_samples = mbs_v
+                    et.mark_custom()
+
+            # Anamorphic Lens Flare
+            lf_c, lf_v = imgui.checkbox("Anamorphic Lens Flare", getattr(et, "lens_flare_enabled", True))
+            if lf_c:
+                et.lens_flare_enabled = lf_v
+                et.mark_custom()
+                self.toast.show(f"Lens Flare: {'ON' if lf_v else 'OFF'}", duration=1.5)
+
+            if getattr(et, "lens_flare_enabled", True):
+                lft_c, lft_v = imgui.slider_float("Flare Threshold", et.lens_flare_threshold, 1.0, 5.0, "%.2f")
+                if lft_c:
+                    et.lens_flare_threshold = lft_v
+                    et.mark_custom()
+
+                lfs_c, lfs_v = imgui.slider_float("Streak Intensity", et.lens_flare_streak_intensity, 0.0, 2.0, "%.2f")
+                if lfs_c:
+                    et.lens_flare_streak_intensity = lfs_v
+                    et.mark_custom()
+
+                lfg_c, lfg_v = imgui.slider_float("Ghost Reflections", et.lens_flare_ghost_intensity, 0.0, 1.5, "%.2f")
+                if lfg_c:
+                    et.lens_flare_ghost_intensity = lfg_v
+                    et.mark_custom()
+
+            # Lens Imperfections (Chromatic Aberration, Vignette, Film Grain)
+            ca_c, ca_v = imgui.checkbox("Chromatic Aberration", getattr(et, "chromatic_aberration_enabled", True))
+            if ca_c:
+                et.chromatic_aberration_enabled = ca_v
+                et.mark_custom()
+            if getattr(et, "chromatic_aberration_enabled", True):
+                cai_c, cai_v = imgui.slider_float("Spectral Fringing", et.chromatic_aberration_intensity, 0.0, 0.02, "%.4f")
+                if cai_c:
+                    et.chromatic_aberration_intensity = cai_v
+                    et.mark_custom()
+
+            vig_c, vig_v = imgui.checkbox("Physical Lens Vignette", getattr(et, "vignette_enabled", True))
+            if vig_c:
+                et.vignette_enabled = vig_v
+                et.mark_custom()
+            if getattr(et, "vignette_enabled", True):
+                vigi_c, vigi_v = imgui.slider_float("Vignette Intensity", et.vignette_intensity, 0.0, 1.0, "%.2f")
+                if vigi_c:
+                    et.vignette_intensity = vigi_v
+                    et.mark_custom()
+
+            fg_c, fg_v = imgui.checkbox("Filmic Grain (35mm)", getattr(et, "film_grain_enabled", True))
+            if fg_c:
+                et.film_grain_enabled = fg_v
+                et.mark_custom()
+            if getattr(et, "film_grain_enabled", True):
+                fgi_c, fgi_v = imgui.slider_float("Grain ISO", et.film_grain_intensity, 0.0, 0.15, "%.3f")
+                if fgi_c:
+                    et.film_grain_intensity = fgi_v
+                    et.mark_custom()
+
+            imgui.separator()
             imgui.text("Micro-Geometry & Displacement")
 
             # POM
