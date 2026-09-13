@@ -827,6 +827,87 @@ class DebugMenu:
                     et.mark_custom()
 
             imgui.separator()
+            imgui.text("Dynamic Water & Screen-Space Refraction (Phase 4)")
+
+            w_c, w_v = imgui.checkbox("Dynamic Water Plane", getattr(et, "water_enabled", True))
+            if w_c:
+                et.water_enabled = w_v
+                et.mark_custom()
+                self.toast.show(f"Water: {'ON' if w_v else 'OFF'}", duration=1.5)
+
+            if getattr(et, "water_enabled", True):
+                wh_c, wh_v = imgui.slider_float("Water Height (Y)", et.water_height, -5.0, 5.0, "%.2f m")
+                if wh_c:
+                    et.water_height = wh_v
+                    et.mark_custom()
+
+                if imgui.tree_node("Gerstner Wave Dynamics"):
+                    wa_c, wa_v = imgui.slider_float("Wave Amplitude", et.water_wave_amplitude, 0.0, 1.0, "%.3f m")
+                    if wa_c:
+                        et.water_wave_amplitude = wa_v
+                        et.mark_custom()
+
+                    ws_c, ws_v = imgui.slider_float("Wave Speed", et.water_wave_speed, 0.0, 3.0, "%.2fx")
+                    if ws_c:
+                        et.water_wave_speed = ws_v
+                        et.mark_custom()
+
+                    wst_c, wst_v = imgui.slider_float("Wave Steepness (Q)", et.water_wave_steepness, 0.1, 1.5, "%.2f")
+                    if wst_c:
+                        et.water_wave_steepness = wst_v
+                        et.mark_custom()
+
+                    imgui.tree_pop()
+
+                if imgui.tree_node("Optics, Refraction & Absorption"):
+                    ref_c, ref_v = imgui.checkbox("Screen-Space Refraction", et.water_refraction_enabled)
+                    if ref_c:
+                        et.water_refraction_enabled = ref_v
+                        et.mark_custom()
+
+                    if et.water_refraction_enabled:
+                        rs_c, rs_v = imgui.slider_float("Refraction Strength", et.water_refraction_strength, 0.0, 0.10, "%.3f")
+                        if rs_c:
+                            et.water_refraction_strength = rs_v
+                            et.mark_custom()
+
+                    clar_c, clar_v = imgui.slider_float("Water Clarity", et.water_clarity, 0.5, 15.0, "%.1f m")
+                    if clar_c:
+                        et.water_clarity = clar_v
+                        et.mark_custom()
+
+                    ro_c, ro_v = imgui.slider_float("Surface Roughness", et.water_roughness, 0.01, 0.50, "%.3f")
+                    if ro_c:
+                        et.water_roughness = ro_v
+                        et.mark_custom()
+
+                    imgui.tree_pop()
+
+                if imgui.tree_node("Shoreline & Crest Foam"):
+                    fm_c, fm_v = imgui.checkbox("Contact & Crest Foam", et.water_foam_enabled)
+                    if fm_c:
+                        et.water_foam_enabled = fm_v
+                        et.mark_custom()
+
+                    if et.water_foam_enabled:
+                        fth_c, fth_v = imgui.slider_float("Shore Foam Depth", et.water_foam_threshold, 0.05, 2.0, "%.2f m")
+                        if fth_c:
+                            et.water_foam_threshold = fth_v
+                            et.mark_custom()
+
+                        fsc_c, fsc_v = imgui.slider_float("Foam Frequency", et.water_foam_scale, 1.0, 20.0, "%.1f")
+                        if fsc_c:
+                            et.water_foam_scale = fsc_v
+                            et.mark_custom()
+
+                        fint_c, fint_v = imgui.slider_float("Foam Intensity", et.water_foam_intensity, 0.1, 3.0, "%.2fx")
+                        if fint_c:
+                            et.water_foam_intensity = fint_v
+                            et.mark_custom()
+
+                    imgui.tree_pop()
+
+            imgui.separator()
             imgui.text("Micro-Geometry & Displacement")
 
             # POM

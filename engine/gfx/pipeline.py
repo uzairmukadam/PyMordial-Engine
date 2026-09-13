@@ -36,6 +36,7 @@ from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
+from engine.gfx.passes.water_pass import WaterPass
 from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
@@ -192,6 +193,7 @@ class RenderPipeline:
         "_u_atmo_sun_dir",
         "particle_pass",
         "camera_optics_pass",
+        "water_pass",
         "_prev_time",
         "_graph_context",
     )
@@ -424,6 +426,9 @@ class RenderPipeline:
         # 8.6. Cinematic Camera Optics & Lens Effects (Phase 3)
         self.camera_optics_pass = CameraOpticsPass(self.ctx, w, h)
 
+        # 8.7. Dynamic Water Simulation & Screen-Space Refraction (Phase 4)
+        self.water_pass = WaterPass(self.ctx, w, h)
+
         # 9. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
             self.ctx,
@@ -483,6 +488,9 @@ class RenderPipeline:
             self.particle_pass.base_size_multiplier = getattr(new_config, "particle_size", 1.0)
             self.particle_pass.turbulence_strength = getattr(new_config, "particle_turbulence", 0.85)
 
+        if self.water_pass is not None:
+            self.water_pass.enabled = getattr(new_config, "water_enabled", True)
+
     def resize(self, width: int, height: int) -> None:
         """Resizes MRT G-Buffer and all post-processing/intermediate pass buffers."""
         self.ctx_wrapper.width = width
@@ -500,6 +508,7 @@ class RenderPipeline:
         self.smaa_pass.resize(width, height)
         self.volumetric_fog_pass.resize(width, height)
         self.camera_optics_pass.resize(width, height)
+        self.water_pass.resize(width, height)
         self.post_process.resize(width, height)
 
         if gl is not None:
@@ -945,6 +954,15 @@ class RenderPipeline:
         ctx.resources["g_buffer"] = self.g_buffer
         ctx.resources["hdr_fbo"] = self.post_process.hdr_fbo
         self.volumetric_fog_pass.execute(ctx)
+
+        # ---- PASS 7.65: Dynamic Water Simulation & Screen-Space Refraction (Phase 4) ----
+        if self.water_pass is not None and getattr(self.config, "water_enabled", True):
+            self.water_pass.render_water(
+                hdr_fbo=self.post_process.hdr_fbo,
+                depth_texture=self.g_buffer.depth_texture,
+                config=self.config,
+                time_elapsed=time_elapsed,
+            )
 
         # ---- PASS 7.7: GPU Compute Particles & Volumetric VFX (Phase 2) ----
         if self.particle_pass is not None:

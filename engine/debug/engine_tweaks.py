@@ -138,6 +138,21 @@ class EngineTweaks:
         "vignette_smoothness",
         "film_grain_enabled",
         "film_grain_intensity",
+        "water_enabled",
+        "water_height",
+        "water_wave_amplitude",
+        "water_wave_speed",
+        "water_wave_steepness",
+        "water_refraction_enabled",
+        "water_refraction_strength",
+        "water_foam_enabled",
+        "water_foam_threshold",
+        "water_foam_scale",
+        "water_foam_intensity",
+        "water_clarity",
+        "water_roughness",
+        "water_color_shallow",
+        "water_color_deep",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -271,6 +286,23 @@ class EngineTweaks:
         self.vignette_smoothness = 0.50
         self.film_grain_enabled = True
         self.film_grain_intensity = 0.04
+
+        # Phase 4: Dynamic Water & Screen-Space Refraction
+        self.water_enabled = True
+        self.water_height = 0.0
+        self.water_wave_amplitude = 0.15
+        self.water_wave_speed = 1.0
+        self.water_wave_steepness = 0.8
+        self.water_refraction_enabled = True
+        self.water_refraction_strength = 0.03
+        self.water_foam_enabled = True
+        self.water_foam_threshold = 0.40
+        self.water_foam_scale = 6.0
+        self.water_foam_intensity = 1.0
+        self.water_clarity = 4.0
+        self.water_roughness = 0.05
+        self.water_color_shallow = (0.05, 0.45, 0.55)
+        self.water_color_deep = (0.005, 0.04, 0.15)
 
         # VSync disabled by default per user request
         self.vsync_enabled = False
