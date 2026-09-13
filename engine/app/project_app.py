@@ -84,8 +84,8 @@ class ProjectApp:
         # 4. Input & Deterministic Engine Loop
         self.input_manager = InputManager()
         if not self.config.headless:
-            self.input_manager.set_mouse_grab(True)
-            self.input_manager._was_mouse_grabbed = True
+            self.input_manager.set_mouse_grab(False)
+            self.input_manager._was_mouse_grabbed = False
 
         fixed_dt = 1.0 / max(1.0, float(self.config.fixed_hz))
         self.engine_loop = EngineLoop(ecs=self.ecs, input_manager=self.input_manager, fixed_dt=fixed_dt)

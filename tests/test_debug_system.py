@@ -221,3 +221,98 @@ class TestDebugSystem:
         if tweaks.show_physics_colliders:
             drawer.draw_box((0, 0, 0), (1, 1, 1))
         assert drawer.vertex_count == 0, "Drawer should have 0 vertices when colliders are toggled OFF"
+
+    def test_engine_tweaks_apply_to_pipeline(self):
+        """Validates that EngineTweaks.apply_to_pipeline synchronizes all post-processing and optics settings."""
+        from engine.gfx.quality_presets import RenderConfig
+        from unittest.mock import MagicMock
+
+        pipeline = MagicMock()
+        pipeline.config = RenderConfig()
+        pipeline.post_process = MagicMock()
+        pipeline.csm = MagicMock()
+        pipeline.csm.atlas_size = 4096
+        pipeline.csm.max_distance = 500.0
+        pipeline.csm.cascade_count = 4
+        pipeline.water_pass = MagicMock()
+        pipeline.particle_pass = MagicMock()
+        pipeline.atmosphere = MagicMock()
+        pipeline.atmosphere.config = MagicMock()
+
+        tweaks = EngineTweaks()
+        tweaks.chromatic_aberration_enabled = False
+        tweaks.chromatic_aberration_intensity = 0.018
+        tweaks.vignette_enabled = True
+        tweaks.vignette_intensity = 0.85
+        tweaks.film_grain_enabled = True
+        tweaks.film_grain_intensity = 0.12
+        tweaks.bloom_enabled = False
+        tweaks.bloom_intensity = 0.075
+        tweaks.dof_enabled = False
+        tweaks.motion_blur_enabled = True
+        tweaks.motion_blur_samples = 24
+        tweaks.motion_blur_intensity = 2.0
+        tweaks.lens_flare_enabled = False
+        tweaks.aa_mode = "SMAA_1X"
+        tweaks.tonemap_mode = "AgX"
+        tweaks.exposure = 1.65
+
+        tweaks.apply_to_pipeline(pipeline)
+
+        assert pipeline.config.chromatic_aberration_enabled is False
+        assert pipeline.config.chromatic_aberration_intensity == 0.018
+        assert pipeline.config.vignette_enabled is True
+        assert pipeline.config.vignette_intensity == 0.85
+        assert pipeline.config.film_grain_enabled is True
+        assert pipeline.config.film_grain_intensity == 0.12
+        assert pipeline.config.bloom_enabled is False
+        assert pipeline.config.bloom_intensity == 0.075
+        assert pipeline.config.dof_enabled is False
+        assert pipeline.config.motion_blur_enabled is True
+        assert pipeline.config.motion_blur_samples == 24
+        assert pipeline.config.motion_blur_intensity == 2.0
+        assert pipeline.config.lens_flare_enabled is False
+        assert pipeline.config.aa_mode == "SMAA_1X"
+        assert pipeline.config.tonemap_mode == "AgX"
+        assert pipeline.config.exposure == 1.65
+        assert pipeline.post_process.config is pipeline.config
+
+    def test_engine_tweaks_serialization(self, tmp_path):
+        """Validates that EngineTweaks can serialize to/from dict and persist to JSON file."""
+        from engine.gfx.quality_presets import GraphicsQuality
+
+        tweaks = EngineTweaks()
+        tweaks.quality_preset = GraphicsQuality.CINEMATIC
+        tweaks.exposure = 1.85
+        tweaks.tonemap_mode = "AgX"
+        tweaks.vignette_intensity = 0.95
+        tweaks.chromatic_aberration_intensity = 0.015
+        tweaks.film_grain_intensity = 0.10
+        tweaks.bloom_intensity = 0.09
+        tweaks.aa_mode = "SMAA_2X"
+
+        # Serialize to dict
+        data = tweaks.to_dict()
+        assert isinstance(data, dict)
+        assert data["quality_preset"] == "cinematic"
+        assert data["exposure"] == 1.85
+        assert data["tonemap_mode"] == "AgX"
+        assert data["vignette_intensity"] == 0.95
+        assert data["aa_mode"] == "SMAA_2X"
+
+        # Persist to file
+        cfg_file = tmp_path / "test_graphics.json"
+        assert tweaks.save_to_file(cfg_file) is True
+        assert cfg_file.is_file()
+
+        # Restore into a fresh EngineTweaks instance
+        restored = EngineTweaks()
+        assert restored.load_from_file(cfg_file) is True
+        assert restored.quality_preset == GraphicsQuality.CINEMATIC
+        assert restored.exposure == 1.85
+        assert restored.tonemap_mode == "AgX"
+        assert restored.vignette_intensity == 0.95
+        assert restored.chromatic_aberration_intensity == 0.015
+        assert restored.film_grain_intensity == 0.10
+        assert restored.bloom_intensity == 0.09
+        assert restored.aa_mode == "SMAA_2X"

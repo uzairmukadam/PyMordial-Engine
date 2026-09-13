@@ -138,10 +138,10 @@ class RenderConfig:
     tess_distance_min: float = 2.0        # Deprecated: alias for near distance
     tess_distance_max: float = 30.0       # Deprecated: alias for far distance
 
-    # Phase 2: Volumetric Particles & Dust Motes
-    particles_enabled: bool = True
+    # Phase 2: Volumetric Particles & Dust Motes (Scene-specific)
+    particles_enabled: bool = False
     particle_count: int = 16384           # Simulated particle count (1024 to 65536)
-    particle_mode: str = "DUST_MOTES"     # "DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"
+    particle_mode: str = "OFF"            # "DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"
     particle_size: float = 1.0            # Multiplier for particle radius
     particle_turbulence: float = 0.85     # Curl noise turbulence strength
 
@@ -180,8 +180,8 @@ class RenderConfig:
     film_grain_enabled: bool = True
     film_grain_intensity: float = 0.04
 
-    # Phase 4: Dynamic Water & Screen-Space Refraction
-    water_enabled: bool = True
+    # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
+    water_enabled: bool = False
     water_height: float = 0.0
     water_wave_amplitude: float = 0.15
     water_wave_speed: float = 1.0

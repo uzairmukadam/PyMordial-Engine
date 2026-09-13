@@ -142,6 +142,13 @@ class RenderContext:
         """Swaps front and back buffers."""
         self.window.swap_buffers()
 
+    def save_screenshot(self, filepath: str) -> None:
+        """Reads backbuffer pixels and saves image to disk."""
+        from PIL import Image
+        raw = self.ctx.screen.read(components=4, dtype="f1")
+        img = Image.frombytes("RGBA", (self.width, self.height), raw).transpose(Image.FLIP_TOP_BOTTOM)
+        img.save(filepath)
+
     def destroy(self) -> None:
         """Releases context resources."""
         if self.ctx:

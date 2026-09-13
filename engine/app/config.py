@@ -17,7 +17,7 @@ class ProjectConfig:
     width: int = 1280
     height: int = 720
     fullscreen: bool = False
-    vsync: bool = True
+    vsync: bool = False
     quality_preset: str = "ultra"  # "low", "medium", "high", "ultra", "cinematic"
     fixed_hz: float = 60.0
     gravity: tuple[float, float, float] = (0.0, -20.0, 0.0)

@@ -5,8 +5,10 @@ G-Buffer inspection modes, visual 3D wireframes, and shadow parameters.
 """
 
 from __future__ import annotations
+import json
+from pathlib import Path
 from enum import IntEnum
-from typing import Callable
+from typing import Any, Callable
 from engine.gfx.quality_presets import GraphicsQuality, GIMode
 
 
@@ -114,6 +116,8 @@ class EngineTweaks:
         "particle_size",
         "particle_turbulence",
         "particle_brightness",
+        "bloom_enabled",
+        "bloom_intensity",
         "dof_enabled",
         "dof_focus_distance",
         "dof_focal_length",
@@ -252,15 +256,18 @@ class EngineTweaks:
         self.turbidity = 1.0
         self.star_intensity = 1.0
 
-        # Phase 2: Volumetric Particles & Dust Motes
-        self.particles_enabled = True
+        # Phase 2: Volumetric Particles & Dust Motes (Scene-specific)
+        self.particles_enabled = False
         self.particle_count = 16384
-        self.particle_mode = "DUST_MOTES"
+        self.particle_mode = "OFF"
         self.particle_size = 1.0
         self.particle_turbulence = 0.85
         self.particle_brightness = 2.5
 
         # Phase 3: Cinematic Camera Optics & Lens Effects
+        self.bloom_enabled = True
+        self.bloom_intensity = 0.045
+
         self.dof_enabled = True
         self.dof_focus_distance = 5.0
         self.dof_focal_length = 50.0
@@ -290,8 +297,8 @@ class EngineTweaks:
         self.film_grain_enabled = True
         self.film_grain_intensity = 0.04
 
-        # Phase 4: Dynamic Water & Screen-Space Refraction
-        self.water_enabled = True
+        # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
+        self.water_enabled = False
         self.water_height = 0.0
         self.water_wave_amplitude = 0.15
         self.water_wave_speed = 1.0
@@ -397,3 +404,289 @@ class EngineTweaks:
         """Toggles immediate-mode physics colliders & gizmos."""
         self.show_physics_colliders = not self.show_physics_colliders
         return self.show_physics_colliders
+
+    def apply_to_pipeline(self, pipeline: Any) -> None:
+        """Synchronizes all graphical and post-processing properties to the active pipeline."""
+        if pipeline is None:
+            return
+
+        p_cfg = getattr(pipeline, "config", None)
+        if p_cfg is not None:
+            # 1. Post-Processing, Optics & Tone-Mapping
+            p_cfg.tonemap_mode = self.tonemap_mode
+            p_cfg.exposure = float(self.exposure)
+            p_cfg.bloom_enabled = bool(self.bloom_enabled)
+            p_cfg.bloom_intensity = float(self.bloom_intensity)
+            p_cfg.chromatic_aberration_enabled = bool(self.chromatic_aberration_enabled)
+            p_cfg.chromatic_aberration_intensity = float(self.chromatic_aberration_intensity)
+            p_cfg.vignette_enabled = bool(self.vignette_enabled)
+            p_cfg.vignette_intensity = float(self.vignette_intensity)
+            p_cfg.vignette_roundness = float(self.vignette_roundness)
+            p_cfg.vignette_smoothness = float(self.vignette_smoothness)
+            p_cfg.film_grain_enabled = bool(self.film_grain_enabled)
+            p_cfg.film_grain_intensity = float(self.film_grain_intensity)
+
+            # 2. Cinematic Camera Optics (DoF, Motion Blur, Lens Flare)
+            p_cfg.dof_enabled = bool(self.dof_enabled)
+            p_cfg.dof_focus_distance = float(self.dof_focus_distance)
+            p_cfg.dof_focal_length = float(self.dof_focal_length)
+            p_cfg.dof_aperture = float(self.dof_aperture)
+            p_cfg.dof_bokeh_shape = self.dof_bokeh_shape
+            p_cfg.dof_anamorphic_ratio = float(self.dof_anamorphic_ratio)
+            p_cfg.dof_max_coc = float(self.dof_max_coc)
+
+            p_cfg.motion_blur_enabled = bool(self.motion_blur_enabled)
+            p_cfg.motion_blur_samples = int(self.motion_blur_samples)
+            p_cfg.motion_blur_intensity = float(self.motion_blur_intensity)
+            p_cfg.motion_blur_max_radius = float(self.motion_blur_max_radius)
+
+            p_cfg.lens_flare_enabled = bool(self.lens_flare_enabled)
+            p_cfg.lens_flare_threshold = float(self.lens_flare_threshold)
+            p_cfg.lens_flare_streak_intensity = float(self.lens_flare_streak_intensity)
+            p_cfg.lens_flare_streak_width = float(self.lens_flare_streak_width)
+            p_cfg.lens_flare_ghost_intensity = float(self.lens_flare_ghost_intensity)
+            p_cfg.lens_flare_halo_intensity = float(self.lens_flare_halo_intensity)
+
+            # 3. Global Illumination & Ambient Occlusion
+            p_cfg.gi_mode = self.gi_mode
+            p_cfg.ssgi_steps = int(self.ssgi_steps)
+            p_cfg.ssgi_rays = int(self.ssgi_rays)
+            p_cfg.ssgi_thickness = float(self.ssgi_thickness)
+            p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
+            p_cfg.ssgi_intensity = float(self.ssgi_intensity)
+            p_cfg.lpv_intensity = float(self.lpv_intensity)
+            p_cfg.ao_mode = self.ao_mode
+            p_cfg.ao_intensity = float(self.ao_intensity)
+            p_cfg.ao_radius = float(self.ao_radius)
+
+            # 4. Reflections & Anti-Aliasing
+            p_cfg.ibl_enabled = bool(self.ibl_enabled)
+            p_cfg.ssr_enabled = bool(self.ssr_enabled)
+            p_cfg.ssr_steps = int(self.ssr_steps)
+            p_cfg.ssr_thickness = float(self.ssr_thickness)
+            p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
+            p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
+            p_cfg.clustered_lights_enabled = bool(self.point_lights_enabled)
+
+            # 5. Shadows & CSM
+            p_cfg.shadow_mode = self.shadow_mode
+            p_cfg.shadow_softness = float(self.shadow_softness)
+            p_cfg.shadow_bias = float(self.shadow_bias)
+            p_cfg.shadow_normal_bias = float(self.shadow_normal_bias)
+            p_cfg.shadow_distance = float(self.shadow_distance)
+            p_cfg.csm_cascades = int(self.csm_cascades)
+            p_cfg.shadow_resolution = int(self.shadow_resolution)
+
+            if hasattr(pipeline, "csm") and pipeline.csm is not None:
+                if self.shadow_resolution != pipeline.csm.atlas_size:
+                    pipeline.csm.resize_atlas(self.shadow_resolution)
+                if (
+                    self.shadow_distance != pipeline.csm.max_distance
+                    or self.csm_cascades != pipeline.csm.cascade_count
+                ):
+                    pipeline.csm.update_splits(self.shadow_distance, self.csm_cascades)
+
+            # 6. Micro-Geometry (POM, SSDM, Tessellation)
+            p_cfg.pom_enabled = bool(self.pom_enabled)
+            p_cfg.pom_height_scale = float(self.pom_height_scale)
+            p_cfg.pom_self_shadow = bool(self.pom_self_shadow)
+            p_cfg.disp_near_radius = float(self.disp_near_radius)
+            p_cfg.disp_mid_radius = float(self.disp_mid_radius)
+            p_cfg.tess_enabled = bool(self.tess_enabled)
+            p_cfg.tess_max_level = float(self.tess_max_level)
+            p_cfg.tess_med_level = float(self.tess_med_level)
+            p_cfg.tess_displacement_scale = float(self.tess_displacement_scale)
+            p_cfg.ssdm_enabled = bool(self.ssdm_enabled)
+            p_cfg.ssdm_scale = float(self.ssdm_scale)
+
+            # 7. Froxel Volumetric Fog
+            p_cfg.volumetric_fog_enabled = bool(self.volumetric_fog_enabled)
+            p_cfg.fog_resolution = str(self.fog_resolution)
+            p_cfg.fog_point_lights = bool(self.fog_point_lights)
+            p_cfg.fog_density = float(self.fog_density)
+            p_cfg.fog_height_falloff = float(self.fog_height_falloff)
+            p_cfg.fog_anisotropy = float(self.fog_anisotropy)
+            p_cfg.fog_distance = float(self.fog_distance)
+            p_cfg.fog_ambient = float(self.fog_ambient)
+            p_cfg.fog_debug_mode = int(self.fog_debug_mode)
+
+            # 8. Dynamic Water Simulation
+            p_cfg.water_enabled = bool(self.water_enabled)
+            p_cfg.water_height = float(self.water_height)
+            p_cfg.water_wave_amplitude = float(self.water_wave_amplitude)
+            p_cfg.water_wave_speed = float(self.water_wave_speed)
+            p_cfg.water_wave_steepness = float(self.water_wave_steepness)
+            p_cfg.water_refraction_enabled = bool(self.water_refraction_enabled)
+            p_cfg.water_refraction_strength = float(self.water_refraction_strength)
+            p_cfg.water_foam_enabled = bool(self.water_foam_enabled)
+            p_cfg.water_foam_threshold = float(self.water_foam_threshold)
+            p_cfg.water_clarity = float(self.water_clarity)
+            p_cfg.water_roughness = float(self.water_roughness)
+            if hasattr(pipeline, "water_pass") and pipeline.water_pass is not None:
+                pipeline.water_pass.enabled = self.water_enabled
+
+            # 9. GPU Particles
+            p_cfg.particles_enabled = bool(self.particles_enabled)
+            p_cfg.particle_count = int(self.particle_count)
+            p_cfg.particle_mode = str(self.particle_mode)
+            p_cfg.particle_size = float(self.particle_size)
+            p_cfg.particle_turbulence = float(self.particle_turbulence)
+            if hasattr(pipeline, "particle_pass") and pipeline.particle_pass is not None:
+                pipeline.particle_pass.set_mode(self.particle_mode if self.particles_enabled else "OFF")
+                pipeline.particle_pass.set_active_count(self.particle_count if self.particles_enabled else 0)
+                pipeline.particle_pass.base_size_multiplier = self.particle_size
+                pipeline.particle_pass.turbulence_strength = self.particle_turbulence
+                pipeline.particle_pass.sun_scatter_intensity = getattr(self, "particle_brightness", 2.5)
+
+            # 10. Debug Displays & Sun
+            p_cfg.wireframe = bool(self.show_wireframe)
+            p_cfg.debug_gbuffer = int(self.gbuffer_debug)
+            p_cfg.sun_intensity = float(self.sun_lux)
+
+            # Ensure post_process config is kept in lockstep
+            if hasattr(pipeline, "post_process") and pipeline.post_process is not None:
+                pipeline.post_process.config = p_cfg
+
+        # 11. Atmosphere System
+        if hasattr(pipeline, "atmosphere") and pipeline.atmosphere is not None:
+            atmo = pipeline.atmosphere
+            if hasattr(atmo, "config") and atmo.config is not None:
+                atmo.config.day_speed = float(self.day_speed)
+                if self.day_speed > 0.0:
+                    self.time_of_day = float(atmo.config.time_of_day)
+                else:
+                    atmo.config.time_of_day = float(self.time_of_day)
+                atmo.config.rayleigh_beta = (
+                    float(self.rayleigh_r * 1e-6),
+                    float(self.rayleigh_g * 1e-6),
+                    float(self.rayleigh_b * 1e-6),
+                )
+                atmo.config.mie_beta = float(self.mie_coeff * 1e-6)
+                atmo.config.turbidity = float(self.turbidity)
+                atmo.config.star_intensity = float(self.star_intensity)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serializes current graphics configuration into a JSON-compatible dictionary."""
+        return {
+            "quality_preset": self.quality_preset.value if hasattr(self.quality_preset, "value") else str(self.quality_preset),
+            "vsync_enabled": bool(self.vsync_enabled),
+            "tonemap_mode": str(self.tonemap_mode),
+            "exposure": float(self.exposure),
+            "bloom_enabled": bool(self.bloom_enabled),
+            "bloom_intensity": float(self.bloom_intensity),
+            "chromatic_aberration_enabled": bool(self.chromatic_aberration_enabled),
+            "chromatic_aberration_intensity": float(self.chromatic_aberration_intensity),
+            "vignette_enabled": bool(self.vignette_enabled),
+            "vignette_intensity": float(self.vignette_intensity),
+            "vignette_roundness": float(self.vignette_roundness),
+            "vignette_smoothness": float(self.vignette_smoothness),
+            "film_grain_enabled": bool(self.film_grain_enabled),
+            "film_grain_intensity": float(self.film_grain_intensity),
+            "dof_enabled": bool(self.dof_enabled),
+            "dof_focus_distance": float(self.dof_focus_distance),
+            "dof_focal_length": float(self.dof_focal_length),
+            "dof_aperture": float(self.dof_aperture),
+            "dof_bokeh_shape": str(self.dof_bokeh_shape),
+            "dof_anamorphic_ratio": float(self.dof_anamorphic_ratio),
+            "dof_max_coc": float(self.dof_max_coc),
+            "motion_blur_enabled": bool(self.motion_blur_enabled),
+            "motion_blur_samples": int(self.motion_blur_samples),
+            "motion_blur_intensity": float(self.motion_blur_intensity),
+            "motion_blur_max_radius": float(self.motion_blur_max_radius),
+            "lens_flare_enabled": bool(self.lens_flare_enabled),
+            "lens_flare_threshold": float(self.lens_flare_threshold),
+            "lens_flare_streak_intensity": float(self.lens_flare_streak_intensity),
+            "lens_flare_streak_width": float(self.lens_flare_streak_width),
+            "lens_flare_ghost_intensity": float(self.lens_flare_ghost_intensity),
+            "lens_flare_halo_intensity": float(self.lens_flare_halo_intensity),
+            "gi_mode": str(self.gi_mode),
+            "ssgi_steps": int(self.ssgi_steps),
+            "ssgi_rays": int(self.ssgi_rays),
+            "ssgi_thickness": float(self.ssgi_thickness),
+            "ssgi_ray_distance": float(self.ssgi_ray_distance),
+            "ssgi_intensity": float(self.ssgi_intensity),
+            "lpv_intensity": float(self.lpv_intensity),
+            "ao_mode": str(self.ao_mode),
+            "ao_intensity": float(self.ao_intensity),
+            "ao_radius": float(self.ao_radius),
+            "ibl_enabled": bool(self.ibl_enabled),
+            "ssr_enabled": bool(self.ssr_enabled),
+            "ssr_steps": int(self.ssr_steps),
+            "ssr_thickness": float(self.ssr_thickness),
+            "ssr_max_roughness": float(self.ssr_max_roughness),
+            "aa_mode": str(getattr(self, "aa_mode", "OFF")),
+            "point_lights_enabled": bool(self.point_lights_enabled),
+            "shadow_mode": str(self.shadow_mode),
+            "shadow_softness": float(self.shadow_softness),
+            "shadow_bias": float(self.shadow_bias),
+            "shadow_normal_bias": float(self.shadow_normal_bias),
+            "shadow_distance": float(self.shadow_distance),
+            "csm_cascades": int(self.csm_cascades),
+            "shadow_resolution": int(self.shadow_resolution),
+            "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
+            "fog_resolution": str(self.fog_resolution),
+            "fog_point_lights": bool(self.fog_point_lights),
+            "fog_density": float(self.fog_density),
+            "fog_height_falloff": float(self.fog_height_falloff),
+            "fog_anisotropy": float(self.fog_anisotropy),
+            "fog_distance": float(self.fog_distance),
+            "fog_ambient": float(self.fog_ambient),
+            "fog_debug_mode": int(self.fog_debug_mode),
+            "sun_lux": float(self.sun_lux),
+            "time_of_day": float(self.time_of_day),
+            "day_speed": float(self.day_speed),
+            "atmo_preset": str(self.atmo_preset),
+            "rayleigh_r": float(self.rayleigh_r),
+            "rayleigh_g": float(self.rayleigh_g),
+            "rayleigh_b": float(self.rayleigh_b),
+            "mie_coeff": float(self.mie_coeff),
+            "turbidity": float(self.turbidity),
+            "star_intensity": float(self.star_intensity),
+        }
+
+    def from_dict(self, data: dict[str, Any]) -> None:
+        """Restores graphics configuration from a dictionary."""
+        if not isinstance(data, dict):
+            return
+
+        if "quality_preset" in data:
+            try:
+                self.quality_preset = GraphicsQuality(data["quality_preset"])
+            except Exception:
+                self.quality_preset = GraphicsQuality.CUSTOM
+
+        for key, val in data.items():
+            if hasattr(self, key) and key != "quality_preset":
+                current = getattr(self, key)
+                if isinstance(current, bool):
+                    setattr(self, key, bool(val))
+                elif isinstance(current, int) and not isinstance(current, bool):
+                    setattr(self, key, int(val))
+                elif isinstance(current, float):
+                    setattr(self, key, float(val))
+                elif isinstance(current, str):
+                    setattr(self, key, str(val))
+
+    def save_to_file(self, filepath: str | Path) -> bool:
+        """Writes configuration to JSON file in the target directory."""
+        try:
+            p = Path(filepath)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(self.to_dict(), f, indent=2)
+            return True
+        except Exception:
+            return False
+
+    def load_from_file(self, filepath: str | Path) -> bool:
+        """Loads configuration from JSON file in the target directory."""
+        try:
+            p = Path(filepath)
+            if not p.is_file():
+                return False
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.from_dict(data)
+            return True
+        except Exception:
+            return False

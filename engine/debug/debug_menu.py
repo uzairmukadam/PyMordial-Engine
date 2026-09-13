@@ -8,6 +8,7 @@ Provides independent, non-intrusive debug panels:
 """
 
 from __future__ import annotations
+from pathlib import Path
 import numpy as np
 import pygame
 import moderngl
@@ -50,6 +51,7 @@ class DebugMenu:
         "io",
         "renderer",
         "_warned_no_renderer",
+        "config_filepath",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -64,6 +66,7 @@ class DebugMenu:
         input_mgr: InputManager,
         screen_width: int = 1280,
         screen_height: int = 720,
+        config_filepath: str | Path | None = None,
     ) -> None:
         self.ctx = ctx
         self.monitor = monitor
@@ -71,6 +74,7 @@ class DebugMenu:
         self.game_tweaks = game_tweaks
         self.toast = toast
         self.input_mgr = input_mgr
+        self.config_filepath = Path(config_filepath) if config_filepath is not None else None
 
         self.width = screen_width
         self.height = screen_height
@@ -388,6 +392,35 @@ class DebugMenu:
         if expanded:
             et = self.engine_tweaks
 
+            # Configuration Persistence
+            if imgui.button("Save Configuration", imgui.ImVec2(160.0, 24.0)):
+                saved = False
+                if self.config_filepath is not None:
+                    saved = self.engine_tweaks.save_to_file(self.config_filepath)
+                if saved:
+                    self.toast.show("Configuration saved to game directory", duration=2.5, color=(56, 189, 248))
+                else:
+                    self.toast.show("Configuration saved to memory", duration=2.0, color=(147, 197, 253))
+
+            imgui.same_line()
+            if imgui.button("Reset Defaults", imgui.ImVec2(130.0, 24.0)):
+                self.engine_tweaks.set_quality_preset(GraphicsQuality.CUSTOM)
+                self.engine_tweaks.exposure = 1.0
+                self.engine_tweaks.tonemap_mode = "ACES"
+                self.engine_tweaks.bloom_enabled = True
+                self.engine_tweaks.bloom_intensity = 0.045
+                self.engine_tweaks.chromatic_aberration_enabled = True
+                self.engine_tweaks.chromatic_aberration_intensity = 0.005
+                self.engine_tweaks.vignette_enabled = True
+                self.engine_tweaks.vignette_intensity = 0.35
+                self.engine_tweaks.film_grain_enabled = True
+                self.engine_tweaks.film_grain_intensity = 0.04
+                if self.config_filepath is not None:
+                    self.engine_tweaks.save_to_file(self.config_filepath)
+                self.toast.show("Reset graphics configuration to defaults", duration=2.0, color=(250, 204, 21))
+
+            imgui.separator()
+
             # 1. Quality Preset
             preset_names = ["custom", "low", "medium", "high", "ultra", "cinematic"]
             current_preset = et.quality_preset.value.lower()
@@ -677,45 +710,6 @@ class DebugMenu:
                     self.toast.show(f"Fog Visualizer: {debug_modes[dbg_idx]}", duration=1.5)
 
             imgui.separator()
-            imgui.text("Volumetric VFX & GPU Particles (Phase 2)")
-
-            part_c, part_v = imgui.checkbox("Volumetric Particles", et.particles_enabled)
-            if part_c:
-                et.particles_enabled = part_v
-                et.mark_custom()
-                self.toast.show(f"Particles: {'ON' if part_v else 'OFF'}", duration=1.5)
-
-            if et.particles_enabled:
-                part_modes = ["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"]
-                part_mode_labels = ["Atmospheric Dust Motes", "Glowing Embers & Sparks", "Bioluminescent Fireflies", "Disabled"]
-                cur_m_idx = part_modes.index(et.particle_mode) if et.particle_mode in part_modes else 0
-                pm_c, pm_idx = imgui.combo("Particle Mode", cur_m_idx, part_mode_labels)
-                if pm_c:
-                    et.particle_mode = part_modes[pm_idx]
-                    et.mark_custom()
-                    self.toast.show(f"Particle Mode: {part_mode_labels[pm_idx]}", duration=1.5)
-
-                cnt_c, cnt_v = imgui.slider_int("Particle Count", et.particle_count, 1024, 65536)
-                if cnt_c:
-                    et.particle_count = cnt_v
-                    et.mark_custom()
-
-                turb_c, turb_v = imgui.slider_float("Turbulence (Curl Noise)", getattr(et, "particle_turbulence", 0.85), 0.0, 3.0, "%.2f")
-                if turb_c:
-                    et.particle_turbulence = turb_v
-                    et.mark_custom()
-
-                sz_c, sz_v = imgui.slider_float("Particle Size Scale", getattr(et, "particle_size", 1.0), 0.2, 3.0, "%.2fx")
-                if sz_c:
-                    et.particle_size = sz_v
-                    et.mark_custom()
-
-                br_c, br_v = imgui.slider_float("Brightness / Glint", getattr(et, "particle_brightness", 2.5), 0.2, 8.0, "%.2fx")
-                if br_c:
-                    et.particle_brightness = br_v
-                    et.mark_custom()
-
-            imgui.separator()
             imgui.text("Cinematic Camera Optics & Lens Effects (Phase 3)")
 
             # Depth of Field
@@ -800,6 +794,17 @@ class DebugMenu:
                     et.lens_flare_ghost_intensity = lfg_v
                     et.mark_custom()
 
+            # HDR Bloom
+            bl_c, bl_v = imgui.checkbox("HDR Bloom", getattr(et, "bloom_enabled", True))
+            if bl_c:
+                et.bloom_enabled = bl_v
+                et.mark_custom()
+            if getattr(et, "bloom_enabled", True):
+                bli_c, bli_v = imgui.slider_float("Bloom Intensity", getattr(et, "bloom_intensity", 0.045), 0.0, 0.20, "%.3f")
+                if bli_c:
+                    et.bloom_intensity = bli_v
+                    et.mark_custom()
+
             # Lens Imperfections (Chromatic Aberration, Vignette, Film Grain)
             ca_c, ca_v = imgui.checkbox("Chromatic Aberration", getattr(et, "chromatic_aberration_enabled", True))
             if ca_c:
@@ -830,87 +835,6 @@ class DebugMenu:
                 if fgi_c:
                     et.film_grain_intensity = fgi_v
                     et.mark_custom()
-
-            imgui.separator()
-            imgui.text("Dynamic Water & Screen-Space Refraction (Phase 4)")
-
-            w_c, w_v = imgui.checkbox("Dynamic Water Plane", getattr(et, "water_enabled", True))
-            if w_c:
-                et.water_enabled = w_v
-                et.mark_custom()
-                self.toast.show(f"Water: {'ON' if w_v else 'OFF'}", duration=1.5)
-
-            if getattr(et, "water_enabled", True):
-                wh_c, wh_v = imgui.slider_float("Water Height (Y)", et.water_height, -5.0, 5.0, "%.2f m")
-                if wh_c:
-                    et.water_height = wh_v
-                    et.mark_custom()
-
-                if imgui.tree_node("Gerstner Wave Dynamics"):
-                    wa_c, wa_v = imgui.slider_float("Wave Amplitude", et.water_wave_amplitude, 0.0, 1.0, "%.3f m")
-                    if wa_c:
-                        et.water_wave_amplitude = wa_v
-                        et.mark_custom()
-
-                    ws_c, ws_v = imgui.slider_float("Wave Speed", et.water_wave_speed, 0.0, 3.0, "%.2fx")
-                    if ws_c:
-                        et.water_wave_speed = ws_v
-                        et.mark_custom()
-
-                    wst_c, wst_v = imgui.slider_float("Wave Steepness (Q)", et.water_wave_steepness, 0.1, 1.5, "%.2f")
-                    if wst_c:
-                        et.water_wave_steepness = wst_v
-                        et.mark_custom()
-
-                    imgui.tree_pop()
-
-                if imgui.tree_node("Optics, Refraction & Absorption"):
-                    ref_c, ref_v = imgui.checkbox("Screen-Space Refraction", et.water_refraction_enabled)
-                    if ref_c:
-                        et.water_refraction_enabled = ref_v
-                        et.mark_custom()
-
-                    if et.water_refraction_enabled:
-                        rs_c, rs_v = imgui.slider_float("Refraction Strength", et.water_refraction_strength, 0.0, 0.10, "%.3f")
-                        if rs_c:
-                            et.water_refraction_strength = rs_v
-                            et.mark_custom()
-
-                    clar_c, clar_v = imgui.slider_float("Water Clarity", et.water_clarity, 0.5, 15.0, "%.1f m")
-                    if clar_c:
-                        et.water_clarity = clar_v
-                        et.mark_custom()
-
-                    ro_c, ro_v = imgui.slider_float("Surface Roughness", et.water_roughness, 0.01, 0.50, "%.3f")
-                    if ro_c:
-                        et.water_roughness = ro_v
-                        et.mark_custom()
-
-                    imgui.tree_pop()
-
-                if imgui.tree_node("Shoreline & Crest Foam"):
-                    fm_c, fm_v = imgui.checkbox("Contact & Crest Foam", et.water_foam_enabled)
-                    if fm_c:
-                        et.water_foam_enabled = fm_v
-                        et.mark_custom()
-
-                    if et.water_foam_enabled:
-                        fth_c, fth_v = imgui.slider_float("Shore Foam Depth", et.water_foam_threshold, 0.05, 2.0, "%.2f m")
-                        if fth_c:
-                            et.water_foam_threshold = fth_v
-                            et.mark_custom()
-
-                        fsc_c, fsc_v = imgui.slider_float("Foam Frequency", et.water_foam_scale, 1.0, 20.0, "%.1f")
-                        if fsc_c:
-                            et.water_foam_scale = fsc_v
-                            et.mark_custom()
-
-                        fint_c, fint_v = imgui.slider_float("Foam Intensity", et.water_foam_intensity, 0.1, 3.0, "%.2fx")
-                        if fint_c:
-                            et.water_foam_intensity = fint_v
-                            et.mark_custom()
-
-                    imgui.tree_pop()
 
             imgui.separator()
             imgui.text("Micro-Geometry & Displacement")

@@ -309,7 +309,7 @@ class RaycastVehicle:
                 effective_dist = dist_from_ray_origin + chassis_half_y
                 susp_len = max(0.0, effective_dist - w_cfg.radius)
 
-                if susp_len <= w_cfg.suspension_rest_length:
+                if susp_len <= w_cfg.suspension_rest_length + 1e-3:
                     w_state.is_grounded = True
                     w_state.suspension_length = susp_len
                     w_state.compression = min(

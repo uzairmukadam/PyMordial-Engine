@@ -151,15 +151,23 @@ class PhysicsManager:
         restitution: float | None = None,
     ) -> None:
         """Attaches an oriented box collider to an entity's rigid body."""
-        self.world.attach_box_collider(
-            entity_id,
-            float(half_x),
-            float(half_y),
-            float(half_z),
-            density=float(density) if density is not None else None,
-            friction=float(friction) if friction is not None else None,
-            restitution=float(restitution) if restitution is not None else None,
-        )
+        try:
+            self.world.attach_box_collider(
+                entity_id,
+                float(half_x),
+                float(half_y),
+                float(half_z),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_box_collider(
+                entity_id,
+                float(half_x),
+                float(half_y),
+                float(half_z),
+            )
 
     def attach_sphere_collider(
         self,
@@ -170,13 +178,19 @@ class PhysicsManager:
         restitution: float | None = None,
     ) -> None:
         """Attaches a sphere collider to an entity's rigid body."""
-        self.world.attach_sphere_collider(
-            entity_id,
-            float(radius),
-            density=float(density) if density is not None else None,
-            friction=float(friction) if friction is not None else None,
-            restitution=float(restitution) if restitution is not None else None,
-        )
+        try:
+            self.world.attach_sphere_collider(
+                entity_id,
+                float(radius),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_sphere_collider(
+                entity_id,
+                float(radius),
+            )
 
     def attach_capsule_collider(
         self,
@@ -188,14 +202,21 @@ class PhysicsManager:
         restitution: float | None = None,
     ) -> None:
         """Attaches a capsule collider (Y-axis aligned) to an entity's rigid body."""
-        self.world.attach_capsule_collider(
-            entity_id,
-            float(half_height),
-            float(radius),
-            density=float(density) if density is not None else None,
-            friction=float(friction) if friction is not None else None,
-            restitution=float(restitution) if restitution is not None else None,
-        )
+        try:
+            self.world.attach_capsule_collider(
+                entity_id,
+                float(half_height),
+                float(radius),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_capsule_collider(
+                entity_id,
+                float(half_height),
+                float(radius),
+            )
 
     def get_mass(self, entity_id: int) -> float:
         """Returns the mass of an entity's rigid body in kilograms."""

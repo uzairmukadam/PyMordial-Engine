@@ -1,6 +1,7 @@
 """Unit test validating independent Dear ImGui F1/F2/F3 debug panels, multi-style F1 cycling, F9 mouse release, and unrestricted gameplay."""
 
 import math
+from pathlib import Path
 import pygame
 from engine.core.ecs import EntityManager
 from engine.input import InputManager, Key
@@ -351,4 +352,51 @@ class TestDebugMenuAndMouseCapture:
         assert res is False
 
         menu.destroy()
+
+    def test_debug_menu_config_filepath_initialization(self, tmp_path):
+        """Validates that DebugMenu correctly accepts string, Path, or None for config_filepath."""
+        input_mgr = InputManager()
+        toast = DebugToast()
+
+        # 1. With None
+        menu_none = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=toast,
+            input_mgr=input_mgr,
+            config_filepath=None,
+        )
+        assert menu_none.config_filepath is None
+        menu_none.destroy()
+
+        # 2. With str
+        str_path = str(tmp_path / "test_settings.json")
+        menu_str = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=toast,
+            input_mgr=input_mgr,
+            config_filepath=str_path,
+        )
+        assert menu_str.config_filepath == Path(str_path)
+        menu_str.destroy()
+
+        # 3. With Path
+        path_obj = tmp_path / "test_settings_2.json"
+        menu_path = DebugMenu(
+            ctx=None,
+            monitor=SystemMonitor(history_size=10),
+            engine_tweaks=EngineTweaks(),
+            game_tweaks=GameTweaks(),
+            toast=toast,
+            input_mgr=input_mgr,
+            config_filepath=path_obj,
+        )
+        assert menu_path.config_filepath == path_obj
+        menu_path.destroy()
+
 
