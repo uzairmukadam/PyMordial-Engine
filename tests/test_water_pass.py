@@ -20,7 +20,6 @@ from engine.gfx.quality_presets import (
     RenderConfig,
     GraphicsQuality,
     get_quality_preset,
-    QUALITY_PRESETS,
 )
 
 

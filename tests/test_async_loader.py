@@ -171,7 +171,7 @@ class TestAsyncLoaderAndLoadingScreen:
     def test_loading_screen_target_fbo_auto_adaptation(self, gl_ctx):
         """Validates that render() automatically detects target_fbo dimensions and resizes."""
         screen = LoadingScreen(gl_ctx, width=1280, height=720, is_headless=True)
-        
+
         # Create an 800x600 FBO
         tex = gl_ctx.texture((800, 600), 4)
         fbo = gl_ctx.framebuffer(color_attachments=[tex])

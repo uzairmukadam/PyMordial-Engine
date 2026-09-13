@@ -1,6 +1,5 @@
 """Unit tests for Physical Atmosphere & Dynamic Day-Night Cycle."""
 
-import math
 import pytest
 from engine.gfx.atmosphere import (
     AtmosphereConfig,

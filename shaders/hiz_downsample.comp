@@ -1,0 +1,41 @@
+#version 450 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D u_SourceTexture;
+uniform int u_SrcLevel;
+uniform int u_ReverseZ; // 1 = Reversed-Z (min reduction), 0 = Standard-Z (max reduction)
+
+layout(r32f, binding = 0) uniform writeonly image2D u_DestMip;
+
+void main() {
+    ivec2 dstPos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dstSize = imageSize(u_DestMip);
+
+    if (dstPos.x >= dstSize.x || dstPos.y >= dstSize.y) {
+        return;
+    }
+
+    ivec2 srcSize = textureSize(u_SourceTexture, u_SrcLevel);
+    ivec2 baseSrc = dstPos * 2;
+
+    ivec2 p0 = min(baseSrc + ivec2(0, 0), srcSize - 1);
+    ivec2 p1 = min(baseSrc + ivec2(1, 0), srcSize - 1);
+    ivec2 p2 = min(baseSrc + ivec2(0, 1), srcSize - 1);
+    ivec2 p3 = min(baseSrc + ivec2(1, 1), srcSize - 1);
+
+    float d0 = texelFetch(u_SourceTexture, p0, u_SrcLevel).r;
+    float d1 = texelFetch(u_SourceTexture, p1, u_SrcLevel).r;
+    float d2 = texelFetch(u_SourceTexture, p2, u_SrcLevel).r;
+    float d3 = texelFetch(u_SourceTexture, p3, u_SrcLevel).r;
+
+    float reduced;
+    if (u_ReverseZ == 1) {
+        // In Reversed-Z (1.0 = near, 0.0 = far), min represents the furthest surface
+        reduced = min(min(d0, d1), min(d2, d3));
+    } else {
+        reduced = max(max(d0, d1), max(d2, d3));
+    }
+
+    imageStore(u_DestMip, dstPos, vec4(reduced, 0.0, 0.0, 0.0));
+}

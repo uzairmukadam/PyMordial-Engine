@@ -31,7 +31,6 @@ from engine.assets.vfs import (
 )
 from engine.assets.cooker import (
     cook_mesh,
-    cook_texture,
     cook_material,
     cook_all_materials,
 )

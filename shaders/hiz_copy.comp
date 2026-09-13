@@ -1,0 +1,18 @@
+#version 450 core
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D u_DepthTexture;
+layout(r32f, binding = 0) uniform writeonly image2D u_DestMip;
+
+void main() {
+    ivec2 dstPos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dstSize = imageSize(u_DestMip);
+
+    if (dstPos.x >= dstSize.x || dstPos.y >= dstSize.y) {
+        return;
+    }
+
+    float rawDepth = texelFetch(u_DepthTexture, dstPos, 0).r;
+    imageStore(u_DestMip, dstPos, vec4(rawDepth, 0.0, 0.0, 0.0));
+}

@@ -138,9 +138,10 @@ def main() -> None:
         "--debug-gbuffer",
         type=str,
         default="",
-        choices=["", "disabled", "albedo", "normals", "material", "depth", "shadow_atlas", "shadow_mask", "ao", "ssgi", "lpv", "gi_total"],
+        choices=["", "disabled", "albedo", "normals", "material", "depth", "shadow_atlas", "shadow_mask", "ao", "ssgi", "lpv", "gi_total", "hiz"],
         help="Initial G-Buffer debug inspection view",
     )
+    parser.add_argument("--hiz-mip", type=int, default=0, help="Hi-Z mip level to visualize (0 to 10)")
     parser.add_argument("--wireframe", action="store_true", default=False, help="Enable polygon wireframe rendering")
     parser.add_argument("--show-colliders", action="store_true", default=False, help="Enable 3D physics collider wireframes")
     parser.add_argument("--show-sun-ray", action="store_true", default=False, help="Enable 3D sun ray visualization")
@@ -313,6 +314,8 @@ def main() -> None:
         engine_tweaks.day_speed = float(args.day_speed)
     if args.debug_gbuffer:
         engine_tweaks.gbuffer_debug = GBufferDebugMode[args.debug_gbuffer.upper()]
+    if getattr(args, "hiz_mip", None) is not None:
+        engine_tweaks.hiz_debug_mip = int(args.hiz_mip)
     if args.wireframe:
         engine_tweaks.show_wireframe = True
     if args.show_colliders:
@@ -633,6 +636,7 @@ def main() -> None:
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)
+        pipeline.config.hiz_debug_mip = int(getattr(engine_tweaks, "hiz_debug_mip", 0))
         pipeline.config.exposure = engine_tweaks.exposure
         pipeline.config.sun_intensity = engine_tweaks.sun_lux
         pipeline.config.ao_mode = engine_tweaks.ao_mode

@@ -10,13 +10,9 @@ Validates:
 - Full RenderPipeline execution with Pass 7.8 and Pass 8.
 """
 
-from __future__ import annotations
 from pathlib import Path
 import numpy as np
 import pytest
-import moderngl
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
@@ -25,6 +21,8 @@ from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset, Rend
 from engine.gfx.pipeline import RenderPipeline
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.post_process import PostProcessPipeline
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")

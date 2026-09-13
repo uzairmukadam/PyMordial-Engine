@@ -477,6 +477,7 @@ class TestAmbientOcclusionModes:
                 sun_lux=4.0,
             )
             final_data = pipeline.post_process.final_texture.read()
+            assert len(final_data) > 0
         pipeline.destroy()
 
 

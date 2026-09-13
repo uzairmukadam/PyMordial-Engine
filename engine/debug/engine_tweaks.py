@@ -24,6 +24,7 @@ class GBufferDebugMode(IntEnum):
     SSGI = 8           # Screen-Space Global Illumination indirect diffuse
     LPV = 9            # Light Propagation Volumes 3D irradiance slice
     GI_TOTAL = 10      # Consolidated Total Indirect Diffuse
+    HIZ = 11           # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
 
 
 class EngineTweaks:
@@ -153,6 +154,7 @@ class EngineTweaks:
         "water_roughness",
         "water_color_shallow",
         "water_color_deep",
+        "hiz_debug_mip",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -163,6 +165,7 @@ class EngineTweaks:
         self.tonemap_mode = "ACES"
         self.exposure = 1.0
         self.gbuffer_debug = GBufferDebugMode.DISABLED
+        self.hiz_debug_mip = 0
 
         self.show_wireframe = False
         # Disabled by default per user request

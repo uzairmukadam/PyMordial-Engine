@@ -16,6 +16,7 @@ layout (binding = 6) uniform sampler2D u_BRDFLUT;              // Split-sum 2D B
 layout (binding = 7) uniform sampler2D u_EnvironmentMap;       // Prefiltered HDR Environment Map
 layout (binding = 8) uniform sampler2D u_SSRTexture;           // Screen-Space Reflections
 layout (binding = 9) uniform sampler3D u_LPVVolume;            // 3D Light Propagation Volume
+layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
 
 // Unified Frame Context UBO 0
 layout (std140, binding = 0) uniform FrameData {
@@ -51,7 +52,8 @@ layout (std430, binding = 3) buffer PointLightBuffer {
 // Configurable quality & feature uniforms
 uniform int u_PCF_Samples = 24;  // 16 to 32 samples (Default: 24)
 uniform int u_CascadeCount = 4;  // 1 to 4
-uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 11=HiZ
+uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug == 11
 
 // AAA Shadow Parametrization
 uniform int u_ShadowMode = 2;          // 0=Hard, 1=PCF, 2=PCSS (Default: PCSS)
@@ -330,6 +332,10 @@ void main() {
 
     if (u_GBufferDebug == 4) {
         out_HDRColor = vec4(vec3(raw_depth), 1.0);
+        return;
+    } else if (u_GBufferDebug == 11) {
+        float hiz_d = textureLod(u_HiZTexture, v_UV, float(u_HiZDebugMip)).r;
+        out_HDRColor = vec4(vec3(hiz_d), 1.0);
         return;
     }
 

@@ -420,6 +420,11 @@ class DebugMenu:
                 et.gbuffer_debug = GBufferDebugMode[gbuf_names[new_g_idx]]
                 self.toast.show(f"G-Buffer Mode: {et.gbuffer_debug.name}", duration=2.0)
 
+            if et.gbuffer_debug == GBufferDebugMode.HIZ:
+                hiz_changed, new_hiz_mip = imgui.slider_int("Hi-Z Mip Level", et.hiz_debug_mip, 0, 10)
+                if hiz_changed:
+                    et.hiz_debug_mip = new_hiz_mip
+
             imgui.separator()
             imgui.text("Global Illumination & Ambient Occlusion")
 

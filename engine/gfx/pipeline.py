@@ -38,6 +38,7 @@ from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.water_pass import WaterPass
+from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.atmosphere import AtmosphereSystem
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
@@ -120,6 +121,7 @@ class RenderPipeline:
         "csm_vao",
         "texture_atlas",
         "ssdm_pass",
+        "hiz_pass",
         "tess_mdi",
         "gbuffer_tess_prog",
         "gbuffer_tess_vao",
@@ -133,6 +135,11 @@ class RenderPipeline:
         "_cam_pos",
         "_cam_fwd",
         "_sun_v",
+        "_screen_size_tuple",
+        "_zero_jitter",
+        "_mie_beta_tuple",
+        "_prev_mie_beta",
+        "_atmo_sun_tuple",
         "_cube_alloc",
         "_sphere_alloc",
         "_capsule_alloc",
@@ -145,6 +152,7 @@ class RenderPipeline:
         "_u_shadow_offset",
         "_u_cascade_count",
         "_u_gbuffer_debug",
+        "_u_hiz_debug_mip",
         "_u_gbuffer_prev_vp",
         "_u_ao_enabled",
         "_u_gi_enabled",
@@ -267,6 +275,11 @@ class RenderPipeline:
         self._cam_pos = np.zeros(3, dtype=np.float32)
         self._cam_fwd = np.zeros(3, dtype=np.float32)
         self._sun_v = np.zeros(3, dtype=np.float32)
+        self._screen_size_tuple = (float(w), float(h))
+        self._zero_jitter = (0.0, 0.0)
+        self._mie_beta_tuple = (0.0, 0.0, 0.0)
+        self._prev_mie_beta = -1.0
+        self._atmo_sun_tuple = (0.0, 0.0, 0.0)
 
         # 7. Compile Core Programs
         quad_vert = _load_shader("fullscreen_quad.vert")
@@ -319,6 +332,9 @@ class RenderPipeline:
         # SSDM Post-G-Buffer Pass
         self.ssdm_pass = SSDMPass(self.ctx, w, h)
 
+        # Hierarchical-Z (Hi-Z) Depth Pyramid Pass
+        self.hiz_pass = HiZPass(self.ctx, w, h, reverse_z=self.config.reverse_z)
+
         self.resolve_prog = self.ctx.program(
             vertex_shader=quad_vert,
             fragment_shader=resolve_frag,
@@ -339,6 +355,7 @@ class RenderPipeline:
             "u_LPVVolume": 9,
             "u_SkyViewLUT": 10,
             "u_TransmittanceLUT": 11,
+            "u_HiZTexture": 14,
         }
         for name, unit in tex_uniforms.items():
             if name in self.resolve_prog:
@@ -358,6 +375,7 @@ class RenderPipeline:
         self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
+        self._u_hiz_debug_mip = self.resolve_prog.get("u_HiZDebugMip", None)
         self._u_gbuffer_prev_vp = self.gbuffer_prog.get("u_PrevViewProjection", None)
 
         self._u_ao_enabled = self.resolve_prog.get("u_AOEnabled", None)
@@ -498,9 +516,11 @@ class RenderPipeline:
         self.ctx_wrapper.height = height
         self._graph_context.width = width
         self._graph_context.height = height
+        self._screen_size_tuple = (float(width), float(height))
 
         self.g_buffer.resize(width, height)
         self.ssdm_pass.resize(width, height)
+        self.hiz_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(width, height)
         self.ssr_pass.resize(width, height)
@@ -571,6 +591,8 @@ class RenderPipeline:
 
         w, h = self.ctx_wrapper.width, self.ctx_wrapper.height
         aspect = w / (h if h > 0 else 1)
+        if w != self.hiz_pass.width or h != self.hiz_pass.height:
+            self.hiz_pass.resize(w, h)
 
         # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
         self.ssbo_transforms.write(ecs.get_active_transforms_view())
@@ -657,8 +679,8 @@ class RenderPipeline:
             inv_view_mat=self._inv_view,
             camera_pos=self._cam_pos,
             time_elapsed=time_elapsed,
-            screen_size=(float(w), float(h)),
-            jitter=(jitter_x, jitter_y),
+            screen_size=self._screen_size_tuple,
+            jitter=(jitter_x, jitter_y) if (jitter_x != 0.0 or jitter_y != 0.0) else self._zero_jitter,
             sun_dir=active_sun_dir,
             sun_lux=active_sun_lux,
             sun_color=active_sun_col,
@@ -812,6 +834,9 @@ class RenderPipeline:
                 material_depths=self.texture_atlas.material_depths,
             )
 
+        # ---- PASS 2.6: Hierarchical-Z (Hi-Z) Depth Pyramid Pass ----
+        self.hiz_pass.execute(ctx)
+
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
         self.ao_pass.execute(ctx)
 
@@ -860,6 +885,7 @@ class RenderPipeline:
 
         self.sky_atmosphere_pass.sky_view_lut.use(location=10)
         self.sky_atmosphere_pass.transmittance_lut.use(location=11)
+        self.hiz_pass.hiz_texture.use(location=14)
 
         # Set resolve uniforms
         if self._u_pcf_samples is not None:
@@ -882,6 +908,8 @@ class RenderPipeline:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_gbuffer_debug is not None:
             self._u_gbuffer_debug.value = self.config.debug_gbuffer
+        if self._u_hiz_debug_mip is not None:
+            self._u_hiz_debug_mip.value = int(getattr(self.config, "hiz_debug_mip", 0))
 
         # Set Phase 5 Feature Toggles
         if self._u_ao_enabled is not None:
@@ -915,7 +943,11 @@ class RenderPipeline:
         if self._u_rayleigh_beta is not None:
             self._u_rayleigh_beta.value = atmo.rayleigh_beta
         if self._u_mie_beta is not None:
-            self._u_mie_beta.value = (atmo.mie_beta, atmo.mie_beta, atmo.mie_beta)
+            if atmo.mie_beta != self._prev_mie_beta:
+                mb = float(atmo.mie_beta)
+                self._mie_beta_tuple = (mb, mb, mb)
+                self._prev_mie_beta = atmo.mie_beta
+            self._u_mie_beta.value = self._mie_beta_tuple
         if self._u_mie_g is not None:
             self._u_mie_g.value = atmo.mie_asymmetry
         if self._u_ozone_beta is not None:
@@ -939,7 +971,10 @@ class RenderPipeline:
         if self._u_atmo_turbidity is not None:
             self._u_atmo_turbidity.value = atmo.turbidity
         if self._u_atmo_sun_dir is not None:
-            self._u_atmo_sun_dir.value = (float(true_sun_dir[0]), float(true_sun_dir[1]), float(true_sun_dir[2]))
+            sx, sy, sz = float(true_sun_dir[0]), float(true_sun_dir[1]), float(true_sun_dir[2])
+            if (sx, sy, sz) != self._atmo_sun_tuple:
+                self._atmo_sun_tuple = (sx, sy, sz)
+            self._u_atmo_sun_dir.value = self._atmo_sun_tuple
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 
@@ -1065,6 +1100,7 @@ class RenderPipeline:
         self.csm_vao.release()
         self.texture_atlas.destroy()
         self.ssdm_pass.destroy()
+        self.hiz_pass.destroy()
         self.tess_mdi.destroy()
         self.gbuffer_tess_prog.release()
         self.gbuffer_tess_vao.release()

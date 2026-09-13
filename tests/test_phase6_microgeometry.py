@@ -17,22 +17,16 @@ import moderngl
 
 from engine.gfx.texture_atlas import (
     DisplacementMode,
-    MAT_FLAG_HAS_TEXTURE,
-    MAT_FLAG_DISP_SHIFT,
-    MAT_FLAG_DISP_MASK,
     encode_mat_flags,
     decode_mat_flags,
     TextureArrayAtlas,
 )
 from engine.gfx.quality_presets import (
-    RenderConfig,
     GraphicsQuality,
     get_quality_preset,
 )
 from engine.gfx.g_buffer import GBuffer
 from engine.gfx.passes.ssdm_pass import SSDMPass
-from engine.gfx.mdi import MultiDrawIndirect
-from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
 
 
 @pytest.fixture
