@@ -184,6 +184,16 @@ class RaycastVehicle:
         """Locks rear wheels for drifting."""
         self.handbrake = bool(value)
 
+    @property
+    def position(self) -> tuple[float, float, float]:
+        """Returns current world position of the chassis center of mass."""
+        pool = self.ecs.pool
+        dense_idx = pool.get_dense_index(self.entity_id)
+        if dense_idx >= 0:
+            rb_state = self.ecs.rigid_body_state[1]
+            return (float(rb_state[dense_idx, 0]), float(rb_state[dense_idx, 1]), float(rb_state[dense_idx, 2]))
+        return (float(self._chassis_pos[0]), float(self._chassis_pos[1]), float(self._chassis_pos[2]))
+
     def set_surface_friction(self, mult: float) -> None:
         """Scales tire surface grip (e.g. 1.0 for dry road, 0.65 for wet rain road)."""
         self.surface_friction_mult = max(0.1, float(mult))

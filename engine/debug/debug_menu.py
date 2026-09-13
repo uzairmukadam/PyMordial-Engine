@@ -52,6 +52,7 @@ class DebugMenu:
         "renderer",
         "_warned_no_renderer",
         "config_filepath",
+        "_custom_ui_callbacks",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -84,6 +85,7 @@ class DebugMenu:
         self.f1_style: int = 0
         self.show_graphics: bool = False
         self.show_game_tweaks: bool = False
+        self._custom_ui_callbacks: list[Callable[[], None]] = []
 
         # Initialize Dear ImGui context
         self.imgui_ctx = imgui.create_context()
@@ -164,8 +166,18 @@ class DebugMenu:
 
     @property
     def visible(self) -> bool:
-        """Returns True if any debug panel is currently active."""
-        return self.f1_style > 0 or self.show_graphics or self.show_game_tweaks
+        """Returns True if any debug panel or custom UI callback is currently active."""
+        return self.f1_style > 0 or self.show_graphics or self.show_game_tweaks or len(self._custom_ui_callbacks) > 0
+
+    def add_custom_ui(self, callback: Callable[[], None]) -> None:
+        """Registers a custom UI rendering callback into the ImGui frame loop."""
+        if callback not in self._custom_ui_callbacks:
+            self._custom_ui_callbacks.append(callback)
+
+    def remove_custom_ui(self, callback: Callable[[], None]) -> None:
+        """Removes a registered custom UI rendering callback."""
+        if callback in self._custom_ui_callbacks:
+            self._custom_ui_callbacks.remove(callback)
 
     @visible.setter
     def visible(self, val: bool) -> None:
@@ -1025,6 +1037,11 @@ class DebugMenu:
                                 changed, val = imgui.slider_float(item.name, float(item.value), min_v, max_v, "%.2f")
                             if changed:
                                 item.set_value(val)
+                        elif item.tweak_type == TweakType.CHOICE:
+                            current_idx = item.choices.index(item.value) if item.value in item.choices else 0
+                            changed, new_idx = imgui.combo(item.name, current_idx, item.choices)
+                            if changed and 0 <= new_idx < len(item.choices):
+                                item.set_value(item.choices[new_idx])
                         elif item.tweak_type == TweakType.ACTION:
                             if imgui.button(f"Trigger {item.name}"):
                                 item.trigger()
@@ -1140,6 +1157,13 @@ class DebugMenu:
             self._render_f3_game_tweaks()
 
         self._render_toasts()
+
+        # Render custom gameplay UI panels (Station menus, HUDs)
+        for cb in self._custom_ui_callbacks:
+            try:
+                cb()
+            except Exception as e:
+                pass
 
         imgui.render()
         if gl is not None:

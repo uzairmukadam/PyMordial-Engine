@@ -234,23 +234,28 @@ class WaypointGraph:
 
     def add_poi(
         self,
-        name: str,
-        poi_type: str,
-        position: tuple[float, float, float],
+        name: str | PointOfInterest,
+        poi_type: str | None = None,
+        position: tuple[float, float, float] | None = None,
         radius: float = 6.0,
         heading_deg: float = 0.0,
         metadata: dict[str, Any] | None = None,
     ) -> PointOfInterest:
         """Registers a named Point of Interest on the map."""
-        poi = PointOfInterest(
-            name=name,
-            poi_type=poi_type.lower(),
-            position=position,
-            radius=radius,
-            heading_deg=heading_deg,
-            metadata=metadata if metadata is not None else {},
-        )
-        self._pois[name] = poi
+        if isinstance(name, PointOfInterest):
+            poi = name
+        else:
+            if poi_type is None or position is None:
+                raise ValueError("poi_type and position are required when passing POI name as string")
+            poi = PointOfInterest(
+                name=name,
+                poi_type=poi_type.lower(),
+                position=position,
+                radius=radius,
+                heading_deg=heading_deg,
+                metadata=metadata if metadata is not None else {},
+            )
+        self._pois[poi.name] = poi
         if poi.poi_type not in self._pois_by_type:
             self._pois_by_type[poi.poi_type] = []
         self._pois_by_type[poi.poi_type].append(poi)
