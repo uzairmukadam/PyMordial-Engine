@@ -12,6 +12,7 @@ through completely untouched.
 
 from __future__ import annotations
 from pathlib import Path
+import numpy as np
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext

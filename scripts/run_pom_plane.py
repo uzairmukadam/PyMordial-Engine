@@ -468,6 +468,7 @@ def main() -> None:
 
     init_sun = pipeline.atmosphere.compute_sun_vector()
     scratch_sun_dir = [float(init_sun[0]), float(init_sun[1]), float(init_sun[2])]
+    scratch_sun_tuple = (scratch_sun_dir[0], scratch_sun_dir[1], scratch_sun_dir[2])
     scratch_fwd_vec = [0.0, 0.0, 0.0]
 
     engine_tweaks.sun_elevation_deg = math.degrees(math.asin(max(-1.0, min(1.0, -init_sun[1]))))
@@ -545,7 +546,7 @@ def main() -> None:
 
         # Panel Toggles
         if input_mgr.is_action_pressed("debug_perf"):
-            style = debug_menu.cycle_f1()
+            debug_menu.cycle_f1()
             if debug_menu.f1_style > 0 and input_mgr.is_mouse_grabbed:
                 input_mgr.set_mouse_grab(False)
                 input_mgr._was_mouse_grabbed = False
@@ -756,6 +757,7 @@ def main() -> None:
             scratch_sun_dir[0] = sun_v[0]
             scratch_sun_dir[1] = sun_v[1]
             scratch_sun_dir[2] = sun_v[2]
+            scratch_sun_tuple = (sun_v[0], sun_v[1], sun_v[2])
             engine_tweaks.sun_elevation_deg = math.degrees(math.asin(max(-1.0, min(1.0, -sun_v[1]))))
             engine_tweaks.sun_angle_deg = math.degrees(math.atan2(sun_v[0], sun_v[2]))
             prev_tod = engine_tweaks.time_of_day
@@ -767,6 +769,7 @@ def main() -> None:
             scratch_sun_dir[0] = math.cos(rad_sun_el) * math.sin(rad_sun_az)
             scratch_sun_dir[1] = -math.sin(rad_sun_el)
             scratch_sun_dir[2] = math.cos(rad_sun_el) * math.cos(rad_sun_az)
+            scratch_sun_tuple = (scratch_sun_dir[0], scratch_sun_dir[1], scratch_sun_dir[2])
             prev_sun_el = engine_tweaks.sun_elevation_deg
             prev_sun_az = engine_tweaks.sun_angle_deg
 
@@ -858,7 +861,7 @@ def main() -> None:
                 camera_pos=camera_pos,
                 camera_target=camera_target,
                 time_elapsed=loop.elapsed_time,
-                sun_dir=tuple(scratch_sun_dir),
+                sun_dir=scratch_sun_tuple,
                 sun_lux=pipeline.config.sun_intensity,
                 draw_batches=draw_batches,
                 debug_draw=pipeline.debug,

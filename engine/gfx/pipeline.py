@@ -7,6 +7,7 @@ Image-Based Lighting (IBL), GTAO, SSGI, LPV, Clustered Local Lighting, SSR, TAA,
 from __future__ import annotations
 from pathlib import Path
 import math
+from typing import Callable
 import numpy as np
 import moderngl
 
@@ -37,7 +38,7 @@ from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.water_pass import WaterPass
-from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
+from engine.gfx.atmosphere import AtmosphereSystem
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
 from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
@@ -1023,8 +1024,8 @@ class RenderPipeline:
         if not self.ctx_wrapper.is_headless:
             self.ctx.copy_framebuffer(self.ctx.screen, self.post_process.final_fbo)
 
-        # Store current ViewProjection for next frame's motion vectors
-        self._prev_vp_mat = np.copy(self._vp_mat)
+        # Store current ViewProjection for next frame's motion vectors (zero-allocation)
+        np.copyto(self._prev_vp_mat, self._vp_mat)
 
     @property
     def output_texture_id(self) -> int:

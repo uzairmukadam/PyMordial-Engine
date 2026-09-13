@@ -36,6 +36,7 @@ out vec3 v_Tangent;
 out vec4 v_ClipPos;
 out vec2 v_UV;
 out float v_WaveCrest;
+out float v_WaterViewDepth;
 
 // -----------------------------------------------------------------------------
 // 4-Octave Gerstner Wave Displacement & Analytic Derivative Evaluation
@@ -143,6 +144,7 @@ void main() {
     v_Normal = normal;
     v_Tangent = tangent;
     v_WaveCrest = crest;
+    v_WaterViewDepth = max(-(u_View * vec4(worldPos, 1.0)).z, 0.05);
 
     v_ClipPos = u_ViewProjection * vec4(worldPos, 1.0);
     gl_Position = v_ClipPos;

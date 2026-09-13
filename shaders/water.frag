@@ -6,6 +6,7 @@ in vec3 v_Tangent;
 in vec4 v_ClipPos;
 in vec2 v_UV;
 in float v_WaveCrest;
+in float v_WaterViewDepth;
 
 layout(location = 0) out vec4 out_HDRColor;
 
@@ -99,13 +100,14 @@ float noise2D(vec2 p) {
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+const mat2 rotFoam = mat2(0.8, -0.6, 0.6, 0.8);
+
 float fbmFoam(vec2 p) {
     float v = 0.0;
     float a = 0.55;
-    mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
     for (int i = 0; i < 3; ++i) {
         v += a * noise2D(p);
-        p = rot * p * 2.05 + vec2(0.15, 0.22);
+        p = rotFoam * p * 2.05 + vec2(0.15, 0.22);
         a *= 0.5;
     }
     return v;
@@ -159,7 +161,7 @@ void main() {
 
     vec3 camPos = u_CameraPos_Time.xyz;
     float floorDepthView = linearizeDepth(rawFloorDepth, screenUV);
-    float waterDepthView = linearizeDepth(rawWaterDepth, screenUV);
+    float waterDepthView = v_WaterViewDepth;
 
     // Optical path thickness of water column (in meters)
     float opticalWaterDepth = max(floorDepthView - waterDepthView, 0.0);
