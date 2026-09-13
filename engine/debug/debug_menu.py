@@ -672,6 +672,45 @@ class DebugMenu:
                     self.toast.show(f"Fog Visualizer: {debug_modes[dbg_idx]}", duration=1.5)
 
             imgui.separator()
+            imgui.text("Volumetric VFX & GPU Particles (Phase 2)")
+
+            part_c, part_v = imgui.checkbox("Volumetric Particles", et.particles_enabled)
+            if part_c:
+                et.particles_enabled = part_v
+                et.mark_custom()
+                self.toast.show(f"Particles: {'ON' if part_v else 'OFF'}", duration=1.5)
+
+            if et.particles_enabled:
+                part_modes = ["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"]
+                part_mode_labels = ["Atmospheric Dust Motes", "Glowing Embers & Sparks", "Bioluminescent Fireflies", "Disabled"]
+                cur_m_idx = part_modes.index(et.particle_mode) if et.particle_mode in part_modes else 0
+                pm_c, pm_idx = imgui.combo("Particle Mode", cur_m_idx, part_mode_labels)
+                if pm_c:
+                    et.particle_mode = part_modes[pm_idx]
+                    et.mark_custom()
+                    self.toast.show(f"Particle Mode: {part_mode_labels[pm_idx]}", duration=1.5)
+
+                cnt_c, cnt_v = imgui.slider_int("Particle Count", et.particle_count, 1024, 65536)
+                if cnt_c:
+                    et.particle_count = cnt_v
+                    et.mark_custom()
+
+                turb_c, turb_v = imgui.slider_float("Turbulence (Curl Noise)", getattr(et, "particle_turbulence", 0.85), 0.0, 3.0, "%.2f")
+                if turb_c:
+                    et.particle_turbulence = turb_v
+                    et.mark_custom()
+
+                sz_c, sz_v = imgui.slider_float("Particle Size Scale", getattr(et, "particle_size", 1.0), 0.2, 3.0, "%.2fx")
+                if sz_c:
+                    et.particle_size = sz_v
+                    et.mark_custom()
+
+                br_c, br_v = imgui.slider_float("Brightness / Glint", getattr(et, "particle_brightness", 2.5), 0.2, 8.0, "%.2fx")
+                if br_c:
+                    et.particle_brightness = br_v
+                    et.mark_custom()
+
+            imgui.separator()
             imgui.text("Micro-Geometry & Displacement")
 
             # POM

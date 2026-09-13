@@ -146,6 +146,9 @@ def main() -> None:
     parser.add_argument("--show-sun-ray", action="store_true", default=False, help="Enable 3D sun ray visualization")
     parser.add_argument("--exposure", type=float, default=None, help="Camera exposure multiplier")
     parser.add_argument("--tonemap", type=str, default=None, choices=["ACES", "AgX", "Reinhard"], help="Tonemapping operator")
+    parser.add_argument("--particles", action=argparse.BooleanOptionalAction, default=True, help="Enable volumetric particle system")
+    parser.add_argument("--particle-count", type=int, default=16384, help="Particle count (1024 to 65536)")
+    parser.add_argument("--particle-mode", type=str, default="DUST_MOTES", choices=["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"], help="Particle VFX mode")
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -307,6 +310,9 @@ def main() -> None:
         engine_tweaks.exposure = float(args.exposure)
     if args.tonemap:
         engine_tweaks.tonemap_mode = args.tonemap
+    engine_tweaks.particles_enabled = args.particles
+    engine_tweaks.particle_count = args.particle_count
+    engine_tweaks.particle_mode = args.particle_mode
 
     game_tweaks = GameTweaks()
     toast = DebugToast()
@@ -369,6 +375,11 @@ def main() -> None:
         engine_tweaks.fog_distance = getattr(cfg, "fog_distance", 400.0)
         engine_tweaks.fog_ambient = getattr(cfg, "fog_ambient", 0.35)
         engine_tweaks.fog_debug_mode = getattr(cfg, "fog_debug_mode", 0)
+        engine_tweaks.particles_enabled = getattr(cfg, "particles_enabled", True)
+        engine_tweaks.particle_count = getattr(cfg, "particle_count", 16384)
+        engine_tweaks.particle_mode = getattr(cfg, "particle_mode", "DUST_MOTES")
+        engine_tweaks.particle_size = getattr(cfg, "particle_size", 0.04)
+        engine_tweaks.particle_turbulence = getattr(cfg, "particle_turbulence", 1.0)
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
@@ -386,6 +397,8 @@ def main() -> None:
     game_tweaks.add_watch("Sun", "Azimuth", lambda: f"{engine_tweaks.sun_angle_deg:.1f}°")
     game_tweaks.add_watch("G-Buffer", "Mode", lambda: engine_tweaks.gbuffer_debug.name)
     game_tweaks.add_watch("Wireframe", "Active", lambda: engine_tweaks.show_wireframe)
+    game_tweaks.add_watch("VFX", "Particle Mode", lambda: engine_tweaks.particle_mode)
+    game_tweaks.add_watch("VFX", "Particles Active", lambda: f"{engine_tweaks.particle_count:,}" if engine_tweaks.particles_enabled else "OFF")
 
     toast.show("POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, F2 Graphics, F9 Free Mouse", duration=4.0, color=(56, 189, 248))
 
@@ -597,6 +610,20 @@ def main() -> None:
         pipeline.config.fog_distance = engine_tweaks.fog_distance
         pipeline.config.fog_ambient = engine_tweaks.fog_ambient
         pipeline.config.fog_debug_mode = engine_tweaks.fog_debug_mode
+
+        # Volumetric Particles (Phase 2)
+        pipeline.config.particles_enabled = engine_tweaks.particles_enabled
+        pipeline.config.particle_count = engine_tweaks.particle_count
+        pipeline.config.particle_mode = engine_tweaks.particle_mode
+        pipeline.config.particle_size = engine_tweaks.particle_size
+        pipeline.config.particle_turbulence = engine_tweaks.particle_turbulence
+        if pipeline.particle_pass is not None:
+            pipeline.particle_pass.enabled = engine_tweaks.particles_enabled
+            pipeline.particle_pass.set_mode(engine_tweaks.particle_mode)
+            pipeline.particle_pass.set_active_count(engine_tweaks.particle_count)
+            pipeline.particle_pass.turbulence_strength = engine_tweaks.particle_turbulence
+            pipeline.particle_pass.base_size_multiplier = engine_tweaks.particle_size
+            pipeline.particle_pass.sun_scatter_intensity = engine_tweaks.particle_brightness
 
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.pom_enabled = engine_tweaks.pom_enabled

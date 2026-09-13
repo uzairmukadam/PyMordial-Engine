@@ -107,6 +107,12 @@ class EngineTweaks:
         "mie_coeff",
         "turbidity",
         "star_intensity",
+        "particles_enabled",
+        "particle_count",
+        "particle_mode",
+        "particle_size",
+        "particle_turbulence",
+        "particle_brightness",
         "_on_quality_changed",
         "_on_vsync_changed",
     )
@@ -202,6 +208,14 @@ class EngineTweaks:
         self.mie_coeff = 3.996        # m^-1 * 1e6
         self.turbidity = 1.0
         self.star_intensity = 1.0
+
+        # Phase 2: Volumetric Particles & Dust Motes
+        self.particles_enabled = True
+        self.particle_count = 16384
+        self.particle_mode = "DUST_MOTES"
+        self.particle_size = 1.0
+        self.particle_turbulence = 0.85
+        self.particle_brightness = 2.5
 
         # VSync disabled by default per user request
         self.vsync_enabled = False

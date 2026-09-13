@@ -1,0 +1,209 @@
+#version 430 core
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct Particle {
+    vec4 pos_life;      // xyz = world position, w = current lifetime remaining (s)
+    vec4 vel_maxlife;   // xyz = velocity, w = initial max lifetime (s)
+    vec4 color_alpha;   // rgb = base tint, a = target opacity
+    vec4 params;        // x = size/radius, y = rotation angle (rad), z = rotation speed, w = mode
+};
+
+layout(std430, binding = 4) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+uniform float u_DeltaTime;
+uniform vec3  u_EmitterCenter;
+uniform vec3  u_EmitterHalfSize;
+uniform int   u_ParticleCount;
+uniform int   u_Mode;                  // 0 = DUST_MOTES, 1 = EMBERS, 2 = FIREFLIES
+uniform float u_TurbulenceStrength;    // 0.0 to 3.0+
+uniform float u_SpeedScale;            // velocity multiplier
+uniform vec3  u_Gravity;               // directional buoyancy / gravity
+uniform float u_Time;                  // total elapsed time
+
+// -----------------------------------------------------------------------------
+// High-Quality Deterministic Hash & 3D Pseudo-Noise
+// -----------------------------------------------------------------------------
+
+uint hash(uint x) {
+    x += (x << 10u);
+    x ^= (x >> 6u);
+    x += (x << 3u);
+    x ^= (x >> 11u);
+    x += (x << 15u);
+    return x;
+}
+
+float floatHash(uint s) {
+    return float(hash(s) & 0x00FFFFFFu) / float(0x01000000);
+}
+
+vec3 randomVec3(uint seed) {
+    float r1 = floatHash(seed + 1u);
+    float r2 = floatHash(seed + 2u);
+    float r3 = floatHash(seed + 3u);
+    return vec3(r1, r2, r3) * 2.0 - 1.0;
+}
+
+// Fast 3D Simplex-style Gradient Noise
+float hash3D(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float noise3D(vec3 x) {
+    vec3 p = floor(x);
+    vec3 w = fract(x);
+    vec3 u = w * w * (3.0 - 2.0 * w);
+
+    float n000 = hash3D(p + vec3(0.0, 0.0, 0.0));
+    float n100 = hash3D(p + vec3(1.0, 0.0, 0.0));
+    float n010 = hash3D(p + vec3(0.0, 1.0, 0.0));
+    float n110 = hash3D(p + vec3(1.0, 1.0, 0.0));
+    float n001 = hash3D(p + vec3(0.0, 0.0, 1.0));
+    float n101 = hash3D(p + vec3(1.0, 0.0, 1.0));
+    float n011 = hash3D(p + vec3(0.0, 1.0, 1.0));
+    float n111 = hash3D(p + vec3(1.0, 1.0, 1.0));
+
+    float x00 = mix(n000, n100, u.x);
+    float x10 = mix(n010, n110, u.x);
+    float x01 = mix(n001, n101, u.x);
+    float x11 = mix(n011, n111, u.x);
+
+    float y0 = mix(x00, x10, u.y);
+    float y1 = mix(x01, x11, u.y);
+
+    return mix(y0, y1, u.z) * 2.0 - 1.0;
+}
+
+// -----------------------------------------------------------------------------
+// Divergence-Free 3D Curl Noise (Fluid-like Vortices)
+// -----------------------------------------------------------------------------
+vec3 curlNoise(vec3 p) {
+    const float e = 0.15;
+    vec3 dx = vec3(e, 0.0, 0.0);
+    vec3 dy = vec3(0.0, e, 0.0);
+    vec3 dz = vec3(0.0, 0.0, e);
+
+    // Three scalar potential fields with spatial offsets
+    vec3 p_x = p + vec3(13.5, 37.1, 71.9);
+    vec3 p_y = p + vec3(91.3, 53.7, 19.1);
+    vec3 p_z = p + vec3(47.9, 83.1, 29.3);
+
+    float dFz_dy = (noise3D(p_z + dy) - noise3D(p_z - dy)) / (2.0 * e);
+    float dFy_dz = (noise3D(p_y + dz) - noise3D(p_y - dz)) / (2.0 * e);
+
+    float dFx_dz = (noise3D(p_x + dz) - noise3D(p_x - dz)) / (2.0 * e);
+    float dFz_dx = (noise3D(p_z + dx) - noise3D(p_z - dx)) / (2.0 * e);
+
+    float dFy_dx = (noise3D(p_y + dx) - noise3D(p_y - dx)) / (2.0 * e);
+    float dFx_dy = (noise3D(p_x + dy) - noise3D(p_x - dy)) / (2.0 * e);
+
+    return vec3(dFz_dy - dFy_dz, dFx_dz - dFz_dx, dFy_dx - dFx_dy);
+}
+
+// -----------------------------------------------------------------------------
+// Main Compute Simulation Kernel
+// -----------------------------------------------------------------------------
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= uint(u_ParticleCount)) {
+        return;
+    }
+
+    Particle p = particles[idx];
+    uint seed = uint(idx) * 1973u + uint(u_Time * 120.0);
+
+    // Decrement Lifetime
+    p.pos_life.w -= u_DeltaTime;
+
+    // Check for Lifetime Expiration -> Respawn
+    if (p.pos_life.w <= 0.0) {
+        vec3 rndBox = randomVec3(seed);
+        p.pos_life.xyz = u_EmitterCenter + rndBox * u_EmitterHalfSize;
+        
+        if (u_Mode == 1) {
+            // Embers: Spawn lower, rise upward
+            p.pos_life.y = u_EmitterCenter.y - abs(rndBox.y) * u_EmitterHalfSize.y * 0.8;
+            p.vel_maxlife.w = 3.0 + floatHash(seed + 10u) * 4.0; // 3 to 7s life
+            p.pos_life.w = p.vel_maxlife.w;
+            p.vel_maxlife.xyz = vec3(
+                (floatHash(seed + 11u) - 0.5) * 0.4,
+                0.6 + floatHash(seed + 12u) * 0.8,
+                (floatHash(seed + 13u) - 0.5) * 0.4
+            );
+            p.color_alpha = vec4(1.0, 0.45 + floatHash(seed + 14u) * 0.35, 0.08, 0.95);
+            p.params.x = 0.02 + floatHash(seed + 15u) * 0.035; // 2cm - 5cm ember
+        } else if (u_Mode == 2) {
+            // Fireflies: Wandering bioluminescent
+            p.vel_maxlife.w = 5.0 + floatHash(seed + 10u) * 6.0;
+            p.pos_life.w = p.vel_maxlife.w;
+            p.vel_maxlife.xyz = randomVec3(seed + 11u) * 0.3;
+            p.color_alpha = vec4(0.5, 0.95, 0.25, 0.9);
+            p.params.x = 0.04 + floatHash(seed + 15u) * 0.03;
+        } else {
+            // Dust Motes: Gentle air drift
+            p.vel_maxlife.w = 8.0 + floatHash(seed + 10u) * 12.0; // 8 to 20s life
+            p.pos_life.w = p.vel_maxlife.w;
+            p.vel_maxlife.xyz = randomVec3(seed + 11u) * 0.08;
+            p.color_alpha = vec4(0.95, 0.93, 0.88, 0.55 + floatHash(seed + 14u) * 0.35);
+            p.params.x = 0.015 + floatHash(seed + 15u) * 0.025; // 1.5cm - 4cm mote
+        }
+
+        p.params.y = floatHash(seed + 20u) * 6.2831853; // initial rotation
+        p.params.z = (floatHash(seed + 21u) - 0.5) * 1.5; // rotation speed
+        p.params.w = float(u_Mode);
+
+        particles[idx] = p;
+        return;
+    }
+
+    // -------------------------------------------------------------------------
+    // Physics & Turbulence Step
+    // -------------------------------------------------------------------------
+    vec3 curl = curlNoise(p.pos_life.xyz * 0.25 + vec3(0.0, u_Time * 0.1, 0.0));
+    vec3 totalVel = (p.vel_maxlife.xyz + curl * u_TurbulenceStrength + u_Gravity) * u_SpeedScale;
+
+    // Apply drag to base velocity so turbulent impulse decays smoothly
+    p.vel_maxlife.xyz *= max(0.0, 1.0 - u_DeltaTime * 0.35);
+
+    // Update Position
+    p.pos_life.xyz += totalVel * u_DeltaTime;
+
+    // Update Rotation
+    p.params.y += p.params.z * u_DeltaTime;
+
+    // -------------------------------------------------------------------------
+    // Camera-Centric Boundary Wrapping (Seamless Infinite Field)
+    // -------------------------------------------------------------------------
+    vec3 minB = u_EmitterCenter - u_EmitterHalfSize;
+    vec3 maxB = u_EmitterCenter + u_EmitterHalfSize;
+    vec3 sizeB = maxB - minB;
+
+    if (p.pos_life.x < minB.x) p.pos_life.x += sizeB.x;
+    else if (p.pos_life.x > maxB.x) p.pos_life.x -= sizeB.x;
+
+    if (p.pos_life.y < minB.y) {
+        if (u_Mode == 1) {
+            // Embers wrap to bottom when falling
+            p.pos_life.y = minB.y;
+        } else {
+            p.pos_life.y += sizeB.y;
+        }
+    } else if (p.pos_life.y > maxB.y) {
+        if (u_Mode == 1) {
+            // Embers dissipate at ceiling
+            p.pos_life.w = 0.0;
+        } else {
+            p.pos_life.y -= sizeB.y;
+        }
+    }
+
+    if (p.pos_life.z < minB.z) p.pos_life.z += sizeB.z;
+    else if (p.pos_life.z > maxB.z) p.pos_life.z -= sizeB.z;
+
+    particles[idx] = p;
+}

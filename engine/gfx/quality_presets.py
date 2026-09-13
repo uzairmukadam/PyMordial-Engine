@@ -138,6 +138,13 @@ class RenderConfig:
     tess_distance_min: float = 2.0        # Deprecated: alias for near distance
     tess_distance_max: float = 30.0       # Deprecated: alias for far distance
 
+    # Phase 2: Volumetric Particles & Dust Motes
+    particles_enabled: bool = True
+    particle_count: int = 16384           # Simulated particle count (1024 to 65536)
+    particle_mode: str = "DUST_MOTES"     # "DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"
+    particle_size: float = 1.0            # Multiplier for particle radius
+    particle_turbulence: float = 0.85     # Curl noise turbulence strength
+
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
@@ -170,6 +177,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pom_self_shadow=False,
         ssdm_enabled=False,
         tess_enabled=False,
+        particles_enabled=False,
+        particle_count=4096,
+        particle_mode="OFF",
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
@@ -201,6 +211,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pom_self_shadow=False,
         ssdm_enabled=False,
         tess_enabled=False,
+        particles_enabled=True,
+        particle_count=8192,
+        particle_mode="DUST_MOTES",
     ),
     GraphicsQuality.HIGH: RenderConfig(
         shadow_resolution=4096,
@@ -236,6 +249,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         tess_enabled=True,
         tess_max_level=16.0,
         tess_displacement_scale=0.10,
+        particles_enabled=True,
+        particle_count=16384,
+        particle_mode="DUST_MOTES",
     ),
     GraphicsQuality.ULTRA: RenderConfig(
         shadow_resolution=4096,
@@ -271,6 +287,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         tess_enabled=True,
         tess_max_level=24.0,
         tess_displacement_scale=0.10,
+        particles_enabled=True,
+        particle_count=32768,
+        particle_mode="DUST_MOTES",
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
         shadow_resolution=4096,
@@ -307,6 +326,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         tess_enabled=True,
         tess_max_level=32.0,
         tess_displacement_scale=0.12,
+        particles_enabled=True,
+        particle_count=65536,
+        particle_mode="DUST_MOTES",
     ),
 }
 

@@ -34,6 +34,7 @@ from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
+from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.atmosphere import AtmosphereSystem, AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
@@ -188,6 +189,7 @@ class RenderPipeline:
         "_u_star_density",
         "_u_atmo_turbidity",
         "_u_atmo_sun_dir",
+        "particle_pass",
         "_prev_time",
         "_graph_context",
     )
@@ -406,6 +408,17 @@ class RenderPipeline:
         self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
         self._u_atmo_sun_dir = self.resolve_prog.get("u_AtmosphereSunDir", None)
 
+        # 8.5. GPU Compute Particle System & Volumetric VFX (Phase 2)
+        part_enabled = getattr(self.config, "particles_enabled", True)
+        part_count = getattr(self.config, "particle_count", 16384)
+        part_mode = getattr(self.config, "particle_mode", "DUST_MOTES")
+        self.particle_pass = ParticleSystemPass(
+            ctx=self.ctx,
+            max_particles=65536,
+            active_count=part_count if part_enabled else 0,
+            mode=part_mode if part_enabled else "OFF",
+        )
+
         # 9. Post-Processing & Tonemapping Pipeline
         self.post_process = PostProcessPipeline(
             self.ctx,
@@ -455,6 +468,15 @@ class RenderPipeline:
         self.ctx_wrapper.config = new_config
         self.ctx_wrapper.ctx.depth_func = ">" if new_config.reverse_z else "<"
         self._graph_context.config = new_config
+
+        part_enabled = getattr(new_config, "particles_enabled", True)
+        part_count = getattr(new_config, "particle_count", 16384)
+        part_mode = getattr(new_config, "particle_mode", "DUST_MOTES")
+        if self.particle_pass is not None:
+            self.particle_pass.set_mode(part_mode if part_enabled else "OFF")
+            self.particle_pass.set_active_count(part_count if part_enabled else 0)
+            self.particle_pass.base_size_multiplier = getattr(new_config, "particle_size", 1.0)
+            self.particle_pass.turbulence_strength = getattr(new_config, "particle_turbulence", 0.85)
 
     def resize(self, width: int, height: int) -> None:
         """Resizes MRT G-Buffer and all post-processing/intermediate pass buffers."""
@@ -918,6 +940,17 @@ class RenderPipeline:
         ctx.resources["hdr_fbo"] = self.post_process.hdr_fbo
         self.volumetric_fog_pass.execute(ctx)
 
+        # ---- PASS 7.7: GPU Compute Particles & Volumetric VFX (Phase 2) ----
+        if self.particle_pass is not None:
+            self.particle_pass.update(
+                dt=calc_dt,
+                camera_pos=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
+            )
+            self.particle_pass.render(
+                hdr_fbo=self.post_process.hdr_fbo,
+                depth_texture=self.g_buffer.depth_texture,
+            )
+
         # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
         aa_mode = getattr(self.config, "aa_mode", "OFF")
@@ -965,6 +998,8 @@ class RenderPipeline:
         self.fxaa_pass.destroy()
         self.smaa_pass.destroy()
         self.volumetric_fog_pass.destroy()
+        if self.particle_pass is not None:
+            self.particle_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()
