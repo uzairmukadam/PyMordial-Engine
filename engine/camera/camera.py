@@ -89,6 +89,17 @@ class VirtualCamera:
             return right / length
         return np.array([1.0, 0.0, 0.0], dtype=np.float32)
 
+    @property
+    def forward(self) -> np.ndarray:
+        """Convenience property returning the normalized forward look vector."""
+        return self.get_forward_vector()
+
+    @property
+    def right(self) -> np.ndarray:
+        """Convenience property returning the normalized right look vector."""
+        return self.get_right_vector()
+
     def update(self, dt: float) -> None:
         """Per-frame update hook for camera controllers."""
         pass
+

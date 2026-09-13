@@ -229,3 +229,6 @@ imgui.ini
 *.pm_tex
 *.pak
 
+# Projects
+projects/
+
