@@ -66,6 +66,19 @@ class AudioEngine:
 
             wind_snd = ProceduralSoundSynthesizer.create_ambient_wind()
             self.register_cue(SoundCue("ambient_wind", wind_snd, bus_name="Ambient", is_3d=False))
+
+            wood_break_snd = ProceduralSoundSynthesizer.create_wood_break()
+            self.register_cue(SoundCue("wood_break", wood_break_snd, bus_name="SFX", is_3d=True, min_distance=2.0, max_distance=50.0))
+
+            throw_snd = ProceduralSoundSynthesizer.create_throw_whoosh()
+            self.register_cue(SoundCue("throw", throw_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0))
+
+            impact_snd = ProceduralSoundSynthesizer.create_impact()
+            self.register_cue(SoundCue("impact", impact_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=40.0))
+
+            water_splash_snd = ProceduralSoundSynthesizer.create_water_splash()
+            self.register_cue(SoundCue("water_splash", water_splash_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=45.0))
+            self.register_cue(SoundCue("footstep_water", water_splash_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0, base_volume=0.7))
         except Exception as e:
             log_warn(LogChannel.AUDIO, f"Failed to register procedural cues: {e}")
 

@@ -12,6 +12,7 @@ A focused, clean sandbox featuring:
 from __future__ import annotations
 import argparse
 import math
+import random
 import sys
 from pathlib import Path
 import pygame
@@ -23,6 +24,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+# ruff: noqa: E402
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop
 from engine.input import (
@@ -33,6 +35,8 @@ from engine.input import (
 )
 from engine.physics.rapier_world import PhysicsManager
 from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
+from engine.physics.props import InteractivePropManager
+from engine.physics.interaction import PhysicsGrabber
 from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
 from engine.camera import CameraManager, FreeFlyCamera
 from engine.assets.mesh_format import PMMesh, build_pm_mesh
@@ -244,7 +248,7 @@ def main() -> None:
         metallic=0.02,
     )
     physics.create_body(plane_id, body_type="fixed", position=(0.0, -0.5, 0.0))
-    physics.attach_box_collider(plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5)
+    physics.attach_box_collider(plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5, friction=0.80, restitution=0.05)
 
     d_plane = ecs.pool.get_dense_index(plane_id)
     ecs.material_data[d_plane, 6] = float(l_mud)
@@ -278,6 +282,17 @@ def main() -> None:
     # 7. Virtual Camera Stack (3rd-Person Follow + Free-Fly)
     audio_engine = get_audio_engine()
     camera_mgr = CameraManager()
+
+    def on_character_footstep(pos: tuple[float, float, float], in_water: bool) -> None:
+        cue_name = "footstep_water" if in_water else "footstep"
+        vol = 0.70 if is_sprinting else 0.45
+        audio_engine.play_sound(cue_name, position=pos, volume=vol)
+
+    motor.on_footstep = on_character_footstep
+
+    # 7.5 Interactive Props Subsystem & Opt-in Physics Grabber
+    prop_mgr = InteractivePropManager(physics=physics, ecs=ecs, audio=audio_engine)
+    grabber = PhysicsGrabber(physics=physics, prop_manager=prop_mgr, audio=audio_engine)
 
     cam = CharacterCamera(
         config=CharacterCameraConfig(
@@ -453,7 +468,83 @@ def main() -> None:
     game_tweaks.add_watch("Water", "Height", lambda: f"{engine_tweaks.water_height:.2f}m")
     game_tweaks.add_watch("Water", "Wave Amp", lambda: f"{engine_tweaks.water_wave_amplitude:.2f}m")
 
-    toast.show("POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, F2 Graphics, F9 Free Mouse", duration=4.0, color=(56, 189, 248))
+    # Physics & Interactive Props Game Tweaks
+    game_tweaks.add_action("Physics & Props", "Spawn Crate (Ahead)", lambda: (
+        prop_mgr.spawn_crate(
+            position=(
+                camera_pos[0] + scratch_fwd_vec[0] * 3.5,
+                max(1.0, camera_pos[1] + scratch_fwd_vec[1] * 3.5),
+                camera_pos[2] + scratch_fwd_vec[2] * 3.5,
+            ),
+            size=0.9,
+            health=40.0,
+        ),
+        toast.show("Spawned Dynamic Crate", duration=1.5, color=(74, 222, 128)),
+    ))
+    game_tweaks.add_action("Physics & Props", "Spawn Pyramid (3x3)", lambda: (
+        prop_mgr.spawn_pyramid(
+            base_center=(
+                char_world_pos[0] - math.sin(math.radians(cam.yaw_deg)) * 4.5,
+                0.45,
+                char_world_pos[2] - math.cos(math.radians(cam.yaw_deg)) * 4.5,
+            ),
+            rows=3,
+            box_size=0.8,
+        ),
+        toast.show("Spawned Crate Pyramid", duration=1.5, color=(74, 222, 128)),
+    ))
+    game_tweaks.add_action("Physics & Props", "Spawn 4 Spheres", lambda: (
+        [
+            prop_mgr.spawn_sphere(
+                position=(
+                    char_world_pos[0] + random.uniform(-2.0, 2.0),
+                    char_world_pos[1] + 2.5 + i * 0.8,
+                    char_world_pos[2] + random.uniform(2.5, 4.5),
+                ),
+                radius=random.uniform(0.35, 0.55),
+                color=(random.uniform(0.3, 0.95), random.uniform(0.3, 0.95), random.uniform(0.3, 0.95)),
+            )
+            for i in range(4)
+        ],
+        toast.show("Spawned 4 Tumbling Spheres", duration=1.5, color=(74, 222, 128)),
+    ))
+    game_tweaks.add_action("Physics & Props", "Clear All Props", lambda: (
+        grabber.release_held(),
+        prop_mgr.clear_all_props(),
+        toast.show("Cleared Dynamic Props", duration=1.5, color=(248, 113, 113)),
+    ))
+    game_tweaks.add_float(
+        "Physics & Props",
+        "Gravity Y",
+        default=-20.0,
+        min_val=-35.0,
+        max_val=0.0,
+        step=1.0,
+        on_changed=lambda val: (physics.set_gravity(0.0, val, 0.0), setattr(motor.config, "gravity", val)),
+    )
+    game_tweaks.add_float(
+        "Physics & Props",
+        "Throw Speed",
+        default=11.0,
+        min_val=3.0,
+        max_val=35.0,
+        step=1.0,
+        on_changed=lambda val: setattr(grabber, "throw_force", val),
+    )
+    game_tweaks.add_float(
+        "Physics & Props",
+        "Grab Reach",
+        default=3.8,
+        min_val=1.5,
+        max_val=8.0,
+        step=0.2,
+        on_changed=lambda val: setattr(grabber, "max_reach", val),
+    )
+    game_tweaks.add_watch("Physics & Props", "Props Active", lambda: f"{prop_mgr.active_props_count}")
+    game_tweaks.add_watch("Physics & Props", "Holding Prop", lambda: f"Entity {grabber.held_entity_id}" if grabber.is_holding else "None")
+    game_tweaks.add_watch("Physics & Props", "Last Event", lambda: prop_mgr.last_impact_info)
+
+    toast.show("POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, E Grab/Drop, L-Click Throw/Hit", duration=4.5, color=(56, 189, 248))
 
     # Finalize Loading Screen & Fade Transition
     loading_screen.set_progress(1.0, status="Ready. Launching POM Mud Plane...")
@@ -469,10 +560,21 @@ def main() -> None:
         (alloc_capsule, 1, d_char, False),
     ]
 
+    alloc_cube = pipeline.mega_buffer.allocations["cube"]
+    alloc_sphere = pipeline.mega_buffer.allocations["sphere"]
+
+    # Initial demonstration dynamic props
+    prop_mgr.spawn_pyramid(base_center=(0.0, 0.45, 4.0), rows=3, box_size=0.8)
+    prop_mgr.spawn_sphere(position=(-3.0, 1.5, 3.0), radius=0.45, color=(0.95, 0.35, 0.25))
+    prop_mgr.spawn_sphere(position=(3.0, 1.5, 3.0), radius=0.45, color=(0.25, 0.85, 0.45))
+    prop_mgr.spawn_barrel(position=(-2.5, 1.0, 5.0), color=(0.35, 0.55, 0.85))
+    prop_mgr.spawn_barrel(position=(2.5, 1.0, 5.0), color=(0.85, 0.65, 0.25))
+
     init_sun = pipeline.atmosphere.compute_sun_vector()
     scratch_sun_dir = [float(init_sun[0]), float(init_sun[1]), float(init_sun[2])]
     scratch_sun_tuple = (scratch_sun_dir[0], scratch_sun_dir[1], scratch_sun_dir[2])
     scratch_fwd_vec = [0.0, 0.0, 0.0]
+    scratch_cam_pos = [0.0, 0.0, 0.0]
 
     engine_tweaks.sun_elevation_deg = math.degrees(math.asin(max(-1.0, min(1.0, -init_sun[1]))))
     engine_tweaks.sun_angle_deg = math.degrees(math.atan2(init_sun[0], init_sun[2]))
@@ -486,6 +588,9 @@ def main() -> None:
     move_strafe = 0.0
     is_sprinting = False
     jump_requested = False
+    char_world_pos = (char_start_pos[0], char_start_pos[1], char_start_pos[2])
+    camera_pos = (0.0, 3.5, 6.0)
+    camera_target = (0.0, 1.0, 0.0)
 
     def fixed_update(dt: float) -> None:
         nonlocal jump_requested
@@ -499,11 +604,29 @@ def main() -> None:
             )
             jump_requested = False
 
+        # Character to dynamic props impulse transfer (kicking & shoving)
+        try:
+            t = physics.world.get_transform(char_id)
+            c_pos = (t[0], t[1], t[2])
+        except Exception:
+            c_pos = (0.0, 1.0, 0.0)
+
+        prop_mgr.push_props_near_character(
+            character_pos=c_pos,
+            character_velocity=motor.state.velocity,
+            push_radius=None,
+            push_force=6.0 if is_sprinting else 3.5,
+        )
+
         with monitor.scope("physics_step"):
             physics.step_simulation(dt)
 
         with monitor.scope("ecs_sync"):
             physics.sync_to_ecs(ecs)
+
+        # Update prop lifecycles and held prop spring tracking
+        prop_mgr.update(dt)
+        grabber.update(dt, camera_pos=scratch_cam_pos, camera_forward=scratch_fwd_vec)
 
     loop.on_fixed_update = fixed_update
 
@@ -579,6 +702,57 @@ def main() -> None:
                 jump_requested = True
                 if motor.state.is_grounded:
                     audio_engine.play_sound("jump", position=char_start_pos, volume=0.8)
+
+            # Pick-and-Carry (E interact)
+            if input_mgr.is_action_pressed("interact"):
+                if grabber.is_holding:
+                    grabber.release_held()
+                    toast.show("Dropped Prop", duration=1.2, color=(147, 197, 253))
+                else:
+                    grabbed = grabber.try_grab(origin=camera_pos, direction=scratch_fwd_vec, ignore_entity_id=char_id)
+                    if grabbed:
+                        toast.show("Grabbed Prop (E Drop, L-Click Throw)", duration=2.0, color=(74, 222, 128))
+                    else:
+                        char_eye = (char_world_pos[0], char_world_pos[1] + 0.6, char_world_pos[2])
+                        yaw_r = math.radians(cam.yaw_deg)
+                        cam_fwd_h = (-math.sin(yaw_r), 0.0, -math.cos(yaw_r))
+                        if grabber.try_grab(origin=char_eye, direction=cam_fwd_h, ignore_entity_id=char_id):
+                            toast.show("Grabbed Prop (E Drop, L-Click Throw)", duration=2.0, color=(74, 222, 128))
+
+            # Throw or punch/hit (Left Click)
+            if input_mgr.is_action_pressed("primary_action"):
+                if grabber.is_holding:
+                    grabber.throw_held(direction=scratch_fwd_vec)
+                    toast.show("Prop Thrown!", duration=1.5, color=(251, 146, 60))
+                else:
+                    # Raycast forward to damage/shatter destructibles or apply hit impulse
+                    punch_orig = camera_pos
+                    hit = physics.raycast(punch_orig, scratch_fwd_vec, max_distance=4.5)
+                    if hit is not None and hit[0] == char_id:
+                        advance = hit[1] + 0.5
+                        punch_orig = (
+                            camera_pos[0] + scratch_fwd_vec[0] * advance,
+                            camera_pos[1] + scratch_fwd_vec[1] * advance,
+                            camera_pos[2] + scratch_fwd_vec[2] * advance,
+                        )
+                        hit = physics.raycast(punch_orig, scratch_fwd_vec, max_distance=3.5)
+
+                    if hit is not None and prop_mgr.is_prop(hit[0]):
+                        hit_id, hit_dist, _ = hit
+                        hit_pt = (
+                            punch_orig[0] + scratch_fwd_vec[0] * hit_dist,
+                            punch_orig[1] + scratch_fwd_vec[1] * hit_dist,
+                            punch_orig[2] + scratch_fwd_vec[2] * hit_dist,
+                        )
+                        destroyed = prop_mgr.damage_prop(hit_id, damage=40.0, hit_point=hit_pt, hit_direction=scratch_fwd_vec)
+                        if destroyed:
+                            toast.show("Crate Shattered!", duration=1.5, color=(248, 113, 113))
+                        else:
+                            physics.apply_impulse(
+                                hit_id,
+                                (scratch_fwd_vec[0] * 8.0, scratch_fwd_vec[1] * 2.0, scratch_fwd_vec[2] * 8.0)
+                            )
+                            toast.show("Hit Prop!", duration=1.0, color=(251, 191, 36))
 
             if input_mgr.is_action_pressed("reset_player"):
                 motor.teleport(char_start_pos)
@@ -806,6 +980,9 @@ def main() -> None:
         camera_target = (float(active_cam.target[0]), float(active_cam.target[1]), float(active_cam.target[2]))
 
         # Update 3D Audio spatial listener
+        scratch_cam_pos[0] = camera_pos[0]
+        scratch_cam_pos[1] = camera_pos[1]
+        scratch_cam_pos[2] = camera_pos[2]
         scratch_fwd_vec[0] = camera_target[0] - camera_pos[0]
         scratch_fwd_vec[1] = camera_target[1] - camera_pos[1]
         scratch_fwd_vec[2] = camera_target[2] - camera_pos[2]
@@ -858,6 +1035,15 @@ def main() -> None:
                 color=(1.0, 0.9, 0.2, 1.0),
             )
 
+        # Collect static batches + all dynamic props and fragments
+        frame_draw_batches = list(draw_batches)
+        frame_draw_batches.extend(
+            prop_mgr.get_draw_batches(
+                alloc_cube=alloc_cube,
+                alloc_sphere=alloc_sphere,
+            )
+        )
+
         # Render Frame via MDI Deferred Pipeline
         with monitor.scope("render_pipeline"):
             pipeline.render_frame(
@@ -867,7 +1053,7 @@ def main() -> None:
                 time_elapsed=loop.elapsed_time,
                 sun_dir=scratch_sun_tuple,
                 sun_lux=pipeline.config.sun_intensity,
-                draw_batches=draw_batches,
+                draw_batches=frame_draw_batches,
                 debug_draw=pipeline.debug,
                 dt=dt,
             )

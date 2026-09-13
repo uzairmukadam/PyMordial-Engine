@@ -12,6 +12,7 @@ Implements responsive 60 Hz character physics:
 from __future__ import annotations
 from dataclasses import dataclass
 import math
+from typing import Callable
 import numpy as np
 
 from engine.core.ecs import EntityManager
@@ -71,6 +72,11 @@ class CharacterMotor:
         "ecs",
         "config",
         "state",
+        "distance_traversed",
+        "walk_stride",
+        "run_stride",
+        "water_height",
+        "on_footstep",
     )
 
     def __init__(
@@ -86,6 +92,11 @@ class CharacterMotor:
         self.ecs = ecs
         self.config = config if config is not None else CharacterMotorConfig()
         self.state = CharacterMotorState()
+        self.distance_traversed: float = 0.0
+        self.walk_stride: float = 1.85
+        self.run_stride: float = 1.25
+        self.water_height: float = 0.0
+        self.on_footstep: Callable[[tuple[float, float, float], bool], None] | None = None
 
         # Register native kinematic character controller in Rapier world
         self.physics.create_character_controller(
@@ -140,6 +151,7 @@ class CharacterMotor:
             self.state.is_grounded = False
             self.state.is_jumping = False
             self.state.is_sliding = False
+            self.distance_traversed = 0.0
 
     def teleport(
         self,
@@ -240,6 +252,7 @@ class CharacterMotor:
                 curr_vy = cfg.jump_force
                 state.is_grounded = False
                 state.is_jumping = True
+                self.distance_traversed = 0.0
             else:
                 # Slight downward bias to stick firmly to slopes and stairs
                 curr_vy = -0.5
@@ -297,3 +310,17 @@ class CharacterMotor:
             rbs[1, dense_idx, 4] = qy
             rbs[1, dense_idx, 5] = 0.0
             rbs[1, dense_idx, 6] = qw
+
+        # 7. Footstep cadence tracking
+        if state.is_grounded and not state.is_jumping:
+            h_dist = math.sqrt(eff_dx * eff_dx + eff_dz * eff_dz)
+            self.distance_traversed += h_dist
+            stride = self.run_stride if is_running else self.walk_stride
+            while self.distance_traversed >= stride:
+                self.distance_traversed -= stride
+                if self.on_footstep is not None:
+                    feet_y = pos_y - cfg.capsule_half_height - cfg.capsule_radius
+                    in_water = feet_y <= (self.water_height + 0.1)
+                    self.on_footstep((pos_x, feet_y, pos_z), in_water)
+
+

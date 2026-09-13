@@ -109,33 +109,101 @@ impl PyRapierWorld {
     }
 
     /// Attach a box collider to an entity's rigid body
-    pub fn attach_box_collider(&mut self, entity_id: u32, half_x: f32, half_y: f32, half_z: f32) -> PyResult<()> {
+    #[pyo3(signature = (entity_id, half_x, half_y, half_z, density=None, friction=None, restitution=None))]
+    pub fn attach_box_collider(
+        &mut self,
+        entity_id: u32,
+        half_x: f32,
+        half_y: f32,
+        half_z: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
         let handle = self.handles.get(&entity_id).ok_or_else(|| {
             pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
         })?;
-        let collider = ColliderBuilder::cuboid(half_x, half_y, half_z).build();
+        let mut builder = ColliderBuilder::cuboid(half_x, half_y, half_z);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
         self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
         Ok(())
     }
 
     /// Attach a sphere collider
-    pub fn attach_sphere_collider(&mut self, entity_id: u32, radius: f32) -> PyResult<()> {
+    #[pyo3(signature = (entity_id, radius, density=None, friction=None, restitution=None))]
+    pub fn attach_sphere_collider(
+        &mut self,
+        entity_id: u32,
+        radius: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
         let handle = self.handles.get(&entity_id).ok_or_else(|| {
             pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
         })?;
-        let collider = ColliderBuilder::ball(radius).build();
+        let mut builder = ColliderBuilder::ball(radius);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
         self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
         Ok(())
     }
 
     /// Attach a capsule collider (Y-axis aligned)
-    pub fn attach_capsule_collider(&mut self, entity_id: u32, half_height: f32, radius: f32) -> PyResult<()> {
+    #[pyo3(signature = (entity_id, half_height, radius, density=None, friction=None, restitution=None))]
+    pub fn attach_capsule_collider(
+        &mut self,
+        entity_id: u32,
+        half_height: f32,
+        radius: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
         let handle = self.handles.get(&entity_id).ok_or_else(|| {
             pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
         })?;
-        let collider = ColliderBuilder::capsule_y(half_height, radius).build();
+        let mut builder = ColliderBuilder::capsule_y(half_height, radius);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
         self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
         Ok(())
+    }
+
+    /// Get mass of rigid body in kilograms
+    pub fn get_mass(&self, entity_id: u32) -> PyResult<f32> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        Ok(rb.mass())
     }
 
     /// Remove an entity's rigid body
@@ -196,6 +264,101 @@ impl PyRapierWorld {
             rot,
         ), true);
         Ok(())
+    }
+
+    /// Apply linear impulse to a dynamic rigid body
+    pub fn apply_impulse(&mut self, entity_id: u32, ix: f32, iy: f32, iz: f32) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get_mut(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        rb.apply_impulse(vector![ix, iy, iz], true);
+        Ok(())
+    }
+
+    /// Apply rotational torque impulse to a dynamic rigid body
+    pub fn apply_torque_impulse(&mut self, entity_id: u32, tx: f32, ty: f32, tz: f32) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get_mut(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        rb.apply_torque_impulse(vector![tx, ty, tz], true);
+        Ok(())
+    }
+
+    /// Set linear velocity for a rigid body
+    pub fn set_linvel(&mut self, entity_id: u32, vx: f32, vy: f32, vz: f32) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get_mut(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        rb.set_linvel(vector![vx, vy, vz], true);
+        Ok(())
+    }
+
+    /// Get current linear velocity: (vx, vy, vz)
+    pub fn get_linvel(&self, entity_id: u32) -> PyResult<(f32, f32, f32)> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        let v = rb.linvel();
+        Ok((v.x, v.y, v.z))
+    }
+
+    /// Set angular velocity for a rigid body: (wx, wy, wz)
+    pub fn set_angvel(&mut self, entity_id: u32, wx: f32, wy: f32, wz: f32) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get_mut(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        rb.set_angvel(vector![wx, wy, wz], true);
+        Ok(())
+    }
+
+    /// Get current angular velocity: (wx, wy, wz)
+    pub fn get_angvel(&self, entity_id: u32) -> PyResult<(f32, f32, f32)> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        let w = rb.angvel();
+        Ok((w.x, w.y, w.z))
+    }
+
+    /// Set linear and angular damping
+    pub fn set_damping(&mut self, entity_id: u32, linear: f32, angular: f32) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let rb = self.rigid_body_set.get_mut(*handle).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err("Rigid body handle invalid")
+        })?;
+        rb.set_linear_damping(linear);
+        rb.set_angular_damping(angular);
+        Ok(())
+    }
+
+    /// Dynamically set global gravity vector
+    pub fn set_gravity(&mut self, gx: f32, gy: f32, gz: f32) {
+        self.gravity = vector![gx, gy, gz];
+    }
+
+    /// Get current global gravity vector
+    pub fn get_gravity(&self) -> (f32, f32, f32) {
+        (self.gravity.x, self.gravity.y, self.gravity.z)
     }
 
     /// Batch sync state: writes transform [x, y, z, qx, qy, qz, qw] for each tracked entity

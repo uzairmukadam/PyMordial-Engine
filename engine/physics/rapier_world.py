@@ -68,23 +68,138 @@ class PhysicsManager:
             float(rotation[3]),
         )
 
+    def apply_impulse(
+        self,
+        entity_id: int,
+        impulse: tuple[float, float, float] | np.ndarray,
+    ) -> None:
+        """Applies an instantaneous linear impulse to a dynamic rigid body."""
+        self.world.apply_impulse(
+            entity_id,
+            float(impulse[0]),
+            float(impulse[1]),
+            float(impulse[2]),
+        )
+
+    def apply_torque_impulse(
+        self,
+        entity_id: int,
+        torque: tuple[float, float, float] | np.ndarray,
+    ) -> None:
+        """Applies an instantaneous rotational torque impulse to a dynamic rigid body."""
+        self.world.apply_torque_impulse(
+            entity_id,
+            float(torque[0]),
+            float(torque[1]),
+            float(torque[2]),
+        )
+
+    def set_linvel(
+        self,
+        entity_id: int,
+        velocity: tuple[float, float, float] | np.ndarray,
+    ) -> None:
+        """Sets linear velocity for a rigid body."""
+        self.world.set_linvel(
+            entity_id,
+            float(velocity[0]),
+            float(velocity[1]),
+            float(velocity[2]),
+        )
+
+    def get_linvel(self, entity_id: int) -> tuple[float, float, float]:
+        """Gets current linear velocity (vx, vy, vz)."""
+        return self.world.get_linvel(entity_id)
+
+    def set_angvel(
+        self,
+        entity_id: int,
+        angvel: tuple[float, float, float] | np.ndarray,
+    ) -> None:
+        """Sets angular velocity (wx, wy, wz)."""
+        self.world.set_angvel(
+            entity_id,
+            float(angvel[0]),
+            float(angvel[1]),
+            float(angvel[2]),
+        )
+
+    def get_angvel(self, entity_id: int) -> tuple[float, float, float]:
+        """Gets current angular velocity (wx, wy, wz)."""
+        return self.world.get_angvel(entity_id)
+
+    def set_damping(self, entity_id: int, linear: float, angular: float) -> None:
+        """Sets linear and angular damping for a rigid body."""
+        self.world.set_damping(entity_id, float(linear), float(angular))
+
+    def set_gravity(self, gx: float, gy: float, gz: float) -> None:
+        """Updates the global gravity vector in real time."""
+        self.world.set_gravity(float(gx), float(gy), float(gz))
+
+    def get_gravity(self) -> tuple[float, float, float]:
+        """Returns the current global gravity vector (gx, gy, gz)."""
+        return self.world.get_gravity()
+
     def attach_box_collider(
         self,
         entity_id: int,
         half_x: float,
         half_y: float,
         half_z: float,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
     ) -> None:
         """Attaches an oriented box collider to an entity's rigid body."""
-        self.world.attach_box_collider(entity_id, half_x, half_y, half_z)
+        self.world.attach_box_collider(
+            entity_id,
+            float(half_x),
+            float(half_y),
+            float(half_z),
+            density=float(density) if density is not None else None,
+            friction=float(friction) if friction is not None else None,
+            restitution=float(restitution) if restitution is not None else None,
+        )
 
-    def attach_sphere_collider(self, entity_id: int, radius: float) -> None:
+    def attach_sphere_collider(
+        self,
+        entity_id: int,
+        radius: float,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
         """Attaches a sphere collider to an entity's rigid body."""
-        self.world.attach_sphere_collider(entity_id, radius)
+        self.world.attach_sphere_collider(
+            entity_id,
+            float(radius),
+            density=float(density) if density is not None else None,
+            friction=float(friction) if friction is not None else None,
+            restitution=float(restitution) if restitution is not None else None,
+        )
 
-    def attach_capsule_collider(self, entity_id: int, half_height: float, radius: float) -> None:
+    def attach_capsule_collider(
+        self,
+        entity_id: int,
+        half_height: float,
+        radius: float,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
         """Attaches a capsule collider (Y-axis aligned) to an entity's rigid body."""
-        self.world.attach_capsule_collider(entity_id, half_height, radius)
+        self.world.attach_capsule_collider(
+            entity_id,
+            float(half_height),
+            float(radius),
+            density=float(density) if density is not None else None,
+            friction=float(friction) if friction is not None else None,
+            restitution=float(restitution) if restitution is not None else None,
+        )
+
+    def get_mass(self, entity_id: int) -> float:
+        """Returns the mass of an entity's rigid body in kilograms."""
+        return float(self.world.get_mass(entity_id))
 
     def create_character_controller(
         self,

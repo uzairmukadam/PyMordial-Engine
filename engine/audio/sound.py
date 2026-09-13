@@ -109,3 +109,86 @@ class ProceduralSoundSynthesizer:
         samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
         stereo = np.column_stack((samples, samples))
         return pygame.mixer.Sound(buffer=stereo.tobytes())
+
+    @classmethod
+    def create_wood_break(cls, duration: float = 0.28, volume: float = 0.7) -> pygame.mixer.Sound:
+        """Generates a shattering wood fracture sound with sharp cracks and splinter rattle."""
+        num_samples = int(cls.SAMPLE_RATE * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+
+        # Initial sharp snap
+        snap = np.sin(2.0 * np.pi * 320.0 * np.exp(-t * 40.0) * t) * np.exp(-t * 50.0)
+        # Low woody resonance
+        thud = np.sin(2.0 * np.pi * 95.0 * t) * np.exp(-t * 22.0)
+        # Noise burst for splinter shatter
+        noise = (np.random.rand(num_samples) * 2.0 - 1.0) * np.exp(-t * 18.0) * 0.5
+        # Secondary crackle spikes
+        crackle = np.zeros(num_samples)
+        for offset in (0.04, 0.08, 0.13, 0.19):
+            idx = int(offset * cls.SAMPLE_RATE)
+            span = min(int(0.02 * cls.SAMPLE_RATE), num_samples - idx)
+            if span > 0:
+                crackle[idx : idx + span] += (np.random.rand(span) * 2.0 - 1.0) * 0.4
+
+        wave = (snap * 0.4 + thud * 0.35 + noise * 0.25 + crackle * 0.3) * volume
+        samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
+        stereo = np.column_stack((samples, samples))
+        return pygame.mixer.Sound(buffer=stereo.tobytes())
+
+    @classmethod
+    def create_throw_whoosh(cls, duration: float = 0.18, volume: float = 0.5) -> pygame.mixer.Sound:
+        """Generates an aerodynamic whoosh sound for launching thrown objects."""
+        num_samples = int(cls.SAMPLE_RATE * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+
+        # Bell-shaped envelope peaking in the middle
+        envelope = np.sin(np.pi * (t / duration)) ** 2
+        # Swept noise filter
+        noise = np.random.rand(num_samples) * 2.0 - 1.0
+        # Pitch sweep tone
+        freq = 160.0 + 340.0 * np.sin(np.pi * (t / duration))
+        phase = 2.0 * np.pi * np.cumsum(freq) / cls.SAMPLE_RATE
+        wave = (np.sin(phase) * 0.35 + noise * 0.65) * envelope * volume
+        samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
+        stereo = np.column_stack((samples, samples))
+        return pygame.mixer.Sound(buffer=stereo.tobytes())
+
+    @classmethod
+    def create_impact(
+        cls,
+        duration: float = 0.15,
+        volume: float = 0.6,
+        frequency: float = 140.0,
+    ) -> pygame.mixer.Sound:
+        """Generates a solid physical impact thud with rapid pitch decay."""
+        num_samples = int(cls.SAMPLE_RATE * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+
+        freq = frequency * np.exp(-t * 30.0) + 40.0
+        phase = 2.0 * np.pi * np.cumsum(freq) / cls.SAMPLE_RATE
+        noise = (np.random.rand(num_samples) * 2.0 - 1.0) * 0.3
+        envelope = np.exp(-t * 25.0)
+
+        wave = (np.sin(phase) * 0.7 + noise) * envelope * volume
+        samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
+        stereo = np.column_stack((samples, samples))
+        return pygame.mixer.Sound(buffer=stereo.tobytes())
+
+    @classmethod
+    def create_water_splash(cls, duration: float = 0.32, volume: float = 0.65) -> pygame.mixer.Sound:
+        """Generates a fluid water splash and bubbling ripple sound."""
+        num_samples = int(cls.SAMPLE_RATE * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+
+        # Noise splash burst
+        noise = np.random.rand(num_samples) * 2.0 - 1.0
+        splash_env = np.exp(-t * 14.0)
+        # Bubble resonance frequencies
+        b1 = np.sin(2.0 * np.pi * 380.0 * (1.0 + 0.4 * np.exp(-t * 10.0)) * t) * np.exp(-t * 18.0)
+        b2 = np.sin(2.0 * np.pi * 540.0 * (1.0 + 0.5 * np.exp(-t * 12.0)) * t) * np.exp(-t * 22.0)
+
+        wave = (noise * 0.5 * splash_env + (b1 + b2) * 0.3) * volume
+        samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
+        stereo = np.column_stack((samples, samples))
+        return pygame.mixer.Sound(buffer=stereo.tobytes())
+
