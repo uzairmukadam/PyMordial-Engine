@@ -170,5 +170,9 @@ void main() {
 
     visibility /= float(num_dirs);
     float ao = clamp(pow(clamp(visibility, 0.0, 1.0), u_Power * u_Intensity), 0.0, 1.0);
-    out_AO = ao;
+
+    // Distance fade-out: Screen-space ambient occlusion represents localized contact crevices;
+    // fade smoothly to unoccluded (1.0) beyond 70m to eliminate far-distance screen-space noise
+    float dist_fade = clamp((view_z - 70.0) / 50.0, 0.0, 1.0);
+    out_AO = mix(ao, 1.0, dist_fade);
 }

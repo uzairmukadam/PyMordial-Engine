@@ -50,7 +50,10 @@ void main() {
     float total_ao = center_ao * weights[0];
     float total_weight = weights[0];
 
-    float two_sigma_sq = 2.0 * u_DepthSigma * u_DepthSigma;
+    // Scale depth threshold with view distance to preserve geometric edges while correctly
+    // filtering perspective planar gradients across distant surfaces
+    float depth_threshold = max(u_DepthSigma, center_z * 0.035);
+    float two_sigma_sq = 2.0 * depth_threshold * depth_threshold;
 
     for (int i = 1; i <= 4; ++i) {
         float w = weights[i];

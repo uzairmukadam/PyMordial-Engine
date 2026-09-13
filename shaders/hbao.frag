@@ -129,5 +129,8 @@ void main() {
     float ao = clamp(1.0 - (total_obscurance / float(num_dirs)) * u_Intensity, 0.0, 1.0);
     ao = pow(ao, u_Power);
 
-    out_AO = ao;
+    // Distance fade-out: Ambient Occlusion is localized to close-range contact crevices;
+    // fade smoothly to unoccluded (1.0) beyond 70m to eliminate distant screen-space noise
+    float dist_fade = clamp((view_z - 70.0) / 50.0, 0.0, 1.0);
+    out_AO = mix(ao, 1.0, dist_fade);
 }

@@ -238,8 +238,11 @@ class RaycastVehicle:
         fwd_speed = float(np.dot(self._chassis_linvel, self._forward_vec))
         self.current_speed_mps = fwd_speed
 
-        # 3. Smooth steering interpolation
-        target_steer = self.steering_input * self.config.max_steer_angle_rad
+        # 3. Smooth steering interpolation with speed-sensitive dynamic lock
+        speed_abs = abs(fwd_speed)
+        speed_factor = 1.0 / (1.0 + speed_abs * 0.035)
+        effective_max_steer = self.config.max_steer_angle_rad * max(0.35, speed_factor)
+        target_steer = self.steering_input * effective_max_steer
         steer_diff = target_steer - self.current_steer_angle
         max_steer_step = self.config.steer_speed * dt
         if abs(steer_diff) <= max_steer_step:
@@ -347,6 +350,12 @@ class RaycastVehicle:
             w_state.world_pos[0] = self._wheel_attach_world[0] + down_x * w_state.suspension_length
             w_state.world_pos[1] = self._wheel_attach_world[1] + down_y * w_state.suspension_length
             w_state.world_pos[2] = self._wheel_attach_world[2] + down_z * w_state.suspension_length
+
+            if w_state.is_grounded:
+                # Guarantee tire bottom never penetrates below the ground contact surface
+                min_center_y = w_state.hit_point[1] + w_cfg.radius
+                if w_state.world_pos[1] < min_center_y:
+                    w_state.world_pos[1] = min_center_y
 
             if w_cfg.is_steerable:
                 w_state.steer_angle = self.current_steer_angle
@@ -515,6 +524,14 @@ class RaycastVehicle:
             self._torque_scratch[1] = 0.0
             self._torque_scratch[2] = tau_z * dt
             self.physics.apply_torque_impulse(self.entity_id, self._torque_scratch)
+
+        # 8. Aerodynamic Downforce (plants vehicle to asphalt at high speed)
+        if fwd_speed > 8.0 and grounded_count >= 2:
+            downforce = min(3500.0, 0.5 * 1.225 * (fwd_speed * fwd_speed) * 0.45)
+            self._impulse_scratch[0] = 0.0
+            self._impulse_scratch[1] = -downforce * dt
+            self._impulse_scratch[2] = 0.0
+            self.physics.apply_impulse(self.entity_id, self._impulse_scratch)
 
     def get_wheel_transform(self, wheel_idx: int) -> tuple[np.ndarray, np.ndarray]:
         """Returns the world position and orientation quaternion for a visual wheel mesh.
