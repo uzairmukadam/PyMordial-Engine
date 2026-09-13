@@ -161,9 +161,13 @@ class EngineTweaks:
         "hiz_debug_mip",
         "_on_quality_changed",
         "_on_vsync_changed",
+        "_version",
+        "_applied_version",
     )
 
     def __init__(self) -> None:
+        super().__setattr__("_version", 0)
+        super().__setattr__("_applied_version", -1)
         # Default to CUSTOM so individual element tweaks are not overridden
         self.quality_preset = GraphicsQuality.CUSTOM
         self.tonemap_mode = "ACES"
@@ -232,6 +236,7 @@ class EngineTweaks:
         self.aa_mode = "OFF"
         self.taa_enabled = False
         self.taa_feedback = 0.92
+        self.taa_sharpness = 0.50
         self.point_lights_enabled = True
 
         # Froxel Volumetric Fog & Atmospheric Light Scattering
@@ -405,9 +410,20 @@ class EngineTweaks:
         self.show_physics_colliders = not self.show_physics_colliders
         return self.show_physics_colliders
 
-    def apply_to_pipeline(self, pipeline: Any) -> None:
+    def __setattr__(self, name: str, value: Any) -> None:
+        super().__setattr__(name, value)
+        if name not in ("_version", "_applied_version"):
+            try:
+                super().__setattr__("_version", getattr(self, "_version", 0) + 1)
+            except AttributeError:
+                pass
+
+    def apply_to_pipeline(self, pipeline: Any, force: bool = False) -> None:
         """Synchronizes all graphical and post-processing properties to the active pipeline."""
         if pipeline is None:
+            return
+
+        if not force and self._version == self._applied_version:
             return
 
         p_cfg = getattr(pipeline, "config", None)
@@ -565,10 +581,13 @@ class EngineTweaks:
                 atmo.config.turbidity = float(self.turbidity)
                 atmo.config.star_intensity = float(self.star_intensity)
 
+        self._applied_version = self._version
+
     def to_dict(self) -> dict[str, Any]:
         """Serializes current graphics configuration into a JSON-compatible dictionary."""
         return {
             "quality_preset": self.quality_preset.value if hasattr(self.quality_preset, "value") else str(self.quality_preset),
+            "show_wireframe": bool(self.show_wireframe),
             "vsync_enabled": bool(self.vsync_enabled),
             "tonemap_mode": str(self.tonemap_mode),
             "exposure": float(self.exposure),
@@ -642,6 +661,33 @@ class EngineTweaks:
             "mie_coeff": float(self.mie_coeff),
             "turbidity": float(self.turbidity),
             "star_intensity": float(self.star_intensity),
+            "uncapped_fps": bool(self.uncapped_fps),
+            "pom_enabled": bool(self.pom_enabled),
+            "pom_height_scale": float(self.pom_height_scale),
+            "pom_self_shadow": bool(self.pom_self_shadow),
+            "disp_near_radius": float(self.disp_near_radius),
+            "disp_mid_radius": float(self.disp_mid_radius),
+            "tess_enabled": bool(self.tess_enabled),
+            "tess_max_level": float(self.tess_max_level),
+            "tess_med_level": float(self.tess_med_level),
+            "tess_displacement_scale": float(self.tess_displacement_scale),
+            "frustum_cull_enabled": bool(self.frustum_cull_enabled),
+            "ssdm_enabled": bool(self.ssdm_enabled),
+            "ssdm_scale": float(self.ssdm_scale),
+            "water_enabled": bool(self.water_enabled),
+            "particles_enabled": bool(self.particles_enabled),
+            "show_bounds": bool(self.show_bounds),
+            "show_physics_colliders": bool(self.show_physics_colliders),
+            "shadow_offset_x": float(self.shadow_offset_x),
+            "shadow_offset_y": float(self.shadow_offset_y),
+            "sscs_enabled": bool(self.sscs_enabled),
+            "sscs_steps": int(self.sscs_steps),
+            "sscs_thickness": float(self.sscs_thickness),
+            "sscs_ray_distance": float(self.sscs_ray_distance),
+            "sscs_max_distance": float(self.sscs_max_distance),
+            "taa_enabled": bool(self.taa_enabled),
+            "taa_feedback": float(self.taa_feedback),
+            "taa_sharpness": float(self.taa_sharpness),
         }
 
     def from_dict(self, data: dict[str, Any]) -> None:
@@ -666,6 +712,8 @@ class EngineTweaks:
                     setattr(self, key, float(val))
                 elif isinstance(current, str):
                     setattr(self, key, str(val))
+                else:
+                    setattr(self, key, val)
 
     def save_to_file(self, filepath: str | Path) -> bool:
         """Writes configuration to JSON file in the target directory."""

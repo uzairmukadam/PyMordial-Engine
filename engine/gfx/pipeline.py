@@ -53,6 +53,15 @@ except ImportError:
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
 ROOT_DIR = SHADER_DIR.parent
 
+_SHADER_FILE_CACHE: dict[Path, str] = {}
+
+
+def _read_shader_file(path: Path) -> str:
+    """Reads a GLSL shader file with memory caching to avoid redundant disk I/O."""
+    if path not in _SHADER_FILE_CACHE:
+        _SHADER_FILE_CACHE[path] = path.read_text(encoding="utf-8")
+    return _SHADER_FILE_CACHE[path]
+
 
 def _load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
     """Loads a GLSL shader file and recursively expands #include directives."""
@@ -66,7 +75,7 @@ def _load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
     if path in visited:
         return ""
     visited.add(path)
-    raw = path.read_text(encoding="utf-8")
+    raw = _read_shader_file(path)
     lines: list[str] = []
     for line in raw.splitlines():
         trimmed = line.strip()

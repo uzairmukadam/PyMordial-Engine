@@ -46,6 +46,7 @@ class ProjectApp:
         "is_running",
         "_modules",
         "_static_draw_batches",
+        "_active_draw_batches",
         "_clock",
         "_frame_counter",
     )
@@ -98,6 +99,7 @@ class ProjectApp:
         self.world_builder: BaseWorldBuilder | None = None
         self._modules: list[ProjectModule] = []
         self._static_draw_batches: list[tuple[MeshAllocation, int, int, bool]] = []
+        self._active_draw_batches: list[tuple[MeshAllocation, int, int, bool]] = []
         self._clock = pygame.time.Clock()
         self._frame_counter = 0
         self.is_running = False
@@ -188,13 +190,14 @@ class ProjectApp:
                 cam_target = (0.0, 0.0, 0.0)
                 fovy_deg = 60.0
 
-            # 2. Gather draw batches (static + any module-provided dynamic batches)
-            batches = list(self._static_draw_batches)
+            # 2. Gather draw batches (reusing pre-allocated list to prevent per-frame allocations)
+            self._active_draw_batches.clear()
+            self._active_draw_batches.extend(self._static_draw_batches)
             for m in self._modules:
                 if m.enabled and hasattr(m, "get_draw_batches"):
                     extra_batches = m.get_draw_batches(self)
                     if extra_batches:
-                        batches.extend(extra_batches)
+                        self._active_draw_batches.extend(extra_batches)
 
             # 3. Sun & lighting parameters
             sun_dir = getattr(self.pipeline.atmosphere, "sun_direction", (0.35, -0.85, 0.40))
@@ -209,7 +212,7 @@ class ProjectApp:
                 sun_dir=sun_dir,
                 sun_lux=sun_lux,
                 fovy_deg=fovy_deg,
-                draw_batches=batches,
+                draw_batches=self._active_draw_batches,
                 debug_draw=self.pipeline.debug,
                 dt=1.0 / 60.0,
             )
@@ -249,44 +252,48 @@ class ProjectApp:
         self.is_running = True
         self._frame_counter = 0
 
-        while self.is_running:
-            raw_ms = self._clock.tick(0)
-            dt = min(raw_ms * 0.001, 0.1)
+        try:
+            while self.is_running:
+                raw_ms = self._clock.tick(0)
+                dt = min(raw_ms * 0.001, 0.1)
 
-            # 1. Input event polling & dispatch
-            events = self.input_manager.poll_events()
-            for ev in events:
-                if ev.type == pygame.QUIT:
+                # 1. Input event polling & dispatch
+                events = self.input_manager.poll_events()
+                for ev in events:
+                    if ev.type == pygame.QUIT:
+                        self.is_running = False
+                        break
+
+                    # Dispatch event to modules
+                    consumed = False
+                    for m in self._modules:
+                        if m.enabled and m.on_event(self, ev):
+                            consumed = True
+                            break
+                    if consumed:
+                        continue
+
+                if self.input_manager.should_quit:
                     self.is_running = False
                     break
 
-                # Dispatch event to modules
-                consumed = False
-                for m in self._modules:
-                    if m.enabled and m.on_event(self, ev):
-                        consumed = True
-                        break
-                if consumed:
-                    continue
+                # 2. Step simulation, interpolation, and rendering
+                self.step_frame(dt)
 
-            if self.input_manager.should_quit:
-                self.is_running = False
-                break
-
-            # 2. Step simulation, interpolation, and rendering
-            self.step_frame(dt)
-
-            self._frame_counter += 1
-            if self.config.max_frames is not None and self._frame_counter >= self.config.max_frames:
-                self.is_running = False
-                break
-
-        self.shutdown()
+                self._frame_counter += 1
+                if self.config.max_frames is not None and self._frame_counter >= self.config.max_frames:
+                    self.is_running = False
+                    break
+        finally:
+            self.shutdown()
 
     def shutdown(self) -> None:
         """Cleans up all modules, world geometry, physics bodies, and window context."""
         for m in reversed(self._modules):
-            m.on_detach(self)
+            try:
+                m.on_detach(self)
+            except Exception:
+                pass
         self._modules.clear()
 
         if self.world_builder is not None:

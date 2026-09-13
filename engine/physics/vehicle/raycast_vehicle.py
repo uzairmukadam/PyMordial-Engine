@@ -297,15 +297,19 @@ class RaycastVehicle:
 
             max_ray_dist = w_cfg.suspension_rest_length + w_cfg.radius
 
-            hit = self.physics.raycast(
-                (ray_ox, ray_oy, ray_oz),
-                (down_x, down_y, down_z),
+            hit = self.physics.cast_ray_raw(
+                ray_ox,
+                ray_oy,
+                ray_oz,
+                down_x,
+                down_y,
+                down_z,
                 max_distance=max_ray_dist,
                 solid=True,
             )
 
             if hit is not None and hit[0] != self.entity_id:
-                _hit_ent, dist_from_ray_origin, (nx, ny, nz) = hit
+                _hit_ent, dist_from_ray_origin, nx, ny, nz = hit
                 effective_dist = dist_from_ray_origin + chassis_half_y
                 susp_len = max(0.0, effective_dist - w_cfg.radius)
 

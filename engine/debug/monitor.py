@@ -101,18 +101,20 @@ class SystemMonitor:
         # Instant FPS
         self.fps = 1000.0 / dt_ms if dt_ms > 0.0 else 60.0
 
-        # Compute summary statistics over rolling history window
-        active_count = min(self.total_frames, self.history_size)
-        active_window = self.frame_times_ms[:active_count]
+        # Compute summary statistics over rolling history window periodically (every 10 frames
+        # or startup frames) to eliminate redundant percentile sorting overhead at high frame rates
+        if self.total_frames < 10 or self.total_frames % 10 == 0:
+            active_count = min(self.total_frames, self.history_size)
+            active_window = self.frame_times_ms[:active_count]
 
-        self.avg_frame_time_ms = float(np.mean(active_window))
-        self.min_frame_time_ms = float(np.min(active_window))
-        self.max_frame_time_ms = float(np.max(active_window))
-        self.avg_fps = 1000.0 / self.avg_frame_time_ms if self.avg_frame_time_ms > 0 else 60.0
+            self.avg_frame_time_ms = float(np.mean(active_window))
+            self.min_frame_time_ms = float(np.min(active_window))
+            self.max_frame_time_ms = float(np.max(active_window))
+            self.avg_fps = 1000.0 / self.avg_frame_time_ms if self.avg_frame_time_ms > 0 else 60.0
 
-        # 1% Low FPS (99th percentile of frame time latency)
-        p99_time = float(np.percentile(active_window, 99))
-        self.one_percent_low_fps = 1000.0 / p99_time if p99_time > 0 else self.avg_fps
+            # 1% Low FPS (99th percentile of frame time latency)
+            p99_time = float(np.percentile(active_window, 99))
+            self.one_percent_low_fps = 1000.0 / p99_time if p99_time > 0 else self.avg_fps
 
     def get_resource_summary(
         self,

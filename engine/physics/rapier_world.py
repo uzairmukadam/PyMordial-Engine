@@ -301,8 +301,8 @@ class PhysicsManager:
         else:
             sync_results = self.world.sync_transforms(self._tracked_entities)
             curr_physics = ecs.rigid_body_state[1]
-            for ent_id, px, py, pz, qx, qy, qz, qw in sync_results:
-                dense_idx = pool.get_dense_index(ent_id)
+            for i, (ent_id, px, py, pz, qx, qy, qz, qw) in enumerate(sync_results):
+                dense_idx = dense_indices[i] if i < len(dense_indices) else pool.get_dense_index(ent_id)
                 if dense_idx >= 0:
                     curr_physics[dense_idx, 0] = px
                     curr_physics[dense_idx, 1] = py
@@ -311,6 +311,32 @@ class PhysicsManager:
                     curr_physics[dense_idx, 4] = qy
                     curr_physics[dense_idx, 5] = qz
                     curr_physics[dense_idx, 6] = qw
+
+    def cast_ray_raw(
+        self,
+        ox: float,
+        oy: float,
+        oz: float,
+        dx: float,
+        dy: float,
+        dz: float,
+        max_distance: float = 1000.0,
+        solid: bool = True,
+    ) -> Optional[tuple[int, float, float, float, float]]:
+        """Casts a ray using scalar coordinates and returns (hit_entity_id, dist, nx, ny, nz) or None.
+
+        Zero-allocation routine avoiding tuple creation on ray invocation.
+        """
+        return self.world.cast_ray(
+            float(ox),
+            float(oy),
+            float(oz),
+            float(dx),
+            float(dy),
+            float(dz),
+            float(max_distance),
+            solid,
+        )
 
     def raycast(
         self,

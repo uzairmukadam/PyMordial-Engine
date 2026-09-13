@@ -398,6 +398,7 @@ class DebugMenu:
                 if self.config_filepath is not None:
                     saved = self.engine_tweaks.save_to_file(self.config_filepath)
                 if saved:
+                    print(f"[INFO ] [DebugMenu] Saved configuration to {self.config_filepath}")
                     self.toast.show("Configuration saved to game directory", duration=2.5, color=(56, 189, 248))
                 else:
                     self.toast.show("Configuration saved to memory", duration=2.0, color=(147, 197, 253))
