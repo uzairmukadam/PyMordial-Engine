@@ -194,6 +194,12 @@ class RaycastVehicle:
             return (float(rb_state[dense_idx, 0]), float(rb_state[dense_idx, 1]), float(rb_state[dense_idx, 2]))
         return (float(self._chassis_pos[0]), float(self._chassis_pos[1]), float(self._chassis_pos[2]))
 
+    @property
+    def velocity(self) -> tuple[float, float, float]:
+        """Returns current linear velocity of the chassis."""
+        vx, vy, vz = self.physics.get_linvel(self.entity_id)
+        return (float(vx), float(vy), float(vz))
+
     def set_surface_friction(self, mult: float) -> None:
         """Scales tire surface grip (e.g. 1.0 for dry road, 0.65 for wet rain road)."""
         self.surface_friction_mult = max(0.1, float(mult))
