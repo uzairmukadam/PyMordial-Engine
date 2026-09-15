@@ -218,6 +218,153 @@ class PhysicsManager:
                 float(radius),
             )
 
+    def attach_cylinder_collider(
+        self,
+        entity_id: int,
+        half_height: float,
+        radius: float,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
+        """Attaches a cylinder collider (Y-axis aligned) to an entity's rigid body."""
+        try:
+            self.world.attach_cylinder_collider(
+                entity_id,
+                float(half_height),
+                float(radius),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_cylinder_collider(entity_id, float(half_height), float(radius))
+
+    def attach_cone_collider(
+        self,
+        entity_id: int,
+        half_height: float,
+        radius: float,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
+        """Attaches a cone collider (Y-axis aligned, apex pointing +Y) to an entity's rigid body."""
+        try:
+            self.world.attach_cone_collider(
+                entity_id,
+                float(half_height),
+                float(radius),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_cone_collider(entity_id, float(half_height), float(radius))
+
+    def attach_plane_collider(
+        self,
+        entity_id: int,
+        half_x: float,
+        half_z: float,
+        thickness: float = 0.05,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
+        """Attaches a planar slab collider (horizontal in X-Z plane) to an entity's rigid body."""
+        try:
+            self.world.attach_plane_collider(
+                entity_id,
+                float(half_x),
+                float(half_z),
+                thickness=float(thickness),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_plane_collider(entity_id, float(half_x), float(half_z))
+
+    def attach_round_box_collider(
+        self,
+        entity_id: int,
+        half_x: float,
+        half_y: float,
+        half_z: float,
+        border_radius: float = 0.05,
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
+        """Attaches a beveled rounded box collider to an entity's rigid body."""
+        try:
+            self.world.attach_round_box_collider(
+                entity_id,
+                float(half_x),
+                float(half_y),
+                float(half_z),
+                float(border_radius),
+                density=float(density) if density is not None else None,
+                friction=float(friction) if friction is not None else None,
+                restitution=float(restitution) if restitution is not None else None,
+            )
+        except TypeError:
+            self.world.attach_round_box_collider(
+                entity_id, float(half_x), float(half_y), float(half_z), float(border_radius)
+            )
+
+    def attach_primitive_collider(
+        self,
+        entity_id: int,
+        shape_type: str,
+        dimensions: tuple[float, ...] = (1.0, 1.0, 1.0),
+        density: float | None = None,
+        friction: float | None = None,
+        restitution: float | None = None,
+    ) -> None:
+        """Unified primitive shape collider dispatcher.
+
+        Args:
+            entity_id: Target entity ID with rigid body.
+            shape_type: "box"|"cube", "sphere", "capsule", "cylinder", "cone", "plane".
+            dimensions: Shape-specific extents:
+                - "box" / "cube": (half_x, half_y, half_z)
+                - "sphere": (radius,)
+                - "capsule": (half_height, radius)
+                - "cylinder": (half_height, radius)
+                - "cone": (half_height, radius)
+                - "plane": (half_x, half_z, thickness)
+        """
+        shape = shape_type.lower()
+        if shape in ("box", "cube"):
+            hx = dimensions[0]
+            hy = dimensions[1] if len(dimensions) > 1 else dimensions[0]
+            hz = dimensions[2] if len(dimensions) > 2 else dimensions[0]
+            self.attach_box_collider(entity_id, hx, hy, hz, density, friction, restitution)
+        elif shape == "sphere":
+            r = dimensions[0]
+            self.attach_sphere_collider(entity_id, r, density, friction, restitution)
+        elif shape == "capsule":
+            hh = dimensions[0]
+            r = dimensions[1] if len(dimensions) > 1 else dimensions[0] * 0.5
+            self.attach_capsule_collider(entity_id, hh, r, density, friction, restitution)
+        elif shape == "cylinder":
+            hh = dimensions[0]
+            r = dimensions[1] if len(dimensions) > 1 else dimensions[0] * 0.5
+            self.attach_cylinder_collider(entity_id, hh, r, density, friction, restitution)
+        elif shape == "cone":
+            hh = dimensions[0]
+            r = dimensions[1] if len(dimensions) > 1 else dimensions[0] * 0.5
+            self.attach_cone_collider(entity_id, hh, r, density, friction, restitution)
+        elif shape == "plane":
+            hx = dimensions[0]
+            hz = dimensions[1] if len(dimensions) > 1 else dimensions[0]
+            th = dimensions[2] if len(dimensions) > 2 else 0.05
+            self.attach_plane_collider(entity_id, hx, hz, th, density, friction, restitution)
+        else:
+            raise ValueError(f"Unsupported primitive shape type: {shape_type}")
+
     def get_mass(self, entity_id: int) -> float:
         """Returns the mass of an entity's rigid body in kilograms."""
         return float(self.world.get_mass(entity_id))

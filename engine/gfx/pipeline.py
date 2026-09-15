@@ -850,6 +850,7 @@ class RenderPipeline:
         self.ao_pass.execute(ctx)
 
         # ---- PASS 4: Clustered Dynamic Local Lights (SSBO 3) ----
+        self.lights_pass.execute(ctx)
         # ---- PASS 5: Global Illumination (SSGI + LPV) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssgi_pass.execute(ctx)
@@ -1070,6 +1071,9 @@ class RenderPipeline:
 
         # Store current ViewProjection for next frame's motion vectors (zero-allocation)
         np.copyto(self._prev_vp_mat, self._vp_mat)
+
+        # Clear dynamic point lights for the next frame
+        self.lights_pass.clear()
 
     @property
     def output_texture_id(self) -> int:

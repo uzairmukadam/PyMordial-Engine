@@ -26,6 +26,9 @@ class PropType(str, Enum):
     CRATE = "crate"
     SPHERE = "sphere"
     BARREL = "barrel"
+    CYLINDER = "cylinder"
+    CONE = "cone"
+    PLANE = "plane"
     DEBRIS = "debris"
 
 
@@ -192,6 +195,110 @@ class InteractivePropManager:
             is_destructible=is_destructible,
             health=health,
             max_health=health,
+        )
+        self._props[ent_id] = prop
+        return ent_id
+
+    def spawn_cylinder(
+        self,
+        position: tuple[float, float, float],
+        half_height: float = 0.5,
+        radius: float = 0.35,
+        color: tuple[float, float, float] = (0.85, 0.55, 0.18),
+        is_destructible: bool = True,
+        health: float = 60.0,
+        density: float = 95.0,
+    ) -> int:
+        """Spawns a dynamic rigid cylinder prop with physical cylinder collider."""
+        ent_id = self.ecs.create_entity(
+            position=position,
+            scale=(radius, half_height * 2.0, radius),
+            color=color,
+            roughness=0.45,
+            metallic=0.4,
+        )
+        self.physics.create_body(ent_id, body_type="dynamic", position=position)
+        self.physics.attach_cylinder_collider(
+            ent_id, half_height, radius, density=density, friction=0.65, restitution=0.15
+        )
+        self.physics.set_damping(ent_id, linear=0.8, angular=1.0)
+        prop = PropInstance(
+            entity_id=ent_id,
+            prop_type=PropType.CYLINDER,
+            shape_name="cylinder",
+            scale=(radius, half_height * 2.0, radius),
+            is_destructible=is_destructible,
+            health=health,
+            max_health=health,
+        )
+        self._props[ent_id] = prop
+        return ent_id
+
+    def spawn_cone(
+        self,
+        position: tuple[float, float, float],
+        half_height: float = 0.4,
+        radius: float = 0.25,
+        color: tuple[float, float, float] = (1.0, 0.4, 0.05),
+        is_destructible: bool = True,
+        health: float = 30.0,
+        density: float = 40.0,
+    ) -> int:
+        """Spawns a dynamic traffic cone prop with physical cone collider."""
+        ent_id = self.ecs.create_entity(
+            position=position,
+            scale=(radius * 2.0, half_height * 2.0, radius * 2.0),
+            color=color,
+            roughness=0.7,
+            metallic=0.1,
+        )
+        self.physics.create_body(ent_id, body_type="dynamic", position=position)
+        self.physics.attach_cone_collider(
+            ent_id, half_height, radius, density=density, friction=0.75, restitution=0.20
+        )
+        self.physics.set_damping(ent_id, linear=0.9, angular=1.2)
+        prop = PropInstance(
+            entity_id=ent_id,
+            prop_type=PropType.CONE,
+            shape_name="cone",
+            scale=(radius * 2.0, half_height * 2.0, radius * 2.0),
+            is_destructible=is_destructible,
+            health=health,
+            max_health=health,
+        )
+        self._props[ent_id] = prop
+        return ent_id
+
+    def spawn_plane_barrier(
+        self,
+        position: tuple[float, float, float],
+        half_x: float = 2.0,
+        half_z: float = 1.0,
+        thickness: float = 0.1,
+        color: tuple[float, float, float] = (0.7, 0.7, 0.7),
+        is_static: bool = True,
+    ) -> int:
+        """Spawns a physical planar slab barrier or road plate."""
+        body_type = "static" if is_static else "dynamic"
+        ent_id = self.ecs.create_entity(
+            position=position,
+            scale=(half_x * 2.0, thickness, half_z * 2.0),
+            color=color,
+            roughness=0.8,
+            metallic=0.2,
+        )
+        self.physics.create_body(ent_id, body_type=body_type, position=position)
+        self.physics.attach_plane_collider(
+            ent_id, half_x, half_z, thickness=thickness, friction=0.80, restitution=0.05
+        )
+        prop = PropInstance(
+            entity_id=ent_id,
+            prop_type=PropType.PLANE,
+            shape_name="cube",
+            scale=(half_x * 2.0, thickness, half_z * 2.0),
+            is_destructible=False,
+            health=9999.0,
+            max_health=9999.0,
         )
         self._props[ent_id] = prop
         return ent_id
@@ -475,6 +582,8 @@ class InteractivePropManager:
         alloc_cube: MeshAllocation,
         alloc_sphere: MeshAllocation | None = None,
         alloc_capsule: MeshAllocation | None = None,
+        alloc_cylinder: MeshAllocation | None = None,
+        alloc_cone: MeshAllocation | None = None,
     ) -> list[tuple[MeshAllocation, int, int, bool]]:
         """Generates compact MDI draw batch commands for all active props."""
         batches: list[tuple[MeshAllocation, int, int, bool]] = []
@@ -490,6 +599,10 @@ class InteractivePropManager:
                 alloc = alloc_sphere
             elif prop.shape_name == "capsule" and alloc_capsule is not None:
                 alloc = alloc_capsule
+            elif prop.shape_name == "cylinder" and alloc_cylinder is not None:
+                alloc = alloc_cylinder
+            elif prop.shape_name == "cone" and alloc_cone is not None:
+                alloc = alloc_cone
             else:
                 alloc = alloc_cube
 

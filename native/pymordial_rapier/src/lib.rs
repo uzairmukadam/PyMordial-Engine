@@ -195,6 +195,126 @@ impl PyRapierWorld {
         Ok(())
     }
 
+    /// Attach a cylinder collider (Y-axis aligned)
+    #[pyo3(signature = (entity_id, half_height, radius, density=None, friction=None, restitution=None))]
+    pub fn attach_cylinder_collider(
+        &mut self,
+        entity_id: u32,
+        half_height: f32,
+        radius: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let mut builder = ColliderBuilder::cylinder(half_height, radius);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
+        self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
+        Ok(())
+    }
+
+    /// Attach a cone collider (Y-axis aligned, apex pointing +Y)
+    #[pyo3(signature = (entity_id, half_height, radius, density=None, friction=None, restitution=None))]
+    pub fn attach_cone_collider(
+        &mut self,
+        entity_id: u32,
+        half_height: f32,
+        radius: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let mut builder = ColliderBuilder::cone(half_height, radius);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
+        self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
+        Ok(())
+    }
+
+    /// Attach a planar ground/wall slab collider
+    #[pyo3(signature = (entity_id, half_x, half_z, thickness=None, density=None, friction=None, restitution=None))]
+    pub fn attach_plane_collider(
+        &mut self,
+        entity_id: u32,
+        half_x: f32,
+        half_z: f32,
+        thickness: Option<f32>,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let half_y = thickness.unwrap_or(0.05).max(0.001) * 0.5;
+        let mut builder = ColliderBuilder::cuboid(half_x, half_y, half_z);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
+        self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
+        Ok(())
+    }
+
+    /// Attach a rounded box collider with beveled edges
+    #[pyo3(signature = (entity_id, half_x, half_y, half_z, border_radius, density=None, friction=None, restitution=None))]
+    pub fn attach_round_box_collider(
+        &mut self,
+        entity_id: u32,
+        half_x: f32,
+        half_y: f32,
+        half_z: f32,
+        border_radius: f32,
+        density: Option<f32>,
+        friction: Option<f32>,
+        restitution: Option<f32>,
+    ) -> PyResult<()> {
+        let handle = self.handles.get(&entity_id).ok_or_else(|| {
+            pyo3::exceptions::PyKeyError::new_err(format!("Entity {} has no rigid body", entity_id))
+        })?;
+        let mut builder = ColliderBuilder::round_cuboid(half_x, half_y, half_z, border_radius);
+        if let Some(d) = density {
+            builder = builder.density(d);
+        }
+        if let Some(f) = friction {
+            builder = builder.friction(f);
+        }
+        if let Some(r) = restitution {
+            builder = builder.restitution(r);
+        }
+        let collider = builder.build();
+        self.collider_set.insert_with_parent(collider, *handle, &mut self.rigid_body_set);
+        Ok(())
+    }
+
     /// Get mass of rigid body in kilograms
     pub fn get_mass(&self, entity_id: u32) -> PyResult<f32> {
         let handle = self.handles.get(&entity_id).ok_or_else(|| {

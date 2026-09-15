@@ -65,6 +65,11 @@ class WheelRuntimeState:
         "spin_angle",
         "angular_velocity",
         "world_pos",
+        "lateral_slip",
+        "longitudinal_slip",
+        "slip_ratio",
+        "slip_angle",
+        "skidding",
     )
 
     def __init__(self, rest_length: float) -> None:
@@ -79,6 +84,11 @@ class WheelRuntimeState:
         self.spin_angle: float = 0.0
         self.angular_velocity: float = 0.0
         self.world_pos = np.zeros(3, dtype=np.float32)
+        self.lateral_slip: float = 0.0
+        self.longitudinal_slip: float = 0.0
+        self.slip_ratio: float = 0.0
+        self.slip_angle: float = 0.0
+        self.skidding: bool = False
 
 
 class RaycastVehicle:
@@ -99,6 +109,17 @@ class RaycastVehicle:
         # Telemetry
         "current_speed_mps",
         "current_steer_angle",
+        # Realistic Powertrain & Telemetry
+        "current_gear",
+        "engine_rpm",
+        "turbo_boost",
+        "turbo_blowoff_triggered",
+        "drift_angle_deg",
+        "is_drifting",
+        "_prev_fwd_speed",
+        "_shift_timer",
+        "_accel_x_filtered",
+        "_prev_throttle",
         # Pre-allocated scratch buffers
         "_rot_mat",
         "_chassis_pos",
@@ -147,6 +168,18 @@ class RaycastVehicle:
         # Telemetry
         self.current_speed_mps: float = 0.0
         self.current_steer_angle: float = 0.0
+
+        # Realistic Powertrain & Telemetry
+        self.current_gear: int = 1
+        self.engine_rpm: float = 800.0
+        self.turbo_boost: float = 0.0
+        self.turbo_blowoff_triggered: bool = False
+        self.drift_angle_deg: float = 0.0
+        self.is_drifting: bool = False
+        self._prev_fwd_speed: float = 0.0
+        self._shift_timer: float = 0.0
+        self._accel_x_filtered: float = 0.0
+        self._prev_throttle: float = 0.0
 
         # Pre-allocated buffers for zero allocations in fixed_update
         self._rot_mat = np.zeros((3, 3), dtype=np.float32)
@@ -254,6 +287,71 @@ class RaycastVehicle:
         fwd_speed = float(np.dot(self._chassis_linvel, self._forward_vec))
         self.current_speed_mps = fwd_speed
 
+        # Longitudinal weight transfer estimation (dive under braking, squat under acceleration)
+        raw_accel_x = (fwd_speed - self._prev_fwd_speed) / dt if dt > 0.0 else 0.0
+        self._prev_fwd_speed = fwd_speed
+        accel_alpha = min(1.0, dt * 8.0)
+        self._accel_x_filtered += (raw_accel_x - self._accel_x_filtered) * accel_alpha
+
+        wheelbase = 2.7
+        cg_height = 0.38
+        weight_transfer = self.config.chassis_mass * self._accel_x_filtered * (cg_height / wheelbase)
+        max_wt = self.config.chassis_mass * 9.81 * 0.40
+        weight_transfer = max(-max_wt, min(max_wt, weight_transfer))
+
+        # Powertrain 5-speed transmission simulation
+        gear_ratios = (3.6, 2.1, 1.45, 1.05, 0.82)
+        rev_ratio = 3.5
+        final_drive = 3.7
+
+        if self._shift_timer > 0.0:
+            self._shift_timer -= dt
+
+        # Reverse vs Forward gear selection
+        if self.throttle < -0.05 and fwd_speed < 1.0:
+            self.current_gear = -1
+        elif self.current_gear == -1 and fwd_speed > -0.5 and self.throttle >= 0.0:
+            self.current_gear = 1
+
+        curr_ratio = rev_ratio * final_drive if self.current_gear == -1 else gear_ratios[self.current_gear - 1] * final_drive
+
+        # Calculate wheel-based RPM
+        num_wheels = len(self.config.wheels)
+        driven_wheel_speed = abs(fwd_speed)
+        wheel_rad = max(0.1, self.config.wheels[2].radius if num_wheels > 2 else 0.35)
+        rpm_from_speed = (driven_wheel_speed / wheel_rad) * curr_ratio * (60.0 / (2.0 * math.pi))
+
+        # Smooth clutch / torque converter slip blend
+        clutch_slip = max(0.0, 1.0 - driven_wheel_speed / 8.0)
+        target_rpm = max(800.0, rpm_from_speed + abs(self.throttle) * 2800.0 * clutch_slip)
+
+        # Smooth RPM response
+        rpm_rate = 14.0 if abs(self.throttle) > 0.1 else 8.0
+        self.engine_rpm += (target_rpm - self.engine_rpm) * min(1.0, dt * rpm_rate)
+        self.engine_rpm = max(800.0, min(7200.0, self.engine_rpm))
+
+        # Automatic transmission shifting logic (load-dependent shift threshold)
+        if self._shift_timer <= 0.0 and self.current_gear > 0:
+            upshift_rpm = 3400.0 + abs(self.throttle) * 2200.0
+            if self.engine_rpm > upshift_rpm and self.current_gear < 5 and fwd_speed > 4.0:
+                self.current_gear += 1
+                self._shift_timer = 0.20
+                self.engine_rpm *= 0.68
+            elif self.engine_rpm < 2200.0 and self.current_gear > 1 and fwd_speed < 45.0:
+                self.current_gear -= 1
+                self._shift_timer = 0.15
+                self.engine_rpm = min(6500.0, self.engine_rpm * 1.35)
+
+        # Turbo Boost Dynamics
+        self.turbo_blowoff_triggered = False
+        if abs(self.throttle) > 0.4 and self.engine_rpm > 2200.0:
+            self.turbo_boost = min(1.2, self.turbo_boost + dt * 1.8)
+        else:
+            if self._prev_throttle > 0.5 and abs(self.throttle) < 0.15 and self.turbo_boost > 0.25:
+                self.turbo_blowoff_triggered = True
+            self.turbo_boost = max(0.0, self.turbo_boost - dt * 3.5)
+        self._prev_throttle = self.throttle
+
         # 3. Smooth steering interpolation with speed-sensitive dynamic lock
         speed_abs = abs(fwd_speed)
         speed_factor = 1.0 / (1.0 + speed_abs * 0.035)
@@ -267,7 +365,6 @@ class RaycastVehicle:
             self.current_steer_angle += math.copysign(max_steer_step, steer_diff)
 
         # 4. Suspension Raycasting and Spring Forces
-        num_wheels = len(self.config.wheels)
         # Blend local chassis down with world down for stability during body roll
         down_x = -self._up_vec[0] * 0.65
         down_y = -self._up_vec[1] * 0.65 - 0.35
@@ -310,7 +407,6 @@ class RaycastVehicle:
             )
 
             # Ray origin starts safely just below the bottom of the chassis collider
-            # oy is the local vertical offset of the wheel attach point (already negative)
             d_to_bottom = max(0.01, chassis_half_y + oy)
             ray_start_offset = d_to_bottom + 0.01
 
@@ -385,10 +481,22 @@ class RaycastVehicle:
             else:
                 w_state.steer_angle = 0.0
 
-        # 5. Anti-Roll Bar Stabilization across axles (Front: 0&1, Rear: 2&3)
-        # Extra force added to compressed wheel to lift chassis back to level
+        # 5. Anti-Roll Bar Stabilization & Longitudinal Weight Transfer
+        # Weight transfer shifts load between front (0, 1) and rear (2, 3) axles
         if num_wheels >= 4:
-            # Front Axle
+            f_wt = weight_transfer * 0.5
+            # Front wheels lose load on acceleration, gain load on braking (dive)
+            if self.wheel_states[0].is_grounded:
+                self.wheel_states[0].normal_force = max(0.0, self.wheel_states[0].normal_force - f_wt)
+            if self.wheel_states[1].is_grounded:
+                self.wheel_states[1].normal_force = max(0.0, self.wheel_states[1].normal_force - f_wt)
+            # Rear wheels gain load on acceleration (squat), lose load on braking
+            if self.wheel_states[2].is_grounded:
+                self.wheel_states[2].normal_force = max(0.0, self.wheel_states[2].normal_force + f_wt)
+            if self.wheel_states[3].is_grounded:
+                self.wheel_states[3].normal_force = max(0.0, self.wheel_states[3].normal_force + f_wt)
+
+            # Front Axle ARB
             f_diff = self.wheel_states[0].compression - self.wheel_states[1].compression
             f_arb = f_diff * self.config.anti_roll_stiffness
             if self.wheel_states[0].is_grounded:
@@ -396,7 +504,7 @@ class RaycastVehicle:
             if self.wheel_states[1].is_grounded:
                 self.wheel_states[1].normal_force = max(0.0, self.wheel_states[1].normal_force - f_arb)
 
-            # Rear Axle
+            # Rear Axle ARB
             r_diff = self.wheel_states[2].compression - self.wheel_states[3].compression
             r_arb = r_diff * self.config.anti_roll_stiffness
             if self.wheel_states[2].is_grounded:
@@ -441,7 +549,6 @@ class RaycastVehicle:
             self._r_vec[2] = w_state.hit_point[2] - self._chassis_pos[2]
 
             # Linear velocity at contact point: v_contact = v_chassis + w x r
-            # Cross product w x r:
             cx = self._chassis_angvel[1] * self._r_vec[2] - self._chassis_angvel[2] * self._r_vec[1]
             cy = self._chassis_angvel[2] * self._r_vec[0] - self._chassis_angvel[0] * self._r_vec[2]
             cz = self._chassis_angvel[0] * self._r_vec[1] - self._chassis_angvel[1] * self._r_vec[0]
@@ -457,16 +564,40 @@ class RaycastVehicle:
             w_state.angular_velocity = v_forward / max(0.05, w_cfg.radius)
             w_state.spin_angle += w_state.angular_velocity * dt
 
-            # C. Lateral Friction (Counteracting slip)
+            # Slip angles and slip ratios
+            slip_angle = -math.atan2(v_lateral, max(0.5, abs(v_forward)))
+            slip_ratio = (w_state.angular_velocity * w_cfg.radius - v_forward) / max(1.0, abs(v_forward))
+
+            w_state.lateral_slip = abs(v_lateral)
+            w_state.longitudinal_slip = abs(slip_ratio)
+            w_state.slip_ratio = slip_ratio
+            w_state.slip_angle = slip_angle
+            w_state.skidding = (abs(v_lateral) > 2.0) or (self.handbrake and abs(v_forward) > 2.0) or (abs(slip_ratio) > 0.5)
+
+            # C. Lateral Friction (Progressive Pacejka Brush Slip Model)
             lateral_grip = effective_surface_grip
             if not w_cfg.is_steerable and self.handbrake:
                 # Rear wheels locked under handbrake: trigger drift slip
                 lateral_grip *= self.config.drift_friction_factor
 
-            # Friction limit based on normal load (Coulomb / Brush friction)
-            max_lateral_force = fn * lateral_grip
+            # Normalized slip angle parameter
+            s_norm = abs(math.tan(slip_angle)) / 0.18
+            if s_norm < 1.0:
+                pacejka_factor = math.sin(s_norm * 1.570796)
+            else:
+                # Sliding dynamic friction plateau (~78% of peak)
+                pacejka_factor = 1.0 - 0.22 * min(1.0, (s_norm - 1.0) / 2.0)
+
+            max_lat_force = fn * lateral_grip * pacejka_factor
             desired_lateral_force = -v_lateral * (self.config.chassis_mass / num_wheels) / max(0.01, dt * 2.0)
-            f_lat = max(-max_lateral_force, min(max_lateral_force, desired_lateral_force))
+            f_lat = max(-max_lat_force, min(max_lat_force, desired_lateral_force))
+
+            # Small velocity deadzone to eliminate zero-speed oscillation
+            if abs(v_lateral) < 0.08 and abs(v_forward) < 0.1:
+                f_lat *= (abs(v_lateral) / 0.08)
+
+            # Counter-Steering Caster Aligning Torque from pneumatic trail
+            aligning_torque = -f_lat * 0.05
 
             # D. Longitudinal Force (Powertrain & Brakes)
             f_long = 0.0
@@ -480,20 +611,37 @@ class RaycastVehicle:
             elif self.config.drive_type == DriveType.AWD:
                 is_driven_wheel = True
 
-            # Number of driven wheels on the vehicle
             num_driven = 2 if self.config.drive_type in (DriveType.RWD, DriveType.FWD) else num_wheels
+
+            # Gear power multiplier and turbo boost
+            gear_ratio_val = rev_ratio if self.current_gear == -1 else gear_ratios[self.current_gear - 1]
+            gear_mult = max(0.50, min(1.35, 0.45 + 0.55 * (gear_ratio_val / 3.6)))
+            if self._shift_timer > 0.0:
+                gear_mult *= 0.20  # momentary power cut during shift
+            boost_mult = 1.0 + self.turbo_boost * 0.32
 
             if is_driven_wheel and abs(self.throttle) > 0.01:
                 if self.throttle > 0.0:
                     if fwd_speed < self.config.top_speed_mps:
-                        # Falloff as top speed is approached
                         speed_ratio = max(0.0, fwd_speed / self.config.top_speed_mps)
                         power_curve = 1.0 - speed_ratio * speed_ratio
-                        f_long += self.throttle * self.config.engine_torque * power_curve * (1.0 / num_driven)
+                        f_long += (
+                            self.throttle
+                            * self.config.engine_torque
+                            * power_curve
+                            * gear_mult
+                            * boost_mult
+                            * (1.0 / num_driven)
+                        )
                 else:
                     # Reverse
                     if fwd_speed > -15.0:
                         f_long += self.throttle * self.config.reverse_torque * (1.0 / num_driven)
+
+            # Engine braking when off-throttle
+            if abs(self.throttle) < 0.02 and abs(v_forward) > 1.0 and not self.handbrake:
+                engine_brake = 350.0 * (self.engine_rpm / 3500.0) * (1.0 / num_wheels)
+                f_long -= math.copysign(engine_brake, v_forward)
 
             # Foot Braking
             if self.brake_input > 0.01 and abs(v_forward) > 0.05:
@@ -519,12 +667,12 @@ class RaycastVehicle:
             self._impulse_scratch[1] = f_total_y * dt
             self._impulse_scratch[2] = f_total_z * dt
 
-            # Torque Impulse: Tau = r x J
+            # Torque Impulse: Tau = r x J + aligning torque on yaw
             rx, ry, rz = self._r_vec[0], self._r_vec[1], self._r_vec[2]
             jx, jy, jz = self._impulse_scratch[0], self._impulse_scratch[1], self._impulse_scratch[2]
 
             self._torque_scratch[0] = ry * jz - rz * jy
-            self._torque_scratch[1] = rz * jx - rx * jz
+            self._torque_scratch[1] = (rz * jx - rx * jz) + aligning_torque * dt
             self._torque_scratch[2] = rx * jy - ry * jx
 
             # Apply to Rapier rigid body
@@ -555,6 +703,15 @@ class RaycastVehicle:
             self._impulse_scratch[1] = -downforce * dt
             self._impulse_scratch[2] = 0.0
             self.physics.apply_impulse(self.entity_id, self._impulse_scratch)
+
+        # 9. Drift Telemetry & Counter-Steering Stabilizer
+        v_lat_chassis = float(np.dot(self._chassis_linvel, self._right_vec))
+        if fwd_speed > 3.0:
+            self.drift_angle_deg = math.degrees(math.atan2(v_lat_chassis, fwd_speed))
+            self.is_drifting = (abs(self.drift_angle_deg) > 12.0) and (fwd_speed > 5.0)
+        else:
+            self.drift_angle_deg = 0.0
+            self.is_drifting = False
 
     def get_wheel_transform(self, wheel_idx: int) -> tuple[np.ndarray, np.ndarray]:
         """Returns the world position and orientation quaternion for a visual wheel mesh.

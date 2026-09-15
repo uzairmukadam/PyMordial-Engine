@@ -51,6 +51,8 @@ class MegaBuffer:
         self._add_sphere_primitive()
         self._add_plane_primitive()
         self._add_capsule_primitive()
+        self._add_cylinder_primitive()
+        self._add_cone_primitive()
         self._bake_buffers()
 
     def _add_mesh(
@@ -323,6 +325,125 @@ class MegaBuffer:
 
         verts = np.array(verts_list, dtype=np.float32).reshape(-1, 12)
         self._add_mesh("capsule", verts, np.array(indices, dtype=np.uint32))
+
+    def _add_cylinder_primitive(
+        self,
+        radius: float = 1.0,
+        half_width: float = 0.5,
+        sectors: int = 32,
+    ) -> None:
+        """Generates an X-axis aligned unit cylinder primitive (radius 1.0, width 1.0).
+
+        Designed specifically for vehicle wheels and dynamic physics cylinders:
+        - Sidewalls at x = -half_width and x = +half_width with flat disc caps.
+        - Outer cylindrical barrel with radial tread normals in Y-Z plane.
+        """
+        verts_list = []
+        indices = []
+
+        # 1. Barrel (tread) vertices: 2 rings at -half_width and +half_width
+        barrel_start = 0
+        for j in range(sectors + 1):
+            theta = j * 2.0 * math.pi / sectors
+            cos_t = math.cos(theta)
+            sin_t = math.sin(theta)
+            y = radius * cos_t
+            z = radius * sin_t
+            ny = cos_t
+            nz = sin_t
+            u = j / sectors
+
+            # Ring 0: -half_width (Left)
+            verts_list.extend([-half_width, y, z, 0.0, ny, nz, u, 0.0, 0.0, -sin_t, cos_t, 1.0])
+            # Ring 1: +half_width (Right)
+            verts_list.extend([half_width, y, z, 0.0, ny, nz, u, 1.0, 0.0, -sin_t, cos_t, 1.0])
+
+        for j in range(sectors):
+            k1 = barrel_start + j * 2
+            k2 = k1 + 2
+            indices.extend([k1, k2, k1 + 1])
+            indices.extend([k1 + 1, k2, k2 + 1])
+
+        # 2. Left Cap (-X, normal: -1, 0, 0)
+        left_center_idx = len(verts_list) // 12
+        verts_list.extend([-half_width, 0.0, 0.0, -1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 1.0, 1.0])
+        left_rim_start = left_center_idx + 1
+        for j in range(sectors + 1):
+            theta = j * 2.0 * math.pi / sectors
+            y = radius * math.cos(theta)
+            z = radius * math.sin(theta)
+            u = 0.5 - 0.5 * math.cos(theta)
+            v = 0.5 + 0.5 * math.sin(theta)
+            verts_list.extend([-half_width, y, z, -1.0, 0.0, 0.0, u, v, 0.0, 0.0, 1.0, 1.0])
+
+        for j in range(sectors):
+            indices.extend([left_center_idx, left_rim_start + j + 1, left_rim_start + j])
+
+        # 3. Right Cap (+X, normal: +1, 0, 0)
+        right_center_idx = len(verts_list) // 12
+        verts_list.extend([half_width, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 1.0, 1.0])
+        right_rim_start = right_center_idx + 1
+        for j in range(sectors + 1):
+            theta = j * 2.0 * math.pi / sectors
+            y = radius * math.cos(theta)
+            z = radius * math.sin(theta)
+            u = 0.5 + 0.5 * math.cos(theta)
+            v = 0.5 + 0.5 * math.sin(theta)
+            verts_list.extend([half_width, y, z, 1.0, 0.0, 0.0, u, v, 0.0, 0.0, 1.0, 1.0])
+
+        for j in range(sectors):
+            indices.extend([right_center_idx, right_rim_start + j, right_rim_start + j + 1])
+
+        verts = np.array(verts_list, dtype=np.float32).reshape(-1, 12)
+        self._add_mesh("cylinder", verts, np.array(indices, dtype=np.uint32))
+
+    def _add_cone_primitive(
+        self,
+        radius: float = 0.5,
+        height: float = 1.0,
+        sectors: int = 24,
+    ) -> None:
+        """Generates a Y-axis aligned unit cone primitive (base at y=0, apex at y=height)."""
+        verts_list = []
+        indices = []
+
+        slope = math.sqrt(radius * radius + height * height)
+        ny_side = radius / slope
+        nr_side = height / slope
+
+        apex_idx = 0
+        verts_list.extend([0.0, height, 0.0, 0.0, 1.0, 0.0, 0.5, 1.0, 1.0, 0.0, 0.0, 1.0])
+        side_base_start = 1
+        for j in range(sectors + 1):
+            theta = j * 2.0 * math.pi / sectors
+            cos_t = math.cos(theta)
+            sin_t = math.sin(theta)
+            x = radius * cos_t
+            z = radius * sin_t
+            nx = nr_side * cos_t
+            nz = nr_side * sin_t
+            u = j / sectors
+            verts_list.extend([x, 0.0, z, nx, ny_side, nz, u, 0.0, -sin_t, 0.0, cos_t, 1.0])
+
+        for j in range(sectors):
+            indices.extend([apex_idx, side_base_start + j + 1, side_base_start + j])
+
+        bot_center_idx = len(verts_list) // 12
+        verts_list.extend([0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0])
+        bot_rim_start = bot_center_idx + 1
+        for j in range(sectors + 1):
+            theta = j * 2.0 * math.pi / sectors
+            x = radius * math.cos(theta)
+            z = radius * math.sin(theta)
+            u = 0.5 + 0.5 * math.cos(theta)
+            v = 0.5 + 0.5 * math.sin(theta)
+            verts_list.extend([x, 0.0, z, 0.0, -1.0, 0.0, u, v, 1.0, 0.0, 0.0, 1.0])
+
+        for j in range(sectors):
+            indices.extend([bot_center_idx, bot_rim_start + j, bot_rim_start + j + 1])
+
+        verts = np.array(verts_list, dtype=np.float32).reshape(-1, 12)
+        self._add_mesh("cone", verts, np.array(indices, dtype=np.uint32))
 
     def destroy(self) -> None:
         if self.vbo:
