@@ -52,7 +52,7 @@ uniform int u_SSDMEnabled = 1;
 uniform float u_SSDMScale = 0.05;
 uniform float u_SSDMMaxDistance = 30.0;
 uniform float u_SSDMTiling = 1.0;
-uniform float u_DispMidRadius = 25.0;
+uniform float u_DispMidRadius = 300.0;
 uniform float u_MaterialDispDepth[32];
 uniform float u_SSDMScaleMultiplier = 1.0;
 

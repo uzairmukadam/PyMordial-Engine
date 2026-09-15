@@ -755,9 +755,9 @@ class RenderPipeline:
                 if self._u_csm_tess_cascade_idx is not None:
                     self._u_csm_tess_cascade_idx.value = c
                 if self._u_csm_tess_near_radius is not None:
-                    self._u_csm_tess_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+                    self._u_csm_tess_near_radius.value = getattr(self.config, "disp_near_radius", 120.0)
                 if self._u_csm_tess_mid_radius is not None:
-                    self._u_csm_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+                    self._u_csm_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 300.0)
                 if self._u_csm_tess_max_level is not None:
                     self._u_csm_tess_max_level.value = getattr(self.config, "tess_max_level", 24.0)
                 if self._u_csm_tess_med_level is not None:
@@ -790,9 +790,9 @@ class RenderPipeline:
         if self._u_gbuffer_pom_self_shadow is not None:
             self._u_gbuffer_pom_self_shadow.value = 1 if getattr(self.config, "pom_self_shadow", True) else 0
         if self._u_gbuffer_disp_near_radius is not None:
-            self._u_gbuffer_disp_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+            self._u_gbuffer_disp_near_radius.value = getattr(self.config, "disp_near_radius", 120.0)
         if self._u_gbuffer_disp_mid_radius is not None:
-            self._u_gbuffer_disp_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+            self._u_gbuffer_disp_mid_radius.value = getattr(self.config, "disp_mid_radius", 300.0)
         self.texture_atlas.upload_depths(self.gbuffer_prog)
 
         is_wireframe = getattr(self.config, "wireframe", False)
@@ -811,9 +811,9 @@ class RenderPipeline:
                 if self._u_tess_frustum_cull is not None:
                     self._u_tess_frustum_cull.value = 1 if getattr(self.config, "frustum_cull_enabled", True) else 0
                 if self._u_tess_near_radius is not None:
-                    self._u_tess_near_radius.value = getattr(self.config, "disp_near_radius", 8.0)
+                    self._u_tess_near_radius.value = getattr(self.config, "disp_near_radius", 120.0)
                 if self._u_tess_mid_radius is not None:
-                    self._u_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 25.0)
+                    self._u_tess_mid_radius.value = getattr(self.config, "disp_mid_radius", 300.0)
                 if self._u_tess_max_level is not None:
                     self._u_tess_max_level.value = getattr(self.config, "tess_max_level", 24.0)
                 if self._u_tess_med_level is not None:
@@ -839,7 +839,7 @@ class RenderPipeline:
                 enabled=self.config.ssdm_enabled,
                 scale=getattr(self.config, "ssdm_scale", 1.0),
                 max_distance=getattr(self.config, "ssdm_max_distance", 30.0),
-                disp_mid_radius=getattr(self.config, "disp_mid_radius", 25.0),
+                disp_mid_radius=getattr(self.config, "disp_mid_radius", 300.0),
                 material_depths=self.texture_atlas.material_depths,
             )
 

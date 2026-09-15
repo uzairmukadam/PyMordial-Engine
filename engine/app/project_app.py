@@ -78,7 +78,8 @@ class ProjectApp:
 
 
         # 3. ECS & Native Rapier3D Physics
-        self.ecs = EntityManager(max_entities=1000)
+        max_ent = getattr(self.config, "max_entities", 50_000)
+        self.ecs = EntityManager(max_entities=max_ent)
         gx, gy, gz = self.config.gravity
         self.physics = PhysicsManager(gravity_x=gx, gravity_y=gy, gravity_z=gz)
 

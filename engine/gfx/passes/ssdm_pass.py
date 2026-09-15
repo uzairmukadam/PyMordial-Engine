@@ -122,7 +122,7 @@ class SSDMPass(RenderPass):
         scale: float = 1.0,
         max_distance: float = 30.0,
         tiling: float = 8.0,
-        disp_mid_radius: float = 25.0,
+        disp_mid_radius: float = 300.0,
         material_depths: np.ndarray | None = None,
     ) -> None:
         """Executes the SSDM pass."""

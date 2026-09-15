@@ -28,5 +28,6 @@ class ProjectConfig:
     max_frames: int | None = None
     asset_dir: Path | str | None = None
     screenshot: Path | str | None = None
+    max_entities: int = 50_000
     custom_settings: dict[str, object] = field(default_factory=dict)
 

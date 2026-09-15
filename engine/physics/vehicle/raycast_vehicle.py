@@ -309,10 +309,14 @@ class RaycastVehicle:
                 - self._forward_vec[2] * oz
             )
 
-            # Ray origin starts slightly below chassis bottom
-            ray_ox = self._wheel_attach_world[0] + down_x * chassis_half_y
-            ray_oy = self._wheel_attach_world[1] + down_y * chassis_half_y
-            ray_oz = self._wheel_attach_world[2] + down_z * chassis_half_y
+            # Ray origin starts safely just below the bottom of the chassis collider
+            # oy is the local vertical offset of the wheel attach point (already negative)
+            d_to_bottom = max(0.01, chassis_half_y + oy)
+            ray_start_offset = d_to_bottom + 0.01
+
+            ray_ox = self._wheel_attach_world[0] + down_x * ray_start_offset
+            ray_oy = self._wheel_attach_world[1] + down_y * ray_start_offset
+            ray_oz = self._wheel_attach_world[2] + down_z * ray_start_offset
 
             max_ray_dist = w_cfg.suspension_rest_length + w_cfg.radius
 
@@ -329,7 +333,7 @@ class RaycastVehicle:
 
             if hit is not None and hit[0] != self.entity_id:
                 _hit_ent, dist_from_ray_origin, nx, ny, nz = hit
-                effective_dist = dist_from_ray_origin + chassis_half_y
+                effective_dist = dist_from_ray_origin + ray_start_offset
                 susp_len = max(0.0, effective_dist - w_cfg.radius)
 
                 if susp_len <= w_cfg.suspension_rest_length + 1e-3:
@@ -342,6 +346,9 @@ class RaycastVehicle:
                     w_state.hit_point[0] = ray_ox + down_x * dist_from_ray_origin
                     w_state.hit_point[1] = ray_oy + down_y * dist_from_ray_origin
                     w_state.hit_point[2] = ray_oz + down_z * dist_from_ray_origin
+                    # Guard degenerate normal vector
+                    if abs(nx) < 1e-4 and abs(ny) < 1e-4 and abs(nz) < 1e-4:
+                        nx, ny, nz = 0.0, 1.0, 0.0
                     w_state.hit_normal[0] = nx
                     w_state.hit_normal[1] = ny
                     w_state.hit_normal[2] = nz

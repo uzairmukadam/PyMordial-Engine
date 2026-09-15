@@ -53,6 +53,7 @@ class DebugMenu:
         "_warned_no_renderer",
         "config_filepath",
         "_custom_ui_callbacks",
+        "_scroll_to_microgeom",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -86,6 +87,7 @@ class DebugMenu:
         self.show_graphics: bool = False
         self.show_game_tweaks: bool = False
         self._custom_ui_callbacks: list[Callable[[], None]] = []
+        self._scroll_to_microgeom: bool = False
 
         # Initialize Dear ImGui context
         self.imgui_ctx = imgui.create_context()
@@ -851,6 +853,9 @@ class DebugMenu:
 
             imgui.separator()
             imgui.text("Micro-Geometry & Displacement")
+            if getattr(self, "_scroll_to_microgeom", False):
+                imgui.set_scroll_here_y(0.0)
+                self._scroll_to_microgeom = False
 
             # POM
             pom_c, pom_v = imgui.checkbox("Parallax Occlusion Mapping (POM)", et.pom_enabled)
@@ -866,6 +871,14 @@ class DebugMenu:
                 if pss_c:
                     et.pom_self_shadow = pss_v
                     et.mark_custom()
+                dnr_c, dnr_v = imgui.slider_float("POM Shadow Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m")
+                if dnr_c:
+                    et.disp_near_radius = dnr_v
+                    et.mark_custom()
+                dmr_c, dmr_v = imgui.slider_float("POM Max Cutoff Radius (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m")
+                if dmr_c:
+                    et.disp_mid_radius = dmr_v
+                    et.mark_custom()
 
             # Hardware Tessellation
             tess_c, tess_v = imgui.checkbox("Hardware GPU Tessellation", et.tess_enabled)
@@ -877,11 +890,11 @@ class DebugMenu:
                 if fc_c:
                     et.frustum_cull_enabled = fc_v
                     et.mark_custom()
-                dnr_c, dnr_v = imgui.slider_float("Near Quality Radius (m)", et.disp_near_radius, 2.0, 20.0, "%.1f m")
+                dnr_c, dnr_v = imgui.slider_float("Near Quality Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m")
                 if dnr_c:
                     et.disp_near_radius = dnr_v
                     et.mark_custom()
-                dmr_c, dmr_v = imgui.slider_float("Mid Radius Cutoff (m)", et.disp_mid_radius, 10.0, 50.0, "%.1f m")
+                dmr_c, dmr_v = imgui.slider_float("Mid Radius Cutoff (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m")
                 if dmr_c:
                     et.disp_mid_radius = dmr_v
                     et.mark_custom()

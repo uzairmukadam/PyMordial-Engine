@@ -190,8 +190,8 @@ class EngineTweaks:
         self.pom_height_scale = 1.0
         self.pom_self_shadow = True
 
-        self.disp_near_radius = 8.0
-        self.disp_mid_radius = 25.0
+        self.disp_near_radius = 120.0
+        self.disp_mid_radius = 300.0
         self.tess_enabled = True
         self.tess_max_level = 24.0
         self.tess_med_level = 8.0

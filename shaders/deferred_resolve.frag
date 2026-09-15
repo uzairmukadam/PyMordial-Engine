@@ -173,7 +173,8 @@ float SampleSingleCascade(
     float cos_theta,
     float slope,
     float ign_phi,
-    float softness
+    float softness,
+    out bool in_bounds
 ) {
     float normal_offset = (u_ShadowNormalBias * slope) * (float(cascade) * 0.35 + 1.0);
     vec3 biased_pos = world_pos + N * normal_offset;
@@ -188,8 +189,10 @@ float SampleSingleCascade(
     if (proj_coords.z < 0.0 || proj_coords.z > 1.0 ||
         proj_coords.x < 0.0 || proj_coords.x > 1.0 ||
         proj_coords.y < 0.0 || proj_coords.y > 1.0) {
+        in_bounds = false;
         return 1.0;
     }
+    in_bounds = true;
 
     vec2 atlas_offset = vec2(float(cascade % 2) * 0.5, float(cascade / 2) * 0.5);
     vec2 uv = proj_coords.xy * 0.5 + atlas_offset;
@@ -198,7 +201,8 @@ float SampleSingleCascade(
 
     float current_depth = proj_coords.z;
     float base_bias = max(u_ShadowBias, 0.0);
-    float bias = base_bias * (1.0 + slope * 0.5);
+    float cascade_bias_scale = max(1.0, float(cascade) * 1.6 + 1.0);
+    float bias = (base_bias / cascade_bias_scale) * (1.0 + slope * 0.5);
 
     // MODE 0: ANTI-ALIASED HARD SHADOWS (4-Tap Bilinear PCF)
     if (u_ShadowMode == 0) {
@@ -296,19 +300,29 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     float ign_phi = InterleavedGradientNoise(gl_FragCoord.xy) * 6.2831853;
     float softness = clamp(u_ShadowSoftness, 0.1, 4.0);
 
-    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness);
+    bool in_bounds = false;
+    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
+
+    // Seamless fallback to wider cascade if local cascade is out of bounds
+    if (!in_bounds && cascade < u_CascadeCount - 1) {
+        cascade++;
+        shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
+    }
 
     // Smooth cascade split transition blending to eliminate seams
-    if (cascade < u_CascadeCount - 1) {
+    if (in_bounds && cascade < u_CascadeCount - 1) {
         float split_val = u_CascadeSplits[cascade];
         float blend_range = split_val * 0.15;
         float blend_start = split_val - blend_range;
         if (view_depth > blend_start) {
             float blend_t = clamp((view_depth - blend_start) / blend_range, 0.0, 1.0);
-            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, ign_phi, softness);
-            shadow = mix(shadow, next_shadow, blend_t);
+            bool next_in_bounds = false;
+            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, ign_phi, softness, next_in_bounds);
+            if (next_in_bounds) {
+                shadow = mix(shadow, next_shadow, blend_t);
+            }
         }
-    } else {
+    } else if (cascade == u_CascadeCount - 1) {
         // Final cascade: smooth distance fade-out towards max shadow distance
         float fade_range = max_shadow_dist * 0.15;
         float fade_start = max_shadow_dist - fade_range;

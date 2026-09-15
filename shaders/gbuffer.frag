@@ -56,8 +56,8 @@ uniform int u_POMMinSamples = 8;
 uniform int u_POMMaxSamples = 64;
 uniform float u_POMHeightScale = 0.08;
 uniform int u_POMSelfShadow = 1;
-uniform float u_DispNearRadius = 8.0;
-uniform float u_DispMidRadius = 25.0;
+uniform float u_DispNearRadius = 120.0;
+uniform float u_DispMidRadius = 300.0;
 uniform float u_MaterialDispDepth[32];
 uniform float u_POMScaleMultiplier = 1.0;
 
@@ -193,7 +193,14 @@ void main() {
 
         // Deactivated outside medium radius
         if (u_POMEnabled == 1 && disp_mode == DISP_MODE_POM && cam_dist <= u_DispMidRadius) {
-            vec3 view_ts = normalize(v_TangentViewDir);
+            // Per-fragment orthonormal TBN matrix for pristine camera tracking on large ground quads
+            vec3 T_frag = normalize(v_TBN[0]);
+            vec3 B_frag = normalize(v_TBN[1]);
+            vec3 N_frag = normalize(v_TBN[2]);
+            mat3 TBN_inv = transpose(mat3(T_frag, B_frag, N_frag));
+
+            vec3 view_world = u_CameraPos_Time.xyz - v_WorldPos;
+            vec3 view_ts = normalize(TBN_inv * view_world);
             float pom_height;
             int mat_i = clamp(int(layer_idx), 0, 31);
             float mat_depth = u_MaterialDispDepth[mat_i];
@@ -208,7 +215,7 @@ void main() {
 
             // Sun self-shadowing with smooth distance attenuation (eliminates boundary popping)
             if (u_POMSelfShadow == 1 && cam_dist <= u_DispNearRadius) {
-                vec3 sun_ts = normalize(v_TangentSunDir);
+                vec3 sun_ts = normalize(TBN_inv * (-u_SunDirection_Intensity.xyz));
                 float raw_shadow = POMSelfShadow(final_uv, pom_height, sun_ts, layer_idx, effective_scale);
                 float shadow_fade = 1.0 - smoothstep(u_DispNearRadius * 0.70, u_DispNearRadius, cam_dist);
                 pom_shadow = mix(1.0, raw_shadow, shadow_fade);

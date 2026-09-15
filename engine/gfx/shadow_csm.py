@@ -51,23 +51,26 @@ class CascadedShadowMap:
         self,
         max_distance: float,
         cascade_count: int | None = None,
-        lambda_val: float = 0.85,
+        lambda_val: float = 0.55,
     ) -> None:
-        """Dynamically recomputes cascade split distances for a new max shadow distance."""
+        """Dynamically recomputes cascade split distances with a tight near split for high-res contact shadows."""
         if cascade_count is not None:
             self.cascade_count = cascade_count
         self.max_distance = float(max_distance)
 
-        near = 0.1
         far = max(self.max_distance, 1.0)
-        splits = []
-
         count = max(1, min(4, self.cascade_count))
-        for i in range(1, count + 1):
-            p = i / count
-            log_split = near * ((far / near) ** p)
-            lin_split = near + (far - near) * p
-            splits.append(lambda_val * log_split + (1.0 - lambda_val) * lin_split)
+
+        if count == 1:
+            splits = [far, far, far, far]
+        else:
+            # Cascade 0: dedicated tight near split (14.0m) for ultra-sharp contact shadows on vehicle/props
+            split0 = min(14.0, far * 0.15)
+            splits = [split0]
+            ratio = (far / max(split0, 0.5)) ** (1.0 / float(count - 1))
+            for i in range(1, count - 1):
+                splits.append(split0 * (ratio ** float(i)))
+            splits.append(far)
 
         # Pad to 4 elements
         while len(splits) < 4:
@@ -117,9 +120,9 @@ class CascadedShadowMap:
             # Round radius to 0.5m increments to prevent projection breathing
             radius = math.ceil(raw_radius * 2.0) * 0.5
 
-            # Light view matrix centered on cascade with extended occluder pull-back
-            caster_pullback = max(radius * 3.5, 65.0)
-            far = caster_pullback + radius * 2.5
+            # Light view matrix centered on cascade with calibrated occluder pull-back
+            caster_pullback = min(radius * 1.6 + 45.0, 350.0)
+            far = caster_pullback + radius * 2.0
             light_pos[0] = center[0] - snx * caster_pullback
             light_pos[1] = center[1] - sny * caster_pullback
             light_pos[2] = center[2] - snz * caster_pullback
@@ -134,13 +137,13 @@ class CascadedShadowMap:
                 view[12] = round(view[12] / world_units_per_texel) * world_units_per_texel
                 view[13] = round(view[13] / world_units_per_texel) * world_units_per_texel
 
-            # Standard OpenGL orthographic projection (NDC z in [-1, 1], depth buffer in [0, 1])
+            # Orthographic projection for GL_ZERO_TO_ONE depth range [0, 1]
             proj.fill(0.0)
             ext = radius
             proj[0] = 1.0 / ext
             proj[5] = 1.0 / ext
-            proj[10] = -2.0 / far
-            proj[14] = -1.0
+            proj[10] = -1.0 / far
+            proj[14] = 0.0
             proj[15] = 1.0
 
             # Combine: LightViewProjection (4x4 column major multiplication)

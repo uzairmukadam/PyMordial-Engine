@@ -33,8 +33,8 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform float u_DispNearRadius = 8.0;
-uniform float u_DispMidRadius = 25.0;
+uniform float u_DispNearRadius = 120.0;
+uniform float u_DispMidRadius = 300.0;
 uniform float u_TessMaxLevel = 16.0;
 uniform float u_TessMedLevel = 6.0;
 

@@ -38,8 +38,8 @@ layout (std140, binding = 0) uniform FrameData {
 // 3-Tier Camera Radius Tessellation Uniforms
 uniform int u_TessEnabled = 1;
 uniform int u_FrustumCullEnabled = 1;
-uniform float u_DispNearRadius = 8.0;   // High quality radius boundary
-uniform float u_DispMidRadius = 25.0;   // Medium quality radius boundary (tessellation drops to 1.0 beyond)
+uniform float u_DispNearRadius = 120.0;   // High quality radius boundary
+uniform float u_DispMidRadius = 300.0;   // Medium quality radius boundary (tessellation drops to 1.0 beyond)
 uniform float u_TessMaxLevel = 24.0;    // Highest quality tessellation level (near)
 uniform float u_TessMedLevel = 8.0;     // Medium quality tessellation level (mid)
 

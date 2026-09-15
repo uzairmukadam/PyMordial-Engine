@@ -45,7 +45,7 @@ class RenderConfig:
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
     pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
-    csm_split_lambda: float = 0.85 # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_split_lambda: float = 0.55 # Practical Split Scheme (PSSM) log-linear blend factor
 
     # Screen-Space Contact Shadows (Deprecated/Removed in favor of GTAO)
     sscs_enabled: bool = False
@@ -129,8 +129,8 @@ class RenderConfig:
     ssdm_max_distance: float = 30.0  # Camera distance fade-out
 
     # Phase 6: Camera Radius-Based Micro-Geometry & Hardware Tessellation
-    disp_near_radius: float = 8.0         # Near radius for highest quality tessellation
-    disp_mid_radius: float = 25.0         # Medium radius boundary & POM/SSDM cutoff
+    disp_near_radius: float = 120.0       # Near radius for highest quality tessellation & POM self-shadowing
+    disp_mid_radius: float = 300.0        # Medium radius boundary & POM/SSDM cutoff
     tess_enabled: bool = True
     tess_max_level: float = 24.0          # Max hardware tessellation subdivision level (near radius)
     tess_med_level: float = 8.0           # Medium quality tessellation level (mid radius)

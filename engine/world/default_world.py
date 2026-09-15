@@ -74,6 +74,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         "friction",
         "restitution",
         "ground_entity_id",
+        "ground_collider_id",
     )
 
     def __init__(
@@ -90,6 +91,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         self.friction = float(friction)
         self.restitution = float(restitution)
         self.ground_entity_id: int | None = None
+        self.ground_collider_id: int | None = None
 
     def build_world(self, app: ProjectApp) -> None:
         """Constructs the tiled ground mesh, loads PBR material, and creates the static collider."""
@@ -125,7 +127,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         if pipeline.csm_tess_prog is not None:
             pipeline.csm_tess_vao = pipeline.mega_buffer.get_vao(pipeline.csm_tess_prog, mode=pipeline.ctx.PATCHES)
 
-        # 3. Create static ground entity & collider
+        # 3. Create visual ground plane entity (at exact y=0.0)
         plane_id = ecs.create_entity(
             position=(0.0, 0.0, 0.0),
             scale=(1.0, 1.0, 1.0),
@@ -133,9 +135,15 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             roughness=0.85,
             metallic=0.02,
         )
-        physics.create_body(plane_id, body_type="fixed", position=(0.0, -0.5, 0.0))
+
+        # 4. Create dedicated static physics box collider (centered at y=-0.5, top face flush with y=0.0)
+        col_id = ecs.create_entity(
+            position=(0.0, -0.5, 0.0),
+            scale=(self.size, 1.0, self.size),
+        )
+        physics.create_body(col_id, body_type="fixed", position=(0.0, -0.5, 0.0))
         physics.attach_box_collider(
-            plane_id,
+            col_id,
             half_x=self.size * 0.5,
             half_y=0.5,
             half_z=self.size * 0.5,
@@ -152,13 +160,17 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             )
 
         self.ground_entity_id = plane_id
+        self.ground_collider_id = col_id
 
         # Register draw batch with the app's MDI submission
         app.register_draw_batch(alloc_plane, 1, d_plane, False)
 
     def teardown_world(self, app: ProjectApp) -> None:
         """Removes the ground plane entity and collider."""
+        if self.ground_collider_id is not None:
+            app.physics.remove_body(self.ground_collider_id)
+            app.ecs.destroy_entity(self.ground_collider_id)
+            self.ground_collider_id = None
         if self.ground_entity_id is not None:
-            app.physics.remove_body(self.ground_entity_id)
             app.ecs.destroy_entity(self.ground_entity_id)
             self.ground_entity_id = None
