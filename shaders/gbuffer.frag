@@ -188,7 +188,7 @@ void main() {
 
     // Strict Mutual Exclusivity & Camera Radius Culling: POM runs ONLY when disp_mode == DISP_MODE_POM (1) and within u_DispMidRadius
     if (has_texture && tex_layer > 0.0) {
-        float layer_idx = tex_layer;
+        float layer_idx = max(0.0, floor(tex_layer + 0.5));
         float cam_dist = length(u_CameraPos_Time.xyz - v_WorldPos);
 
         // Deactivated outside medium radius

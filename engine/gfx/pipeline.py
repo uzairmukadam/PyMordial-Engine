@@ -20,19 +20,21 @@ from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
 from engine.gfx.mdi import MultiDrawIndirect
 from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
+from engine.gfx.spot_shadows import SpotLightShadowMap
 from engine.gfx.post_process import PostProcessPipeline
 from engine.gfx.render_graph import RenderGraphContext
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.ao_pass import AmbientOcclusionPass
 from engine.gfx.passes.ssgi_pass import SSGIPass
 from engine.gfx.passes.lpv_pass import LPVPass
-from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight
+from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
 from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
 from engine.gfx.passes.fxaa_pass import FXAAPass
 from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
+from engine.gfx.material_registry import MaterialRegistry
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
@@ -128,7 +130,11 @@ class RenderPipeline:
         "resolve_vao",
         "gbuffer_vao",
         "csm_vao",
+        "spot_shadow_map",
+        "spot_depth_prog",
+        "spot_depth_vao",
         "texture_atlas",
+        "material_registry",
         "ssdm_pass",
         "hiz_pass",
         "tess_mdi",
@@ -168,6 +174,11 @@ class RenderPipeline:
         "_u_ibl_enabled",
         "_u_ssr_enabled",
         "_u_point_light_count",
+        "_u_spot_light_count",
+        "_u_spot_shadow_enabled",
+        "_u_spot_vp",
+        "_u_spot_depth_vp",
+        "_spot_matrices_bytes",
         "_u_lpv_min",
         "_u_lpv_size",
         "_u_gbuffer_pom_enabled",
@@ -267,7 +278,15 @@ class RenderPipeline:
         self.ao_pass = AmbientOcclusionPass(self.ctx, w, h)
         self.ssgi_pass = SSGIPass(self.ctx, w, h)
         self.lpv_pass = LPVPass(self.ctx)
-        self.lights_pass = ClusteredLightingPass(self.ctx, max_lights=self.config.max_point_lights)
+        self.lights_pass = ClusteredLightingPass(
+            self.ctx,
+            max_lights=self.config.max_point_lights,
+            max_spot_lights=getattr(self.config, "max_spot_lights", 64),
+        )
+        self.spot_shadow_map = SpotLightShadowMap(
+            self.ctx,
+            atlas_size=getattr(self.config, "spot_shadow_resolution", 2048),
+        )
         self.ssr_pass = SSRPass(self.ctx, w, h)
         self.taa_pass = TAAPass(self.ctx, w, h)
         self.fxaa_pass = FXAAPass(self.ctx, w, h)
@@ -296,6 +315,7 @@ class RenderPipeline:
         gbuffer_frag = _load_shader("gbuffer.frag")
         csm_vert = _load_shader("csm_depth.vert")
         csm_frag = _load_shader("csm_depth.frag")
+        spot_depth_vert = _load_shader("spot_depth.vert")
         resolve_frag = _load_shader("deferred_resolve.frag")
         post_frag = _load_shader("post_process.frag")
 
@@ -310,6 +330,12 @@ class RenderPipeline:
             fragment_shader=csm_frag,
         )
         self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
+
+        self.spot_depth_prog = self.ctx.program(
+            vertex_shader=spot_depth_vert,
+            fragment_shader=csm_frag,
+        )
+        self.spot_depth_vao = self.mega_buffer.get_vao(self.spot_depth_prog)
 
         # Hardware Tessellation Programs & VAOs (mode=PATCHES)
         gbuffer_tess_vert = _load_shader("gbuffer_tess.vert")
@@ -335,8 +361,10 @@ class RenderPipeline:
         self.csm_tess_vao = self.mega_buffer.get_vao(self.csm_tess_prog, mode=self.ctx.PATCHES)
         self.tess_mdi = MultiDrawIndirect(self.ctx)
 
-        # Texture Array Atlas for PBR Materials
+        # Texture Array Atlas for PBR Materials & Central Material Registry
         self.texture_atlas = TextureArrayAtlas(self.ctx, width=2048, height=2048, max_layers=32)
+        self.material_registry = MaterialRegistry()
+        self.material_registry.sync_with_atlas(self.texture_atlas)
 
         # SSDM Post-G-Buffer Pass
         self.ssdm_pass = SSDMPass(self.ctx, w, h)
@@ -364,11 +392,18 @@ class RenderPipeline:
             "u_LPVVolume": 9,
             "u_SkyViewLUT": 10,
             "u_TransmittanceLUT": 11,
+            "u_SpotShadowAtlas": 12,
             "u_HiZTexture": 14,
         }
         for name, unit in tex_uniforms.items():
             if name in self.resolve_prog:
                 self.resolve_prog[name].value = unit
+
+        self._u_spot_light_count = self.resolve_prog.get("u_SpotLightCount", None)
+        self._u_spot_shadow_enabled = self.resolve_prog.get("u_SpotShadowEnabled", None)
+        self._u_spot_vp = self.resolve_prog.get("u_SpotLightViewProjection", None)
+        self._u_spot_depth_vp = self.spot_depth_prog.get("u_SpotLightViewProjection", None)
+        self._spot_matrices_bytes = bytearray(4 * 16 * 4)
 
         # Pre-cache mesh allocations and uniforms
         self._cube_alloc = self.mega_buffer.allocations["cube"]
@@ -394,6 +429,11 @@ class RenderPipeline:
         self._u_point_light_count = self.resolve_prog.get("u_PointLightCount", None)
         self._u_lpv_min = self.resolve_prog.get("u_LPV_Min", None)
         self._u_lpv_size = self.resolve_prog.get("u_LPV_Size", None)
+        self._u_spot_light_count = self.resolve_prog.get("u_SpotLightCount", None)
+        self._u_spot_shadow_enabled = self.resolve_prog.get("u_SpotShadowEnabled", None)
+        self._u_spot_vp = self.resolve_prog.get("u_SpotLightViewProjection", None)
+        self._u_spot_depth_vp = self.spot_depth_prog.get("u_SpotLightViewProjection", None)
+        self._spot_matrices_bytes = bytearray(4 * 64)
 
         # Pre-cache POM and micro-geometry uniform handles
         self._u_gbuffer_pom_enabled = self.gbuffer_prog.get("u_POMEnabled", None)
@@ -489,14 +529,48 @@ class RenderPipeline:
         """Adds a dynamic local point light to the active frame."""
         return self.lights_pass.add_light(position, radius, color, intensity)
 
+    def add_spot_light(
+        self,
+        position: tuple[float, float, float],
+        direction: tuple[float, float, float],
+        radius: float = 25.0,
+        inner_cone_angle: float = math.radians(18.0),
+        outer_cone_angle: float = math.radians(32.0),
+        color: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        intensity: float = 4.5,
+        cast_shadow: bool = False,
+        shadow_bias: float = 0.0015,
+    ) -> SpotLight:
+        """Adds a dynamic local spot light with cone falloff and optional perspective shadow casting."""
+        return self.lights_pass.add_spot_light(
+            position=position,
+            direction=direction,
+            radius=radius,
+            inner_cone_angle=inner_cone_angle,
+            outer_cone_angle=outer_cone_angle,
+            color=color,
+            intensity=intensity,
+            cast_shadow=cast_shadow,
+            shadow_bias=shadow_bias,
+        )
+
     def clear_point_lights(self) -> None:
         """Clears all active dynamic point lights."""
+        self.lights_pass.clear_point_lights()
+
+    def clear_spot_lights(self) -> None:
+        """Clears all active dynamic spot lights."""
+        self.lights_pass.clear_spot_lights()
+
+    def clear_lights(self) -> None:
+        """Clears all active dynamic point and spot lights."""
         self.lights_pass.clear()
 
     def apply_config(self, new_config: RenderConfig) -> None:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
         self.csm.resize_atlas(new_config.shadow_resolution)
+        self.spot_shadow_map.resize_atlas(getattr(new_config, "spot_shadow_resolution", 2048))
         self.csm.update_splits(
             new_config.shadow_distance,
             new_config.csm_cascades,
@@ -578,7 +652,9 @@ class RenderPipeline:
         if self.texture_atlas.width != resolution or self.texture_atlas.height != resolution:
             self.texture_atlas.destroy()
             self.texture_atlas = TextureArrayAtlas(self.ctx, width=resolution, height=resolution, max_layers=32)
-        return self.texture_atlas.load_materials_from_folder(textures_dir, progress_callback=progress_callback)
+        res = self.texture_atlas.load_materials_from_folder(textures_dir, progress_callback=progress_callback)
+        self.material_registry.sync_with_atlas(self.texture_atlas)
+        return res
 
     def render_frame(
         self,
@@ -735,6 +811,9 @@ class RenderPipeline:
         ctx.resources["g_buffer"] = self.g_buffer
         ctx.resources["csm"] = self.csm
 
+        # Pre-pass: Dynamic Clustered Local Point & Spot Lights (SSBO 3)
+        self.lights_pass.execute(ctx)
+
         # ---- PASS 1: Cascaded Shadow Maps Pass ----
         self.csm.fbo.use()
         self.csm.clear()
@@ -766,6 +845,27 @@ class RenderPipeline:
                     self._u_csm_tess_disp_scale.value = getattr(self.config, "tess_displacement_scale", 1.0)
                 self.texture_atlas.upload_depths(self.csm_tess_prog)
                 self.tess_mdi.submit(self.csm_tess_vao, self.csm_tess_prog)
+
+        # ---- PASS 1.5: Spot Light Shadow Maps Pass ----
+        shadow_spots = ctx.resources.get("shadow_spot_lights", [])
+        spot_shadows_active = getattr(self.config, "spot_shadows_enabled", True) and len(shadow_spots) > 0
+        if spot_shadows_active:
+            self.spot_shadow_map.clear()
+            self.ctx.depth_func = "<"
+            self.ctx.enable(moderngl.DEPTH_TEST)
+            self.ctx.disable(moderngl.CULL_FACE)
+            for idx, spot in enumerate(shadow_spots[:4]):
+                vp = self.spot_shadow_map.compute_spot_matrix(
+                    (spot.x, spot.y, spot.z),
+                    (spot.dir_x, spot.dir_y, spot.dir_z),
+                    spot.outer_cone_angle,
+                    spot.radius,
+                    spot_idx=idx,
+                )
+                self.spot_shadow_map.begin_spot(idx)
+                if self._u_spot_depth_vp is not None:
+                    self._u_spot_depth_vp.write(vp.tobytes())
+                self.mdi.submit(self.spot_depth_vao, self.spot_depth_prog)
 
         # ---- PASS 2: G-Buffer Pass (Reversed-Z) ----
         self.g_buffer.clear()
@@ -849,8 +949,8 @@ class RenderPipeline:
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
         self.ao_pass.execute(ctx)
 
-        # ---- PASS 4: Clustered Dynamic Local Lights (SSBO 3) ----
-        self.lights_pass.execute(ctx)
+        # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
+        # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
         # ---- PASS 5: Global Illumination (SSGI + LPV) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         self.ssgi_pass.execute(ctx)
@@ -895,6 +995,7 @@ class RenderPipeline:
 
         self.sky_atmosphere_pass.sky_view_lut.use(location=10)
         self.sky_atmosphere_pass.transmittance_lut.use(location=11)
+        self.spot_shadow_map.depth_texture.use(location=12)
         self.hiz_pass.hiz_texture.use(location=14)
 
         # Set resolve uniforms
@@ -941,6 +1042,14 @@ class RenderPipeline:
             self._u_ssr_enabled.value = 1 if self.config.ssr_enabled else 0
         if self._u_point_light_count is not None:
             self._u_point_light_count.value = ctx.resources.get("point_light_count", 0)
+        if self._u_spot_light_count is not None:
+            self._u_spot_light_count.value = ctx.resources.get("spot_light_count", 0)
+        if self._u_spot_shadow_enabled is not None:
+            self._u_spot_shadow_enabled.value = 1 if getattr(self.config, "spot_shadows_enabled", True) else 0
+        if self._u_spot_vp is not None:
+            for i, mat in enumerate(self.spot_shadow_map.spot_matrices):
+                self._spot_matrices_bytes[i * 64 : (i + 1) * 64] = mat.tobytes()
+            self._u_spot_vp.write(self._spot_matrices_bytes)
 
         if self._u_lpv_min is not None and "lpv_min" in ctx.resources:
             self._u_lpv_min.value = ctx.resources["lpv_min"]

@@ -88,10 +88,17 @@ class RenderConfig:
     fxaa_edge_threshold: float = 0.125
     smaa_threshold: float = 0.08
 
-    # Clustered Local Lighting
+    # Clustered Local Lighting & Spot Lights
     clustered_lights_enabled: bool = True
     max_point_lights: int = 256
-    sun_intensity: float = 4.0     # Sun lux intensity
+    max_spot_lights: int = 64
+    spot_lights_enabled: bool = True
+    spot_shadows_enabled: bool = True
+    spot_shadow_resolution: int = 2048  # Atlas size (1024 or 2048)
+    spot_light_radius: float = 35.0
+    spot_cone_angle: float = 32.0       # Outer cone angle in degrees
+    spot_shadow_bias: float = 0.0015
+    sun_intensity: float = 4.0          # Sun lux intensity
     ambient_factor: float = 0.04
 
     # Post-Processing & Atmosphere

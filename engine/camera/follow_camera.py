@@ -12,15 +12,15 @@ from engine.physics.rapier_world import PhysicsManager
 @dataclass(slots=True)
 class FollowCameraConfig:
     """Tuning parameters for the third-person follow camera."""
-    distance: float = 6.5           # Default camera follow distance in meters
+    distance: float = 5.2           # Default camera follow distance in meters
     min_distance: float = 1.0       # Minimum pull-in distance in meters
     max_distance: float = 20.0      # Maximum zoomed out distance in meters
-    target_offset_y: float = 1.35   # Height offset above character origin in meters
+    target_offset_y: float = 0.55   # Height offset above character origin in meters
     camera_radius: float = 0.20     # Margin from obstacles to avoid clipping in meters
-    yaw_sensitivity: float = 0.25   # Mouse drag yaw sensitivity
-    pitch_sensitivity: float = 0.25 # Mouse drag pitch sensitivity
-    min_pitch_deg: float = -35.0    # Lowest downward pitch angle
-    max_pitch_deg: float = 75.0     # Highest upward pitch angle
+    yaw_sensitivity: float = 0.22   # Mouse drag yaw sensitivity
+    pitch_sensitivity: float = 0.22 # Mouse drag pitch sensitivity
+    min_pitch_deg: float = -12.0    # Lowest downward pitch angle
+    max_pitch_deg: float = 65.0     # Highest upward pitch angle
     zoom_speed: float = 12.0        # Smoothing rate when zooming out
 
 
@@ -40,8 +40,8 @@ class FollowCamera(VirtualCamera):
         self,
         config: FollowCameraConfig | None = None,
         initial_yaw_deg: float = 45.0,
-        initial_pitch_deg: float = 20.0,
-        fov: float = 75.0,
+        initial_pitch_deg: float = 11.0,
+        fov: float = 68.0,
     ) -> None:
         super().__init__(fov=fov)
         self.config = config if config is not None else FollowCameraConfig()
@@ -53,7 +53,7 @@ class FollowCamera(VirtualCamera):
 
     def handle_mouse_orbit(self, rel_x: float, rel_y: float) -> None:
         """Applies hardware relative mouse delta to camera orbit angles."""
-        self.yaw_deg -= rel_x * self.config.yaw_sensitivity
+        self.yaw_deg += rel_x * self.config.yaw_sensitivity
         self.pitch_deg = max(
             self.config.min_pitch_deg,
             min(self.config.max_pitch_deg, self.pitch_deg - rel_y * self.config.pitch_sensitivity),

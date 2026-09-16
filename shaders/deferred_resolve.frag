@@ -16,6 +16,7 @@ layout (binding = 6) uniform sampler2D u_BRDFLUT;              // Split-sum 2D B
 layout (binding = 7) uniform sampler2D u_EnvironmentMap;       // Prefiltered HDR Environment Map
 layout (binding = 8) uniform sampler2D u_SSRTexture;           // Screen-Space Reflections
 layout (binding = 9) uniform sampler3D u_LPVVolume;            // 3D Light Propagation Volume
+layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light Perspective Shadow Depth Atlas
 layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
 
 // Unified Frame Context UBO 0
@@ -39,20 +40,28 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-// SSBO 3: Dynamic Clustered Local Point Lights
+// SSBO 3: Dynamic Clustered Local Point & Spot Lights
 struct PointLightData {
     vec4 pos_radius;      // xyz = position, w = radius
     vec4 color_intensity; // rgb = color, w = intensity
 };
 
-layout (std430, binding = 3) buffer PointLightBuffer {
-    PointLightData u_PointLights[];
+struct SpotLightData {
+    vec4 pos_radius;      // xyz = position, w = radius
+    vec4 dir_inner_cos;   // xyz = normalized direction, w = cos(inner_cone_angle)
+    vec4 color_intensity; // rgb = color, w = intensity
+    vec4 params;          // x = cos(outer_cone_angle), y = shadow_index (-1 if no shadow), z = shadow_bias, w = reserved
+};
+
+layout (std430, binding = 3) buffer LightBuffer {
+    PointLightData u_PointLights[256];
+    SpotLightData u_SpotLights[];
 };
 
 // Configurable quality & feature uniforms
 uniform int u_PCF_Samples = 24;  // 16 to 32 samples (Default: 24)
 uniform int u_CascadeCount = 4;  // 1 to 4
-uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 11=HiZ
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 11=HiZ, 12=SpotLights
 uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug == 11
 
 // AAA Shadow Parametrization
@@ -71,10 +80,50 @@ uniform int u_GIEnabled = 3;     // 0=Off, 1=SSGI, 2=LPV, 3=Hybrid
 uniform int u_IBLEnabled = 1;
 uniform int u_SSREnabled = 1;
 uniform int u_PointLightCount = 0;
+uniform int u_SpotLightCount = 0;
+uniform int u_SpotShadowEnabled = 1;
+uniform mat4 u_SpotLightViewProjection[4];
 uniform vec3 u_LPV_Min = vec3(-32.0, -2.0, -32.0);
 uniform vec3 u_LPV_Size = vec3(64.0, 32.0, 64.0);
 
 #include "shaders/atmosphere.glsl"
+
+// Evaluates localized perspective spot light shadow occlusion
+float SampleSpotShadow(int shadow_idx, vec3 world_pos, vec3 N, float bias) {
+    if (shadow_idx < 0 || shadow_idx >= 4 || u_SpotShadowEnabled == 0) return 1.0;
+
+    vec4 light_space_pos = u_SpotLightViewProjection[shadow_idx] * vec4(world_pos + N * (bias * 0.5), 1.0);
+    if (light_space_pos.w <= 0.0) return 1.0;
+    vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
+    // Remap NDC XY [-1, 1] to UV [0, 1]; Z is already in [0, 1] under GL_ZERO_TO_ONE clip control
+    proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
+
+    // Out-of-bounds check (outside spot cone/frustum)
+    if (proj_coords.z < 0.0 || proj_coords.z > 1.0 ||
+        proj_coords.x < 0.0 || proj_coords.x > 1.0 ||
+        proj_coords.y < 0.0 || proj_coords.y > 1.0) {
+        return 1.0;
+    }
+
+    vec2 atlas_offset = vec2(float(shadow_idx % 2) * 0.5, float(shadow_idx / 2) * 0.5);
+    vec2 uv = proj_coords.xy * 0.5 + atlas_offset;
+    vec2 uv_min = atlas_offset + vec2(0.0005);
+    vec2 uv_max = atlas_offset + vec2(0.4995);
+
+    float current_depth = proj_coords.z;
+    vec2 full_size = vec2(textureSize(u_SpotShadowAtlas, 0));
+    vec2 texel_size = 1.0 / full_size;
+
+    // 5-Tap PCF filter with soft penumbra
+    vec2 off = texel_size * 1.5;
+    float s00 = (current_depth - bias <= texture(u_SpotShadowAtlas, clamp(uv + vec2(-off.x, -off.y), uv_min, uv_max)).r) ? 1.0 : 0.0;
+    float s10 = (current_depth - bias <= texture(u_SpotShadowAtlas, clamp(uv + vec2( off.x, -off.y), uv_min, uv_max)).r) ? 1.0 : 0.0;
+    float s01 = (current_depth - bias <= texture(u_SpotShadowAtlas, clamp(uv + vec2(-off.x,  off.y), uv_min, uv_max)).r) ? 1.0 : 0.0;
+    float s11 = (current_depth - bias <= texture(u_SpotShadowAtlas, clamp(uv + vec2( off.x,  off.y), uv_min, uv_max)).r) ? 1.0 : 0.0;
+    float sc  = (current_depth - bias <= texture(u_SpotShadowAtlas, clamp(uv, uv_min, uv_max)).r) ? 1.0 : 0.0;
+
+    return (s00 + s10 + s01 + s11 + sc) * 0.2;
+}
 
 // Jorge Jimenez's Interleaved Gradient Noise (IGN) for uniform blue-noise spatial distribution
 float InterleavedGradientNoise(vec2 screen_pos) {
@@ -479,6 +528,58 @@ void main() {
         }
     }
 
+    // Dynamic Clustered Spot Lights (SSBO 3 + Perspective Spot Shadows)
+    vec3 spot_lights_accum = vec3(0.0);
+    int spot_count = min(u_SpotLightCount, 64);
+    for (int i = 0; i < spot_count; ++i) {
+        vec3 sp_pos = u_SpotLights[i].pos_radius.xyz;
+        float sp_radius = u_SpotLights[i].pos_radius.w;
+        vec3 sp_delta = sp_pos - world_pos.xyz;
+        float sp_dist = length(sp_delta);
+
+        if (sp_dist < sp_radius) {
+            vec3 sp_L = sp_delta / max(sp_dist, 0.0001);
+            vec3 sp_dir = normalize(u_SpotLights[i].dir_inner_cos.xyz);
+            float inner_cos = u_SpotLights[i].dir_inner_cos.w;
+            float outer_cos = u_SpotLights[i].params.x;
+
+            // Spot cone angle check: dot product between vector from light to fragment (-sp_L) and spot direction
+            float cos_theta = dot(-sp_L, sp_dir);
+            if (cos_theta > outer_cos) {
+                float spot_cone = smoothstep(outer_cos, inner_cos, cos_theta);
+                float sp_NdotL = max(dot(N, sp_L), 0.0);
+
+                if (sp_NdotL > 0.0) {
+                    // Smooth physical inverse-square distance attenuation with windowing
+                    float ratio = sp_dist / sp_radius;
+                    float win = clamp(1.0 - ratio * ratio * ratio * ratio, 0.0, 1.0);
+                    float atten = (win * win) / (sp_dist * sp_dist + 1.0);
+
+                    // Spot shadow factor
+                    int shadow_idx = int(u_SpotLights[i].params.y);
+                    float sp_bias = u_SpotLights[i].params.z;
+                    float sp_shadow = (shadow_idx >= 0) ? SampleSpotShadow(shadow_idx, world_pos.xyz, N, sp_bias) : 1.0;
+
+                    vec3 sp_H = normalize(V + sp_L);
+                    float sp_NDF = DistributionGGX(N, sp_H, roughness);
+                    float sp_G = GeometrySmith(N, V, sp_L, roughness);
+                    vec3 sp_F = FresnelSchlick(max(dot(sp_H, V), 0.0), F0);
+
+                    vec3 sp_spec = (sp_NDF * sp_G * sp_F) / (4.0 * max(dot(N, V), 0.0) * sp_NdotL + 0.0001);
+                    vec3 sp_diff = (vec3(1.0) - sp_F) * (1.0 - metallic) * albedo / PI;
+
+                    vec3 sp_rad = u_SpotLights[i].color_intensity.rgb * u_SpotLights[i].color_intensity.w;
+                    spot_lights_accum += (sp_diff + sp_spec) * sp_rad * sp_NdotL * atten * spot_cone * sp_shadow;
+                }
+            }
+        }
+    }
+
+    if (u_GBufferDebug == 12) {
+        out_HDRColor = vec4(spot_lights_accum, 1.0);
+        return;
+    }
+
     // Global Illumination (SSGI + LPV)
     vec3 indirect_diffuse = vec3(0.0);
     vec4 ssgi_sample = vec4(0.0);
@@ -556,7 +657,7 @@ void main() {
     // Total combine with Multi-Bounce color-preserving Ambient Occlusion on diffuse
     vec3 bounce_ao = MultiBounceAO(ao, albedo);
     vec3 ambient = (ambient_base + indirect_diffuse) * bounce_ao + indirect_specular;
-    vec3 total_lit = direct_sun + point_lights_accum + ambient;
+    vec3 total_lit = direct_sun + point_lights_accum + spot_lights_accum + ambient;
 
     out_HDRColor = vec4(total_lit, 1.0);
 }

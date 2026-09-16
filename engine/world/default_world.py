@@ -114,6 +114,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
                 cooked_folder=cooked_mat_dir if cooked_mat_dir.is_dir() else None,
             )
             layer_idx = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
+            pipeline.material_registry.sync_with_atlas(pipeline.texture_atlas)
 
         # 2. Add tiled plane to MegaBuffer
         tiled_pm = make_tiled_plane_pm_mesh(size=self.size, uv_tiles=self.uv_tiles)
@@ -131,6 +132,9 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         plane_id = ecs.create_entity(
             position=(0.0, 0.0, 0.0),
             scale=(1.0, 1.0, 1.0),
+            material_id=self.material_name,
+            layer_idx=layer_idx,
+            disp_mode=DisplacementMode.POM,
             color=(0.65, 0.55, 0.42),
             roughness=0.85,
             metallic=0.02,
@@ -151,18 +155,18 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             restitution=self.restitution,
         )
 
-        d_plane = ecs.pool.get_dense_index(plane_id)
-        if d_plane >= 0:
-            ecs.material_data[d_plane, 6] = float(layer_idx)
-            ecs.material_data[d_plane, 7] = encode_mat_flags(
-                has_texture=(layer_idx > 0),
-                disp_mode=DisplacementMode.POM,
-            )
+        ecs.set_entity_material(
+            plane_id,
+            material_id=self.material_name,
+            layer_idx=layer_idx,
+            disp_mode=DisplacementMode.POM,
+        )
 
         self.ground_entity_id = plane_id
         self.ground_collider_id = col_id
 
         # Register draw batch with the app's MDI submission
+        d_plane = ecs.pool.get_dense_index(plane_id)
         app.register_draw_batch(alloc_plane, 1, d_plane, False)
 
     def teardown_world(self, app: ProjectApp) -> None:

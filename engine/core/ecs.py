@@ -5,13 +5,20 @@ physics state, and material parameters, mirroring directly into OpenGL SSBOs.
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, TYPE_CHECKING
 import numpy as np
 
 from engine.core.entity_pool import EntityPool
 from engine.core.math_utils import (
     batch_nlerp_and_compose_mat4,
     trs_to_mat4,
+)
+from engine.core.materials import (
+    DisplacementMode,
+    encode_mat_flags,
+    decode_mat_flags,
+    MaterialRegistry,
+    MaterialDef,
 )
 
 
@@ -76,6 +83,74 @@ class TransformProxy:
         """Direct 16 float32 slice into WorldTransforms."""
         return self._mgr.world_transforms[self.dense_index]
 
+    @property
+    def material_data(self) -> np.ndarray:
+        """Direct 8 float32 slice into MaterialData."""
+        return self._mgr.material_data[self.dense_index]
+
+    @property
+    def color(self) -> np.ndarray:
+        """Base color [R, G, B]."""
+        return self._mgr.material_data[self.dense_index, 0:3]
+
+    @color.setter
+    def color(self, val: tuple[float, float, float] | list[float] | np.ndarray) -> None:
+        self._mgr.material_data[self.dense_index, 0:3] = val
+
+    @property
+    def roughness(self) -> float:
+        return float(self._mgr.material_data[self.dense_index, 3])
+
+    @roughness.setter
+    def roughness(self, val: float) -> None:
+        self._mgr.material_data[self.dense_index, 3] = float(val)
+
+    @property
+    def metallic(self) -> float:
+        return float(self._mgr.material_data[self.dense_index, 4])
+
+    @metallic.setter
+    def metallic(self, val: float) -> None:
+        self._mgr.material_data[self.dense_index, 4] = float(val)
+
+    @property
+    def ao(self) -> float:
+        return float(self._mgr.material_data[self.dense_index, 5])
+
+    @ao.setter
+    def ao(self, val: float) -> None:
+        self._mgr.material_data[self.dense_index, 5] = float(val)
+
+    @property
+    def layer_idx(self) -> int:
+        return int(self._mgr.material_data[self.dense_index, 6])
+
+    @layer_idx.setter
+    def layer_idx(self, val: int) -> None:
+        self._mgr.material_data[self.dense_index, 6] = float(val)
+
+    def set_material(
+        self,
+        material_id: int | str | None = None,
+        layer_idx: int | None = None,
+        disp_mode: DisplacementMode | int | None = None,
+        color: tuple[float, float, float] | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        ao: float | None = None,
+    ) -> None:
+        """Applies a registered material or parameter overrides to this entity."""
+        self._mgr.set_entity_material(
+            self._entity_id,
+            material_id=material_id,
+            layer_idx=layer_idx,
+            disp_mode=disp_mode,
+            color=color,
+            roughness=roughness,
+            metallic=metallic,
+            ao=ao,
+        )
+
 
 class EntityManager:
     """Manages flat memory tables and entities for the engine."""
@@ -87,11 +162,13 @@ class EntityManager:
         "rigid_body_state",
         "material_data",
         "scales",
+        "material_registry",
     )
 
     def __init__(self, max_entities: int = 100_000) -> None:
         self.max_entities = max_entities
         self.pool = EntityPool(max_entities)
+        self.material_registry: MaterialRegistry | None = None
 
         # 1. WorldTransforms: (N, 16) float32, C-contiguous
         # Mirrors layout(std430, binding = 1) readonly buffer TransformBuffer { mat4 u_WorldTransforms[]; };
@@ -106,7 +183,7 @@ class EntityManager:
         assert self.rigid_body_state.flags["C_CONTIGUOUS"], "RigidBodyState must be C-contiguous"
 
         # 3. MaterialData: (N, 8) float32, C-contiguous
-        # Layout: [R, G, B, Roughness, Metallic, AO, AlbedoTexID, NormalTexID]
+        # Layout: [R, G, B, Roughness, Metallic, AO, LayerIdx, MatFlags]
         # Mirrors layout(std430, binding = 2) readonly buffer MaterialBuffer
         self.material_data = np.zeros((max_entities, 8), dtype=np.float32)
         # Defaults: Color = (1, 1, 1), Roughness = 0.5, Metallic = 0.0, AO = 1.0
@@ -120,6 +197,10 @@ class EntityManager:
         self.scales = np.ones((max_entities, 3), dtype=np.float32)
         assert self.scales.flags["C_CONTIGUOUS"], "Scales must be C-contiguous"
 
+    def set_material_registry(self, registry: MaterialRegistry) -> None:
+        """Assigns the central material registry for resolving material names and layer indices."""
+        self.material_registry = registry
+
     @property
     def active_count(self) -> int:
         return self.pool.active_count
@@ -129,9 +210,13 @@ class EntityManager:
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         rotation: tuple[float, float, float, float] | np.ndarray = (0.0, 0.0, 0.0, 1.0),
         scale: tuple[float, float, float] | np.ndarray = (1.0, 1.0, 1.0),
-        color: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        roughness: float = 0.5,
-        metallic: float = 0.0,
+        color: tuple[float, float, float] | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        ao: float | None = None,
+        material_id: int | str | None = None,
+        layer_idx: int | None = None,
+        disp_mode: DisplacementMode | int | None = None,
     ) -> int:
         """Allocates an entity and initializes its slots in contiguous memory tables."""
         entity_id = self.pool.allocate()
@@ -144,14 +229,157 @@ class EntityManager:
         self.rigid_body_state[1, dense_idx, 3:7] = rotation
 
         self.scales[dense_idx] = scale
-        self.material_data[dense_idx, 0:3] = color
-        self.material_data[dense_idx, 3] = roughness
-        self.material_data[dense_idx, 4] = metallic
-        self.material_data[dense_idx, 5] = 1.0  # AO
-        self.material_data[dense_idx, 6:8] = 0.0  # Default tex IDs
+
+        # Resolve material definition if material_id was provided
+        mat_def = None
+        if material_id is not None and self.material_registry is not None:
+            mat_def = self.material_registry.get(material_id)
+
+        # Base Color / Tint
+        if color is not None:
+            self.material_data[dense_idx, 0:3] = color
+        elif mat_def is not None:
+            self.material_data[dense_idx, 0:3] = mat_def.color
+        else:
+            self.material_data[dense_idx, 0:3] = 1.0
+
+        # Roughness
+        if roughness is not None:
+            self.material_data[dense_idx, 3] = float(roughness)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 3] = float(mat_def.roughness)
+        else:
+            self.material_data[dense_idx, 3] = 0.5
+
+        # Metallic
+        if metallic is not None:
+            self.material_data[dense_idx, 4] = float(metallic)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 4] = float(mat_def.metallic)
+        else:
+            self.material_data[dense_idx, 4] = 0.0
+
+        # Ambient Occlusion
+        if ao is not None:
+            self.material_data[dense_idx, 5] = float(ao)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 5] = float(mat_def.ao)
+        else:
+            self.material_data[dense_idx, 5] = 1.0
+
+        # Layer Index & Texture Usage
+        if layer_idx is not None:
+            resolved_layer = int(layer_idx)
+            has_tex = (resolved_layer > 0)
+        elif mat_def is not None:
+            resolved_layer = mat_def.layer_idx
+            has_tex = mat_def.has_texture and (resolved_layer > 0)
+        elif isinstance(material_id, int):
+            resolved_layer = int(material_id)
+            has_tex = (resolved_layer > 0)
+        else:
+            resolved_layer = 0
+            has_tex = False
+
+        # Displacement Mode
+        if disp_mode is not None:
+            resolved_disp = DisplacementMode(disp_mode)
+        elif mat_def is not None:
+            resolved_disp = mat_def.disp_mode
+        else:
+            resolved_disp = DisplacementMode.NONE
+
+        self.material_data[dense_idx, 6] = float(resolved_layer)
+        self.material_data[dense_idx, 7] = encode_mat_flags(has_tex, resolved_disp)
 
         self.recompute_matrix(dense_idx)
         return entity_id
+
+    def set_entity_material(
+        self,
+        entity_id: int,
+        material_id: int | str | None = None,
+        layer_idx: int | None = None,
+        disp_mode: DisplacementMode | int | None = None,
+        color: tuple[float, float, float] | None = None,
+        roughness: float | None = None,
+        metallic: float | None = None,
+        ao: float | None = None,
+    ) -> None:
+        """Applies a registered material or parameter overrides to an active entity."""
+        dense_idx = self.pool.get_dense_index(entity_id)
+        if dense_idx < 0:
+            raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
+
+        mat_def = None
+        if material_id is not None and self.material_registry is not None:
+            mat_def = self.material_registry.get(material_id)
+
+        # 1. Color
+        if color is not None:
+            self.material_data[dense_idx, 0:3] = color
+        elif mat_def is not None:
+            self.material_data[dense_idx, 0:3] = mat_def.color
+
+        # 2. Roughness
+        if roughness is not None:
+            self.material_data[dense_idx, 3] = float(roughness)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 3] = float(mat_def.roughness)
+
+        # 3. Metallic
+        if metallic is not None:
+            self.material_data[dense_idx, 4] = float(metallic)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 4] = float(mat_def.metallic)
+
+        # 4. AO
+        if ao is not None:
+            self.material_data[dense_idx, 5] = float(ao)
+        elif mat_def is not None:
+            self.material_data[dense_idx, 5] = float(mat_def.ao)
+
+        # 5. Layer Index & Texture Flags
+        if layer_idx is not None:
+            resolved_layer = int(layer_idx)
+            has_tex = (resolved_layer > 0)
+        elif mat_def is not None:
+            resolved_layer = mat_def.layer_idx
+            has_tex = mat_def.has_texture and (resolved_layer > 0)
+        elif isinstance(material_id, int):
+            resolved_layer = int(material_id)
+            has_tex = (resolved_layer > 0)
+        else:
+            resolved_layer = int(self.material_data[dense_idx, 6])
+            has_tex = (resolved_layer > 0)
+
+        # 6. Displacement Mode
+        if disp_mode is not None:
+            resolved_disp = DisplacementMode(disp_mode)
+        elif mat_def is not None:
+            resolved_disp = mat_def.disp_mode
+        else:
+            _, resolved_disp = decode_mat_flags(self.material_data[dense_idx, 7])
+
+        self.material_data[dense_idx, 6] = float(resolved_layer)
+        self.material_data[dense_idx, 7] = encode_mat_flags(has_tex, resolved_disp)
+
+    def get_entity_material(self, entity_id: int) -> dict[str, Any]:
+        """Returns the material parameters for an active entity."""
+        dense_idx = self.pool.get_dense_index(entity_id)
+        if dense_idx < 0:
+            raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
+        data = self.material_data[dense_idx]
+        has_tex, disp_mode = decode_mat_flags(data[7])
+        return {
+            "color": (float(data[0]), float(data[1]), float(data[2])),
+            "roughness": float(data[3]),
+            "metallic": float(data[4]),
+            "ao": float(data[5]),
+            "layer_idx": int(data[6]),
+            "has_texture": has_tex,
+            "disp_mode": disp_mode,
+        }
 
     def destroy_entity(self, entity_id: int) -> bool:
         """Destroys an entity and performs O(1) swap-and-pop row consolidation."""

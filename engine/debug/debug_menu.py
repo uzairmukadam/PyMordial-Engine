@@ -591,6 +591,35 @@ class DebugMenu:
                 et.mark_custom()
                 self.toast.show(f"Point Lights: {'ON' if pl_val else 'OFF'}", duration=1.5)
 
+            # Dynamic Local Spot Lights & Perspective Shadows
+            sl_changed, sl_val = imgui.checkbox("Dynamic Spot Lights", getattr(et, "spot_lights_enabled", True))
+            if sl_changed:
+                et.spot_lights_enabled = sl_val
+                et.mark_custom()
+                self.toast.show(f"Spot Lights: {'ON' if sl_val else 'OFF'}", duration=1.5)
+
+            if getattr(et, "spot_lights_enabled", True):
+                ssh_changed, ssh_val = imgui.checkbox("Spot Shadows (2x2 Perspective Atlas)", getattr(et, "spot_shadows_enabled", True))
+                if ssh_changed:
+                    et.spot_shadows_enabled = ssh_val
+                    et.mark_custom()
+                    self.toast.show(f"Spot Shadows: {'ON' if ssh_val else 'OFF'}", duration=1.5)
+
+                sl_r_c, sl_r_v = imgui.slider_float("Spot Light Radius", getattr(et, "spot_light_radius", 35.0), 5.0, 100.0, "%.1fm")
+                if sl_r_c:
+                    et.spot_light_radius = sl_r_v
+                    et.mark_custom()
+
+                sl_a_c, sl_a_v = imgui.slider_float("Spot Cone Angle", getattr(et, "spot_cone_angle", 32.0), 10.0, 75.0, "%.1f deg")
+                if sl_a_c:
+                    et.spot_cone_angle = sl_a_v
+                    et.mark_custom()
+
+                sl_b_c, sl_b_v = imgui.slider_float("Spot Shadow Bias", getattr(et, "spot_shadow_bias", 0.0015), 0.0001, 0.010, "%.4f")
+                if sl_b_c:
+                    et.spot_shadow_bias = sl_b_v
+                    et.mark_custom()
+
             imgui.separator()
             imgui.text("Physical Atmosphere & Day-Night Cycle")
 

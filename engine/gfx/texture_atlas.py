@@ -38,46 +38,15 @@ class DecodedMaterialLayer:
     height: int
 
 
-class DisplacementMode(IntEnum):
-    """Mutually exclusive displacement modes per entity."""
-    NONE = 0          # Standard PBR (normal mapping only, no displacement)
-    POM = 1           # Parallax Occlusion Mapping (fragment shader raymarch + self-shadowing)
-    SSDM = 2          # Screen-Space Displacement Mapping (post-G-buffer depth extrusion)
-    TESSELLATION = 3  # Hardware Tessellation (GPU TCS+TES vertex displacement along normal)
-
-
-# Material flag bitfield layout stored in material_data[entity, 7]:
-# Bit 0: MAT_FLAG_HAS_TEXTURE (1 = sample texture arrays)
-# Bits 1..2: Displacement Mode (2 bits: 0=None, 1=POM, 2=SSDM, 3=Tessellation)
-MAT_FLAG_HAS_TEXTURE = 1 << 0
-MAT_FLAG_DISP_SHIFT = 1
-MAT_FLAG_DISP_MASK = 0x3
-
-
-def encode_mat_flags(has_texture: bool, disp_mode: DisplacementMode = DisplacementMode.NONE) -> float:
-    """Encodes material flags and displacement mode into a float for material_data[entity, 7]."""
-    flags = (1 if has_texture else 0) | ((int(disp_mode) & MAT_FLAG_DISP_MASK) << MAT_FLAG_DISP_SHIFT)
-    return float(flags)
-
-
-def decode_mat_flags(flag_val: float | int) -> tuple[bool, DisplacementMode]:
-    """Decodes material flags and displacement mode from material_data[entity, 7]."""
-    val = int(flag_val)
-    has_texture = bool(val & MAT_FLAG_HAS_TEXTURE)
-    disp_mode = DisplacementMode((val >> MAT_FLAG_DISP_SHIFT) & MAT_FLAG_DISP_MASK)
-    return has_texture, disp_mode
-
-
-DEFAULT_MATERIAL_DEPTHS: dict[str, float] = {
-    "identity": 0.0,
-    "clay_roof_tiles_02": 0.040,      # Terracotta roof tiles (4.0 cm physical depth)
-    "metal_grate_rusty": 0.015,       # Metal floor grate (1.5 cm physical depth)
-    "castle_brick_02_red": 0.035,     # Exterior masonry brick (3.5 cm depth)
-    "mud_cracked_dry_03": 0.045,      # Dry cracked ground fissures (4.5 cm depth)
-    "floor_pattern_02": 0.025,        # Decorative stone floor tiles (2.5 cm depth)
-    "ribbed_corduroy": 0.008,         # Fabric corduroy micro-ribs (0.8 cm depth)
-    "concrete_floor_worn_02": 0.005,  # Worn industrial concrete (0.5 cm depth)
-}
+from engine.core.materials import (
+    DisplacementMode,
+    MAT_FLAG_HAS_TEXTURE,
+    MAT_FLAG_DISP_SHIFT,
+    MAT_FLAG_DISP_MASK,
+    encode_mat_flags,
+    decode_mat_flags,
+    DEFAULT_MATERIAL_DEPTHS,
+)
 
 
 def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:

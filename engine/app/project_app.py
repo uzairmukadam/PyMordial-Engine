@@ -80,6 +80,7 @@ class ProjectApp:
         # 3. ECS & Native Rapier3D Physics
         max_ent = getattr(self.config, "max_entities", 50_000)
         self.ecs = EntityManager(max_entities=max_ent)
+        self.ecs.set_material_registry(self.pipeline.material_registry)
         gx, gy, gz = self.config.gravity
         self.physics = PhysicsManager(gravity_x=gx, gravity_y=gy, gravity_z=gz)
 

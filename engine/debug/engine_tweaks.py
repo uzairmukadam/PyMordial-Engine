@@ -78,6 +78,11 @@ class EngineTweaks:
         "taa_feedback",
         "taa_sharpness",
         "point_lights_enabled",
+        "spot_lights_enabled",
+        "spot_shadows_enabled",
+        "spot_light_radius",
+        "spot_cone_angle",
+        "spot_shadow_bias",
         "pom_enabled",
         "pom_height_scale",
         "pom_self_shadow",
@@ -238,6 +243,11 @@ class EngineTweaks:
         self.taa_feedback = 0.92
         self.taa_sharpness = 0.50
         self.point_lights_enabled = True
+        self.spot_lights_enabled = True
+        self.spot_shadows_enabled = True
+        self.spot_light_radius = 35.0
+        self.spot_cone_angle = 32.0
+        self.spot_shadow_bias = 0.0015
 
         # Froxel Volumetric Fog & Atmospheric Light Scattering
         self.volumetric_fog_enabled = True
@@ -483,6 +493,11 @@ class EngineTweaks:
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
             p_cfg.clustered_lights_enabled = bool(self.point_lights_enabled)
+            p_cfg.spot_lights_enabled = bool(self.spot_lights_enabled)
+            p_cfg.spot_shadows_enabled = bool(self.spot_shadows_enabled)
+            p_cfg.spot_light_radius = float(self.spot_light_radius)
+            p_cfg.spot_cone_angle = float(self.spot_cone_angle)
+            p_cfg.spot_shadow_bias = float(self.spot_shadow_bias)
 
             # 5. Shadows & CSM
             p_cfg.shadow_mode = self.shadow_mode
@@ -501,6 +516,11 @@ class EngineTweaks:
                     or self.csm_cascades != pipeline.csm.cascade_count
                 ):
                     pipeline.csm.update_splits(self.shadow_distance, self.csm_cascades)
+
+            if hasattr(pipeline, "spot_shadow_map") and pipeline.spot_shadow_map is not None:
+                spot_res = getattr(p_cfg, "spot_shadow_resolution", 2048)
+                if spot_res != pipeline.spot_shadow_map.atlas_size:
+                    pipeline.spot_shadow_map.resize_atlas(spot_res)
 
             # 6. Micro-Geometry (POM, SSDM, Tessellation)
             p_cfg.pom_enabled = bool(self.pom_enabled)
@@ -635,6 +655,11 @@ class EngineTweaks:
             "ssr_max_roughness": float(self.ssr_max_roughness),
             "aa_mode": str(getattr(self, "aa_mode", "OFF")),
             "point_lights_enabled": bool(self.point_lights_enabled),
+            "spot_lights_enabled": bool(self.spot_lights_enabled),
+            "spot_shadows_enabled": bool(self.spot_shadows_enabled),
+            "spot_light_radius": float(self.spot_light_radius),
+            "spot_cone_angle": float(self.spot_cone_angle),
+            "spot_shadow_bias": float(self.spot_shadow_bias),
             "shadow_mode": str(self.shadow_mode),
             "shadow_softness": float(self.shadow_softness),
             "shadow_bias": float(self.shadow_bias),

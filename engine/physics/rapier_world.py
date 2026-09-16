@@ -237,8 +237,16 @@ class PhysicsManager:
                 friction=float(friction) if friction is not None else None,
                 restitution=float(restitution) if restitution is not None else None,
             )
-        except TypeError:
-            self.world.attach_cylinder_collider(entity_id, float(half_height), float(radius))
+        except (AttributeError, TypeError):
+            self.attach_box_collider(
+                entity_id,
+                half_x=float(radius),
+                half_y=float(half_height),
+                half_z=float(radius),
+                density=density,
+                friction=friction,
+                restitution=restitution,
+            )
 
     def attach_cone_collider(
         self,
@@ -259,8 +267,16 @@ class PhysicsManager:
                 friction=float(friction) if friction is not None else None,
                 restitution=float(restitution) if restitution is not None else None,
             )
-        except TypeError:
-            self.world.attach_cone_collider(entity_id, float(half_height), float(radius))
+        except (AttributeError, TypeError):
+            self.attach_box_collider(
+                entity_id,
+                half_x=float(radius),
+                half_y=float(half_height),
+                half_z=float(radius),
+                density=density,
+                friction=friction,
+                restitution=restitution,
+            )
 
     def attach_plane_collider(
         self,
@@ -283,8 +299,16 @@ class PhysicsManager:
                 friction=float(friction) if friction is not None else None,
                 restitution=float(restitution) if restitution is not None else None,
             )
-        except TypeError:
-            self.world.attach_plane_collider(entity_id, float(half_x), float(half_z))
+        except (AttributeError, TypeError):
+            self.attach_box_collider(
+                entity_id,
+                half_x=float(half_x),
+                half_y=max(float(thickness) * 0.5, 0.01),
+                half_z=float(half_z),
+                density=density,
+                friction=friction,
+                restitution=restitution,
+            )
 
     def attach_round_box_collider(
         self,
@@ -309,9 +333,15 @@ class PhysicsManager:
                 friction=float(friction) if friction is not None else None,
                 restitution=float(restitution) if restitution is not None else None,
             )
-        except TypeError:
-            self.world.attach_round_box_collider(
-                entity_id, float(half_x), float(half_y), float(half_z), float(border_radius)
+        except (AttributeError, TypeError):
+            self.attach_box_collider(
+                entity_id,
+                half_x=float(half_x),
+                half_y=float(half_y),
+                half_z=float(half_z),
+                density=density,
+                friction=friction,
+                restitution=restitution,
             )
 
     def attach_primitive_collider(
