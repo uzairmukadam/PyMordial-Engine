@@ -152,6 +152,8 @@ class RenderPipeline:
         "_view_mat",
         "_proj_mat",
         "_vp_mat",
+        "_unjittered_proj_mat",
+        "_unjittered_vp_mat",
         "_inv_proj",
         "_inv_view",
         "_cam_pos",
@@ -313,6 +315,8 @@ class RenderPipeline:
         self._view_mat = np.zeros(16, dtype=np.float32)
         self._proj_mat = np.zeros(16, dtype=np.float32)
         self._vp_mat = np.zeros(16, dtype=np.float32)
+        self._unjittered_proj_mat = np.zeros(16, dtype=np.float32)
+        self._unjittered_vp_mat = np.zeros(16, dtype=np.float32)
         self._inv_proj = np.zeros(16, dtype=np.float32)
         self._inv_view = np.zeros(16, dtype=np.float32)
         self._cam_pos = np.zeros(3, dtype=np.float32)
@@ -739,9 +743,13 @@ class RenderPipeline:
             out=self._proj_mat,
         )
 
+        np.copyto(self._unjittered_proj_mat, self._proj_mat)
+
         jitter_x, jitter_y = 0.0, 0.0
         aa_mode = getattr(self.config, "aa_mode", "OFF")
-        if aa_mode in ("SMAA_2X", "SMAA_4X"):
+        if aa_mode == "TAA" or getattr(self.config, "taa_enabled", False):
+            jitter_x, jitter_y = self.taa_pass.get_jitter(w, h)
+        elif aa_mode in ("SMAA_2X", "SMAA_4X"):
             jitter_x, jitter_y = self.smaa_pass.get_jitter(w, h, aa_mode)
 
         if jitter_x != 0.0 or jitter_y != 0.0:
@@ -749,6 +757,7 @@ class RenderPipeline:
             self._proj_mat[9] += jitter_y * 2.0
 
         mat4_mul(self._proj_mat, self._view_mat, out=self._vp_mat)
+        mat4_mul(self._unjittered_proj_mat, self._view_mat, out=self._unjittered_vp_mat)
         mat4_inv(self._proj_mat, out=self._inv_proj)
         mat4_inv(self._view_mat, out=self._inv_view)
 
@@ -1222,6 +1231,16 @@ class RenderPipeline:
                     config=self.config,
                 )
 
+        # ---- PASS 7.9: Temporal Anti-Aliasing (TAA in linear HDR space before Tonemapping) ----
+        aa_mode = getattr(self.config, "aa_mode", "OFF")
+        taa_active = (aa_mode == "TAA" or getattr(self.config, "taa_enabled", False))
+        if taa_active:
+            ctx.resources["hdr_color"] = self.post_process.hdr_fbo.color_attachments[0]
+            ctx.resources["g_buffer"] = self.g_buffer
+            ctx.resources["prev_unjittered_vp"] = self._prev_vp_mat
+            self.taa_pass.execute(ctx)
+            self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.taa_pass._write_fbo)
+
         # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
         aa_mode = getattr(self.config, "aa_mode", "OFF")
@@ -1246,8 +1265,8 @@ class RenderPipeline:
         if not self.ctx_wrapper.is_headless:
             self.ctx.copy_framebuffer(self.ctx.screen, self.post_process.final_fbo)
 
-        # Store current ViewProjection for next frame's motion vectors (zero-allocation)
-        np.copyto(self._prev_vp_mat, self._vp_mat)
+        # Store current unjittered ViewProjection for next frame's motion vectors (zero-allocation)
+        np.copyto(self._prev_vp_mat, self._unjittered_vp_mat)
 
         # Clear dynamic point lights for the next frame
         self.lights_pass.clear()

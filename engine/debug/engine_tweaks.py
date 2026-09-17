@@ -77,6 +77,7 @@ class EngineTweaks:
         "taa_enabled",
         "taa_feedback",
         "taa_sharpness",
+        "taa_gamma",
         "point_lights_enabled",
         "spot_lights_enabled",
         "spot_shadows_enabled",
@@ -240,8 +241,9 @@ class EngineTweaks:
         self.ssr_max_roughness = 0.65
         self.aa_mode = "OFF"
         self.taa_enabled = False
-        self.taa_feedback = 0.92
-        self.taa_sharpness = 0.50
+        self.taa_feedback = 0.95
+        self.taa_sharpness = 0.35
+        self.taa_gamma = 1.25
         self.point_lights_enabled = True
         self.spot_lights_enabled = True
         self.spot_shadows_enabled = True
@@ -492,6 +494,10 @@ class EngineTweaks:
             p_cfg.ssr_thickness = float(self.ssr_thickness)
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
+            p_cfg.taa_enabled = (p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False)))
+            p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
+            p_cfg.taa_sharpness = float(getattr(self, "taa_sharpness", 0.35))
+            p_cfg.taa_gamma = float(getattr(self, "taa_gamma", 1.25))
             p_cfg.clustered_lights_enabled = bool(self.point_lights_enabled)
             p_cfg.spot_lights_enabled = bool(self.spot_lights_enabled)
             p_cfg.spot_shadows_enabled = bool(self.spot_shadows_enabled)

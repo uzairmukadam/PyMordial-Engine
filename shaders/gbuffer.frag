@@ -241,10 +241,10 @@ void main() {
     // Apply POM self-shadow into AO channel
     ao *= pom_shadow;
 
-    // Velocity vector (UV space: curr_uv - prev_uv)
+    // Velocity vector (pure geometric motion in UV space: unjittered_curr_uv - prev_uv)
     float curr_inv_w = 1.0 / max(v_CurrClip.w, 1e-6);
     float prev_inv_w = 1.0 / max(v_PrevClip.w, 1e-6);
-    vec2 curr_uv = (v_CurrClip.xy * curr_inv_w) * 0.5 + 0.5;
+    vec2 curr_uv = (v_CurrClip.xy * curr_inv_w) * 0.5 + 0.5 - u_ScreenSize_Jitter.zw;
     vec2 prev_uv = (v_PrevClip.xy * prev_inv_w) * 0.5 + 0.5;
     vec2 velocity = curr_uv - prev_uv;
 

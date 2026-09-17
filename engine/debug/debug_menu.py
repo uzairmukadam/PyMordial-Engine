@@ -575,9 +575,9 @@ class DebugMenu:
                     et.ssr_max_roughness = ssr_mr_val
                     et.mark_custom()
 
-            # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x)
-            aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x"]
-            aa_internal_modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X"]
+            # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
+            aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x", "TAA"]
+            aa_internal_modes = ["OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"]
             curr_mode = getattr(et, "aa_mode", "OFF")
             curr_aa_idx = aa_internal_modes.index(curr_mode) if curr_mode in aa_internal_modes else 0
 
@@ -585,9 +585,25 @@ class DebugMenu:
             if aa_changed:
                 chosen_internal = aa_internal_modes[aa_idx]
                 et.aa_mode = chosen_internal
-                et.taa_enabled = False
+                et.taa_enabled = (chosen_internal == "TAA")
                 et.mark_custom()
                 self.toast.show(f"Anti-Aliasing: {aa_modes[aa_idx]}", duration=1.5)
+
+            if et.aa_mode == "TAA" or getattr(et, "taa_enabled", False):
+                taa_fb_c, taa_fb_v = imgui.slider_float("TAA Feedback", getattr(et, "taa_feedback", 0.95), 0.80, 0.98, "%.2f")
+                if taa_fb_c:
+                    et.taa_feedback = taa_fb_v
+                    et.mark_custom()
+
+                taa_sh_c, taa_sh_v = imgui.slider_float("TAA Sharpness", getattr(et, "taa_sharpness", 0.35), 0.0, 1.0, "%.2f")
+                if taa_sh_c:
+                    et.taa_sharpness = taa_sh_v
+                    et.mark_custom()
+
+                taa_gm_c, taa_gm_v = imgui.slider_float("TAA Variance Box (Gamma)", getattr(et, "taa_gamma", 1.25), 0.75, 2.50, "%.2f")
+                if taa_gm_c:
+                    et.taa_gamma = taa_gm_v
+                    et.mark_custom()
 
             # Dynamic Local Point Lights
             pl_changed, pl_val = imgui.checkbox("Dynamic Local Lights (SSBO 3)", et.point_lights_enabled)

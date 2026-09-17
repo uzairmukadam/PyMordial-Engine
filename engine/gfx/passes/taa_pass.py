@@ -1,8 +1,8 @@
 """Temporal Anti-Aliasing (TAA) Pass for PyMordial Engine.
 
 Implements subpixel Halton (2, 3) projection jittering, history reprojection,
-and YCoCg neighborhood variance bounding-box clamping to eliminate specular shimmer
-and geometric aliasing.
+and tonemapped YCoCg neighborhood variance bounding-box clamping to eliminate specular shimmer
+and geometric aliasing without color shifting or temporal wobbling.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
 
 
 def _halton(index: int, base: int) -> float:
+    """Computes the index-th value of the radical inverse sequence for a prime base."""
     f = 1.0
     r = 0.0
     curr = index
@@ -29,7 +30,7 @@ def _halton(index: int, base: int) -> float:
 class TAAPass(RenderPass):
     """Sub-pixel jittering and temporal reprojection accumulation pass."""
 
-    # Precomputed 8-phase Halton(2, 3) normalized offsets (-0.5 .. +0.5)
+    # Precomputed 8-phase Halton(2, 3) normalized offsets (-0.5 .. +0.5 pixels)
     HALTON_8 = tuple(
         (_halton(i + 1, 2) - 0.5, _halton(i + 1, 3) - 0.5)
         for i in range(8)
@@ -70,9 +71,11 @@ class TAAPass(RenderPass):
 
         self._u_prev_vp = self.prog.get("u_PrevViewProjection", None)
         self._u_feedback = self.prog.get("u_Feedback", None)
+        self._u_sharpness = self.prog.get("u_Sharpness", None)
+        self._u_gamma = self.prog.get("u_Gamma", None)
 
     def get_jitter(self, width: int, height: int) -> tuple[float, float]:
-        """Calculates subpixel projection offset for the current frame."""
+        """Calculates subpixel projection offset for the current frame in UV coordinates."""
         hx, hy = self.HALTON_8[self.frame_idx % 8]
         return hx / max(width, 1), hy / max(height, 1)
 
@@ -103,13 +106,17 @@ class TAAPass(RenderPass):
         self._read_hist = self.hist_a
         self._write_fbo = self.fbo_b
         self._write_hist = self.hist_b
+        self.frame_idx = 0
 
     def execute(self, context: RenderGraphContext) -> None:
         self.frame_idx += 1
         current_tex = context.resources.get("hdr_color")
         g_buffer = context.resources.get("g_buffer")
 
-        if not getattr(context.config, "taa_enabled", True) or current_tex is None or g_buffer is None:
+        aa_mode = getattr(context.config, "aa_mode", "OFF")
+        taa_active = (aa_mode == "TAA" or getattr(context.config, "taa_enabled", False))
+
+        if not taa_active or current_tex is None or g_buffer is None:
             context.resources["taa_output"] = current_tex
             return
 
@@ -122,21 +129,23 @@ class TAAPass(RenderPass):
         g_buffer.depth_texture.use(location=2)
         g_buffer.velocity_texture.use(location=3)
 
-        # On frame 1, seed previous VP from current to avoid a flash
-        if hasattr(context.frame_context, "view_proj_mat"):
-            if self.frame_idx <= 1:
-                self._prev_vp = np.copy(context.frame_context.view_proj_mat)
+        # On frame 1, seed previous unjittered VP from current to avoid initialization flash
+        prev_vp_candidate = context.resources.get("prev_unjittered_vp")
+        if prev_vp_candidate is not None:
+            self._prev_vp = prev_vp_candidate
+        elif hasattr(context.frame_context, "view_proj_mat") and self.frame_idx <= 1:
+            self._prev_vp = np.copy(context.frame_context.view_proj_mat)
 
         if self._u_prev_vp is not None:
             self._u_prev_vp.write(self._prev_vp.tobytes())
         if self._u_feedback is not None:
             self._u_feedback.value = float(getattr(context.config, "taa_feedback", 0.95))
+        if self._u_sharpness is not None:
+            self._u_sharpness.value = float(getattr(context.config, "taa_sharpness", 0.35))
+        if self._u_gamma is not None:
+            self._u_gamma.value = float(getattr(context.config, "taa_gamma", 1.25))
 
         self.vao.render(moderngl.TRIANGLES, vertices=3)
-
-        # Store current VP as previous for next frame's reprojection
-        if hasattr(context.frame_context, "view_proj_mat"):
-            self._prev_vp = np.copy(context.frame_context.view_proj_mat)
 
         # Ping-pong swap
         context.resources["taa_output"] = self._write_hist

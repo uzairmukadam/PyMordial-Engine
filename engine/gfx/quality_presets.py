@@ -79,11 +79,12 @@ class RenderConfig:
     ssr_thickness: float = 0.40
     ssr_max_distance: float = 20.0
 
-    # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X")
+    # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
     aa_mode: str = "OFF"
     taa_enabled: bool = False
-    taa_feedback: float = 0.92
+    taa_feedback: float = 0.95
     taa_sharpness: float = 0.35
+    taa_gamma: float = 1.25
     fxaa_subpixel: float = 0.75
     fxaa_edge_threshold: float = 0.125
     smaa_threshold: float = 0.08
