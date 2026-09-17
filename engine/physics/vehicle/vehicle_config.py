@@ -30,6 +30,8 @@ class WheelConfig:
     is_steerable: bool = False
     is_driven: bool = True
     brake_ratio: float = 1.0            # 1.0 = full brake force applied
+    bump_stop_threshold: float = 0.78   # Ratio of travel where progressive bump-stop engages
+    bump_stop_stiffness_mult: float = 3.5 # Spring stiffness multiplier at full bump-stop
 
 
 @dataclass(slots=True)
@@ -61,15 +63,24 @@ class VehicleConfig:
     brake_torque: float = 6500.0        # Braking force (N)
     handbrake_torque: float = 9000.0    # Rear wheel handbrake lock force (N)
     reverse_torque: float = 1800.0
+    brake_bias_front: float = 0.65      # 65% front / 35% rear brake distribution for directional stability
 
-    # Steering & Handling
+    # Steering & Handling Dynamics
     max_steer_angle_rad: float = 0.52   # ~30 degrees
     steer_speed: float = 4.5            # Rad/s response speed
+    high_speed_steer_reduction: float = 0.45 # Max lock taper factor at top speed
+    caster_aligning_torque: float = 0.08     # Pneumatic trail self-centering torque scalar
+    drift_counter_steer_assist: float = 0.25 # Pneumatic trail assist when counter-steering in drifts
     anti_roll_stiffness: float = 12000.0 # Force transfer between left and right wheels
     upright_stiffness: float = 34000.0   # Self-righting torque restoring chassis to level (N*m/rad)
     upright_damping: float = 5200.0      # Damping on roll and pitch oscillations (N*m*s/rad)
 
-    # Tire Friction & Surface Slip
+    # Suspension & Damper Realism
+    suspension_rebound_damping_factor: float = 1.40 # Rebound damping vs compression damping ratio
+
+    # Tire Friction & Surface Slip (Pacejka / Kamm's Friction Circle)
     tire_grip: float = 1.0              # Baseline lateral tire grip scalar
+    tire_load_sensitivity: float = 0.15 # Grip de-rating coefficient under high normal load
     drift_friction_factor: float = 0.45 # Lateral friction reduction under handbrake/skid
     surface_friction_mult: float = 1.0  # Environmental grip scalar (e.g. 0.65 in rain)
+

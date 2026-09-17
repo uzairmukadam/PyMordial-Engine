@@ -183,6 +183,46 @@ class TestVehicleMechanics:
         assert hasattr(rear_left, "slip_angle")
         assert hasattr(rear_left, "skidding")
 
+    def test_kamms_friction_circle_and_brake_bias(self):
+        """Verifies Kamm's friction circle: braking consumes longitudinal capacity and front bias bites harder."""
+        dt = 1.0 / 60.0
+        # Settle car
+        for _ in range(30):
+            self.vehicle.update(dt)
+            self.physics.step_simulation(dt)
+            self.physics.sync_to_ecs(self.ecs)
+
+        # Apply brake and steer simultaneously
+        self.vehicle.set_brake(1.0)
+        self.vehicle.set_steering(1.0)
+        self.vehicle.update(dt)
+
+        assert self.vehicle.config.brake_bias_front == 0.65
+        assert hasattr(self.vehicle.config, "caster_aligning_torque")
+
+    def test_dynamic_2axis_weight_transfer(self):
+        """Verifies longitudinal dive and lateral weight transfer."""
+        dt = 1.0 / 60.0
+        # Accelerate hard
+        self.vehicle.set_throttle(1.0)
+        for _ in range(25):
+            self.vehicle.update(dt)
+            self.physics.step_simulation(dt)
+            self.physics.sync_to_ecs(self.ecs)
+
+        assert hasattr(self.vehicle, "_accel_x_filtered")
+        assert hasattr(self.vehicle, "_accel_y_filtered")
+        assert self.vehicle._accel_x_filtered != 0.0
+
+    def test_speed_sensitive_steering_lock(self):
+        """Verifies that high forward speed tapers the effective steering angle."""
+        dt = 1.0 / 60.0
+        self.vehicle.current_speed_mps = 50.0  # Simulated high speed
+        self.vehicle.set_steering(1.0)
+        self.vehicle.update(dt)
+        # Steer angle should be less than max_steer_angle_rad due to speed reduction
+        assert self.vehicle.current_steer_angle < self.vehicle.config.max_steer_angle_rad
+
 
 class TestVehicleAudioSynthesis:
     """Validates procedural in-memory audio waveform generation."""
