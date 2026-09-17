@@ -532,6 +532,7 @@ class EngineTweaks:
             p_cfg.tess_max_level = float(self.tess_max_level)
             p_cfg.tess_med_level = float(self.tess_med_level)
             p_cfg.tess_displacement_scale = float(self.tess_displacement_scale)
+            p_cfg.frustum_cull_enabled = bool(self.frustum_cull_enabled)
             p_cfg.ssdm_enabled = bool(self.ssdm_enabled)
             p_cfg.ssdm_scale = float(self.ssdm_scale)
 

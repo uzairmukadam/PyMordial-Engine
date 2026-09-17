@@ -21,6 +21,7 @@ from engine.gfx.mdi import MultiDrawIndirect
 from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.spot_shadows import SpotLightShadowMap
+from engine.gfx.culling import FrustumCuller
 from engine.gfx.post_process import PostProcessPipeline
 from engine.gfx.render_graph import RenderGraphContext
 from engine.gfx.passes.ibl import IBLPass
@@ -106,6 +107,7 @@ class RenderPipeline:
         "frame_context",
         "mega_buffer",
         "mdi",
+        "shadow_mdi",
         "g_buffer",
         "csm",
         "ibl_pass",
@@ -137,6 +139,11 @@ class RenderPipeline:
         "material_registry",
         "ssdm_pass",
         "hiz_pass",
+        "culler",
+        "stats_visible_entities",
+        "stats_culled_entities",
+        "stats_visible_commands",
+        "stats_culled_commands",
         "tess_mdi",
         "gbuffer_tess_prog",
         "gbuffer_tess_vao",
@@ -248,6 +255,7 @@ class RenderPipeline:
         # 2. Initialize Shared Mega-Buffer & MDI Batcher
         self.mega_buffer = MegaBuffer(self.ctx)
         self.mdi = MultiDrawIndirect(self.ctx)
+        self.shadow_mdi = MultiDrawIndirect(self.ctx)
 
         # 3. Initialize MRT G-Buffer (Reversed-Z 32F)
         self.g_buffer = GBuffer(
@@ -293,6 +301,13 @@ class RenderPipeline:
         self.smaa_pass = SMAAPass(self.ctx, w, h)
         self.volumetric_fog_pass = VolumetricFogPass(self.ctx, w, h)
         self._prev_vp_mat = np.identity(4, dtype=np.float32).flatten()
+
+        # Phase 3: Frustum Culling & MDI Batch Filter
+        self.culler = FrustumCuller(max_entities=getattr(self.config, "max_entities", 100_000))
+        self.stats_visible_entities = 0
+        self.stats_culled_entities = 0
+        self.stats_visible_commands = 0
+        self.stats_culled_commands = 0
 
         # Pre-allocated scratch buffers for zero-allocation frame rendering
         self._view_mat = np.zeros(16, dtype=np.float32)
@@ -680,8 +695,22 @@ class RenderPipeline:
             self.hiz_pass.resize(w, h)
 
         # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
-        self.ssbo_transforms.write(ecs.get_active_transforms_view())
-        self.ssbo_materials.write(ecs.get_active_materials_view())
+        # Phase 4: Static / Dynamic Entity Upload Optimization
+        if ecs.is_static_dirty:
+            if ecs.static_count > 0:
+                self.ssbo_transforms.write(ecs.get_static_transforms_view().tobytes(), offset=0)
+                self.ssbo_materials.write(ecs.get_static_materials_view().tobytes(), offset=0)
+            else:
+                self.ssbo_transforms.write(ecs.get_active_transforms_view().tobytes(), offset=0)
+                self.ssbo_materials.write(ecs.get_active_materials_view().tobytes(), offset=0)
+            ecs.clear_static_dirty()
+
+        # Upload dynamic entity slice every frame
+        if active_count > ecs.static_count:
+            dyn_offset_t = ecs.static_count * 64  # 16 floats * 4 bytes
+            dyn_offset_m = ecs.static_count * 32  # 8 floats * 4 bytes
+            self.ssbo_transforms.write(ecs.get_dynamic_transforms_view().tobytes(), offset=dyn_offset_t)
+            self.ssbo_materials.write(ecs.get_dynamic_materials_view().tobytes(), offset=dyn_offset_m)
 
         # 2. Camera Matrices & Subpixel TAA Jitter
         self._cam_pos[0] = float(camera_pos[0])
@@ -776,11 +805,50 @@ class RenderPipeline:
             fog_height_falloff=self.config.fog_height_falloff,
         )
 
-        # Prepare MDI batch commands (standard and tessellated)
+        # Prepare MDI batch commands (camera view, tessellated, and shadow passes)
         self.mdi.begin_frame()
         self.tess_mdi.begin_frame()
+        self.shadow_mdi.begin_frame()
+
+        # Populate shadow MDI with all shadow casters (independent of camera view frustum)
         if draw_batches is not None:
             for item in draw_batches:
+                if len(item) == 4:
+                    mesh_item, count, base_inst, is_tess = item
+                else:
+                    mesh_item, count, base_inst = item
+                    is_tess = False
+
+                if count > 0 and not is_tess:
+                    alloc = (
+                        self.mega_buffer.allocations[mesh_item]
+                        if isinstance(mesh_item, str)
+                        else mesh_item
+                    )
+                    self.shadow_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+
+        # Synchronize dynamic entity AABBs from current world transforms (compound vehicle parts, props, etc.)
+        ecs.sync_dynamic_aabbs()
+
+        # Phase 3: Frustum Culling for Camera MDI Draw Calls
+        frustum_cull_active = getattr(self.config, "frustum_cull_enabled", True)
+        if frustum_cull_active and draw_batches:
+            self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
+            visible_mask = self.culler.cull_aabbs(ecs.get_active_aabbs_view(), active_count)
+            batches_to_render = self.culler.filter_draw_batches(draw_batches, visible_mask)
+            self.stats_visible_entities = self.culler.stats_visible_entities
+            self.stats_culled_entities = self.culler.stats_culled_entities
+            self.stats_visible_commands = self.culler.stats_visible_commands
+            self.stats_culled_commands = self.culler.stats_culled_commands
+        else:
+            batches_to_render = draw_batches
+            self.stats_visible_entities = active_count
+            self.stats_culled_entities = 0
+            self.stats_visible_commands = len(draw_batches) if draw_batches else 0
+            self.stats_culled_commands = 0
+
+        if batches_to_render is not None:
+            for item in batches_to_render:
                 if len(item) == 4:
                     mesh_item, count, base_inst, is_tess = item
                 else:
@@ -828,7 +896,7 @@ class RenderPipeline:
             self.csm.begin_cascade(c)
             if self._csm_cascade_idx_uniform is not None:
                 self._csm_cascade_idx_uniform.value = c
-            self.mdi.submit(self.csm_vao, self.csm_prog)
+            self.shadow_mdi.submit(self.csm_vao, self.csm_prog)
             if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
                 self.ctx.patch_vertices = 3
                 if self._u_csm_tess_cascade_idx is not None:
@@ -865,7 +933,7 @@ class RenderPipeline:
                 self.spot_shadow_map.begin_spot(idx)
                 if self._u_spot_depth_vp is not None:
                     self._u_spot_depth_vp.write(vp.tobytes())
-                self.mdi.submit(self.spot_depth_vao, self.spot_depth_prog)
+                self.shadow_mdi.submit(self.spot_depth_vao, self.spot_depth_prog)
 
         # ---- PASS 2: G-Buffer Pass (Reversed-Z) ----
         self.g_buffer.clear()
@@ -1196,6 +1264,7 @@ class RenderPipeline:
         self.frame_context.destroy()
         self.mega_buffer.destroy()
         self.mdi.destroy()
+        self.shadow_mdi.destroy()
         self.g_buffer.destroy()
         self.csm.destroy()
         self.ibl_pass.destroy()

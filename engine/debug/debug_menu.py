@@ -54,6 +54,8 @@ class DebugMenu:
         "config_filepath",
         "_custom_ui_callbacks",
         "_scroll_to_microgeom",
+        "_scroll_to_culling",
+        "app",
     )
 
     TABS = ["F1: Performance", "F2: Graphics Options", "F3: Game Options"]
@@ -69,6 +71,7 @@ class DebugMenu:
         screen_width: int = 1280,
         screen_height: int = 720,
         config_filepath: str | Path | None = None,
+        app: Any | None = None,
     ) -> None:
         self.ctx = ctx
         self.monitor = monitor
@@ -77,6 +80,7 @@ class DebugMenu:
         self.toast = toast
         self.input_mgr = input_mgr
         self.config_filepath = Path(config_filepath) if config_filepath is not None else None
+        self.app = app
 
         self.width = screen_width
         self.height = screen_height
@@ -88,6 +92,7 @@ class DebugMenu:
         self.show_game_tweaks: bool = False
         self._custom_ui_callbacks: list[Callable[[], None]] = []
         self._scroll_to_microgeom: bool = False
+        self._scroll_to_culling: bool = False
 
         # Initialize Dear ImGui context
         self.imgui_ctx = imgui.create_context()
@@ -909,16 +914,37 @@ class DebugMenu:
                     et.disp_mid_radius = dmr_v
                     et.mark_custom()
 
+            # Vectorized Frustum Culling (Phase 3) & Static/Dynamic Separation (Phase 4)
+            if self._scroll_to_culling:
+                imgui.set_scroll_here_y(0.2)
+                self._scroll_to_culling = False
+            fc_c, fc_v = imgui.checkbox("Vectorized Frustum Culling", et.frustum_cull_enabled)
+            if fc_c:
+                et.frustum_cull_enabled = fc_v
+                et.mark_custom()
+
+            pipe = getattr(self.app, "pipeline", None) if self.app is not None else None
+            if pipe is not None:
+                vis_ent = getattr(pipe, "stats_visible_entities", 0)
+                cull_ent = getattr(pipe, "stats_culled_entities", 0)
+                vis_cmd = getattr(pipe, "stats_visible_commands", 0)
+                cull_cmd = getattr(pipe, "stats_culled_commands", 0)
+                imgui.text_colored(imgui.ImVec4(0.4, 0.9, 0.4, 1.0), f"  Entities: {vis_ent} Visible | {cull_ent} Culled")
+                imgui.text_colored(imgui.ImVec4(0.4, 0.8, 1.0, 1.0), f"  Commands: {vis_cmd} Visible | {cull_cmd} Culled")
+
+            ecs_ref = getattr(self.app, "ecs", None) if self.app is not None else None
+            if ecs_ref is not None and getattr(ecs_ref, "static_count", 0) > 0:
+                s_cnt = ecs_ref.static_count
+                d_cnt = max(0, ecs_ref.active_count - s_cnt)
+                saved_kb = (s_cnt * 96) / 1024.0
+                imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.3, 1.0), f"  Static: {s_cnt} | Dynamic: {d_cnt} (Saved: {saved_kb:.1f} KB/frame)")
+
             # Hardware Tessellation
             tess_c, tess_v = imgui.checkbox("Hardware GPU Tessellation", et.tess_enabled)
             if tess_c:
                 et.tess_enabled = tess_v
                 et.mark_custom()
             if et.tess_enabled:
-                fc_c, fc_v = imgui.checkbox("GPU Frustum Culling", et.frustum_cull_enabled)
-                if fc_c:
-                    et.frustum_cull_enabled = fc_v
-                    et.mark_custom()
                 dnr_c, dnr_v = imgui.slider_float("Near Quality Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m")
                 if dnr_c:
                     et.disp_near_radius = dnr_v

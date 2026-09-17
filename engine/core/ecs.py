@@ -163,6 +163,10 @@ class EntityManager:
         "material_data",
         "scales",
         "material_registry",
+        "aabbs",
+        "is_static",
+        "static_count",
+        "_static_dirty",
     )
 
     def __init__(self, max_entities: int = 100_000) -> None:
@@ -197,6 +201,15 @@ class EntityManager:
         self.scales = np.ones((max_entities, 3), dtype=np.float32)
         assert self.scales.flags["C_CONTIGUOUS"], "Scales must be C-contiguous"
 
+        # 5. World-Space AABBs: (N, 6) float32, C-contiguous [cx, cy, cz, ex, ey, ez]
+        self.aabbs = np.zeros((max_entities, 6), dtype=np.float32)
+        assert self.aabbs.flags["C_CONTIGUOUS"], "AABBs must be C-contiguous"
+
+        # 6. Static/Dynamic Entity Classification
+        self.is_static = np.zeros(max_entities, dtype=bool)
+        self.static_count: int = 0
+        self._static_dirty: bool = True
+
     def set_material_registry(self, registry: MaterialRegistry) -> None:
         """Assigns the central material registry for resolving material names and layer indices."""
         self.material_registry = registry
@@ -217,10 +230,18 @@ class EntityManager:
         material_id: int | str | None = None,
         layer_idx: int | None = None,
         disp_mode: DisplacementMode | int | None = None,
+        is_static: bool = False,
     ) -> int:
         """Allocates an entity and initializes its slots in contiguous memory tables."""
         entity_id = self.pool.allocate()
         dense_idx = self.pool.get_dense_index(entity_id)
+
+        # Static / dynamic classification
+        self.is_static[dense_idx] = bool(is_static)
+        if is_static:
+            self._static_dirty = True
+            if dense_idx >= self.static_count:
+                self.static_count = dense_idx + 1
 
         # Initialize current and previous physics state identically
         self.rigid_body_state[0, dense_idx, 0:3] = position
@@ -394,6 +415,8 @@ class EntityManager:
             self.rigid_body_state[:, dense_idx, :] = self.rigid_body_state[:, last_dense_idx, :]
             self.material_data[dense_idx] = self.material_data[last_dense_idx]
             self.scales[dense_idx] = self.scales[last_dense_idx]
+            self.aabbs[dense_idx] = self.aabbs[last_dense_idx]
+            self.is_static[dense_idx] = self.is_static[last_dense_idx]
 
         # Reset the now inactive last slot
         self.world_transforms[last_dense_idx].fill(0.0)
@@ -401,6 +424,11 @@ class EntityManager:
         self.rigid_body_state[:, last_dense_idx, 6] = 1.0
         self.material_data[last_dense_idx].fill(0.0)
         self.scales[last_dense_idx].fill(1.0)
+        self.aabbs[last_dense_idx].fill(0.0)
+        self.is_static[last_dense_idx] = False
+
+        if dense_idx < self.static_count or last_dense_idx < self.static_count:
+            self._static_dirty = True
 
         return True
 
@@ -411,11 +439,25 @@ class EntityManager:
         return TransformProxy(self, entity_id)
 
     def recompute_matrix(self, dense_idx: int) -> None:
-        """Recomputes the 4x4 transform matrix for a single dense entity slot."""
+        """Recomputes the 4x4 transform matrix and world-space AABB for a single dense entity slot."""
         pos = self.rigid_body_state[1, dense_idx, 0:3]
         rot = self.rigid_body_state[1, dense_idx, 3:7]
         scl = self.scales[dense_idx]
-        self.world_transforms[dense_idx] = trs_to_mat4(pos, rot, scl)
+        mat = trs_to_mat4(pos, rot, scl)
+        self.world_transforms[dense_idx] = mat
+
+        # Update world-space AABB (center & half-extents for unit mesh via Arvo transform)
+        # In column-major layout:
+        # Col 0: mat[0..2], Col 1: mat[4..6], Col 2: mat[8..10], Col 3 (pos): mat[12..14]
+        self.aabbs[dense_idx, 0] = mat[12]
+        self.aabbs[dense_idx, 1] = mat[13]
+        self.aabbs[dense_idx, 2] = mat[14]
+        self.aabbs[dense_idx, 3] = 0.5 * (abs(mat[0]) + abs(mat[4]) + abs(mat[8]))
+        self.aabbs[dense_idx, 4] = 0.5 * (abs(mat[1]) + abs(mat[5]) + abs(mat[9]))
+        self.aabbs[dense_idx, 5] = 0.5 * (abs(mat[2]) + abs(mat[6]) + abs(mat[10]))
+
+        if self.is_static[dense_idx]:
+            self._static_dirty = True
 
     def cache_previous_physics_state(self) -> None:
         """Copies Current State (index 1) to Previous State (index 0) before physics tick."""
@@ -434,6 +476,55 @@ class EntityManager:
             count,
             scales=self.scales,
         )
+
+        # Update dynamic entity AABBs from interpolated world transforms
+        self.sync_dynamic_aabbs()
+
+    def sync_dynamic_aabbs(self) -> None:
+        """Synchronizes dynamic entity AABB centers and half-extents from current world transforms."""
+        count = self.pool.active_count
+        if count > self.static_count:
+            dyn = slice(self.static_count, count)
+            m = self.world_transforms[dyn]
+            self.aabbs[dyn, 0:3] = m[:, 12:15]
+            self.aabbs[dyn, 3] = 0.5 * (np.abs(m[:, 0]) + np.abs(m[:, 4]) + np.abs(m[:, 8]))
+            self.aabbs[dyn, 4] = 0.5 * (np.abs(m[:, 1]) + np.abs(m[:, 5]) + np.abs(m[:, 9]))
+            self.aabbs[dyn, 5] = 0.5 * (np.abs(m[:, 2]) + np.abs(m[:, 6]) + np.abs(m[:, 10]))
+
+    @property
+    def is_static_dirty(self) -> bool:
+        """Returns True if the static prefix of entities needs re-uploading to the GPU."""
+        return self._static_dirty
+
+    def clear_static_dirty(self) -> None:
+        """Clears static dirty flag after successful GPU SSBO upload."""
+        self._static_dirty = False
+
+    def mark_static_split(self, count: int | None = None) -> None:
+        """Freezes the static entity partition prefix [0..static_count) after world generation."""
+        self.static_count = self.pool.active_count if count is None else int(count)
+        self.is_static[: self.static_count] = True
+        self._static_dirty = True
+
+    def get_static_transforms_view(self) -> np.ndarray:
+        """Returns contiguous (static_count, 16) float32 slice for cached GPU SSBO upload."""
+        return self.world_transforms[: self.static_count]
+
+    def get_dynamic_transforms_view(self) -> np.ndarray:
+        """Returns contiguous (active_count - static_count, 16) float32 slice for per-frame GPU SSBO upload."""
+        return self.world_transforms[self.static_count : self.pool.active_count]
+
+    def get_static_materials_view(self) -> np.ndarray:
+        """Returns contiguous (static_count, 8) float32 slice for cached GPU SSBO upload."""
+        return self.material_data[: self.static_count]
+
+    def get_dynamic_materials_view(self) -> np.ndarray:
+        """Returns contiguous (active_count - static_count, 8) float32 slice for per-frame GPU SSBO upload."""
+        return self.material_data[self.static_count : self.pool.active_count]
+
+    def get_active_aabbs_view(self) -> np.ndarray:
+        """Returns contiguous (active_count, 6) float32 slice for Frustum Culling."""
+        return self.aabbs[: self.pool.active_count]
 
     def get_active_transforms_view(self) -> np.ndarray:
         """Returns contiguous (active_count, 16) float32 slice for GPU SSBO upload."""
@@ -455,6 +546,10 @@ class EntityManager:
             "rigid_body_state": self.rigid_body_state.copy(),
             "material_data": self.material_data.copy(),
             "scales": self.scales.copy(),
+            "aabbs": self.aabbs.copy(),
+            "is_static": self.is_static.copy(),
+            "static_count": self.static_count,
+            "_static_dirty": self._static_dirty,
         }
 
     def restore_snapshot(self, snapshot: dict[str, Any]) -> None:
@@ -468,3 +563,9 @@ class EntityManager:
         self.rigid_body_state[:] = snapshot["rigid_body_state"]
         self.material_data[:] = snapshot["material_data"]
         self.scales[:] = snapshot["scales"]
+        if "aabbs" in snapshot:
+            self.aabbs[:] = snapshot["aabbs"]
+        if "is_static" in snapshot:
+            self.is_static[:] = snapshot["is_static"]
+        self.static_count = snapshot.get("static_count", 0)
+        self._static_dirty = snapshot.get("_static_dirty", True)

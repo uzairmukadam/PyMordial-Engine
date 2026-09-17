@@ -138,12 +138,15 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             color=(0.65, 0.55, 0.42),
             roughness=0.85,
             metallic=0.02,
+            is_static=True,
         )
 
         # 4. Create dedicated static physics box collider (centered at y=-0.5, top face flush with y=0.0)
         col_id = ecs.create_entity(
             position=(0.0, -0.5, 0.0),
             scale=(self.size, 1.0, self.size),
+            color=(0.0, 0.0, 0.0),
+            is_static=True,
         )
         physics.create_body(col_id, body_type="fixed", position=(0.0, -0.5, 0.0))
         physics.attach_box_collider(
@@ -167,6 +170,12 @@ class DefaultWorldBuilder(BaseWorldBuilder):
 
         # Register draw batch with the app's MDI submission
         d_plane = ecs.pool.get_dense_index(plane_id)
+        if d_plane >= 0:
+            half_s = self.size * 0.5 + 50.0
+            ecs.aabbs[d_plane, 0:3] = (0.0, 0.0, 0.0)
+            ecs.aabbs[d_plane, 3] = half_s
+            ecs.aabbs[d_plane, 4] = 20.0
+            ecs.aabbs[d_plane, 5] = half_s
         app.register_draw_batch(alloc_plane, 1, d_plane, False)
 
     def teardown_world(self, app: ProjectApp) -> None:
