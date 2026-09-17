@@ -236,6 +236,11 @@ void main() {
         ao = arm_sample.r;
         roughness = clamp(arm_sample.g, 0.04, 1.0);
         metallic = clamp(arm_sample.b, 0.0, 1.0);
+    } else {
+        // Phase 7: Procedural micro-surface aggregate grain for untextured architectural & road surfaces
+        vec3 p = v_WorldPos * 8.0;
+        float micro_grain = (sin(p.x * 32.0) * cos(p.z * 32.0) + sin(p.x * 77.0 + p.z * 63.0) * 0.5) * 0.02;
+        N = normalize(N + vec3(micro_grain, 0.0, -micro_grain));
     }
 
     // Apply POM self-shadow into AO channel

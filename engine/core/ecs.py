@@ -247,6 +247,7 @@ class EntityManager:
         material_id: int | str | None = None,
         layer_idx: int | None = None,
         disp_mode: DisplacementMode | int | None = None,
+        emissive_intensity: float = 0.0,
         is_static: bool = False,
     ) -> int:
         """Allocates an entity and initializes its slots in contiguous memory tables."""
@@ -277,13 +278,18 @@ class EntityManager:
         if material_id is not None and self.material_registry is not None:
             mat_def = self.material_registry.get(material_id)
 
-        # Base Color / Tint
+        # Base Color / Tint & HDR Emissive Intensity
+        emissive_val = emissive_intensity
+        if emissive_val <= 0.0 and mat_def is not None:
+            emissive_val = getattr(mat_def, "emissive_intensity", 0.0)
+        emissive_mult = 1.0 + max(0.0, float(emissive_val))
+
         if color is not None:
-            self.material_data[dense_idx, 0:3] = color
+            self.material_data[dense_idx, 0:3] = (color[0] * emissive_mult, color[1] * emissive_mult, color[2] * emissive_mult)
         elif mat_def is not None:
-            self.material_data[dense_idx, 0:3] = mat_def.color
+            self.material_data[dense_idx, 0:3] = (mat_def.color[0] * emissive_mult, mat_def.color[1] * emissive_mult, mat_def.color[2] * emissive_mult)
         else:
-            self.material_data[dense_idx, 0:3] = 1.0
+            self.material_data[dense_idx, 0:3] = 1.0 * emissive_mult
 
         # Roughness
         if roughness is not None:
@@ -347,6 +353,7 @@ class EntityManager:
         roughness: float | None = None,
         metallic: float | None = None,
         ao: float | None = None,
+        emissive_intensity: float | None = None,
     ) -> None:
         """Applies a registered material or parameter overrides to an active entity."""
         dense_idx = self.pool.get_dense_index(entity_id)
@@ -357,11 +364,18 @@ class EntityManager:
         if material_id is not None and self.material_registry is not None:
             mat_def = self.material_registry.get(material_id)
 
-        # 1. Color
+        # 1. Color & Emissive
+        emissive_val = emissive_intensity
+        if emissive_val is None and mat_def is not None:
+            emissive_val = getattr(mat_def, "emissive_intensity", 0.0)
+        emissive_mult = 1.0 + max(0.0, float(emissive_val)) if emissive_val is not None else 1.0
+
         if color is not None:
-            self.material_data[dense_idx, 0:3] = color
+            self.material_data[dense_idx, 0:3] = (color[0] * emissive_mult, color[1] * emissive_mult, color[2] * emissive_mult)
         elif mat_def is not None:
-            self.material_data[dense_idx, 0:3] = mat_def.color
+            self.material_data[dense_idx, 0:3] = (mat_def.color[0] * emissive_mult, mat_def.color[1] * emissive_mult, mat_def.color[2] * emissive_mult)
+        elif emissive_val is not None:
+            self.material_data[dense_idx, 0:3] *= emissive_mult
 
         # 2. Roughness
         if roughness is not None:

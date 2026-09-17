@@ -450,7 +450,11 @@ void main() {
     vec4 albedo_rough = texture(u_GBufferAlbedoRoughness, v_UV);
     vec4 normal_metal = texture(u_GBufferNormalMetallic, v_UV);
 
-    vec3 albedo = albedo_rough.rgb;
+    vec3 raw_albedo = albedo_rough.rgb;
+    // Phase 8: Extract HDR emissive radiance (> 1.0) and normalize diffuse albedo
+    float max_c = max(max(raw_albedo.r, raw_albedo.g), raw_albedo.b);
+    vec3 albedo = (max_c > 1.0) ? (raw_albedo / max_c) : raw_albedo;
+    vec3 emissive = (max_c > 1.0) ? (raw_albedo - albedo) : vec3(0.0);
     float roughness = clamp(albedo_rough.a, 0.04, 1.0);
     vec3 N = OctahedralDecode(normal_metal.rg);
     float metallic = normal_metal.b;
@@ -669,7 +673,7 @@ void main() {
     // Total combine with Multi-Bounce color-preserving Ambient Occlusion on diffuse
     vec3 bounce_ao = MultiBounceAO(ao, albedo);
     vec3 ambient = (ambient_base + indirect_diffuse) * bounce_ao + indirect_specular;
-    vec3 total_lit = direct_sun + point_lights_accum + spot_lights_accum + ambient;
+    vec3 total_lit = direct_sun + point_lights_accum + spot_lights_accum + ambient + emissive;
 
     out_HDRColor = vec4(total_lit, 1.0);
 }

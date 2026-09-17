@@ -80,6 +80,8 @@ class MaterialDef:
     roughness: float = 0.5
     metallic: float = 0.0
     ao: float = 1.0
+    normal_strength: float = 1.0
+    emissive_intensity: float = 0.0
     disp_depth: float = 0.030
     friction: float = 0.80       # Surface friction coefficient for vehicle tires
     restitution: float = 0.05    # Surface restitution (bounciness)
@@ -94,11 +96,12 @@ class MaterialDef:
 
     def to_material_floats(self) -> np.ndarray:
         """Returns 8 float32 values matching the MaterialData layout."""
+        emissive_mult = 1.0 + max(0.0, float(self.emissive_intensity))
         return np.array(
             [
-                float(self.color[0]),
-                float(self.color[1]),
-                float(self.color[2]),
+                float(self.color[0]) * emissive_mult,
+                float(self.color[1]) * emissive_mult,
+                float(self.color[2]) * emissive_mult,
                 float(self.roughness),
                 float(self.metallic),
                 float(self.ao),

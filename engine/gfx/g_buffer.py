@@ -59,9 +59,9 @@ class GBuffer:
         self._create_buffers()
 
     def _create_buffers(self) -> None:
-        # RT0: Albedo (RGB) + Roughness (A) (RGBA8)
+        # RT0: Albedo (RGB) + Roughness (A) (RGBA16F - HDR Emissive Capable)
         self.rt_albedo_roughness = self.ctx.texture(
-            (self.width, self.height), 4, dtype="f1"
+            (self.width, self.height), 4, dtype="f2"
         )
         self.rt_albedo_roughness.filter = (moderngl.NEAREST, moderngl.NEAREST)
 

@@ -40,6 +40,7 @@ from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
+from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.water_pass import WaterPass
 from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.atmosphere import AtmosphereSystem
@@ -138,6 +139,7 @@ class RenderPipeline:
         "texture_atlas",
         "material_registry",
         "ssdm_pass",
+        "decal_pass",
         "hiz_pass",
         "culler",
         "stats_visible_entities",
@@ -388,6 +390,9 @@ class RenderPipeline:
         # SSDM Post-G-Buffer Pass
         self.ssdm_pass = SSDMPass(self.ctx, w, h)
 
+        # Screen-Space Deferred Decal Pass (Phase 9)
+        self.decal_pass = DecalPass(self.ctx, w, h)
+
         # Hierarchical-Z (Hi-Z) Depth Pyramid Pass
         self.hiz_pass = HiZPass(self.ctx, w, h, reverse_z=self.config.reverse_z)
 
@@ -585,6 +590,31 @@ class RenderPipeline:
         """Clears all active dynamic point and spot lights."""
         self.lights_pass.clear()
 
+    def add_decal(
+        self,
+        position: tuple[float, float, float],
+        rotation_quat: tuple[float, float, float, float] | np.ndarray,
+        size: tuple[float, float, float],
+        color: tuple[float, float, float] = (0.04, 0.04, 0.05),
+        opacity: float = 0.85,
+        roughness: float = 0.95,
+        decal_type: int = 0,
+    ) -> int:
+        """Adds or updates an oriented bounding box decal into the deferred decal pass."""
+        return self.decal_pass.add_decal(
+            position=position,
+            rotation_quat=rotation_quat,
+            size=size,
+            color=color,
+            opacity=opacity,
+            roughness=roughness,
+            decal_type=decal_type,
+        )
+
+    def clear_decals(self) -> None:
+        """Clears all active deferred decals."""
+        self.decal_pass.clear()
+
     def apply_config(self, new_config: RenderConfig) -> None:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
@@ -622,6 +652,7 @@ class RenderPipeline:
 
         self.g_buffer.resize(width, height)
         self.ssdm_pass.resize(width, height)
+        self.decal_pass.resize(width, height)
         self.hiz_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(width, height)
@@ -1025,7 +1056,10 @@ class RenderPipeline:
                 material_depths=self.texture_atlas.material_depths,
             )
 
-        # ---- PASS 2.6: Hierarchical-Z (Hi-Z) Depth Pyramid Pass ----
+        # ---- PASS 2.6: Screen-Space Deferred Decals (Phase 9) ----
+        self.decal_pass.execute(ctx, self.g_buffer)
+
+        # ---- PASS 2.7: Hierarchical-Z (Hi-Z) Depth Pyramid Pass ----
         self.hiz_pass.execute(ctx)
 
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
@@ -1315,6 +1349,7 @@ class RenderPipeline:
         self.csm_vao.release()
         self.texture_atlas.destroy()
         self.ssdm_pass.destroy()
+        self.decal_pass.destroy()
         self.hiz_pass.destroy()
         self.tess_mdi.destroy()
         self.gbuffer_tess_prog.release()
