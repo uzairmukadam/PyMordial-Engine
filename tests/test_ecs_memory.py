@@ -58,16 +58,19 @@ class TestEntityManagerMemory:
         assert ecs.rigid_body_state.flags["C_CONTIGUOUS"]
         assert ecs.material_data.flags["C_CONTIGUOUS"]
         assert ecs.scales.flags["C_CONTIGUOUS"]
+        assert ecs.local_half_extents.flags["C_CONTIGUOUS"]
 
         assert ecs.world_transforms.dtype == np.float32
         assert ecs.rigid_body_state.dtype == np.float32
         assert ecs.material_data.dtype == np.float32
         assert ecs.scales.dtype == np.float32
+        assert ecs.local_half_extents.dtype == np.float32
 
         assert ecs.world_transforms.shape == (1000, 16)
         assert ecs.rigid_body_state.shape == (2, 1000, 7)
         assert ecs.material_data.shape == (1000, 8)
         assert ecs.scales.shape == (1000, 3)
+        assert ecs.local_half_extents.shape == (1000, 3)
 
     def test_entity_creation_and_destruction(self, ecs: EntityManager):
         ecs.create_entity(position=(1.0, 2.0, 3.0), color=(1.0, 0.0, 0.0))
@@ -127,3 +130,25 @@ class TestEntityManagerMemory:
         np.testing.assert_allclose(ecs.rigid_body_state[1, 0, 0:3], [1.0, 2.0, 3.0])
         np.testing.assert_allclose(ecs.rigid_body_state[1, 1, 0:3], [4.0, 5.0, 6.0])
         assert not ecs.pool.is_valid(e2)
+
+    def test_mesh_half_extents_aabb(self, ecs: EntityManager):
+        """Verifies that non-unit mesh half extents scale the AABB extents correctly."""
+        ent = ecs.create_entity(
+            position=(10.0, 0.0, -10.0),
+            scale=(2.0, 1.0, 2.0),
+            mesh_half_extents=(50.0, 0.5, 50.0),
+        )
+        dense_idx = ecs.pool.get_dense_index(ent)
+        aabb = ecs.aabbs[dense_idx]
+
+        # Center should be at position (10, 0, -10)
+        np.testing.assert_allclose(aabb[0:3], [10.0, 0.0, -10.0])
+
+        # Half-extents should be scale * mesh_half_extents = (100.0, 0.5, 100.0)
+        np.testing.assert_allclose(aabb[3:6], [100.0, 0.5, 100.0])
+
+        # Verify proxy mutation
+        proxy = ecs.get_transform_proxy(ent)
+        proxy.mesh_half_extents = (25.0, 1.0, 25.0)
+        np.testing.assert_allclose(ecs.aabbs[dense_idx, 3:6], [50.0, 1.0, 50.0])
+

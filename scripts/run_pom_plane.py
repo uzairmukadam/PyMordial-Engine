@@ -243,6 +243,7 @@ def main() -> None:
     plane_id = ecs.create_entity(
         position=(0.0, 0.0, 0.0),
         scale=(1.0, 1.0, 1.0),
+        mesh_half_extents=(plane_size * 0.5, 0.5, plane_size * 0.5),
         color=(0.65, 0.55, 0.42),
         roughness=0.85,
         metallic=0.02,

@@ -53,6 +53,7 @@ class EngineTweaks:
         "shadow_offset_y",
         "shadow_distance",
         "csm_cascades",
+        "csm_stabilization",
         "sscs_enabled",
         "sscs_steps",
         "sscs_thickness",
@@ -217,6 +218,7 @@ class EngineTweaks:
         self.shadow_offset_y = 0.0
         self.shadow_distance = 500.0
         self.csm_cascades = 4
+        self.csm_stabilization = True
         self.sscs_enabled = False
         self.sscs_steps = 16
         self.sscs_thickness = 0.10
@@ -513,6 +515,7 @@ class EngineTweaks:
             p_cfg.shadow_distance = float(self.shadow_distance)
             p_cfg.csm_cascades = int(self.csm_cascades)
             p_cfg.shadow_resolution = int(self.shadow_resolution)
+            p_cfg.csm_stabilization = bool(self.csm_stabilization)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
                 if self.shadow_resolution != pipeline.csm.atlas_size:
@@ -673,6 +676,7 @@ class EngineTweaks:
             "shadow_normal_bias": float(self.shadow_normal_bias),
             "shadow_distance": float(self.shadow_distance),
             "csm_cascades": int(self.csm_cascades),
+            "csm_stabilization": bool(self.csm_stabilization),
             "shadow_resolution": int(self.shadow_resolution),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
             "fog_resolution": str(self.fog_resolution),

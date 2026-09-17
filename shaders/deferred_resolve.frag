@@ -277,8 +277,13 @@ float SampleSingleCascade(
     vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
     vec2 texel_size = 1.0 / full_size;
 
+    // Extract physical cascade metric scale from light projection matrix
+    float inv_rad = length(vec3(u_LightViewProjection[cascade][0].x, u_LightViewProjection[cascade][1].x, u_LightViewProjection[cascade][2].x));
+    float inv_far = length(vec3(u_LightViewProjection[cascade][0].z, u_LightViewProjection[cascade][1].z, u_LightViewProjection[cascade][2].z));
+    float light_far = 1.0 / max(inv_far, 1e-6);
+
     // Step 1: Blocker Search (Vogel Spiral)
-    float search_radius = clamp(texel_size.x * 2.8 * softness, texel_size.x * 1.5, 0.0012) / cascade_scale;
+    float search_radius = clamp(texel_size.x * 4.5 * softness, texel_size.x * 2.0, 0.0035) / cascade_scale;
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
     int blocker_samples = 16;
@@ -298,20 +303,27 @@ float SampleSingleCascade(
         return 1.0;
     }
 
-    // Step 2: Physical Directional Penumbra Estimation
+    // Step 2: Physical Metric Directional Penumbra Estimation
     float avg_blocker_depth = blocker_depth_sum / float(blocker_count);
     float depth_diff = max(current_depth - avg_blocker_depth, 0.0);
-    float penumbra_ratio = clamp(depth_diff * 22.0 * softness, 0.0, 1.0);
+    // Convert depth difference to physical metric distance along light direction
+    float metric_depth_diff = depth_diff * light_far;
 
-    // Immediate contact hardening: at contact points, bypass wide filtering for razor-sharp edge
-    if (penumbra_ratio < 0.03) {
-        return SampleShadowBilinear(uv, current_depth, bias, uv_min, uv_max);
-    }
+    // Physical sun angular diameter spread (~0.53 degrees):
+    // Penumbra world width expands with distance from blocker: metric_depth_diff * sun_spread
+    float sun_spread = 0.040 * softness;
+    float penumbra_world = metric_depth_diff * sun_spread;
 
-    // Step 3: Filtered PCF with contact-hardening penumbra radius
-    float min_filter_radius = texel_size.x * 0.75;
-    float max_filter_radius = (0.0018 * softness) / cascade_scale;
-    float filter_radius = mix(min_filter_radius, max_filter_radius, penumbra_ratio);
+    // Convert penumbra from world units to atlas UV coordinates
+    float penumbra_uv = (penumbra_world * inv_rad) * 0.25;
+
+    // Step 3: Anti-Aliased Filtered PCF with contact-hardening penumbra radius
+    // Anti-aliasing floor: minimum 1.6 texels radius guarantees every shadow edge is
+    // smoothly sampled across adjacent texels (eliminating 1-bit staircase jaggies),
+    // while expanding gracefully for distant casters into realistic soft penumbrae.
+    float min_filter_radius = texel_size.x * 1.6;
+    float max_filter_radius = (0.0028 * softness) / cascade_scale;
+    float filter_radius = clamp(min_filter_radius + penumbra_uv, min_filter_radius, max_filter_radius);
 
     int filter_samples = clamp(u_PCF_Samples, 12, 32);
     float pcss_shadow = 0.0;

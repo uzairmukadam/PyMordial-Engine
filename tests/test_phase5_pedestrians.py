@@ -219,8 +219,9 @@ def test_pedestrian_module_and_draw_batches(test_app: ProjectApp):
 
     # Test MDI draw batch generation
     batches = ped_mod.get_draw_batches(test_app)
-    # Each pedestrian has 1 torso + 1 head = 2 batches
-    assert len(batches) == len(ped_mod.pedestrians) * 2
+    # Each pedestrian has 1 torso + 1 head; batches are coalesced into unified MDI commands
+    assert sum(b[1] for b in batches) == len(ped_mod.pedestrians) * 2
+    assert len(batches) <= len(ped_mod.pedestrians) * 2
 
     # Verify zero-allocation batch container reuse
     batches_again = ped_mod.get_draw_batches(test_app)

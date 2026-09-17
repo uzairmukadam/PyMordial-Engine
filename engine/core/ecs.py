@@ -84,6 +84,17 @@ class TransformProxy:
         return self._mgr.world_transforms[self.dense_index]
 
     @property
+    def mesh_half_extents(self) -> np.ndarray:
+        """Local mesh half-extents [hx, hy, hz] for AABB calculation."""
+        return self._mgr.local_half_extents[self.dense_index]
+
+    @mesh_half_extents.setter
+    def mesh_half_extents(self, val: tuple[float, float, float] | np.ndarray) -> None:
+        idx = self.dense_index
+        self._mgr.local_half_extents[idx] = val
+        self._mgr.recompute_matrix(idx)
+
+    @property
     def material_data(self) -> np.ndarray:
         """Direct 8 float32 slice into MaterialData."""
         return self._mgr.material_data[self.dense_index]
@@ -162,6 +173,7 @@ class EntityManager:
         "rigid_body_state",
         "material_data",
         "scales",
+        "local_half_extents",
         "material_registry",
         "aabbs",
         "is_static",
@@ -201,11 +213,15 @@ class EntityManager:
         self.scales = np.ones((max_entities, 3), dtype=np.float32)
         assert self.scales.flags["C_CONTIGUOUS"], "Scales must be C-contiguous"
 
-        # 5. World-Space AABBs: (N, 6) float32, C-contiguous [cx, cy, cz, ex, ey, ez]
+        # 5. Local Mesh Half-Extents: (N, 3) float32, default 0.5 (unit cube / primitive)
+        self.local_half_extents = np.full((max_entities, 3), 0.5, dtype=np.float32)
+        assert self.local_half_extents.flags["C_CONTIGUOUS"], "LocalHalfExtents must be C-contiguous"
+
+        # 6. World-Space AABBs: (N, 6) float32, C-contiguous [cx, cy, cz, ex, ey, ez]
         self.aabbs = np.zeros((max_entities, 6), dtype=np.float32)
         assert self.aabbs.flags["C_CONTIGUOUS"], "AABBs must be C-contiguous"
 
-        # 6. Static/Dynamic Entity Classification
+        # 7. Static/Dynamic Entity Classification
         self.is_static = np.zeros(max_entities, dtype=bool)
         self.static_count: int = 0
         self._static_dirty: bool = True
@@ -223,6 +239,7 @@ class EntityManager:
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         rotation: tuple[float, float, float, float] | np.ndarray = (0.0, 0.0, 0.0, 1.0),
         scale: tuple[float, float, float] | np.ndarray = (1.0, 1.0, 1.0),
+        mesh_half_extents: tuple[float, float, float] | np.ndarray | None = None,
         color: tuple[float, float, float] | None = None,
         roughness: float | None = None,
         metallic: float | None = None,
@@ -250,6 +267,10 @@ class EntityManager:
         self.rigid_body_state[1, dense_idx, 3:7] = rotation
 
         self.scales[dense_idx] = scale
+        if mesh_half_extents is not None:
+            self.local_half_extents[dense_idx] = mesh_half_extents
+        else:
+            self.local_half_extents[dense_idx].fill(0.5)
 
         # Resolve material definition if material_id was provided
         mat_def = None
@@ -415,6 +436,7 @@ class EntityManager:
             self.rigid_body_state[:, dense_idx, :] = self.rigid_body_state[:, last_dense_idx, :]
             self.material_data[dense_idx] = self.material_data[last_dense_idx]
             self.scales[dense_idx] = self.scales[last_dense_idx]
+            self.local_half_extents[dense_idx] = self.local_half_extents[last_dense_idx]
             self.aabbs[dense_idx] = self.aabbs[last_dense_idx]
             self.is_static[dense_idx] = self.is_static[last_dense_idx]
 
@@ -424,6 +446,7 @@ class EntityManager:
         self.rigid_body_state[:, last_dense_idx, 6] = 1.0
         self.material_data[last_dense_idx].fill(0.0)
         self.scales[last_dense_idx].fill(1.0)
+        self.local_half_extents[last_dense_idx].fill(0.5)
         self.aabbs[last_dense_idx].fill(0.0)
         self.is_static[last_dense_idx] = False
 
@@ -446,15 +469,16 @@ class EntityManager:
         mat = trs_to_mat4(pos, rot, scl)
         self.world_transforms[dense_idx] = mat
 
-        # Update world-space AABB (center & half-extents for unit mesh via Arvo transform)
+        # Update world-space AABB (center & half-extents for mesh via Arvo transform)
         # In column-major layout:
         # Col 0: mat[0..2], Col 1: mat[4..6], Col 2: mat[8..10], Col 3 (pos): mat[12..14]
+        hx, hy, hz = self.local_half_extents[dense_idx]
         self.aabbs[dense_idx, 0] = mat[12]
         self.aabbs[dense_idx, 1] = mat[13]
         self.aabbs[dense_idx, 2] = mat[14]
-        self.aabbs[dense_idx, 3] = 0.5 * (abs(mat[0]) + abs(mat[4]) + abs(mat[8]))
-        self.aabbs[dense_idx, 4] = 0.5 * (abs(mat[1]) + abs(mat[5]) + abs(mat[9]))
-        self.aabbs[dense_idx, 5] = 0.5 * (abs(mat[2]) + abs(mat[6]) + abs(mat[10]))
+        self.aabbs[dense_idx, 3] = abs(mat[0]) * hx + abs(mat[4]) * hy + abs(mat[8]) * hz
+        self.aabbs[dense_idx, 4] = abs(mat[1]) * hx + abs(mat[5]) * hy + abs(mat[9]) * hz
+        self.aabbs[dense_idx, 5] = abs(mat[2]) * hx + abs(mat[6]) * hy + abs(mat[10]) * hz
 
         if self.is_static[dense_idx]:
             self._static_dirty = True
@@ -486,10 +510,13 @@ class EntityManager:
         if count > self.static_count:
             dyn = slice(self.static_count, count)
             m = self.world_transforms[dyn]
+            hx = self.local_half_extents[dyn, 0]
+            hy = self.local_half_extents[dyn, 1]
+            hz = self.local_half_extents[dyn, 2]
             self.aabbs[dyn, 0:3] = m[:, 12:15]
-            self.aabbs[dyn, 3] = 0.5 * (np.abs(m[:, 0]) + np.abs(m[:, 4]) + np.abs(m[:, 8]))
-            self.aabbs[dyn, 4] = 0.5 * (np.abs(m[:, 1]) + np.abs(m[:, 5]) + np.abs(m[:, 9]))
-            self.aabbs[dyn, 5] = 0.5 * (np.abs(m[:, 2]) + np.abs(m[:, 6]) + np.abs(m[:, 10]))
+            self.aabbs[dyn, 3] = np.abs(m[:, 0]) * hx + np.abs(m[:, 4]) * hy + np.abs(m[:, 8]) * hz
+            self.aabbs[dyn, 4] = np.abs(m[:, 1]) * hx + np.abs(m[:, 5]) * hy + np.abs(m[:, 9]) * hz
+            self.aabbs[dyn, 5] = np.abs(m[:, 2]) * hx + np.abs(m[:, 6]) * hy + np.abs(m[:, 10]) * hz
 
     @property
     def is_static_dirty(self) -> bool:
@@ -546,6 +573,7 @@ class EntityManager:
             "rigid_body_state": self.rigid_body_state.copy(),
             "material_data": self.material_data.copy(),
             "scales": self.scales.copy(),
+            "local_half_extents": self.local_half_extents.copy(),
             "aabbs": self.aabbs.copy(),
             "is_static": self.is_static.copy(),
             "static_count": self.static_count,
@@ -563,6 +591,8 @@ class EntityManager:
         self.rigid_body_state[:] = snapshot["rigid_body_state"]
         self.material_data[:] = snapshot["material_data"]
         self.scales[:] = snapshot["scales"]
+        if "local_half_extents" in snapshot:
+            self.local_half_extents[:] = snapshot["local_half_extents"]
         if "aabbs" in snapshot:
             self.aabbs[:] = snapshot["aabbs"]
         if "is_static" in snapshot:

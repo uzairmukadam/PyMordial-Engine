@@ -20,6 +20,7 @@ class CascadedShadowMap:
         "fbo",
         "split_distances",
         "light_matrices",
+        "stabilize_cascades",
         "_proj_scratch",
         "_view_scratch",
         "_center_scratch",
@@ -46,6 +47,7 @@ class CascadedShadowMap:
         # Compute cascade split distances (log-linear blend)
         self.update_splits(max_distance=max_distance, cascade_count=cascade_count)
         self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
+        self.stabilize_cascades: bool = True
 
     def update_splits(
         self,
@@ -64,8 +66,8 @@ class CascadedShadowMap:
         if count == 1:
             splits = [far, far, far, far]
         else:
-            # Cascade 0: dedicated tight near split (14.0m) for ultra-sharp contact shadows on vehicle/props
-            split0 = min(14.0, far * 0.15)
+            # Cascade 0: dedicated tight near split (10.0m) for ultra-sharp contact shadows on vehicle/props
+            split0 = min(10.0, far * 0.18)
             splits = [split0]
             ratio = (far / max(split0, 0.5)) ** (1.0 / float(count - 1))
             for i in range(1, count - 1):
@@ -89,6 +91,7 @@ class CascadedShadowMap:
         camera_pos: np.ndarray,
         camera_forward: np.ndarray,
         sun_dir: np.ndarray,
+        stabilize: bool | None = None,
     ) -> list[np.ndarray]:
         """Calculates 4 light-projection matrices fitted to cascade distances with texel stabilization."""
         sx, sy, sz = float(sun_dir[0]), float(sun_dir[1]), float(sun_dir[2])
@@ -104,6 +107,7 @@ class CascadedShadowMap:
         quad_size = max(self.atlas_size // 2, 1)
         up_vec_standard = (0.0, 1.0, 0.0)
         up_vec_alt = (0.0, 0.0, 1.0)
+        use_stabilize = self.stabilize_cascades if stabilize is None else bool(stabilize)
 
         for i in range(4):
             dist = self.split_distances[i]
@@ -132,10 +136,11 @@ class CascadedShadowMap:
             matrix_look_at(light_pos, center, up=up_vec, out=view)
 
             # Subpixel Texel Snapping in Light View Space to eliminate edge swimming/shimmering
-            world_units_per_texel = (2.0 * radius) / float(quad_size)
-            if world_units_per_texel > 1e-6:
-                view[12] = round(view[12] / world_units_per_texel) * world_units_per_texel
-                view[13] = round(view[13] / world_units_per_texel) * world_units_per_texel
+            if use_stabilize:
+                world_units_per_texel = (2.0 * radius) / float(quad_size)
+                if world_units_per_texel > 1e-6:
+                    view[12] = math.floor(view[12] / world_units_per_texel) * world_units_per_texel
+                    view[13] = math.floor(view[13] / world_units_per_texel) * world_units_per_texel
 
             # Orthographic projection for GL_ZERO_TO_ONE depth range [0, 1]
             proj.fill(0.0)

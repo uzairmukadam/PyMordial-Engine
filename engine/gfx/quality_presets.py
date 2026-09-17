@@ -46,6 +46,7 @@ class RenderConfig:
     pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
     csm_split_lambda: float = 0.55 # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
 
     # Screen-Space Contact Shadows (Deprecated/Removed in favor of GTAO)
     sscs_enabled: bool = False

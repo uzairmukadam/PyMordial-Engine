@@ -791,7 +791,12 @@ class RenderPipeline:
         self._sun_v[0] = float(active_sun_dir[0])
         self._sun_v[1] = float(active_sun_dir[1])
         self._sun_v[2] = float(active_sun_dir[2])
-        csm_matrices = self.csm.compute_cascade_matrices(self._cam_pos, self._cam_fwd, self._sun_v)
+        csm_matrices = self.csm.compute_cascade_matrices(
+            self._cam_pos,
+            self._cam_fwd,
+            self._sun_v,
+            stabilize=getattr(self.config, "csm_stabilization", True),
+        )
 
         # 4. Upload to UBO 0
         self.frame_context.update(

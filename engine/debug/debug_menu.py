@@ -1060,6 +1060,13 @@ class DebugMenu:
                 et.mark_custom()
                 self.toast.show(f"Shadow Cascades: {et.csm_cascades}", duration=2.0)
 
+            # 5c. CSM Texel Stabilization (Shimmer Elimination)
+            csm_stab_changed, csm_stab_val = imgui.checkbox("CSM Texel Stabilization", getattr(et, "csm_stabilization", True))
+            if csm_stab_changed:
+                et.csm_stabilization = csm_stab_val
+                et.mark_custom()
+                self.toast.show(f"CSM Stabilization: {'ON' if csm_stab_val else 'OFF'}", duration=1.5)
+
             # 6. Sun Angle (Azimuth)
             sun_changed, sun_val = imgui.slider_float("Sun Azimuth", et.sun_angle_deg, 0.0, 360.0, "%.1f deg")
             if sun_changed:
