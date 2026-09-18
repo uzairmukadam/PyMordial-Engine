@@ -133,7 +133,6 @@ class SSDMPass(RenderPass):
         if self.ssdm_fbo is None:
             self.ssdm_fbo = self.ctx.framebuffer(
                 color_attachments=[self.perturbed_normal_tex],
-                depth_attachment=g_buffer.depth_texture,
             )
         if self.copy_dst_fbo is None:
             self.copy_dst_fbo = self.ctx.framebuffer(
@@ -142,11 +141,7 @@ class SSDMPass(RenderPass):
 
         self.ssdm_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
-        self.ctx.enable(moderngl.DEPTH_TEST)
-        try:
-            self.ctx.depth_func = "1"
-        except Exception:
-            pass
+        self.ctx.disable(moderngl.DEPTH_TEST)
 
         # Bind inputs
         g_buffer.rt_albedo_roughness.use(location=0)

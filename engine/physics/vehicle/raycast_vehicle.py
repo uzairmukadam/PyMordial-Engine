@@ -738,11 +738,15 @@ class RaycastVehicle:
             self._torque_scratch[2] = tau_z * dt
             self.physics.apply_torque_impulse(self.entity_id, self._torque_scratch)
 
-        # 8. Aerodynamic Downforce (plants vehicle to asphalt at high speed)
-        if fwd_speed > 8.0 and grounded_count >= 2:
-            downforce = min(3500.0, 0.5 * 1.225 * (fwd_speed * fwd_speed) * 0.45)
+        # 8. Road Holding Plant & Aerodynamic Downforce (Gives vehicle heavy, grounded asphalt feel)
+        if grounded_count >= 2:
+            # Baseline road adhesion plant proportional to chassis mass (plants the vehicle firmly)
+            base_plant = self.config.chassis_mass * 4.2
+            # Speed-dependent aerodynamic downforce
+            aero_downforce = min(5500.0, 0.5 * 1.225 * (fwd_speed * fwd_speed) * 0.65) if fwd_speed > 2.0 else 0.0
+            total_downforce = base_plant + aero_downforce
             self._impulse_scratch[0] = 0.0
-            self._impulse_scratch[1] = -downforce * dt
+            self._impulse_scratch[1] = -total_downforce * dt
             self._impulse_scratch[2] = 0.0
             self.physics.apply_impulse(self.entity_id, self._impulse_scratch)
 

@@ -54,7 +54,8 @@ def test_city_world_builder_navigation_graph() -> None:
     assert safehouse.poi_type == "safehouse"
 
     # Nearest POI query
-    nearest = graph.find_nearest_poi((-40.0, 0.0, -25.0))
+    sh = builder.map_data.get_safehouse()
+    nearest = graph.find_nearest_poi((sh.position[0] - 2.0, 0.0, sh.position[2] - 5.0))
     assert nearest is not None
     assert nearest.name == "Safehouse Garage"
 
@@ -65,8 +66,8 @@ def test_city_world_builder_navigation_graph() -> None:
 
     # Spawn position query
     spawn_pos, heading = builder.get_poi_spawn("Safehouse Garage")
-    assert spawn_pos[0] == pytest.approx(-38.0)
-    assert heading == pytest.approx(0.0)
+    assert spawn_pos[0] == pytest.approx(sh.position[0])
+    assert heading == pytest.approx(sh.heading_deg)
 
 
 
@@ -79,8 +80,10 @@ def test_city_world_builder_pathfinding() -> None:
     graph = builder.waypoint_graph
 
     # Find path between safehouse vicinity and bank vicinity
-    start_node = graph.find_nearest_node((-45.0, 0.0, -20.0))
-    goal_node = graph.find_nearest_node((35.0, 0.0, -35.0))
+    sh = builder.map_data.get_safehouse()
+    bank = graph.get_pois_by_type("heist_target")[0]
+    start_node = graph.find_nearest_node(sh.position)
+    goal_node = graph.find_nearest_node(bank.position)
     assert start_node is not None
     assert goal_node is not None
 

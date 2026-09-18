@@ -294,6 +294,9 @@ class TextureArrayAtlas:
         rebuild_mipmaps: bool = True,
     ) -> int:
         """Loads PBR texture files, resizes to atlas resolution, and uploads as a new layer."""
+        if name and name in self.name_to_layer:
+            return self.name_to_layer[name]
+
         if self._next_layer >= self.max_layers:
             raise RuntimeError(
                 f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers"
@@ -362,12 +365,17 @@ class TextureArrayAtlas:
         self.material_names.append(mat_name)
         self.name_to_layer[mat_name] = layer
         self.material_depths[layer] = DEFAULT_MATERIAL_DEPTHS.get(mat_name, 0.030)
+        self._material_depths_bytes = self.material_depths.tobytes()
         self._next_layer = layer + 1
 
         if rebuild_mipmaps:
             self.rebuild_all_mipmaps()
 
         return layer
+
+    def get_layer(self, name: str) -> int | None:
+        """Returns the layer index for a material name, or None if not registered."""
+        return self.name_to_layer.get(name, None)
 
     def upload_decoded_layer(
         self,

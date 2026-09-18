@@ -146,6 +146,12 @@ class RenderContext:
         """Reads backbuffer pixels and saves image to disk."""
         from PIL import Image
         raw = self.ctx.screen.read(components=4, dtype="f1")
+        try:
+            from OpenGL import GL
+            while GL.glGetError() != 0:
+                pass
+        except Exception:
+            pass
         img = Image.frombytes("RGBA", (self.width, self.height), raw).transpose(Image.FLIP_TOP_BOTTOM)
         img.save(filepath)
 

@@ -45,7 +45,7 @@ vec3 OctahedralDecode(vec2 f) {
 vec3 GetViewPos(vec2 uv, float depth) {
     vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 view = u_InvProjection * clip;
-    return view.xyz / view.w;
+    return view.xyz / max(abs(view.w), 1e-6);
 }
 
 // Jorge Jimenez's Interleaved Gradient Noise for uniform blue-noise spatial dithering
@@ -70,9 +70,15 @@ void main() {
     }
 
     vec3 view_pos = GetViewPos(v_UV, raw_depth);
+    float v_len = length(view_pos);
+    if (v_len <= 1e-5) {
+        out_SSR = vec4(0.0);
+        return;
+    }
+
     vec3 world_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
     vec3 view_normal = normalize((u_View * vec4(world_normal, 0.0)).xyz);
-    vec3 view_dir = normalize(-view_pos);
+    vec3 view_dir = -view_pos / v_len;
     vec3 R = reflect(-view_dir, view_normal);
 
     // If reflection ray points towards the surface or into camera clipping plane, abort
@@ -102,7 +108,7 @@ void main() {
         if (curr_view.z >= -0.08) break;
 
         vec4 clip_sample = u_Projection * vec4(curr_view, 1.0);
-        if (clip_sample.w <= 0.0) break;
+        if (clip_sample.w <= 1e-5) break;
         vec3 ndc_sample = clip_sample.xyz / clip_sample.w;
         vec2 sample_uv = ndc_sample.xy * 0.5 + 0.5;
 
@@ -133,6 +139,7 @@ void main() {
                 float t_mid = (t_min + t_max) * 0.5;
                 vec3 p_mid = ray_origin + R * t_mid;
                 vec4 c_mid = u_Projection * vec4(p_mid, 1.0);
+                if (c_mid.w <= 1e-5) break;
                 vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
 
                 float d_mid = texture(u_GBufferDepth, uv_mid).r;
@@ -167,8 +174,15 @@ void main() {
         float rough_fade = 1.0 - smoothstep(0.0, u_SSR_MaxRoughness, roughness);
 
         vec3 reflected_color = texture(u_SceneColor, hit_uv).rgb;
+        if (isnan(reflected_color.r) || isnan(reflected_color.g) || isnan(reflected_color.b) ||
+            isinf(reflected_color.r) || isinf(reflected_color.g) || isinf(reflected_color.b)) {
+            reflected_color = vec3(0.0);
+        }
+        reflected_color = clamp(reflected_color, vec3(0.0), vec3(40.0));
+
         float alpha = edge_factor * dist_fade * rough_fade;
-        out_SSR = vec4(reflected_color, alpha);
+        if (isnan(alpha) || isinf(alpha)) alpha = 0.0;
+        out_SSR = vec4(reflected_color, clamp(alpha, 0.0, 1.0));
     } else {
         out_SSR = vec4(0.0);
     }

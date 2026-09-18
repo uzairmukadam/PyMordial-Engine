@@ -382,6 +382,9 @@ class RenderPipeline:
         self.csm_tess_vao = self.mega_buffer.get_vao(self.csm_tess_prog, mode=self.ctx.PATCHES)
         self.tess_mdi = MultiDrawIndirect(self.ctx)
 
+        # Automatically rebuild VAOs whenever MegaBuffer bakes/reallocates
+        self.mega_buffer.on_bake_callbacks.append(self.rebuild_vaos)
+
         # Texture Array Atlas for PBR Materials & Central Material Registry
         self.texture_atlas = TextureArrayAtlas(self.ctx, width=2048, height=2048, max_layers=32)
         self.material_registry = MaterialRegistry()
@@ -683,11 +686,16 @@ class RenderPipeline:
         mesh = self.resources.load_mesh(vpath)
         alloc = self.mega_buffer.add_pm_mesh(name, mesh)
         self.resources.register_gpu_mesh(name, alloc)
-        self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
+        self.rebuild_vaos()
+        return alloc
+
+    def rebuild_vaos(self) -> None:
+        """Rebuilds all pipeline VAOs bound to the MegaBuffer."""
         self.gbuffer_vao = self.mega_buffer.get_vao(self.gbuffer_prog)
+        self.csm_vao = self.mega_buffer.get_vao(self.csm_prog)
+        self.spot_depth_vao = self.mega_buffer.get_vao(self.spot_depth_prog)
         self.gbuffer_tess_vao = self.mega_buffer.get_vao(self.gbuffer_tess_prog, mode=self.ctx.PATCHES)
         self.csm_tess_vao = self.mega_buffer.get_vao(self.csm_tess_prog, mode=self.ctx.PATCHES)
-        return alloc
 
     def load_cooked_texture(self, vpath: str) -> moderngl.Texture:
         return self.resources.load_gpu_texture(vpath, self.ctx)
@@ -858,13 +866,17 @@ class RenderPipeline:
         # Populate shadow MDI with all shadow casters (independent of camera view frustum)
         if draw_batches is not None:
             for item in draw_batches:
-                if len(item) == 4:
+                if len(item) >= 5:
+                    mesh_item, count, base_inst, is_tess, cast_shadow = item[:5]
+                elif len(item) == 4:
                     mesh_item, count, base_inst, is_tess = item
+                    cast_shadow = True
                 else:
                     mesh_item, count, base_inst = item
                     is_tess = False
+                    cast_shadow = True
 
-                if count > 0 and not is_tess:
+                if count > 0 and not is_tess and cast_shadow:
                     alloc = (
                         self.mega_buffer.allocations[mesh_item]
                         if isinstance(mesh_item, str)
@@ -894,8 +906,8 @@ class RenderPipeline:
 
         if batches_to_render is not None:
             for item in batches_to_render:
-                if len(item) == 4:
-                    mesh_item, count, base_inst, is_tess = item
+                if len(item) >= 4:
+                    mesh_item, count, base_inst, is_tess = item[:4]
                 else:
                     mesh_item, count, base_inst = item
                     is_tess = False

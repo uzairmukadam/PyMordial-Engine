@@ -54,7 +54,7 @@ float InterleavedGradientNoise(vec2 screen_pos) {
 vec3 GetViewPos(vec2 uv, float raw_depth) {
     vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
     vec4 view = u_InvProjection * clip;
-    return view.xyz / view.w;
+    return view.xyz / max(abs(view.w), 1e-6);
 }
 
 // Low-discrepancy Fibonacci spiral hemisphere sample (uniform coverage without clumping)
@@ -65,7 +65,9 @@ vec3 FibonacciHemisphereSample(int index, int num_samples, float phi_rot, vec3 N
 
     vec3 H = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
     vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent = normalize(cross(up, N));
+    vec3 tangent = cross(up, N);
+    float tlen = length(tangent);
+    tangent = (tlen > 1e-5) ? (tangent / tlen) : vec3(1.0, 0.0, 0.0);
     vec3 bitangent = cross(N, tangent);
     return normalize(tangent * H.x + bitangent * H.y + N * H.z);
 }
@@ -105,7 +107,7 @@ void main() {
             curr_p = ray_origin + ray_dir * t;
 
             vec4 clip_sample = u_Projection * vec4(curr_p, 1.0);
-            if (clip_sample.w <= 0.0) break;
+            if (clip_sample.w <= 1e-5) break;
             vec2 sample_uv = (clip_sample.xy / clip_sample.w) * 0.5 + 0.5;
 
             if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
@@ -132,7 +134,7 @@ void main() {
                 for (int b = 0; b < 5; ++b) {
                     vec3 b_mid = (b_start + b_end) * 0.5;
                     vec4 c_mid = u_Projection * vec4(b_mid, 1.0);
-                    if (c_mid.w <= 0.0) break;
+                    if (c_mid.w <= 1e-5) break;
                     vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
                     float d_mid = texture(u_GBufferDepth, uv_mid).r;
                     float z_mid = GetViewPos(uv_mid, d_mid).z;
@@ -162,7 +164,9 @@ void main() {
         if (hit) {
             // Sample lit radiance (HDR lit buffer containing sunlight + dynamic point lights)
             vec3 hit_radiance = texture(u_SceneColor, hit_uv).rgb;
-            if (dot(hit_radiance, hit_radiance) < 0.0001) {
+            if (isnan(hit_radiance.r) || isnan(hit_radiance.g) || isnan(hit_radiance.b) ||
+                isinf(hit_radiance.r) || isinf(hit_radiance.g) || isinf(hit_radiance.b) ||
+                dot(hit_radiance, hit_radiance) < 0.0001) {
                 vec3 hit_albedo = texture(u_GBufferAlbedoRoughness, hit_uv).rgb;
                 hit_radiance = hit_albedo * u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * 0.25);
             }
@@ -191,5 +195,13 @@ void main() {
         indirect_radiance = (indirect_radiance / float(rays)) * u_SSGI_Intensity;
     }
 
-    out_SSGI = vec4(indirect_radiance, clamp(total_hits / float(rays), 0.0, 1.0));
+    // Comprehensive NaN / Inf sanitizer
+    if (isnan(indirect_radiance.r) || isnan(indirect_radiance.g) || isnan(indirect_radiance.b) ||
+        isinf(indirect_radiance.r) || isinf(indirect_radiance.g) || isinf(indirect_radiance.b)) {
+        indirect_radiance = vec3(0.0);
+    }
+    float out_hits = clamp(total_hits / float(rays), 0.0, 1.0);
+    if (isnan(out_hits) || isinf(out_hits)) out_hits = 0.0;
+
+    out_SSGI = vec4(clamp(indirect_radiance, vec3(0.0), vec3(40.0)), out_hits);
 }

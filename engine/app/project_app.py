@@ -155,9 +155,10 @@ class ProjectApp:
         instance_count: int,
         first_instance: int,
         is_animated: bool = False,
+        cast_shadow: bool = True,
     ) -> None:
         """Registers a static or persistent MDI draw batch."""
-        self._static_draw_batches.append((alloc, instance_count, first_instance, is_animated))
+        self._static_draw_batches.append((alloc, instance_count, first_instance, is_animated, cast_shadow))
 
     # ---------------- Loop Callbacks ----------------
 

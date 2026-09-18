@@ -250,8 +250,7 @@ float SampleSingleCascade(
 
     float current_depth = proj_coords.z;
     float base_bias = max(u_ShadowBias, 0.0);
-    float cascade_bias_scale = max(1.0, float(cascade) * 1.6 + 1.0);
-    float bias = (base_bias / cascade_bias_scale) * (1.0 + slope * 0.5);
+    float bias = base_bias * (1.0 + slope * 1.5);
 
     // MODE 0: ANTI-ALIASED HARD SHADOWS (4-Tap Bilinear PCF)
     if (u_ShadowMode == 0) {
@@ -287,12 +286,13 @@ float SampleSingleCascade(
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
     int blocker_samples = 16;
+    float blocker_bias = bias + slope * search_radius * 1.5;
 
     for (int i = 0; i < blocker_samples; ++i) {
         vec2 offset = VogelDiskSample(i, blocker_samples, ign_phi) * search_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
         float d = texture(u_ShadowAtlas, sample_uv).r;
-        if (d < current_depth - bias) {
+        if (d < current_depth - blocker_bias) {
             blocker_depth_sum += d;
             blocker_count++;
         }
@@ -364,10 +364,13 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     bool in_bounds = false;
     float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
 
-    // Seamless fallback to wider cascade if local cascade is out of bounds
-    if (!in_bounds && cascade < u_CascadeCount - 1) {
+    // Seamless fallback to wider cascades if local cascade is out of bounds
+    while (!in_bounds && cascade < u_CascadeCount - 1) {
         cascade++;
         shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
+    }
+    if (!in_bounds) {
+        return 1.0;
     }
 
     // Smooth cascade split transition blending to eliminate seams
@@ -443,7 +446,7 @@ void main() {
     // Reconstruct world position from Reversed-Z depth
     vec4 clip_pos = vec4(v_UV * 2.0 - 1.0, raw_depth, 1.0);
     vec4 view_pos = u_InvProjection * clip_pos;
-    view_pos /= view_pos.w;
+    view_pos /= max(abs(view_pos.w), 1e-6);
     vec4 world_pos = u_InvView * vec4(view_pos.xyz, 1.0);
 
     // Read G-Buffer parameters
@@ -604,7 +607,12 @@ void main() {
     // 1. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
     if (u_GIEnabled == 1 || u_GIEnabled == 3) {
         ssgi_sample = texture(u_SSGITexture, v_UV);
-        vec3 ssgi_diffuse = ssgi_sample.rgb * albedo * (1.0 - metallic);
+        if (isnan(ssgi_sample.r) || isnan(ssgi_sample.g) || isnan(ssgi_sample.b) ||
+            isinf(ssgi_sample.r) || isinf(ssgi_sample.g) || isinf(ssgi_sample.b) ||
+            isnan(ssgi_sample.a) || isinf(ssgi_sample.a)) {
+            ssgi_sample = vec4(0.0);
+        }
+        vec3 ssgi_diffuse = clamp(ssgi_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
         indirect_diffuse += ssgi_diffuse;
     }
 
@@ -615,8 +623,12 @@ void main() {
         vec3 lpv_sample_pos = world_pos.xyz + N * (voxel_cell * 0.75);
         vec3 lpv_uvw = clamp((lpv_sample_pos - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
         lpv_sample = texture(u_LPVVolume, lpv_uvw);
+        if (isnan(lpv_sample.r) || isnan(lpv_sample.g) || isnan(lpv_sample.b) ||
+            isinf(lpv_sample.r) || isinf(lpv_sample.g) || isinf(lpv_sample.b)) {
+            lpv_sample = vec4(0.0);
+        }
 
-        vec3 lpv_diffuse = lpv_sample.rgb * albedo * (1.0 - metallic) * 0.40;
+        vec3 lpv_diffuse = clamp(lpv_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic) * 0.40;
         if (u_GIEnabled == 2) {
             indirect_diffuse += lpv_diffuse;
         } else {
@@ -636,11 +648,12 @@ void main() {
         return;
     }
 
-    // Ambient Sky / Ground Foundation
-    vec3 sky_ambient = vec3(0.18, 0.24, 0.38) * (u_SunColor_Ambient.w * 2.5);
-    vec3 ground_ambient = vec3(0.22, 0.24, 0.22) * (u_SunColor_Ambient.w * 1.8);
-    vec3 hemisphere_light = mix(ground_ambient, sky_ambient, clamp(N.y * 0.5 + 0.5, 0.0, 1.0));
-    float base_ambient_scale = (u_GIEnabled > 0) ? 0.35 : 1.0;
+    // Ambient Sky / Ground Foundation with minimum physical exposure floor
+    float sky_intensity = max(u_SunColor_Ambient.w * 3.5, 0.12);
+    vec3 sky_color = mix(vec3(0.25, 0.35, 0.50), u_SunColor_Ambient.rgb * 0.5 + vec3(0.15), 0.4);
+    vec3 ground_color = vec3(0.18, 0.19, 0.18);
+    vec3 hemisphere_light = mix(ground_color, sky_color, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) * sky_intensity;
+    float base_ambient_scale = (u_GIEnabled > 0) ? 0.65 : 1.0;
     vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic) * base_ambient_scale;
 
     // Image-Based Lighting (IBL) & Screen-Space Reflections (SSR)
@@ -660,7 +673,14 @@ void main() {
         // Sample SSR
         if (u_SSREnabled == 1) {
             vec4 ssr_sample = texture(u_SSRTexture, v_UV);
-            env_radiance = mix(env_radiance, ssr_sample.rgb, ssr_sample.a);
+            if (isnan(ssr_sample.r) || isnan(ssr_sample.g) || isnan(ssr_sample.b) ||
+                isinf(ssr_sample.r) || isinf(ssr_sample.g) || isinf(ssr_sample.b) ||
+                isnan(ssr_sample.a) || isinf(ssr_sample.a)) {
+                ssr_sample = vec4(0.0);
+            }
+            vec3 safe_ssr_rgb = clamp(ssr_sample.rgb, vec3(0.0), vec3(30.0));
+            float safe_ssr_a = clamp(ssr_sample.a, 0.0, 1.0);
+            env_radiance = mix(env_radiance, safe_ssr_rgb, safe_ssr_a);
         }
 
         // Specular occlusion (Lagarde / Frostbite) prevents specular light leaks into deep crevices
@@ -674,6 +694,13 @@ void main() {
     vec3 bounce_ao = MultiBounceAO(ao, albedo);
     vec3 ambient = (ambient_base + indirect_diffuse) * bounce_ao + indirect_specular;
     vec3 total_lit = direct_sun + point_lights_accum + spot_lights_accum + ambient + emissive;
+
+    // Guaranteed NaN / Inf fallback to ambient floor
+    if (isnan(total_lit.r) || isnan(total_lit.g) || isnan(total_lit.b) ||
+        isinf(total_lit.r) || isinf(total_lit.g) || isinf(total_lit.b)) {
+        total_lit = max(ambient_base, vec3(0.05));
+    }
+    total_lit = clamp(total_lit, vec3(0.0), vec3(100.0));
 
     out_HDRColor = vec4(total_lit, 1.0);
 }

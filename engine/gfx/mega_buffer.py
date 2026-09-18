@@ -31,11 +31,13 @@ class MegaBuffer:
         "index_data",
         "total_vertices",
         "total_indices",
+        "on_bake_callbacks",
     )
 
     def __init__(self, ctx: moderngl.Context) -> None:
         self.ctx = ctx
         self.allocations: dict[str, MeshAllocation] = {}
+        self.on_bake_callbacks: list[Callable[[], None]] = []
 
         # Accumulator lists before GPU buffer creation
         self.vertex_data: list[np.ndarray] = []
@@ -105,6 +107,8 @@ class MegaBuffer:
     def bake(self) -> None:
         """Concatenates all mesh arrays and reallocates GPU Mega-VBO/IBO."""
         self._bake_buffers()
+        for cb in self.on_bake_callbacks:
+            cb()
 
     def _bake_buffers(self) -> None:
         """Concatenates all mesh arrays and allocates single GPU Mega-VBO/IBO."""

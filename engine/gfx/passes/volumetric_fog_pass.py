@@ -16,6 +16,16 @@ import moderngl
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 from engine.gfx.quality_presets import FROXEL_RESOLUTIONS
 
+try:
+    from OpenGL.GL import (
+        glMemoryBarrier,
+        GL_SHADER_IMAGE_ACCESS_BARRIER_BIT,
+        GL_TEXTURE_FETCH_BARRIER_BIT,
+    )
+    _HAS_GL_BARRIER = True
+except Exception:
+    _HAS_GL_BARRIER = False
+
 SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
 
 
@@ -205,6 +215,12 @@ class VolumetricFogPass(RenderPass):
         gz = self.grid_d
         self.inject_prog.run(gx, gy, gz)
 
+        if _HAS_GL_BARRIER:
+            try:
+                glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+            except Exception:
+                pass
+
         # ---- PASS 2: Front-to-Back Raymarch Integration ----
         self.scatter_ext_vol.bind_to_image(0, read=True, write=False)
         self.integrated_vol.bind_to_image(1, read=False, write=True)
@@ -217,6 +233,12 @@ class VolumetricFogPass(RenderPass):
             self._u_int_grid_size.value = (self.grid_w, self.grid_h, self.grid_d)
 
         self.integrate_prog.run(gx, gy, 1)
+
+        if _HAS_GL_BARRIER:
+            try:
+                glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+            except Exception:
+                pass
 
         # ---- PASS 3: Fullscreen HDR Composite ----
         target_fbo.use()

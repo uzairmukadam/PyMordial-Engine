@@ -78,6 +78,7 @@ class FollowCamera(VirtualCamera):
         dt: float,
         character_pos: tuple[float, float, float] | np.ndarray,
         physics: PhysicsManager | None = None,
+        exclude_entity_id: int | None = None,
     ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
         """Updates camera position following the target with obstacle clipping."""
         cfg = self.config
@@ -101,17 +102,28 @@ class FollowCamera(VirtualCamera):
         desired_dist = cfg.distance
         hit_dist = desired_dist
 
-        # Cast ray from target pivot toward the camera position
+        # Cast ray to check for obstacle occlusion between target and camera
         if physics is not None:
-            hit = physics.raycast(
-                origin=(cx, cy, cz),
-                direction=(dir_x, dir_y, dir_z),
-                max_distance=cfg.distance,
-                solid=True,
-            )
-            if hit is not None:
-                _, hit_dist_val, _ = hit
-                hit_dist = max(cfg.min_distance, hit_dist_val - cfg.camera_radius)
+            # If an entity is excluded (such as a vehicle chassis), start the probe outside its local collider
+            start_offset = 0.0
+            if exclude_entity_id is not None:
+                start_offset = max(cfg.min_distance, 1.8)
+
+            ray_dist = desired_dist - start_offset
+            if ray_dist > 0.05:
+                ox = cx + dir_x * start_offset
+                oy = cy + dir_y * start_offset
+                oz = cz + dir_z * start_offset
+                hit = physics.raycast(
+                    origin=(ox, oy, oz),
+                    direction=(dir_x, dir_y, dir_z),
+                    max_distance=ray_dist,
+                    solid=True,
+                )
+                if hit is not None:
+                    hit_eid, hit_dist_val, _ = hit
+                    if exclude_entity_id is None or hit_eid != exclude_entity_id:
+                        hit_dist = max(cfg.min_distance, start_offset + hit_dist_val - cfg.camera_radius)
 
         if hit_dist < self.current_distance:
             # Snap in immediately to prevent clipping through geometry
@@ -136,8 +148,9 @@ class FollowCamera(VirtualCamera):
         dt: float,
         character_pos: tuple[float, float, float] | np.ndarray | None = None,
         physics: PhysicsManager | None = None,
+        exclude_entity_id: int | None = None,
     ) -> tuple[tuple[float, float, float], tuple[float, float, float]] | None:
         """Compatible with original CharacterCamera signature."""
         if character_pos is not None:
-            return self.update_follow(dt, character_pos, physics)
+            return self.update_follow(dt, character_pos, physics, exclude_entity_id=exclude_entity_id)
         return None

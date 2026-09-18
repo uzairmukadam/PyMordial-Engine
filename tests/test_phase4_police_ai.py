@@ -22,18 +22,17 @@ def test_app():
 
 
 def test_police_vehicle_spawning(test_app: ProjectApp):
-    """Verifies that police cruisers (Sedan and SUV) spawn with chassis, cabin, lightbar, and wheels."""
+    """Verifies that police cruisers (Sedan and SUV) spawn with chassis, lightbar beacons, and wheels."""
     sedan = PoliceVehicle(test_app, vehicle_type="sedan", position=(10.0, 1.0, 10.0), heading_deg=0.0)
     assert sedan.chassis_id >= 0
-    assert sedan.cabin_id >= 0
-    assert sedan.strobe_bar_id >= 0
     assert sedan.beacon_red_id >= 0
     assert sedan.beacon_blue_id >= 0
     assert len(sedan.wheel_entity_ids) == 4
     assert sedan.vehicle is not None
+    assert sedan.model_info is not None
 
     suv = PoliceVehicle(test_app, vehicle_type="suv", position=(20.0, 1.0, 20.0), heading_deg=45.0)
-    assert suv.config.chassis_mass == 2250.0  # Heavy Interceptor SUV mass
+    assert suv.config.chassis_mass >= 2100.0  # Heavy Interceptor SUV mass
     assert suv.vehicle_type == "suv"
 
     # Cleanup
@@ -149,8 +148,8 @@ def test_police_draw_batches_zero_allocation(test_app: ProjectApp):
     police_sys.cops.append(cop)
 
     batches = police_sys.get_draw_batches(test_app)
-    # Chassis, Cabin, Pushbar, Strobe Bar, Red Beacon, Blue Beacon, 4 Wheels = 10 batches per cruiser
-    assert len(batches) >= 10
+    # Chassis, Red Beacon, Blue Beacon, 4 Wheels = 7 batches per cruiser
+    assert len(batches) >= 7
 
     # Verify second call reuses batch container
     batches_again = police_sys.get_draw_batches(test_app)

@@ -64,13 +64,57 @@ def make_tiled_plane_pm_mesh(size: float = 100.0, uv_tiles: float = 50.0) -> PMM
     return build_pm_mesh(pos, nor, uvs, tan, idx)
 
 
+def make_grid_terrain_pm_mesh(size: float = 100.0, grid_cells: int = 32, uv_tiles: float = 1.0) -> PMMesh:
+    """Builds a flat regular grid terrain mesh ready for heightmap displacement."""
+    cells = max(1, int(grid_cells))
+    verts_per_side = cells + 1
+    total_verts = verts_per_side * verts_per_side
+
+    half_s = size * 0.5
+    xs = np.linspace(-half_s, half_s, verts_per_side, dtype=np.float32)
+    zs = np.linspace(-half_s, half_s, verts_per_side, dtype=np.float32)
+    grid_x, grid_z = np.meshgrid(xs, zs)
+
+    pos = np.zeros((total_verts, 3), dtype=np.float32)
+    pos[:, 0] = grid_x.ravel()
+    pos[:, 1] = 0.0
+    pos[:, 2] = grid_z.ravel()
+
+    nor = np.zeros((total_verts, 4), dtype=np.float32)
+    nor[:, 1] = 1.0
+    nor[:, 3] = 1.0
+
+    uvs = np.zeros((total_verts, 2), dtype=np.float32)
+    uvs[:, 0] = ((grid_x.ravel() + half_s) / size) * uv_tiles
+    uvs[:, 1] = ((grid_z.ravel() + half_s) / size) * uv_tiles
+
+    tan = np.zeros((total_verts, 4), dtype=np.float32)
+    tan[:, 0] = 1.0
+    tan[:, 3] = 1.0
+
+    indices = []
+    for r in range(cells):
+        for c in range(cells):
+            v0 = r * verts_per_side + c
+            v1 = v0 + 1
+            v2 = (r + 1) * verts_per_side + c
+            v3 = v2 + 1
+            indices.extend([v0, v1, v2, v1, v3, v2])
+
+    idx = np.array(indices, dtype=np.uint32)
+    return build_pm_mesh(pos, nor, uvs, tan, idx)
+
+
 class DefaultWorldBuilder(BaseWorldBuilder):
-    """Standard engine world generator creating a tiled POM ground plane and physics boundary."""
+    """Standard engine world generator creating a tiled POM or flat untextured ground plane and physics boundary."""
 
     __slots__ = (
         "size",
         "uv_tiles",
         "material_name",
+        "color",
+        "roughness",
+        "metallic",
         "friction",
         "restitution",
         "ground_entity_id",
@@ -81,40 +125,50 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         self,
         size: float = 100.0,
         uv_tiles: float = 50.0,
-        material_name: str = "mud_cracked_dry_03",
+        material_name: str | None = "mud_cracked_dry_03",
+        color: tuple[float, float, float] = (0.65, 0.55, 0.42),
+        roughness: float = 0.85,
+        metallic: float = 0.02,
         friction: float = 0.80,
         restitution: float = 0.05,
     ) -> None:
         self.size = float(size)
         self.uv_tiles = float(uv_tiles)
         self.material_name = material_name
+        self.color = color
+        self.roughness = float(roughness)
+        self.metallic = float(metallic)
         self.friction = float(friction)
         self.restitution = float(restitution)
         self.ground_entity_id: int | None = None
         self.ground_collider_id: int | None = None
 
     def build_world(self, app: ProjectApp) -> None:
-        """Constructs the tiled ground mesh, loads PBR material, and creates the static collider."""
+        """Constructs the tiled ground mesh, loads PBR material (if specified), and creates the static collider."""
         pipeline = app.pipeline
         ecs = app.ecs
         physics = app.physics
 
-        # 1. PBR Texture Array Atlas upload
-        raw_mat_dir = Path("assets/textures") / self.material_name
-        cooked_mat_dir = Path("build/cooked_assets/textures") / self.material_name
-        target_res = 4096
+        layer_idx = 0
+        disp_mode = DisplacementMode.NONE
 
-        layer_idx = 1
-        if raw_mat_dir.is_dir():
-            decoded = decode_material_folder(
-                folder=raw_mat_dir,
-                width=target_res,
-                height=target_res,
-                name=self.material_name,
-                cooked_folder=cooked_mat_dir if cooked_mat_dir.is_dir() else None,
-            )
-            layer_idx = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
-            pipeline.material_registry.sync_with_atlas(pipeline.texture_atlas)
+        # 1. PBR Texture Array Atlas upload (if material is specified)
+        if self.material_name:
+            raw_mat_dir = Path("assets/textures") / self.material_name
+            cooked_mat_dir = Path("build/cooked_assets/textures") / self.material_name
+            target_res = 4096
+
+            if raw_mat_dir.is_dir():
+                decoded = decode_material_folder(
+                    folder=raw_mat_dir,
+                    width=target_res,
+                    height=target_res,
+                    name=self.material_name,
+                    cooked_folder=cooked_mat_dir if cooked_mat_dir.is_dir() else None,
+                )
+                layer_idx = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
+                pipeline.material_registry.sync_with_atlas(pipeline.texture_atlas)
+                disp_mode = DisplacementMode.POM
 
         # 2. Add tiled plane to MegaBuffer
         tiled_pm = make_tiled_plane_pm_mesh(size=self.size, uv_tiles=self.uv_tiles)
@@ -132,12 +186,12 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         plane_id = ecs.create_entity(
             position=(0.0, 0.0, 0.0),
             scale=(1.0, 1.0, 1.0),
-            material_id=self.material_name,
+            material_id=self.material_name or "flat_land",
             layer_idx=layer_idx,
-            disp_mode=DisplacementMode.POM,
-            color=(0.65, 0.55, 0.42),
-            roughness=0.85,
-            metallic=0.02,
+            disp_mode=disp_mode,
+            color=self.color,
+            roughness=self.roughness,
+            metallic=self.metallic,
             is_static=True,
         )
 
@@ -176,7 +230,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             ecs.aabbs[d_plane, 3] = half_s
             ecs.aabbs[d_plane, 4] = 20.0
             ecs.aabbs[d_plane, 5] = half_s
-        app.register_draw_batch(alloc_plane, 1, d_plane, False)
+        app.register_draw_batch(alloc_plane, 1, d_plane, False, cast_shadow=False)
 
     def teardown_world(self, app: ProjectApp) -> None:
         """Removes the ground plane entity and collider."""

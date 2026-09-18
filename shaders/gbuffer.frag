@@ -184,6 +184,7 @@ void main() {
 
     vec3 N = normalize(v_Normal);
     vec2 final_uv = v_UV;
+    vec2 sample_uv = vec2(abs(v_UV.x), v_UV.y);
     float pom_shadow = 1.0;
 
     // Strict Mutual Exclusivity & Camera Radius Culling: POM runs ONLY when disp_mode == DISP_MODE_POM (1) and within u_DispMidRadius
@@ -222,20 +223,31 @@ void main() {
             }
         }
 
-        // Sample PBR texture arrays at final_uv
-        vec4 diffuse_sample = texture(u_DiffuseArray, vec3(final_uv, layer_idx));
-        albedo = diffuse_sample.rgb;
+        sample_uv = vec2(abs(final_uv.x), final_uv.y);
+        bool is_paintable = (v_UV.x < 0.0);
+
+        // Sample PBR texture arrays at sample_uv
+        vec4 diffuse_sample = texture(u_DiffuseArray, vec3(sample_uv, layer_idx));
+        if (is_paintable) {
+            albedo = mat0.rgb;
+            roughness = clamp(mat0.a, 0.04, 1.0);
+            metallic = clamp(mat1.r, 0.0, 1.0);
+        } else {
+            albedo = diffuse_sample.rgb;
+        }
 
         // Normal mapping via TBN
-        vec3 normal_sample = texture(u_NormalArray, vec3(final_uv, layer_idx)).rgb;
+        vec3 normal_sample = texture(u_NormalArray, vec3(sample_uv, layer_idx)).rgb;
         vec3 tangent_normal = normalize(normal_sample * 2.0 - 1.0);
         N = normalize(v_TBN * tangent_normal);
 
         // ARM texture: R=AO, G=Roughness, B=Metallic
-        vec4 arm_sample = texture(u_ARMArray, vec3(final_uv, layer_idx));
+        vec4 arm_sample = texture(u_ARMArray, vec3(sample_uv, layer_idx));
         ao = arm_sample.r;
-        roughness = clamp(arm_sample.g, 0.04, 1.0);
-        metallic = clamp(arm_sample.b, 0.0, 1.0);
+        if (!is_paintable) {
+            roughness = clamp(arm_sample.g, 0.04, 1.0);
+            metallic = clamp(arm_sample.b, 0.0, 1.0);
+        }
     } else {
         // Phase 7: Procedural micro-surface aggregate grain for untextured architectural & road surfaces
         vec3 p = v_WorldPos * 8.0;
@@ -257,5 +269,5 @@ void main() {
     out_AlbedoRoughness = vec4(albedo, roughness);
     out_NormalMetallic = vec4(OctahedralEncode(N), metallic, ao);
     out_Velocity = velocity;
-    out_DispInfo = vec4(final_uv, tex_layer, float(disp_mode));
+    out_DispInfo = vec4(sample_uv, tex_layer, float(disp_mode));
 }

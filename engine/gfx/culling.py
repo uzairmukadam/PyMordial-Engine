@@ -161,11 +161,16 @@ class FrustumCuller:
         out_cmd_count = 0
 
         for item in draw_batches:
-            if len(item) == 4:
+            orig_len = len(item)
+            if orig_len >= 5:
+                mesh_item, count, base_inst, is_tess, cast_shadow = item[:5]
+            elif orig_len == 4:
                 mesh_item, count, base_inst, is_tess = item
+                cast_shadow = True
             else:
                 mesh_item, count, base_inst = item
                 is_tess = False
+                cast_shadow = True
 
             if count <= 0 or base_inst >= mask_len:
                 continue
@@ -173,10 +178,18 @@ class FrustumCuller:
             end_inst = min(base_inst + count, mask_len)
             sub = visible_mask[base_inst:end_inst]
 
+            def _pack_batch(m_item, c_count, b_inst):
+                if orig_len >= 5:
+                    return (m_item, c_count, b_inst, is_tess, cast_shadow)
+                elif orig_len == 4:
+                    return (m_item, c_count, b_inst, is_tess)
+                else:
+                    return (m_item, c_count, b_inst)
+
             # 1. Single-instance fast path
             if count == 1:
                 if sub[0]:
-                    self._filtered_batches.append((mesh_item, 1, base_inst, is_tess))
+                    self._filtered_batches.append(_pack_batch(mesh_item, 1, base_inst))
                     out_cmd_count += 1
                 continue
 
@@ -189,7 +202,7 @@ class FrustumCuller:
             all_vis = np.all(sub)
             if all_vis:
                 # Fully visible: single instanced draw command
-                self._filtered_batches.append((mesh_item, count, base_inst, is_tess))
+                self._filtered_batches.append(_pack_batch(mesh_item, count, base_inst))
                 out_cmd_count += 1
                 continue
 
@@ -206,7 +219,7 @@ class FrustumCuller:
             for s, e in zip(starts, ends):
                 run_len = int(e - s)
                 if run_len > 0:
-                    self._filtered_batches.append((mesh_item, run_len, base_inst + int(s), is_tess))
+                    self._filtered_batches.append(_pack_batch(mesh_item, run_len, base_inst + int(s)))
                     out_cmd_count += 1
 
         self.stats_visible_commands = out_cmd_count

@@ -88,8 +88,26 @@ def test_respray_and_bribe_system():
         new_color = (0.85, 0.12, 0.08)  # Crimson Red
         ok, msg = career.respray_car(new_color)
         assert ok is True
-        assert career.get_active_car_color() == new_color
+        assert career.active_car.color == new_color
         assert career.money == 5000 - 350
+
+        # Verify respray dynamically notifies VehicleControllerModule if attached
+        class MockVC:
+            def __init__(self):
+                self.color = None
+            def set_paint_color(self, app, color):
+                self.color = color
+
+        class MockApp:
+            def __init__(self, vc):
+                self._vc = vc
+            def get_module(self, mod_cls):
+                return self._vc
+
+        mock_vc = MockVC()
+        career._app = MockApp(mock_vc)
+        career.respray_car((0.2, 0.7, 0.9))
+        assert mock_vc.color == (0.2, 0.7, 0.9)
 
         # Add heat: 40 points (Tier 2 Heavy Pursuit)
         career.add_heat(40.0)
@@ -100,7 +118,7 @@ def test_respray_and_bribe_system():
         ok, msg = career.pay_bribe()
         assert ok is True
         assert career.active_car.heat == 0.0
-        assert career.money == 5000 - 350 - 1000
+        assert career.money == 5000 - (350 * 2) - 1000
 
         heat_sys.heat_level = career.active_car.heat
         assert heat_sys.cop_tier == 0
@@ -124,9 +142,24 @@ def test_dealership_purchase_and_fleet_switch():
         assert "classic_muscle" in career.owned_cars
         assert career.money == 15_000 - 8_500
 
-        # Switch to Classic Muscle
+        # Switch to Classic Muscle with app sync verification
+        class MockVC:
+            def __init__(self):
+                self.reconfigured = False
+            def apply_vehicle_config(self, app, reset_pose=False):
+                self.reconfigured = True
+
+        class MockApp:
+            def __init__(self, vc):
+                self._vc = vc
+            def get_module(self, mod_cls):
+                return self._vc
+
+        mock_vc = MockVC()
+        career._app = MockApp(mock_vc)
         ok, msg = career.select_active_car("classic_muscle")
         assert ok is True
+        assert mock_vc.reconfigured is True
         assert career.active_car_id == "classic_muscle"
         assert career.active_car_definition.car_class == CarClass.CLASSIC_MUSCLE
 
