@@ -9,6 +9,7 @@ Provides independent, non-intrusive debug panels:
 
 from __future__ import annotations
 from pathlib import Path
+from typing import Any, Callable
 import numpy as np
 import pygame
 import moderngl
@@ -1253,7 +1254,7 @@ class DebugMenu:
         for cb in self._custom_ui_callbacks:
             try:
                 cb()
-            except Exception as e:
+            except Exception:
                 pass
 
         imgui.render()

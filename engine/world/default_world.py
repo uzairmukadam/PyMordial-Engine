@@ -12,7 +12,6 @@ import numpy as np
 from engine.gfx.texture_atlas import (
     DisplacementMode,
     decode_material_folder,
-    encode_mat_flags,
 )
 from engine.assets.mesh_format import PMMesh, build_pm_mesh
 from engine.world.base import BaseWorldBuilder

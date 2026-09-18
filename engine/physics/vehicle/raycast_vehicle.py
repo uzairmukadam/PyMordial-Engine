@@ -14,11 +14,15 @@ import math
 from typing import TYPE_CHECKING
 import numpy as np
 
-from engine.physics.vehicle.vehicle_config import VehicleConfig, WheelConfig, DriveType
+from engine.physics.vehicle.vehicle_config import VehicleConfig, DriveType
 
 if TYPE_CHECKING:
     from engine.core.ecs import EntityManager
     from engine.physics.rapier_world import PhysicsManager
+
+_GEAR_RATIOS = (3.6, 2.1, 1.45, 1.05, 0.82)
+_REV_RATIO = 3.5
+_FINAL_DRIVE = 3.7
 
 
 def _quat_to_rotation_matrix(q: np.ndarray, out: np.ndarray) -> None:
@@ -287,9 +291,17 @@ class RaycastVehicle:
         self._forward_vec[1] = -self._rot_mat[1, 2]
         self._forward_vec[2] = -self._rot_mat[2, 2]
 
-        # Vehicle planar speed along forward and right vectors
-        fwd_speed = float(np.dot(self._chassis_linvel, self._forward_vec))
-        lat_speed = float(np.dot(self._chassis_linvel, self._right_vec))
+        # Vehicle planar speed along forward and right vectors (direct float arithmetic, zero allocation)
+        fwd_speed = float(
+            self._chassis_linvel[0] * self._forward_vec[0]
+            + self._chassis_linvel[1] * self._forward_vec[1]
+            + self._chassis_linvel[2] * self._forward_vec[2]
+        )
+        lat_speed = float(
+            self._chassis_linvel[0] * self._right_vec[0]
+            + self._chassis_linvel[1] * self._right_vec[1]
+            + self._chassis_linvel[2] * self._right_vec[2]
+        )
         self.current_speed_mps = fwd_speed
 
         # 2-Axis dynamic acceleration tracking (longitudinal + lateral)
@@ -316,9 +328,9 @@ class RaycastVehicle:
         lat_weight_transfer = max(-max_roll_wt, min(max_roll_wt, lat_weight_transfer))
 
         # Powertrain 5-speed transmission simulation
-        gear_ratios = (3.6, 2.1, 1.45, 1.05, 0.82)
-        rev_ratio = 3.5
-        final_drive = 3.7
+        gear_ratios = _GEAR_RATIOS
+        rev_ratio = _REV_RATIO
+        final_drive = _FINAL_DRIVE
 
         if self._shift_timer > 0.0:
             self._shift_timer -= dt
@@ -766,12 +778,4 @@ class RaycastVehicle:
             (pos_xyz, rot_xyzw) as NumPy arrays.
         """
         w_state = self.wheel_states[wheel_idx]
-        w_cfg = self.config.wheels[wheel_idx]
-
-        # Steering yaw around local Up + Rolling spin around local Right
-        steer = w_state.steer_angle
-        spin = w_state.spin_angle
-
-        # Compute combined quaternion (ChassisRot * SteerYaw * WheelSpin)
-        # For simplicity and zero allocation, return wheel world_pos and chassis orientation
         return w_state.world_pos, self._chassis_rot

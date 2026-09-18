@@ -152,7 +152,6 @@ class DecalPass(RenderPass):
             return
 
         count = min(self.active_decal_count, self.MAX_DECALS)
-        bytes_to_write = count * self.DECAL_SIZE_BYTES
         self.ssbo_decals.write(self._cpu_buffer[: count * self.DECAL_SIZE_FLOATS].tobytes(), offset=0)
         self.ssbo_decals.bind_to_storage_buffer(binding=4)
 

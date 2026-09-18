@@ -231,6 +231,7 @@ class RenderPipeline:
         "_u_star_density",
         "_u_atmo_turbidity",
         "_u_atmo_sun_dir",
+        "_prev_atmo_key",
         "particle_pass",
         "camera_optics_pass",
         "water_pass",
@@ -506,6 +507,7 @@ class RenderPipeline:
         self._u_star_density = self.resolve_prog.get("u_StarDensity", None)
         self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
         self._u_atmo_sun_dir = self.resolve_prog.get("u_AtmosphereSunDir", None)
+        self._prev_atmo_key: tuple | None = None
 
         # 8.5. GPU Compute Particle System & Volumetric VFX (Phase 2)
         part_enabled = getattr(self.config, "particles_enabled", True)
@@ -866,15 +868,12 @@ class RenderPipeline:
         # Populate shadow MDI with all shadow casters (independent of camera view frustum)
         if draw_batches is not None:
             for item in draw_batches:
-                if len(item) >= 5:
-                    mesh_item, count, base_inst, is_tess, cast_shadow = item[:5]
-                elif len(item) == 4:
-                    mesh_item, count, base_inst, is_tess = item
-                    cast_shadow = True
-                else:
-                    mesh_item, count, base_inst = item
-                    is_tess = False
-                    cast_shadow = True
+                item_len = len(item)
+                mesh_item = item[0]
+                count = item[1]
+                base_inst = item[2]
+                is_tess = item[3] if item_len >= 4 else False
+                cast_shadow = item[4] if item_len >= 5 else True
 
                 if count > 0 and not is_tess and cast_shadow:
                     alloc = (
@@ -906,11 +905,10 @@ class RenderPipeline:
 
         if batches_to_render is not None:
             for item in batches_to_render:
-                if len(item) >= 4:
-                    mesh_item, count, base_inst, is_tess = item[:4]
-                else:
-                    mesh_item, count, base_inst = item
-                    is_tess = False
+                mesh_item = item[0]
+                count = item[1]
+                base_inst = item[2]
+                is_tess = item[3] if len(item) >= 4 else False
 
                 if count > 0:
                     alloc = (
@@ -1184,44 +1182,59 @@ class RenderPipeline:
         if self._u_lpv_size is not None and "lpv_size" in ctx.resources:
             self._u_lpv_size.value = ctx.resources["lpv_size"]
 
-        # Upload Parameterized Physical Atmosphere Uniforms
+        # Upload Parameterized Physical Atmosphere Uniforms (Cached to avoid redundant OpenGL driver calls)
         atmo = self.atmosphere.config
-        self.sky_atmosphere_pass._update_common_uniforms(self.resolve_prog, atmo)
-        if self._u_rayleigh_beta is not None:
-            self._u_rayleigh_beta.value = atmo.rayleigh_beta
-        if self._u_mie_beta is not None:
-            if atmo.mie_beta != self._prev_mie_beta:
+        atmo_key = (
+            atmo.rayleigh_beta,
+            atmo.mie_beta,
+            atmo.mie_asymmetry,
+            atmo.ozone_beta,
+            atmo.turbidity,
+            atmo.sun_disc_size,
+            atmo.moon_disc_size,
+            atmo.moon_color,
+            atmo.star_intensity,
+            atmo.star_density,
+            atmo.ground_color,
+            atmo.night_zenith,
+            atmo.night_horizon,
+        )
+        if atmo_key != self._prev_atmo_key:
+            self._prev_atmo_key = atmo_key
+            self.sky_atmosphere_pass._update_common_uniforms(self.resolve_prog, atmo)
+            if self._u_rayleigh_beta is not None:
+                self._u_rayleigh_beta.value = atmo.rayleigh_beta
+            if self._u_mie_beta is not None:
                 mb = float(atmo.mie_beta)
-                self._mie_beta_tuple = (mb, mb, mb)
-                self._prev_mie_beta = atmo.mie_beta
-            self._u_mie_beta.value = self._mie_beta_tuple
-        if self._u_mie_g is not None:
-            self._u_mie_g.value = atmo.mie_asymmetry
-        if self._u_ozone_beta is not None:
-            self._u_ozone_beta.value = atmo.ozone_beta
-        if self._u_atmo_ground_col is not None:
-            self._u_atmo_ground_col.value = atmo.ground_color
-        if self._u_night_zenith is not None:
-            self._u_night_zenith.value = atmo.night_zenith
-        if self._u_night_horizon is not None:
-            self._u_night_horizon.value = atmo.night_horizon
-        if self._u_sun_disc_size is not None:
-            self._u_sun_disc_size.value = atmo.sun_disc_size
-        if self._u_moon_disc_size is not None:
-            self._u_moon_disc_size.value = atmo.moon_disc_size
-        if self._u_moon_color is not None:
-            self._u_moon_color.value = atmo.moon_color
-        if self._u_star_intensity is not None:
-            self._u_star_intensity.value = atmo.star_intensity
-        if self._u_star_density is not None:
-            self._u_star_density.value = atmo.star_density
-        if self._u_atmo_turbidity is not None:
-            self._u_atmo_turbidity.value = atmo.turbidity
+                self._u_mie_beta.value = (mb, mb, mb)
+            if self._u_mie_g is not None:
+                self._u_mie_g.value = atmo.mie_asymmetry
+            if self._u_ozone_beta is not None:
+                self._u_ozone_beta.value = atmo.ozone_beta
+            if self._u_atmo_ground_col is not None:
+                self._u_atmo_ground_col.value = atmo.ground_color
+            if self._u_night_zenith is not None:
+                self._u_night_zenith.value = atmo.night_zenith
+            if self._u_night_horizon is not None:
+                self._u_night_horizon.value = atmo.night_horizon
+            if self._u_sun_disc_size is not None:
+                self._u_sun_disc_size.value = atmo.sun_disc_size
+            if self._u_moon_disc_size is not None:
+                self._u_moon_disc_size.value = atmo.moon_disc_size
+            if self._u_moon_color is not None:
+                self._u_moon_color.value = atmo.moon_color
+            if self._u_star_intensity is not None:
+                self._u_star_intensity.value = atmo.star_intensity
+            if self._u_star_density is not None:
+                self._u_star_density.value = atmo.star_density
+            if self._u_atmo_turbidity is not None:
+                self._u_atmo_turbidity.value = atmo.turbidity
+
         if self._u_atmo_sun_dir is not None:
             sx, sy, sz = float(true_sun_dir[0]), float(true_sun_dir[1]), float(true_sun_dir[2])
             if (sx, sy, sz) != self._atmo_sun_tuple:
                 self._atmo_sun_tuple = (sx, sy, sz)
-            self._u_atmo_sun_dir.value = self._atmo_sun_tuple
+                self._u_atmo_sun_dir.value = self._atmo_sun_tuple
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 

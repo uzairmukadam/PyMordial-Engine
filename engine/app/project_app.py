@@ -6,7 +6,7 @@ Rapier3D physics, Audio, ECS, Input, Cameras, and self-contained ProjectModules.
 
 from __future__ import annotations
 import sys
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING, TypeVar, Any
 import pygame
 
 from engine.app.config import ProjectConfig

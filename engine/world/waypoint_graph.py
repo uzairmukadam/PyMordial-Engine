@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import heapq
 import math
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(slots=True)

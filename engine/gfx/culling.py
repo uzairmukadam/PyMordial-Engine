@@ -6,7 +6,6 @@ Indirect (MDI) batch filtering.
 """
 
 from __future__ import annotations
-import math
 import numpy as np
 
 
@@ -163,12 +162,21 @@ class FrustumCuller:
         for item in draw_batches:
             orig_len = len(item)
             if orig_len >= 5:
-                mesh_item, count, base_inst, is_tess, cast_shadow = item[:5]
+                mesh_item = item[0]
+                count = item[1]
+                base_inst = item[2]
+                is_tess = item[3]
+                cast_shadow = item[4]
             elif orig_len == 4:
-                mesh_item, count, base_inst, is_tess = item
+                mesh_item = item[0]
+                count = item[1]
+                base_inst = item[2]
+                is_tess = item[3]
                 cast_shadow = True
             else:
-                mesh_item, count, base_inst = item
+                mesh_item = item[0]
+                count = item[1]
+                base_inst = item[2]
                 is_tess = False
                 cast_shadow = True
 
@@ -178,18 +186,15 @@ class FrustumCuller:
             end_inst = min(base_inst + count, mask_len)
             sub = visible_mask[base_inst:end_inst]
 
-            def _pack_batch(m_item, c_count, b_inst):
-                if orig_len >= 5:
-                    return (m_item, c_count, b_inst, is_tess, cast_shadow)
-                elif orig_len == 4:
-                    return (m_item, c_count, b_inst, is_tess)
-                else:
-                    return (m_item, c_count, b_inst)
-
             # 1. Single-instance fast path
             if count == 1:
                 if sub[0]:
-                    self._filtered_batches.append(_pack_batch(mesh_item, 1, base_inst))
+                    if orig_len >= 5:
+                        self._filtered_batches.append((mesh_item, 1, base_inst, is_tess, cast_shadow))
+                    elif orig_len == 4:
+                        self._filtered_batches.append((mesh_item, 1, base_inst, is_tess))
+                    else:
+                        self._filtered_batches.append((mesh_item, 1, base_inst))
                     out_cmd_count += 1
                 continue
 
@@ -202,25 +207,44 @@ class FrustumCuller:
             all_vis = np.all(sub)
             if all_vis:
                 # Fully visible: single instanced draw command
-                self._filtered_batches.append(_pack_batch(mesh_item, count, base_inst))
+                if orig_len >= 5:
+                    self._filtered_batches.append((mesh_item, count, base_inst, is_tess, cast_shadow))
+                elif orig_len == 4:
+                    self._filtered_batches.append((mesh_item, count, base_inst, is_tess))
+                else:
+                    self._filtered_batches.append((mesh_item, count, base_inst))
                 out_cmd_count += 1
                 continue
 
-            # 3. Partially visible: find contiguous runs of True
-            # Pad with False on both ends to detect transitions via diff
-            padded = np.empty(len(sub) + 2, dtype=bool)
-            padded[0] = False
-            padded[-1] = False
-            padded[1:-1] = sub
-            diff = np.diff(padded.astype(np.int8))
-            starts = np.where(diff == 1)[0]
-            ends = np.where(diff == -1)[0]
+            # 3. Partially visible: linear scan for contiguous visible runs without temporary array allocations
+            in_run = False
+            run_start = 0
+            for idx, vis in enumerate(sub):
+                if vis:
+                    if not in_run:
+                        in_run = True
+                        run_start = idx
+                else:
+                    if in_run:
+                        in_run = False
+                        run_len = idx - run_start
+                        if orig_len >= 5:
+                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow))
+                        elif orig_len == 4:
+                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess))
+                        else:
+                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start))
+                        out_cmd_count += 1
 
-            for s, e in zip(starts, ends):
-                run_len = int(e - s)
-                if run_len > 0:
-                    self._filtered_batches.append(_pack_batch(mesh_item, run_len, base_inst + int(s)))
-                    out_cmd_count += 1
+            if in_run:
+                run_len = len(sub) - run_start
+                if orig_len >= 5:
+                    self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow))
+                elif orig_len == 4:
+                    self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess))
+                else:
+                    self._filtered_batches.append((mesh_item, run_len, base_inst + run_start))
+                out_cmd_count += 1
 
         self.stats_visible_commands = out_cmd_count
         self.stats_culled_commands = max(0, in_cmd_count - out_cmd_count)

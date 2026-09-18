@@ -14,13 +14,18 @@ and their displacement mode via material_data[entity, 7].
 
 from __future__ import annotations
 from dataclasses import dataclass
-from enum import IntEnum
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 import numpy as np
 from PIL import Image
 
 from engine.assets.texture_format import PMTex
+from engine.core.materials import (
+    DEFAULT_MATERIAL_DEPTHS,
+    DisplacementMode,
+    encode_mat_flags,
+    decode_mat_flags,
+)
 
 if TYPE_CHECKING:
     import moderngl
@@ -37,16 +42,6 @@ class DecodedMaterialLayer:
     width: int
     height: int
 
-
-from engine.core.materials import (
-    DisplacementMode,
-    MAT_FLAG_HAS_TEXTURE,
-    MAT_FLAG_DISP_SHIFT,
-    MAT_FLAG_DISP_MASK,
-    encode_mat_flags,
-    decode_mat_flags,
-    DEFAULT_MATERIAL_DEPTHS,
-)
 
 
 def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:

@@ -5,7 +5,7 @@ physics state, and material parameters, mirroring directly into OpenGL SSBOs.
 """
 
 from __future__ import annotations
-from typing import Any, TYPE_CHECKING
+from typing import Any
 import numpy as np
 
 from engine.core.entity_pool import EntityPool
@@ -18,7 +18,6 @@ from engine.core.materials import (
     encode_mat_flags,
     decode_mat_flags,
     MaterialRegistry,
-    MaterialDef,
 )
 
 
