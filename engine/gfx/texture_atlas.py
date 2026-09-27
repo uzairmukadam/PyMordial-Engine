@@ -23,9 +23,18 @@ from engine.assets.texture_format import PMTex
 from engine.core.materials import (
     DEFAULT_MATERIAL_DEPTHS,
     DisplacementMode,
-    encode_mat_flags,
     decode_mat_flags,
+    encode_mat_flags,
 )
+
+__all__ = [
+    "DEFAULT_MATERIAL_DEPTHS",
+    "DisplacementMode",
+    "decode_mat_flags",
+    "encode_mat_flags",
+    "DecodedMaterialLayer",
+    "decode_material_folder",
+]
 
 if TYPE_CHECKING:
     import moderngl
@@ -167,6 +176,25 @@ def decode_material_folder(
 
 
 
+_IDENTITY_CACHE: dict[tuple[int, int], tuple[bytes, bytes, bytes, bytes]] = {}
+
+
+def _get_identity_buffers(w: int, h: int) -> tuple[bytes, bytes, bytes, bytes]:
+    """Generates or retrieves cached immutable identity layer byte buffers."""
+    key = (w, h)
+    cached = _IDENTITY_CACHE.get(key)
+    if cached is not None:
+        return cached
+    pixel_count = w * h
+    white = b"\xff" * (pixel_count * 4)
+    normal = b"\x80\x80\xff\xff" * pixel_count
+    mid_height = b"\x80" * pixel_count
+    arm = b"\xff\x80\x00\xff" * pixel_count
+    res = (white, normal, mid_height, arm)
+    _IDENTITY_CACHE[key] = res
+    return res
+
+
 class TextureArrayAtlas:
     """Manages layered sampler2DArray GPU atlases for PBR material maps.
 
@@ -251,33 +279,13 @@ class TextureArrayAtlas:
     def _write_identity_layer(self) -> None:
         """Writes layer 0 as identity: white diffuse, flat normal, zero height, default ARM."""
         w, h = self.width, self.height
-        pixel_count = w * h
-
-        # Diffuse: solid white (255, 255, 255, 255)
-        white = np.full(pixel_count * 4, 255, dtype=np.uint8)
-        self.diffuse_array.write(white.tobytes(), viewport=(0, 0, 0, w, h, 1))
-
-        # Normal: flat up (128, 128, 255, 255) = tangent-space (0, 0, 1)
-        flat_normal = np.zeros(pixel_count * 4, dtype=np.uint8)
-        flat_normal[0::4] = 128  # X
-        flat_normal[1::4] = 128  # Y
-        flat_normal[2::4] = 255  # Z
-        flat_normal[3::4] = 255  # W
-        self.normal_array.write(flat_normal.tobytes(), viewport=(0, 0, 0, w, h, 1))
-
-        # Displacement: mid height (128)
-        mid_height = np.full(pixel_count, 128, dtype=np.uint8)
-        self.displacement_array.write(mid_height.tobytes(), viewport=(0, 0, 0, w, h, 1))
-
-        # ARM: default (AO=255, Roughness=128, Metallic=0, A=255)
-        arm_data = np.zeros(pixel_count * 4, dtype=np.uint8)
-        arm_data[0::4] = 255  # AO = 1.0
-        arm_data[1::4] = 128  # Roughness = 0.5
-        arm_data[2::4] = 0    # Metallic = 0.0
-        arm_data[3::4] = 255  # Unused
-        self.arm_array.write(arm_data.tobytes(), viewport=(0, 0, 0, w, h, 1))
-
+        white, normal, mid_height, arm = _get_identity_buffers(w, h)
+        self.diffuse_array.write(white, viewport=(0, 0, 0, w, h, 1))
+        self.normal_array.write(normal, viewport=(0, 0, 0, w, h, 1))
+        self.displacement_array.write(mid_height, viewport=(0, 0, 0, w, h, 1))
+        self.arm_array.write(arm, viewport=(0, 0, 0, w, h, 1))
         self._next_layer = 1
+
 
     def add_layer_from_images(
         self,

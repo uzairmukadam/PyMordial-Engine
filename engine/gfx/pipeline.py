@@ -200,6 +200,14 @@ class RenderPipeline:
         "_u_gbuffer_pom_self_shadow",
         "_u_gbuffer_disp_near_radius",
         "_u_gbuffer_disp_mid_radius",
+        "_u_gbuffer_car_paint_layer",
+        "_u_gbuffer_car_glass_layer",
+        "_u_gbuffer_car_rim_layer",
+        "_u_gbuffer_car_tire_layer",
+        "_u_gbuffer_car_chrome_layer",
+        "_u_gbuffer_car_taillight_layer",
+        "_u_gbuffer_car_indicator_layer",
+        "_u_gbuffer_car_interior_layer",
         "_u_tess_enabled",
         "_u_tess_frustum_cull",
         "_u_tess_near_radius",
@@ -472,6 +480,14 @@ class RenderPipeline:
         self._u_gbuffer_pom_self_shadow = self.gbuffer_prog.get("u_POMSelfShadow", None)
         self._u_gbuffer_disp_near_radius = self.gbuffer_prog.get("u_DispNearRadius", None)
         self._u_gbuffer_disp_mid_radius = self.gbuffer_prog.get("u_DispMidRadius", None)
+        self._u_gbuffer_car_paint_layer = self.gbuffer_prog.get("u_CarPaintLayer", None)
+        self._u_gbuffer_car_glass_layer = self.gbuffer_prog.get("u_CarGlassLayer", None)
+        self._u_gbuffer_car_rim_layer = self.gbuffer_prog.get("u_CarRimLayer", None)
+        self._u_gbuffer_car_tire_layer = self.gbuffer_prog.get("u_CarTireLayer", None)
+        self._u_gbuffer_car_chrome_layer = self.gbuffer_prog.get("u_CarChromeLayer", None)
+        self._u_gbuffer_car_taillight_layer = self.gbuffer_prog.get("u_CarTaillightLayer", None)
+        self._u_gbuffer_car_indicator_layer = self.gbuffer_prog.get("u_CarIndicatorLayer", None)
+        self._u_gbuffer_car_interior_layer = self.gbuffer_prog.get("u_CarInteriorLayer", None)
 
         self._u_tess_enabled = self.gbuffer_tess_prog.get("u_TessEnabled", None)
         self._u_tess_frustum_cull = self.gbuffer_tess_prog.get("u_FrustumCullEnabled", None)
@@ -741,21 +757,29 @@ class RenderPipeline:
 
         # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
         # Phase 4: Static / Dynamic Entity Upload Optimization
-        if ecs.is_static_dirty:
-            if ecs.static_count > 0:
+        s_count = ecs.static_count
+        valid_partition = (
+            s_count > 0
+            and s_count <= active_count
+            and not np.any(~ecs.is_static[:s_count])
+        )
+        if valid_partition:
+            if ecs.is_static_dirty:
                 self.ssbo_transforms.write(ecs.get_static_transforms_view().tobytes(), offset=0)
                 self.ssbo_materials.write(ecs.get_static_materials_view().tobytes(), offset=0)
-            else:
-                self.ssbo_transforms.write(ecs.get_active_transforms_view().tobytes(), offset=0)
-                self.ssbo_materials.write(ecs.get_active_materials_view().tobytes(), offset=0)
-            ecs.clear_static_dirty()
+                ecs.clear_static_dirty()
 
-        # Upload dynamic entity slice every frame
-        if active_count > ecs.static_count:
-            dyn_offset_t = ecs.static_count * 64  # 16 floats * 4 bytes
-            dyn_offset_m = ecs.static_count * 32  # 8 floats * 4 bytes
-            self.ssbo_transforms.write(ecs.get_dynamic_transforms_view().tobytes(), offset=dyn_offset_t)
-            self.ssbo_materials.write(ecs.get_dynamic_materials_view().tobytes(), offset=dyn_offset_m)
+            # Upload dynamic entity slice every frame
+            if active_count > s_count:
+                dyn_offset_t = s_count * 64  # 16 floats * 4 bytes
+                dyn_offset_m = s_count * 32  # 8 floats * 4 bytes
+                self.ssbo_transforms.write(ecs.get_dynamic_transforms_view().tobytes(), offset=dyn_offset_t)
+                self.ssbo_materials.write(ecs.get_dynamic_materials_view().tobytes(), offset=dyn_offset_m)
+        else:
+            # Full upload: guarantees all dynamic entities are refreshed even after map rebuilding
+            self.ssbo_transforms.write(ecs.get_active_transforms_view().tobytes(), offset=0)
+            self.ssbo_materials.write(ecs.get_active_materials_view().tobytes(), offset=0)
+            ecs.clear_static_dirty()
 
         # 2. Camera Matrices & Subpixel TAA Jitter
         self._cam_pos[0] = float(camera_pos[0])
@@ -1016,6 +1040,22 @@ class RenderPipeline:
             self._u_gbuffer_disp_near_radius.value = getattr(self.config, "disp_near_radius", 120.0)
         if self._u_gbuffer_disp_mid_radius is not None:
             self._u_gbuffer_disp_mid_radius.value = getattr(self.config, "disp_mid_radius", 300.0)
+        if self._u_gbuffer_car_paint_layer is not None:
+            self._u_gbuffer_car_paint_layer.value = float(self.texture_atlas.name_to_layer.get("car_body_paint", 2))
+        if self._u_gbuffer_car_glass_layer is not None:
+            self._u_gbuffer_car_glass_layer.value = float(self.texture_atlas.name_to_layer.get("car_window_glass", 8))
+        if self._u_gbuffer_car_rim_layer is not None:
+            self._u_gbuffer_car_rim_layer.value = float(self.texture_atlas.name_to_layer.get("car_alloy_rim", 1))
+        if self._u_gbuffer_car_tire_layer is not None:
+            self._u_gbuffer_car_tire_layer.value = float(self.texture_atlas.name_to_layer.get("car_tire_rubber", 7))
+        if self._u_gbuffer_car_chrome_layer is not None:
+            self._u_gbuffer_car_chrome_layer.value = float(self.texture_atlas.name_to_layer.get("car_chrome_trim", 3))
+        if self._u_gbuffer_car_taillight_layer is not None:
+            self._u_gbuffer_car_taillight_layer.value = float(self.texture_atlas.name_to_layer.get("car_taillight_red", 6))
+        if self._u_gbuffer_car_indicator_layer is not None:
+            self._u_gbuffer_car_indicator_layer.value = float(self.texture_atlas.name_to_layer.get("car_indicator_amber", 4))
+        if self._u_gbuffer_car_interior_layer is not None:
+            self._u_gbuffer_car_interior_layer.value = float(self.texture_atlas.name_to_layer.get("car_interior", 5))
         self.texture_atlas.upload_depths(self.gbuffer_prog)
 
         is_wireframe = getattr(self.config, "wireframe", False)

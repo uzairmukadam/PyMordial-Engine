@@ -32,7 +32,7 @@ dev = [
 include = ["engine*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "projects/shotgun_escape_the_heat/tests"]
 python_files = ["test_*.py"]
 
 [tool.ruff]

@@ -9,6 +9,8 @@ layout (location = 3) out vec4 out_DispInfo;         // RT3: Displacement Info (
 in vec3 v_WorldPos;
 in vec3 v_Normal;
 in vec2 v_UV;
+in vec3 v_ModelPos;
+in vec3 v_ModelNormal;
 in vec4 v_CurrClip;
 in vec4 v_PrevClip;
 in flat uint v_EntityID;
@@ -60,6 +62,14 @@ uniform float u_DispNearRadius = 120.0;
 uniform float u_DispMidRadius = 300.0;
 uniform float u_MaterialDispDepth[32];
 uniform float u_POMScaleMultiplier = 1.0;
+uniform float u_CarPaintLayer = 2.0;
+uniform float u_CarGlassLayer = 8.0;
+uniform float u_CarRimLayer = 1.0;
+uniform float u_CarTireLayer = 7.0;
+uniform float u_CarChromeLayer = 3.0;
+uniform float u_CarTaillightLayer = 6.0;
+uniform float u_CarIndicatorLayer = 4.0;
+uniform float u_CarInteriorLayer = 5.0;
 
 // Displacement modes (matches DisplacementMode enum in texture_atlas.py)
 const uint DISP_MODE_NONE = 0u;
@@ -81,6 +91,11 @@ vec2 OctahedralEncode(vec3 n) {
 // Steep Parallax Occlusion Mapping with 6-iteration binary refinement
 // Returns displaced UV and final height at the intersection (1.0 = peak, 0.0 = valley)
 vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float height_scale, int target_samples, out float out_height) {
+    if (view_dir_ts.z <= 0.0) {
+        out_height = 0.0;
+        return uv;
+    }
+
     float v_dot_n = clamp(normalize(view_dir_ts).z, 0.0, 1.0);
     int num_steps = int(mix(float(target_samples), float(u_POMMinSamples), v_dot_n));
     num_steps = clamp(num_steps, 16, 64);
@@ -89,11 +104,11 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float heig
     float ray_h = 1.0;
 
     // View vector projected onto surface in tangent space (clamped divisor prevents horizon divergence)
-    vec2 view_dir_2d = view_dir_ts.xy / max(abs(view_dir_ts.z), 0.15);
+    vec2 view_dir_2d = view_dir_ts.xy / max(view_dir_ts.z, 0.10);
     vec2 delta_uv = view_dir_2d * height_scale * step_h;
 
     vec2 current_uv = uv;
-    float current_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
+    float current_height = textureLod(u_DisplacementArray, vec3(current_uv, layer_idx), 0.0).r;
 
     // Steep Parallax: step downward from 1.0 toward 0.0 until ray penetrates heightfield
     for (int i = 0; i < u_POMMaxSamples; ++i) {
@@ -102,7 +117,7 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float heig
         }
         current_uv -= delta_uv;
         ray_h -= step_h;
-        current_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
+        current_height = textureLod(u_DisplacementArray, vec3(current_uv, layer_idx), 0.0).r;
     }
 
     // Binary refinement (6 iterations for sub-texel depth stability)
@@ -112,7 +127,7 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float heig
     for (int i = 0; i < 6; ++i) {
         vec2 mid_uv = (current_uv + prev_uv) * 0.5;
         float mid_ray_h = (ray_h + prev_ray_h) * 0.5;
-        float mid_height = texture(u_DisplacementArray, vec3(mid_uv, layer_idx)).r;
+        float mid_height = textureLod(u_DisplacementArray, vec3(mid_uv, layer_idx), 0.0).r;
 
         if (mid_ray_h > mid_height) {
             // Ray is still above the surface, search deeper half
@@ -126,7 +141,7 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float heig
     }
 
     // Exact ground-truth surface height at the refined intersection UV
-    out_height = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
+    out_height = textureLod(u_DisplacementArray, vec3(current_uv, layer_idx), 0.0).r;
     return current_uv;
 }
 
@@ -152,7 +167,7 @@ float POMSelfShadow(vec2 uv, float surface_height, vec3 sun_dir_ts, float layer_
     for (int i = 0; i < num_steps; ++i) {
         if (current_h >= 1.0) break;
 
-        float h = texture(u_DisplacementArray, vec3(current_uv, layer_idx)).r;
+        float h = textureLod(u_DisplacementArray, vec3(current_uv, layer_idx), 0.0).r;
         if (h > current_h) {
             float diff = h - current_h;
             float weight = 1.0 - (float(i) / float(num_steps));
@@ -184,7 +199,7 @@ void main() {
 
     vec3 N = normalize(v_Normal);
     vec2 final_uv = v_UV;
-    vec2 sample_uv = vec2(abs(v_UV.x), v_UV.y);
+    vec2 sample_uv = v_UV;
     float pom_shadow = 1.0;
 
     // Strict Mutual Exclusivity & Camera Radius Culling: POM runs ONLY when disp_mode == DISP_MODE_POM (1) and within u_DispMidRadius
@@ -223,36 +238,84 @@ void main() {
             }
         }
 
-        sample_uv = vec2(abs(final_uv.x), final_uv.y);
-        bool is_paintable = (v_UV.x < 0.0);
+        bool is_chassis_entity = (mat_flags & 8u) != 0u;
+        bool is_wheel_entity = (mat_flags & 16u) != 0u;
+        bool is_paintable = is_chassis_entity && (v_UV.x < 0.0);
 
-        // Sample PBR texture arrays at sample_uv
-        vec4 diffuse_sample = texture(u_DiffuseArray, vec3(sample_uv, layer_idx));
+        vec3 Nm = abs(normalize(v_ModelNormal));
+
+        if (is_paintable && u_CarPaintLayer > 0.0) {
+            layer_idx = u_CarPaintLayer;
+            vec3 p = v_ModelPos;
+            sample_uv = (Nm.y > 0.55) ? p.xz * 0.7 : ((Nm.x > 0.55) ? p.zy * 0.7 : p.xy * 0.7);
+        } else if (is_wheel_entity) {
+            vec3 p = v_ModelPos;
+            if (v_UV.x < 0.70) {
+                layer_idx = u_CarRimLayer;
+            } else {
+                layer_idx = u_CarTireLayer;
+            }
+            sample_uv = p.yz * 1.8 + 0.5;
+        } else if (is_chassis_entity) {
+            vec2 uv_r = v_UV;
+            vec3 p = v_ModelPos;
+            bool is_glass = (uv_r.x >= 0.70 && uv_r.x <= 0.74 && uv_r.y >= 0.13 && uv_r.y <= 0.17)
+                         || (uv_r.x >= 0.44 && uv_r.x <= 0.48 && uv_r.y >= 0.47 && uv_r.y <= 0.51)
+                         || (uv_r.x >= 0.61 && uv_r.x <= 0.64 && uv_r.y >= 0.09 && uv_r.y <= 0.12 && p.y > 0.35)
+                         || (uv_r.x >= 0.08 && uv_r.x <= 0.11 && uv_r.y >= 0.88 && uv_r.y <= 0.92 && p.y > 0.35)
+                         || (uv_r.x >= 0.23 && uv_r.x <= 0.26 && uv_r.y >= 0.95 && uv_r.y <= 0.99 && p.y > 0.18)
+                         || (uv_r.x >= 0.30 && uv_r.x <= 0.34 && uv_r.y >= 0.08 && uv_r.y <= 0.12 && p.y > 0.30)
+                         || (p.y > 0.38 && abs(p.z) < 1.4 && abs(p.x) < 0.85 && (Nm.z > 0.35 || Nm.x > 0.85));
+
+            bool is_tail = (p.z > 1.8 && (uv_r.x <= 0.15 || uv_r.y >= 0.80));
+            bool is_ind = (p.z < -1.8 && (uv_r.x <= 0.35 || uv_r.x >= 0.85));
+            bool is_chrome = (uv_r.x >= 0.63 && uv_r.x <= 0.86 && uv_r.y <= 0.13);
+
+            if (is_glass) {
+                layer_idx = u_CarGlassLayer;
+                sample_uv = (Nm.z > 0.55) ? p.xy * 1.0 : p.zy * 1.0;
+            } else if (is_tail) {
+                layer_idx = u_CarTaillightLayer;
+                sample_uv = p.xy * 2.0 + 0.5;
+            } else if (is_ind) {
+                layer_idx = u_CarIndicatorLayer;
+                sample_uv = p.xy * 2.0 + 0.5;
+            } else if (is_chrome) {
+                layer_idx = u_CarChromeLayer;
+                sample_uv = (Nm.y > 0.55) ? p.xz * 1.2 : ((Nm.x > 0.55) ? p.zy * 1.2 : p.xy * 1.2);
+            } else {
+                layer_idx = u_CarInteriorLayer;
+                sample_uv = (Nm.y > 0.55) ? p.xz * 1.0 : p.zy * 1.0;
+            }
+        } else {
+            sample_uv = final_uv;
+        }
+
+        // Use geometric UV derivatives for mesh textures to prevent POM height-step derivative spikes,
+        // while using model-space derivatives for procedural vehicle chassis/wheel triplanar projections.
+        vec2 d_uv_dx = (is_chassis_entity || is_wheel_entity) ? dFdx(sample_uv) : dFdx(v_UV);
+        vec2 d_uv_dy = (is_chassis_entity || is_wheel_entity) ? dFdy(sample_uv) : dFdy(v_UV);
+
+        // Sample PBR texture arrays at sample_uv with smooth derivatives to prevent mipmap banding at grazing angles
+        vec4 diffuse_sample = textureGrad(u_DiffuseArray, vec3(sample_uv, layer_idx), d_uv_dx, d_uv_dy);
+        vec4 arm_sample = textureGrad(u_ARMArray, vec3(sample_uv, layer_idx), d_uv_dx, d_uv_dy);
+        ao = arm_sample.r;
+
+        // Use diffuse and ARM textures from the active texture layer
         if (is_paintable) {
             albedo = mat0.rgb;
             roughness = clamp(mat0.a, 0.04, 1.0);
             metallic = clamp(mat1.r, 0.0, 1.0);
         } else {
             albedo = diffuse_sample.rgb;
-        }
-
-        // Normal mapping via TBN
-        vec3 normal_sample = texture(u_NormalArray, vec3(sample_uv, layer_idx)).rgb;
-        vec3 tangent_normal = normalize(normal_sample * 2.0 - 1.0);
-        N = normalize(v_TBN * tangent_normal);
-
-        // ARM texture: R=AO, G=Roughness, B=Metallic
-        vec4 arm_sample = texture(u_ARMArray, vec3(sample_uv, layer_idx));
-        ao = arm_sample.r;
-        if (!is_paintable) {
             roughness = clamp(arm_sample.g, 0.04, 1.0);
             metallic = clamp(arm_sample.b, 0.0, 1.0);
         }
-    } else {
-        // Phase 7: Procedural micro-surface aggregate grain for untextured architectural & road surfaces
-        vec3 p = v_WorldPos * 8.0;
-        float micro_grain = (sin(p.x * 32.0) * cos(p.z * 32.0) + sin(p.x * 77.0 + p.z * 63.0) * 0.5) * 0.02;
-        N = normalize(N + vec3(micro_grain, 0.0, -micro_grain));
+
+        // Normal mapping via TBN
+        vec3 normal_sample = textureGrad(u_NormalArray, vec3(sample_uv, layer_idx), d_uv_dx, d_uv_dy).rgb;
+        vec3 tangent_normal = normalize(normal_sample * 2.0 - 1.0);
+        N = normalize(v_TBN * tangent_normal);
     }
 
     // Apply POM self-shadow into AO channel

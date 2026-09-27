@@ -124,9 +124,9 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         self,
         size: float = 100.0,
         uv_tiles: float = 50.0,
-        material_name: str | None = "mud_cracked_dry_03",
-        color: tuple[float, float, float] = (0.65, 0.55, 0.42),
-        roughness: float = 0.85,
+        material_name: str | None = None,
+        color: tuple[float, float, float] = (0.16, 0.16, 0.18),
+        roughness: float = 0.88,
         metallic: float = 0.02,
         friction: float = 0.80,
         restitution: float = 0.05,
@@ -182,9 +182,11 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             pipeline.csm_tess_vao = pipeline.mega_buffer.get_vao(pipeline.csm_tess_prog, mode=pipeline.ctx.PATCHES)
 
         # 3. Create visual ground plane entity (at exact y=0.0)
+        half_s = max(10000.0, float(self.size) * 2.0)
         plane_id = ecs.create_entity(
             position=(0.0, 0.0, 0.0),
             scale=(1.0, 1.0, 1.0),
+            mesh_half_extents=(half_s, 500.0, half_s),
             material_id=self.material_name or "flat_land",
             layer_idx=layer_idx,
             disp_mode=disp_mode,
@@ -215,7 +217,7 @@ class DefaultWorldBuilder(BaseWorldBuilder):
             plane_id,
             material_id=self.material_name,
             layer_idx=layer_idx,
-            disp_mode=DisplacementMode.POM,
+            disp_mode=disp_mode,
         )
 
         self.ground_entity_id = plane_id
@@ -224,10 +226,10 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         # Register draw batch with the app's MDI submission
         d_plane = ecs.pool.get_dense_index(plane_id)
         if d_plane >= 0:
-            half_s = self.size * 0.5 + 50.0
+            ecs.local_half_extents[d_plane] = (half_s, 500.0, half_s)
             ecs.aabbs[d_plane, 0:3] = (0.0, 0.0, 0.0)
             ecs.aabbs[d_plane, 3] = half_s
-            ecs.aabbs[d_plane, 4] = 20.0
+            ecs.aabbs[d_plane, 4] = 500.0
             ecs.aabbs[d_plane, 5] = half_s
         app.register_draw_batch(alloc_plane, 1, d_plane, False, cast_shadow=False)
 

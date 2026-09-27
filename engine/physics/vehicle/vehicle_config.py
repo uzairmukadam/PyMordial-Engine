@@ -68,9 +68,12 @@ class VehicleConfig:
     # Steering & Handling Dynamics
     max_steer_angle_rad: float = 0.52   # ~30 degrees
     steer_speed: float = 4.5            # Rad/s response speed
-    high_speed_steer_reduction: float = 0.45 # Max lock taper factor at top speed
-    caster_aligning_torque: float = 0.08     # Pneumatic trail self-centering torque scalar
-    drift_counter_steer_assist: float = 0.25 # Pneumatic trail assist when counter-steering in drifts
+    high_speed_steer_reduction: float = 0.55 # Max lock taper floor at top speed (allows highway lane control)
+    high_speed_steer_taper: float = 0.018    # Speed sensitivity taper rate
+    turn_in_bite_assist: float = 0.28   # Front axle bite assisting yaw initiation through heavy chassis inertia
+    dynamic_yaw_damping: float = 0.50   # Mass-scaled yaw rate stabilizer (gives planted, heavy vehicle heft)
+    caster_aligning_torque: float = 0.10     # Pneumatic trail self-centering torque scalar
+    drift_counter_steer_assist: float = 0.30 # Pneumatic trail assist when counter-steering in drifts
     anti_roll_stiffness: float = 12000.0 # Force transfer between left and right wheels
     upright_stiffness: float = 34000.0   # Self-righting torque restoring chassis to level (N*m/rad)
     upright_damping: float = 5200.0      # Damping on roll and pitch oscillations (N*m*s/rad)
@@ -78,9 +81,11 @@ class VehicleConfig:
     # Suspension & Damper Realism
     suspension_rebound_damping_factor: float = 1.40 # Rebound damping vs compression damping ratio
 
-    # Tire Friction & Surface Slip (Pacejka / Kamm's Friction Circle)
-    tire_grip: float = 1.0              # Baseline lateral tire grip scalar
-    tire_load_sensitivity: float = 0.15 # Grip de-rating coefficient under high normal load
-    drift_friction_factor: float = 0.45 # Lateral friction reduction under handbrake/skid
+    # Tire Friction & Surface Slip (Pacejka / Kamm's Combined Slip Ellipse)
+    tire_grip: float = 1.65              # Baseline lateral tire grip scalar (calibrated for high-authority cornering)
+    tire_load_sensitivity: float = 0.12 # Grip de-rating coefficient under high normal load
+    combined_slip_reserve: float = 0.42  # Minimum lateral grip envelope reserved under drive/braking torque
+    drift_friction_factor: float = 0.50 # Lateral friction during power slides / handbrake drifts
     surface_friction_mult: float = 1.0  # Environmental grip scalar (e.g. 0.65 in rain)
+
 

@@ -227,3 +227,42 @@ def test_ecs_multi_entity_ssbo_material_layout():
     assert raw_mat_view[3, 3] == pytest.approx(0.1, abs=1e-5)
     assert raw_mat_view[3, 4] == pytest.approx(0.9, abs=1e-5)
     assert raw_mat_view[3, 6] == 0.0
+
+
+def test_car_textured_materials_registered_and_distinct():
+    """Verifies that all 8 shared vehicle materials are registered with distinct colors and valid PBR parameters."""
+    registry = MaterialRegistry()
+
+    expected_materials = {
+        "car_tire_rubber": (0.608, 0.318, 0.878),   # Vivid Purple #9B51E0
+        "car_alloy_rim": (0.949, 0.788, 0.298),     # Golden Yellow #F2C94C
+        "car_chrome_trim": (0.0, 0.941, 1.0),       # Neon Cyan #00F0FF
+        "car_interior": (0.153, 0.682, 0.376),      # Lime Green #27AE60
+        "car_body_paint": (1.0, 0.0, 0.498),        # Hot Magenta #FF007F
+        "car_window_glass": (0.184, 0.502, 0.929),  # Royal Blue #2F80ED
+        "car_taillight_red": (0.922, 0.341, 0.341), # Crimson Red #EB5757
+        "car_indicator_amber": (0.949, 0.600, 0.290), # Tangerine Orange #F2994A
+    }
+
+    seen_colors = set()
+    for mat_name, expected_color in expected_materials.items():
+        mat = registry.get(mat_name)
+        assert mat is not None, f"Material {mat_name} must be registered"
+        assert mat.name == mat_name
+        np.testing.assert_allclose(mat.color, expected_color, atol=0.01)
+        assert 0.0 <= mat.roughness <= 1.0
+        assert 0.0 <= mat.metallic <= 1.0
+        assert 0.0 <= mat.ao <= 1.0
+        assert mat.color not in seen_colors, f"Color {mat.color} must be distinct for {mat_name}"
+        seen_colors.add(mat.color)
+
+    # Aliases
+    assert registry.get("tire") is registry.get("car_tire_rubber")
+    assert registry.get("rim") is registry.get("car_alloy_rim")
+    assert registry.get("chrome") is registry.get("car_chrome_trim")
+    assert registry.get("interior") is registry.get("car_interior")
+    assert registry.get("car_paint") is registry.get("car_body_paint")
+    assert registry.get("car_palette") is registry.get("car_body_paint")
+    assert registry.get("window_glass") is registry.get("car_window_glass")
+    assert registry.get("taillight") is registry.get("car_taillight_red")
+    assert registry.get("turn_signal") is registry.get("car_indicator_amber")

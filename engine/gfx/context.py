@@ -21,6 +21,7 @@ class RenderContext:
         "is_headless",
         "depth_func_name",
         "window",
+        "pipeline",
     )
 
     def __init__(
@@ -35,6 +36,7 @@ class RenderContext:
     ) -> None:
         self.config = config if config is not None else get_quality_preset(GraphicsQuality.HIGH)
         self.is_headless = hidden
+        self.pipeline = None
 
         if window is not None:
             self.window = window
@@ -145,17 +147,33 @@ class RenderContext:
     def save_screenshot(self, filepath: str) -> None:
         """Reads backbuffer pixels and saves image to disk."""
         from PIL import Image
-        raw = self.ctx.screen.read(components=4, dtype="f1")
+        fbo = self.ctx.screen
+        if hasattr(self, "pipeline") and self.pipeline is not None:
+            pp = getattr(self.pipeline, "post_process", None)
+            if pp is not None and getattr(pp, "final_fbo", None) is not None:
+                fbo = pp.final_fbo
+        components = 4 if fbo is self.ctx.screen else 3
+        mode = "RGBA" if components == 4 else "RGB"
+        raw = fbo.read(components=components, dtype="f1")
         try:
             from OpenGL import GL
             while GL.glGetError() != 0:
                 pass
         except Exception:
             pass
-        img = Image.frombytes("RGBA", (self.width, self.height), raw).transpose(Image.FLIP_TOP_BOTTOM)
+        img = Image.frombytes(mode, (self.width, self.height), raw).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
         img.save(filepath)
 
     def destroy(self) -> None:
         """Releases context resources."""
         if self.ctx:
-            self.ctx.release()
+            try:
+                self.ctx.release()
+            except Exception:
+                pass
+            self.ctx = None
+        if hasattr(self, "window") and self.window is not None:
+            try:
+                self.window.destroy()
+            except Exception:
+                pass

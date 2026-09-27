@@ -185,7 +185,9 @@ class CascadedShadowMap:
         self._create_atlas()
 
     def destroy(self) -> None:
-        if self.depth_texture is not None:
-            self.depth_texture.release()
         if self.fbo is not None:
             self.fbo.release()
+            self.fbo = None
+        if self.depth_texture is not None:
+            self.depth_texture.release()
+            self.depth_texture = None

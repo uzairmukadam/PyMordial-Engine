@@ -26,15 +26,28 @@ class DisplacementMode(IntEnum):
 # Material flag bitfield layout stored in material_data[entity, 7]:
 # Bit 0: MAT_FLAG_HAS_TEXTURE (1 = sample texture arrays)
 # Bits 1..2: Displacement Mode (2 bits: 0=None, 1=POM, 2=SSDM, 3=Tessellation)
+# Bit 3: MAT_FLAG_VEHICLE_CHASSIS (8 = vehicle chassis multi-material rendering)
+# Bit 4: MAT_FLAG_VEHICLE_WHEEL (16 = vehicle wheel tire/rim rendering)
 MAT_FLAG_HAS_TEXTURE = 1 << 0
 MAT_FLAG_DISP_SHIFT = 1
 MAT_FLAG_DISP_MASK = 0x3
+MAT_FLAG_VEHICLE_CHASSIS = 1 << 3
+MAT_FLAG_VEHICLE_WHEEL = 1 << 4
 
 
-def encode_mat_flags(has_texture: bool, disp_mode: DisplacementMode | int = DisplacementMode.NONE) -> float:
-    """Encodes material flags and displacement mode into a float for material_data[entity, 7]."""
+def encode_mat_flags(
+    has_texture: bool,
+    disp_mode: DisplacementMode | int = DisplacementMode.NONE,
+    is_vehicle_chassis: bool = False,
+    is_vehicle_wheel: bool = False,
+) -> float:
+    """Encodes material flags, displacement mode, and vehicle tags into a float for material_data[entity, 7]."""
     mode_val = int(disp_mode)
     flags = (1 if has_texture else 0) | ((mode_val & MAT_FLAG_DISP_MASK) << MAT_FLAG_DISP_SHIFT)
+    if is_vehicle_chassis:
+        flags |= MAT_FLAG_VEHICLE_CHASSIS
+    if is_vehicle_wheel:
+        flags |= MAT_FLAG_VEHICLE_WHEEL
     return float(flags)
 
 
@@ -85,6 +98,8 @@ class MaterialDef:
     disp_depth: float = 0.030
     friction: float = 0.80       # Surface friction coefficient for vehicle tires
     restitution: float = 0.05    # Surface restitution (bounciness)
+    is_vehicle_chassis: bool = False
+    is_vehicle_wheel: bool = False
     description: str = ""
 
     def encode_flags(self) -> float:
@@ -92,6 +107,8 @@ class MaterialDef:
         return encode_mat_flags(
             has_texture=(self.has_texture and self.layer_idx > 0),
             disp_mode=self.disp_mode,
+            is_vehicle_chassis=self.is_vehicle_chassis,
+            is_vehicle_wheel=self.is_vehicle_wheel,
         )
 
     def to_material_floats(self) -> np.ndarray:
@@ -329,6 +346,106 @@ class MaterialRegistry:
             description="Textile corduroy ribbed fabric",
         )
 
+        # 15. Vehicle Tire Rubber (Matches asset 'car_tire_rubber')
+        self.register_material(
+            name="car_tire_rubber",
+            color=(0.608, 0.318, 0.878),  # Distinct Purple #9B51E0
+            roughness=0.85,
+            metallic=0.02,
+            ao=0.95,
+            friction=1.20,
+            restitution=0.05,
+            description="Vehicle tire tread and sidewall rubber",
+        )
+        self.add_alias("tire_rubber", "car_tire_rubber")
+        self.add_alias("tire", "car_tire_rubber")
+
+        # 16. Vehicle Alloy Wheel Rim (Matches asset 'car_alloy_rim')
+        self.register_material(
+            name="car_alloy_rim",
+            color=(0.949, 0.788, 0.298),  # Distinct Golden Yellow #F2C94C
+            roughness=0.30,
+            metallic=0.80,
+            ao=1.0,
+            description="Cast and machined alloy wheel rims and metallic trim",
+        )
+        self.add_alias("alloy_rim", "car_alloy_rim")
+        self.add_alias("rim", "car_alloy_rim")
+
+        # 17. Vehicle Chrome & Specular Reflectors (Matches asset 'car_chrome_trim')
+        self.register_material(
+            name="car_chrome_trim",
+            color=(0.0, 0.941, 1.0),       # Distinct Neon Cyan #00F0FF
+            roughness=0.12,
+            metallic=0.90,
+            ao=1.0,
+            description="Polished chrome trim, mirror housings, and headlight bowls",
+        )
+        self.add_alias("chrome_trim", "car_chrome_trim")
+        self.add_alias("chrome", "car_chrome_trim")
+
+        # 18. Vehicle Chassis Interior & Underbody (Matches asset 'car_interior')
+        self.register_material(
+            name="car_interior",
+            color=(0.153, 0.682, 0.376),  # Distinct Lime Green #27AE60
+            roughness=0.40,
+            metallic=0.10,
+            ao=0.85,
+            description="Structural chassis interior, floor pan, and underbody lining",
+        )
+        self.add_alias("interior", "car_interior")
+        self.add_alias("chassis_interior", "car_interior")
+
+        # 19. Vehicle Body Paint Lacquer (Matches asset 'car_body_paint')
+        self.register_material(
+            name="car_body_paint",
+            color=(1.0, 0.0, 0.498),      # Distinct Hot Magenta #FF007F
+            roughness=0.25,
+            metallic=0.10,
+            ao=1.0,
+            description="Glossy exterior automotive body clearcoat lacquer",
+        )
+        self.add_alias("body_paint", "car_body_paint")
+        self.add_alias("car_paint", "car_body_paint")
+        self.add_alias("car_palette", "car_body_paint")
+        self.add_alias("palette", "car_body_paint")
+
+        # 20. Vehicle Window Glass (Matches asset 'car_window_glass')
+        self.register_material(
+            name="car_window_glass",
+            color=(0.184, 0.502, 0.929),  # Distinct Royal Blue #2F80ED
+            roughness=0.05,
+            metallic=0.0,
+            ao=1.0,
+            description="Tinted automotive windshield and cabin glass",
+        )
+        self.add_alias("window_glass", "car_window_glass")
+        self.add_alias("car_glass", "car_window_glass")
+
+        # 21. Vehicle Taillight & Brake Lens (Matches asset 'car_taillight_red')
+        self.register_material(
+            name="car_taillight_red",
+            color=(0.922, 0.341, 0.341),  # Distinct Crimson Red #EB5757
+            roughness=0.10,
+            metallic=0.0,
+            ao=1.0,
+            description="Translucent red polycarbonate taillight and brake lenses",
+        )
+        self.add_alias("taillight_red", "car_taillight_red")
+        self.add_alias("taillight", "car_taillight_red")
+
+        # 22. Vehicle Turn Signal & Marker Lens (Matches asset 'car_indicator_amber')
+        self.register_material(
+            name="car_indicator_amber",
+            color=(0.949, 0.600, 0.290),  # Distinct Tangerine Orange #F2994A
+            roughness=0.12,
+            metallic=0.0,
+            ao=1.0,
+            description="Faceted amber indicator, turn signal, and beacon lenses",
+        )
+        self.add_alias("indicator_amber", "car_indicator_amber")
+        self.add_alias("turn_signal", "car_indicator_amber")
+
     def register_material(
         self,
         name: str,
@@ -342,6 +459,8 @@ class MaterialRegistry:
         disp_depth: float = 0.030,
         friction: float = 0.80,
         restitution: float = 0.05,
+        is_vehicle_chassis: bool = False,
+        is_vehicle_wheel: bool = False,
         description: str = "",
     ) -> MaterialDef:
         """Registers or updates a material definition in the registry."""
@@ -360,6 +479,8 @@ class MaterialRegistry:
             mat.disp_depth = disp_depth
             mat.friction = friction
             mat.restitution = restitution
+            mat.is_vehicle_chassis = is_vehicle_chassis
+            mat.is_vehicle_wheel = is_vehicle_wheel
             if description:
                 mat.description = description
             return mat
@@ -377,6 +498,8 @@ class MaterialRegistry:
             disp_depth=disp_depth,
             friction=friction,
             restitution=restitution,
+            is_vehicle_chassis=is_vehicle_chassis,
+            is_vehicle_wheel=is_vehicle_wheel,
             description=description,
         )
         self._next_id += 1
@@ -418,11 +541,15 @@ class MaterialRegistry:
                 if layer_idx < len(atlas.material_depths)
                 else DEFAULT_MATERIAL_DEPTHS.get(norm_name, 0.030)
             )
+            is_chassis = (norm_name == "car_body_paint")
+            is_wheel = (norm_name in ("car_alloy_rim", "car_tire_rubber"))
             mat = self.get(norm_name)
             if mat is not None:
                 mat.layer_idx = layer_idx
                 mat.has_texture = (layer_idx > 0)
                 mat.disp_depth = depth
+                mat.is_vehicle_chassis = is_chassis or mat.is_vehicle_chassis
+                mat.is_vehicle_wheel = is_wheel or mat.is_vehicle_wheel
                 if depth > 0.0 and mat.disp_mode == DisplacementMode.NONE:
                     mat.disp_mode = DisplacementMode.POM
             else:
@@ -432,6 +559,8 @@ class MaterialRegistry:
                     has_texture=(layer_idx > 0),
                     disp_mode=DisplacementMode.POM if depth > 0.0 else DisplacementMode.NONE,
                     disp_depth=depth,
+                    is_vehicle_chassis=is_chassis,
+                    is_vehicle_wheel=is_wheel,
                     description=f"Auto-registered from texture atlas layer {layer_idx}",
                 )
 

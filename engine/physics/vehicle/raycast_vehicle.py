@@ -74,6 +74,7 @@ class WheelRuntimeState:
         "slip_ratio",
         "slip_angle",
         "skidding",
+        "initialized",
     )
 
     def __init__(self, rest_length: float) -> None:
@@ -93,6 +94,7 @@ class WheelRuntimeState:
         self.slip_ratio: float = 0.0
         self.slip_angle: float = 0.0
         self.skidding: bool = False
+        self.initialized: bool = False
 
 
 class RaycastVehicle:
@@ -382,8 +384,9 @@ class RaycastVehicle:
 
         # 3. Smooth steering interpolation with speed-sensitive dynamic lock
         speed_abs = abs(fwd_speed)
-        speed_factor = 1.0 / (1.0 + speed_abs * 0.035)
-        min_steer_reduction = getattr(self.config, "high_speed_steer_reduction", 0.45)
+        taper_rate = getattr(self.config, "high_speed_steer_taper", 0.018)
+        speed_factor = 1.0 / (1.0 + speed_abs * taper_rate)
+        min_steer_reduction = getattr(self.config, "high_speed_steer_reduction", 0.55)
         effective_max_steer = self.config.max_steer_angle_rad * max(min_steer_reduction, speed_factor)
         target_steer = self.steering_input * effective_max_steer
         steer_diff = target_steer - self.current_steer_angle
@@ -405,22 +408,21 @@ class RaycastVehicle:
             down_y *= inv_l
             down_z *= inv_l
 
-        # Half-height margin to ensure ray origin starts outside chassis box
-        chassis_half_y = self.config.chassis_size[1] * 0.5 + 0.05
-
         for i in range(num_wheels):
             w_cfg = self.config.wheels[i]
             w_state = self.wheel_states[i]
             w_state.prev_suspension_length = w_state.suspension_length
+            max_droop = getattr(w_cfg, "max_droop", 0.12)
+            max_extended_len = w_cfg.suspension_rest_length + max_droop
 
             # Wheel attachment point in world space
-            # offset: (ox, oy, oz) where oz is along -Z forward
+            # offset: (ox, oy, oz) where oz is along -Z forward (+z in vehicle config is rear, -z is front)
             ox, oy, oz = w_cfg.offset
             self._wheel_attach_world[0] = (
                 self._chassis_pos[0]
                 + self._right_vec[0] * ox
                 + self._up_vec[0] * oy
-                - self._forward_vec[0] * oz  # offset z is forward (+z in vehicle config is rear, -z is front)
+                - self._forward_vec[0] * oz
             )
             self._wheel_attach_world[1] = (
                 self._chassis_pos[1]
@@ -435,51 +437,102 @@ class RaycastVehicle:
                 - self._forward_vec[2] * oz
             )
 
-            # Ray origin starts safely just below the bottom of the chassis collider
-            d_to_bottom = max(0.01, chassis_half_y + oy)
-            ray_start_offset = d_to_bottom + 0.01
+            # Cast ray downwards starting directly from the suspension anchor
+            # Extended reach allows continuous contact tracking over potholes, dips, curbs, and irregular terrain
+            max_ray_dist = w_cfg.suspension_rest_length + w_cfg.radius + 0.35
 
-            ray_ox = self._wheel_attach_world[0] + down_x * ray_start_offset
-            ray_oy = self._wheel_attach_world[1] + down_y * ray_start_offset
-            ray_oz = self._wheel_attach_world[2] + down_z * ray_start_offset
+            curr_ox = self._wheel_attach_world[0]
+            curr_oy = self._wheel_attach_world[1]
+            curr_oz = self._wheel_attach_world[2]
+            accum_dist = 0.0
+            rem_dist = max_ray_dist
+            final_hit = None
 
-            max_ray_dist = w_cfg.suspension_rest_length + w_cfg.radius
-
-            hit = self.physics.cast_ray_raw(
-                ray_ox,
-                ray_oy,
-                ray_oz,
+            # Multi-step raycast: bypass vehicle chassis collider to detect ground/terrain without tunneling
+            h = self.physics.cast_ray_raw(
+                curr_ox,
+                curr_oy,
+                curr_oz,
                 down_x,
                 down_y,
                 down_z,
-                max_distance=max_ray_dist,
-                solid=True,
+                max_distance=rem_dist,
+                solid=False,
             )
+            if h is not None:
+                hit_ent, hit_d, nx, ny, nz = h
+                if hit_ent == self.entity_id:
+                    # Ray started inside or hit chassis collider: advance past chassis exit point
+                    exit_dist = hit_d
+                    step = 0.001
+                    rem = rem_dist - exit_dist - step
+                    if rem > 0.0:
+                        # Cast from 1mm below chassis with solid=True to detect terrain and prevent ground tunneling
+                        h2 = self.physics.cast_ray_raw(
+                            curr_ox + down_x * (exit_dist + step),
+                            curr_oy + down_y * (exit_dist + step),
+                            curr_oz + down_z * (exit_dist + step),
+                            down_x,
+                            down_y,
+                            down_z,
+                            max_distance=rem,
+                            solid=True,
+                        )
+                        if h2 is not None:
+                            if h2[0] != self.entity_id:
+                                final_hit = (h2[0], exit_dist + step + h2[1], h2[2], h2[3], h2[4])
+                            else:
+                                # Stepped through secondary chassis face, advance another 4mm
+                                step2 = 0.004
+                                rem2 = rem - step2
+                                if rem2 > 0.0:
+                                    h3 = self.physics.cast_ray_raw(
+                                        curr_ox + down_x * (exit_dist + step + step2),
+                                        curr_oy + down_y * (exit_dist + step + step2),
+                                        curr_oz + down_z * (exit_dist + step + step2),
+                                        down_x,
+                                        down_y,
+                                        down_z,
+                                        max_distance=rem2,
+                                        solid=True,
+                                    )
+                                    if h3 is not None and h3[0] != self.entity_id:
+                                        final_hit = (h3[0], exit_dist + step + step2 + h3[1], h3[2], h3[3], h3[4])
+                else:
+                    final_hit = (hit_ent, hit_d, nx, ny, nz)
 
-            if hit is not None and hit[0] != self.entity_id:
-                _hit_ent, dist_from_ray_origin, nx, ny, nz = hit
-                effective_dist = dist_from_ray_origin + ray_start_offset
-                susp_len = max(0.0, effective_dist - w_cfg.radius)
+            if final_hit is not None:
+                _hit_ent, dist_to_ground, nx, ny, nz = final_hit
+                # Guard degenerate normal vector
+                if abs(nx) < 1e-4 and abs(ny) < 1e-4 and abs(nz) < 1e-4:
+                    nx, ny, nz = 0.0, 1.0, 0.0
+                w_state.hit_normal[0] = nx
+                w_state.hit_normal[1] = ny
+                w_state.hit_normal[2] = nz
+                w_state.hit_point[0] = self._wheel_attach_world[0] + down_x * dist_to_ground
+                w_state.hit_point[1] = self._wheel_attach_world[1] + down_y * dist_to_ground
+                w_state.hit_point[2] = self._wheel_attach_world[2] + down_z * dist_to_ground
 
-                if susp_len <= w_cfg.suspension_rest_length + 1e-3:
+                # Measure suspension stroke: hub_dist is the distance from anchor to wheel hub center
+                hub_dist = dist_to_ground - w_cfg.radius
+
+                # Schmitt trigger contact hysteresis (12mm) eliminates contact flicker on suspension limit
+                ground_threshold = max_extended_len + (0.012 if w_state.is_grounded else 0.0)
+                if hub_dist <= ground_threshold:
                     w_state.is_grounded = True
+                    min_susp_len = max(0.01, w_cfg.suspension_rest_length - w_cfg.max_compression)
+                    susp_len = max(min_susp_len, min(max_extended_len, hub_dist))
                     w_state.suspension_length = susp_len
-                    w_state.compression = min(
-                        w_cfg.max_compression,
-                        w_cfg.suspension_rest_length - susp_len,
-                    )
-                    w_state.hit_point[0] = ray_ox + down_x * dist_from_ray_origin
-                    w_state.hit_point[1] = ray_oy + down_y * dist_from_ray_origin
-                    w_state.hit_point[2] = ray_oz + down_z * dist_from_ray_origin
-                    # Guard degenerate normal vector
-                    if abs(nx) < 1e-4 and abs(ny) < 1e-4 and abs(nz) < 1e-4:
-                        nx, ny, nz = 0.0, 1.0, 0.0
-                    w_state.hit_normal[0] = nx
-                    w_state.hit_normal[1] = ny
-                    w_state.hit_normal[2] = nz
+                    w_state.compression = max(0.0, w_cfg.suspension_rest_length - susp_len)
 
-                    # Spring + Damper force (Progressive Bump-Stop + Asymmetric Rebound Damping)
+                    # Spring + Damper force (Progressive Bump-Stop + Asymmetric Rebound Damping + Digressive Blow-Off)
+                    if not w_state.initialized:
+                        w_state.prev_suspension_length = susp_len
+                        w_state.initialized = True
+
                     v_susp = (w_state.prev_suspension_length - susp_len) / dt
+                    # Digressive damper blow-off: prevents shock absorber hydro-lock spikes from launching vehicle
+                    v_susp_eff = math.copysign(min(3.5, abs(v_susp)), v_susp)
 
                     bump_threshold = getattr(w_cfg, "bump_stop_threshold", 0.78) * w_cfg.max_compression
                     if w_state.compression > bump_threshold:
@@ -491,16 +544,17 @@ class RaycastVehicle:
 
                     rebound_mult = getattr(self.config, "suspension_rebound_damping_factor", 1.40)
                     damper_coeff = w_cfg.spring_damping * (rebound_mult if v_susp < 0.0 else 1.0)
-                    damper_force = damper_coeff * v_susp
+                    damper_force = damper_coeff * v_susp_eff
                     w_state.normal_force = max(0.0, spring_force + damper_force)
                 else:
                     w_state.is_grounded = False
-                    w_state.suspension_length = w_cfg.suspension_rest_length
+                    # Wheel rests at maximum extended droop limit when airborne, never snapping to rest length
+                    w_state.suspension_length = max_extended_len
                     w_state.compression = 0.0
                     w_state.normal_force = 0.0
             else:
                 w_state.is_grounded = False
-                w_state.suspension_length = w_cfg.suspension_rest_length
+                w_state.suspension_length = max_extended_len
                 w_state.compression = 0.0
                 w_state.normal_force = 0.0
 
@@ -509,7 +563,7 @@ class RaycastVehicle:
             w_state.world_pos[1] = self._wheel_attach_world[1] + down_y * w_state.suspension_length
             w_state.world_pos[2] = self._wheel_attach_world[2] + down_z * w_state.suspension_length
 
-            if w_state.is_grounded:
+            if final_hit is not None:
                 # Guarantee tire bottom never penetrates below the ground contact surface
                 min_center_y = w_state.hit_point[1] + w_cfg.radius
                 if w_state.world_pos[1] < min_center_y:
@@ -521,51 +575,124 @@ class RaycastVehicle:
                 w_state.steer_angle = 0.0
 
         # 5. Anti-Roll Bar Stabilization & 2-Axis Dynamic Weight Transfer (Pitch & Roll)
+        _gx, _gy, _gz = self.physics.get_gravity()
+        world_g = abs(_gy) if abs(_gy) > 0.1 else 9.81
+        fz_nominal = (self.config.chassis_mass * world_g) / max(1, num_wheels)
+        base_min_fn = fz_nominal * 0.18  # Inside wheels retain at least 18% nominal load reserve
+
+        # Smooth droop fade: normal force floor smoothly tapers to 0 as suspension approaches maximum extension limit
+        def _get_wheel_min_fn(w_idx: int) -> float:
+            w = self.wheel_states[w_idx]
+            w_c = self.config.wheels[w_idx]
+            m_droop = getattr(w_c, "max_droop", 0.12)
+            if w.suspension_length > w_c.suspension_rest_length and m_droop > 1e-4:
+                droop_ratio = min(1.0, (w.suspension_length - w_c.suspension_rest_length) / m_droop)
+                return base_min_fn * (1.0 - droop_ratio * droop_ratio)
+            return base_min_fn
+
+        min_fn_0 = _get_wheel_min_fn(0)
+        min_fn_1 = _get_wheel_min_fn(1)
+        min_fn_2 = _get_wheel_min_fn(2)
+        min_fn_3 = _get_wheel_min_fn(3)
+
         if num_wheels >= 4:
+            w0 = self.wheel_states[0]
+            w1 = self.wheel_states[1]
+            w2 = self.wheel_states[2]
+            w3 = self.wheel_states[3]
+
+            # A. Pitch Load Transfer (Front Axle <-> Rear Axle, strictly load-conserving)
             f_pitch = pitch_weight_transfer * 0.5
-            f_roll = lat_weight_transfer * 0.5
+            if f_pitch > 0.0:  # Squat under acceleration: transfer front -> rear
+                avail_f = max(0.0, (w0.normal_force - min_fn_0) + (w1.normal_force - min_fn_1))
+                actual_pitch = min(f_pitch * 2.0, avail_f)
+                half_pitch = actual_pitch * 0.5
+                if w0.is_grounded and w1.is_grounded:
+                    w0.normal_force -= half_pitch
+                    w1.normal_force -= half_pitch
+                    w2.normal_force += half_pitch
+                    w3.normal_force += half_pitch
+            elif f_pitch < 0.0:  # Dive under braking: transfer rear -> front
+                neg_pitch = -f_pitch
+                avail_r = max(0.0, (w2.normal_force - min_fn_2) + (w3.normal_force - min_fn_3))
+                actual_pitch = min(neg_pitch * 2.0, avail_r)
+                half_pitch = actual_pitch * 0.5
+                if w2.is_grounded and w3.is_grounded:
+                    w2.normal_force -= half_pitch
+                    w3.normal_force -= half_pitch
+                    w0.normal_force += half_pitch
+                    w1.normal_force += half_pitch
 
-            # Front-Left (0): loses pitch on accel, unloads/loads with roll
-            if self.wheel_states[0].is_grounded:
-                self.wheel_states[0].normal_force = max(0.0, self.wheel_states[0].normal_force - f_pitch - f_roll)
-            # Front-Right (1): loses pitch on accel, opposite roll
-            if self.wheel_states[1].is_grounded:
-                self.wheel_states[1].normal_force = max(0.0, self.wheel_states[1].normal_force - f_pitch + f_roll)
-            # Rear-Left (2): gains pitch on accel, unloads/loads with roll
-            if self.wheel_states[2].is_grounded:
-                self.wheel_states[2].normal_force = max(0.0, self.wheel_states[2].normal_force + f_pitch - f_roll)
-            # Rear-Right (3): gains pitch on accel, opposite roll
-            if self.wheel_states[3].is_grounded:
-                self.wheel_states[3].normal_force = max(0.0, self.wheel_states[3].normal_force + f_pitch + f_roll)
-
+            # B. Anti-Roll Bar Stabilization (Active only between grounded wheels on same axle)
+            # Body roll and lateral load transfer naturally occur via chassis roll angle and spring compression.
+            # ARB resists asymmetric axle displacement without injecting artificial forces into ungrounded wheels.
+            max_arb = fz_nominal * 0.35
             # Front Axle ARB
-            f_diff = self.wheel_states[0].compression - self.wheel_states[1].compression
-            f_arb = f_diff * self.config.anti_roll_stiffness
-            if self.wheel_states[0].is_grounded:
-                self.wheel_states[0].normal_force = max(0.0, self.wheel_states[0].normal_force + f_arb)
-            if self.wheel_states[1].is_grounded:
-                self.wheel_states[1].normal_force = max(0.0, self.wheel_states[1].normal_force - f_arb)
+            if w0.is_grounded and w1.is_grounded:
+                f_diff = w0.compression - w1.compression
+                f_arb = max(-max_arb, min(max_arb, f_diff * self.config.anti_roll_stiffness))
+                if f_arb > 0.0:
+                    t_arb = min(f_arb, max(0.0, w1.normal_force - min_fn_1))
+                    w0.normal_force += t_arb
+                    w1.normal_force -= t_arb
+                elif f_arb < 0.0:
+                    t_arb = min(-f_arb, max(0.0, w0.normal_force - min_fn_0))
+                    w0.normal_force -= t_arb
+                    w1.normal_force += t_arb
 
             # Rear Axle ARB
-            r_diff = self.wheel_states[2].compression - self.wheel_states[3].compression
-            r_arb = r_diff * self.config.anti_roll_stiffness
-            if self.wheel_states[2].is_grounded:
-                self.wheel_states[2].normal_force = max(0.0, self.wheel_states[2].normal_force + r_arb)
-            if self.wheel_states[3].is_grounded:
-                self.wheel_states[3].normal_force = max(0.0, self.wheel_states[3].normal_force - r_arb)
+            if w2.is_grounded and w3.is_grounded:
+                r_diff = w2.compression - w3.compression
+                r_arb = max(-max_arb, min(max_arb, r_diff * self.config.anti_roll_stiffness))
+                if r_arb > 0.0:
+                    t_arb_r = min(r_arb, max(0.0, w3.normal_force - min_fn_3))
+                    w2.normal_force += t_arb_r
+                    w3.normal_force -= t_arb_r
+                elif r_arb < 0.0:
+                    t_arb_r = min(-r_arb, max(0.0, w2.normal_force - min_fn_2))
+                    w2.normal_force -= t_arb_r
+                    w3.normal_force += t_arb_r
+
+        # Guarantee invariant: ungrounded wheels strictly carry zero normal force
+        for i in range(num_wheels):
+            if not self.wheel_states[i].is_grounded:
+                self.wheel_states[i].normal_force = 0.0
 
         # 6. Apply Forces: Suspension, Traction, Braking, and Lateral Tire Friction (Kamm's Circle)
         effective_surface_grip = self.config.tire_grip * self.surface_friction_mult
-        fz_nominal = (self.config.chassis_mass * 9.81) / max(1, num_wheels)
         load_sens = getattr(self.config, "tire_load_sensitivity", 0.15)
         brake_bias_f = getattr(self.config, "brake_bias_front", 0.65)
         caster_torque_factor = getattr(self.config, "caster_aligning_torque", 0.08)
+        total_grounded_fn = sum(w.normal_force for w in self.wheel_states if w.is_grounded)
+        inv_total_fn = (1.0 / total_grounded_fn) if total_grounded_fn > 10.0 else (1.0 / max(1, num_wheels))
 
         for i in range(num_wheels):
             w_cfg = self.config.wheels[i]
             w_state = self.wheel_states[i]
 
             if not w_state.is_grounded or w_state.normal_force <= 0.0:
+                # Wheel is airborne: free-spin dynamics
+                # Driven wheels spin up under throttle; undriven or off-throttle wheels decelerate smoothly
+                is_driven = w_cfg.is_driven
+                if self.config.drive_type == DriveType.FWD:
+                    is_driven = w_cfg.is_steerable
+                elif self.config.drive_type == DriveType.RWD:
+                    is_driven = not w_cfg.is_steerable
+                elif self.config.drive_type == DriveType.AWD:
+                    is_driven = True
+
+                if is_driven and abs(self.throttle) > 0.01:
+                    target_spin = (self.throttle * self.config.top_speed_mps) / max(0.05, w_cfg.radius)
+                    w_state.angular_velocity += (target_spin - w_state.angular_velocity) * min(1.0, dt * 10.0)
+                else:
+                    w_state.angular_velocity *= max(0.0, 1.0 - dt * 2.5)
+
+                w_state.spin_angle += w_state.angular_velocity * dt
+                w_state.slip_ratio = 0.0
+                w_state.slip_angle = 0.0
+                w_state.lateral_slip = 0.0
+                w_state.longitudinal_slip = 0.0
+                w_state.skidding = False
                 continue
 
             fn = w_state.normal_force
@@ -576,10 +703,10 @@ class RaycastVehicle:
             tire_grip_eff = effective_surface_grip * load_factor
             f_traction_max = fn * tire_grip_eff
 
-            # A. Suspension Upward Force
-            fx_susp = self._up_vec[0] * (fn * 0.25)
-            fy_susp = fn
-            fz_susp = self._up_vec[2] * (fn * 0.25)
+            # A. Suspension Reaction Force (acts along surface contact normal, eliminating phantom horizontal rake propulsion)
+            fx_susp = w_state.hit_normal[0] * fn
+            fy_susp = w_state.hit_normal[1] * fn
+            fz_susp = w_state.hit_normal[2] * fn
 
             # B. Wheel Steering Directions
             steer = w_state.steer_angle
@@ -662,43 +789,61 @@ class RaycastVehicle:
                     if fwd_speed > -15.0:
                         f_long += self.throttle * self.config.reverse_torque * (1.0 / num_driven)
 
-            # Engine braking when off-throttle
-            if abs(self.throttle) < 0.02 and abs(v_forward) > 1.0 and not self.handbrake:
-                engine_brake = 350.0 * (self.engine_rpm / 3500.0) * (1.0 / num_wheels)
-                f_long -= math.copysign(engine_brake, v_forward)
+            wheel_mass_share = self.config.chassis_mass * (fn * inv_total_fn if total_grounded_fn > 10.0 else (1.0 / num_wheels))
+            stop_clamp = abs(v_forward) * (wheel_mass_share / max(0.005, dt))
+
+            # Resistance budget: aggregate engine braking, rolling resistance, foot brake, handbrake, auto-hold
+            f_resist = 0.0
 
             # Foot Braking with realistic Front/Rear Brake Bias
-            if self.brake_input > 0.01 and abs(v_forward) > 0.05:
+            if self.brake_input > 0.01 and abs(v_forward) > 0.001:
                 bias_ratio = brake_bias_f if w_cfg.is_steerable else (1.0 - brake_bias_f)
-                brake_f = self.brake_input * self.config.brake_torque * (bias_ratio * 2.0 / num_wheels) * w_cfg.brake_ratio
-                f_long -= math.copysign(min(brake_f, abs(v_forward) * 2000.0), v_forward)
+                f_resist += self.brake_input * self.config.brake_torque * (bias_ratio * 2.0 / num_wheels) * w_cfg.brake_ratio
 
             # Handbrake on rear wheels
-            if not w_cfg.is_steerable and self.handbrake and abs(v_forward) > 0.05:
-                hb_f = self.config.handbrake_torque * (1.0 / num_wheels)
-                f_long -= math.copysign(min(hb_f, abs(v_forward) * 3000.0), v_forward)
+            if not w_cfg.is_steerable and self.handbrake and abs(v_forward) > 0.001:
+                f_resist += self.config.handbrake_torque * (1.0 / num_wheels)
+
+            # When driver is off-throttle:
+            if abs(self.throttle) < 0.02 and not self.handbrake:
+                if abs(v_forward) > 0.40:
+                    # Engine braking above walking pace
+                    f_resist += 450.0 * (self.engine_rpm / 3500.0) * (1.0 / num_wheels)
+                    # Rolling resistance
+                    f_resist += 0.018 * fn
+                else:
+                    # Stationary Auto-Hold: critically damped stop hold without creeping or rolling
+                    f_resist += stop_clamp
+
+            # Total resistance strictly opposes v_forward without ever exceeding stop_clamp
+            if f_resist > 0.0 and abs(v_forward) > 0.0001:
+                f_long -= math.copysign(min(f_resist, stop_clamp), v_forward)
 
             # Clamp longitudinal force to total traction circle
             f_long = max(-f_traction_max, min(f_traction_max, f_long))
 
-            # 2. Kamm's Friction Circle: Available lateral force budget after longitudinal traction
-            f_lat_cap_sq = max(0.0, f_traction_max * f_traction_max - f_long * f_long)
-            f_lat_budget = math.sqrt(f_lat_cap_sq)
+            # 2. Kamm's Friction Ellipse: Combined Slip Traction Envelope
+            # Ensures applying throttle or brake reserves cornering grip so the car doesn't slide off at turns
+            f_drive_ratio = min(1.0, abs(f_long) / max(1.0, f_traction_max))
+            lat_envelope = math.sqrt(max(0.0, 1.0 - (f_drive_ratio * 0.85) ** 2))
+            slip_reserve = getattr(self.config, "combined_slip_reserve", 0.42)
+            f_lat_budget = f_traction_max * max(slip_reserve, lat_envelope)
 
             # Handbrake specifically induces rear-axle sliding breakaway
             if not w_cfg.is_steerable and self.handbrake:
                 f_lat_budget = min(f_lat_budget, fn * tire_grip_eff * self.config.drift_friction_factor)
 
             # 3. Progressive Pacejka Brush Slip Model
-            s_norm = abs(math.tan(slip_angle)) / 0.18
+            # Broad peak and communicative plateau giving progressive feedback before sliding
+            s_norm = abs(math.tan(slip_angle)) / 0.22
             if s_norm < 1.0:
                 pacejka_factor = math.sin(s_norm * 1.570796)
             else:
-                # Sliding dynamic friction plateau (~78% of peak)
-                pacejka_factor = 1.0 - 0.22 * min(1.0, (s_norm - 1.0) / 2.0)
+                # Dynamic sliding plateau (~86% of peak grip retains controllable drift feel)
+                pacejka_factor = 1.0 - 0.14 * min(1.0, (s_norm - 1.0) / 2.5)
 
             max_lat_force = f_lat_budget * pacejka_factor
-            desired_lateral_force = -v_lateral * (self.config.chassis_mass / num_wheels) / max(0.01, dt * 2.0)
+            desired_lateral_force = -v_lateral * (self.config.chassis_mass / num_wheels) / max(0.01, dt * 1.6)
             f_lat = max(-max_lat_force, min(max_lat_force, desired_lateral_force))
 
             # Small velocity deadzone to eliminate zero-speed oscillation
@@ -706,10 +851,11 @@ class RaycastVehicle:
                 f_lat *= (abs(v_lateral) / 0.08)
 
             # 4. Counter-Steering Caster Aligning Torque from Pneumatic Trail
+            # Naturally stabilizes wheels and helps driver counter-steer out of slides
             aligning_torque = -f_lat * caster_torque_factor
             if self.is_drifting and w_cfg.is_steerable:
-                drift_counter_mult = getattr(self.config, "drift_counter_steer_assist", 0.25)
-                aligning_torque -= math.radians(self.drift_angle_deg) * drift_counter_mult * 150.0
+                drift_counter_mult = getattr(self.config, "drift_counter_steer_assist", 0.30)
+                aligning_torque -= math.radians(self.drift_angle_deg) * drift_counter_mult * 160.0
 
             # E. Aggregate Total Contact Force (Suspension + Longitudinal + Lateral)
             f_total_x = fx_susp + self._wheel_forward[0] * f_long + self._wheel_right[0] * f_lat
@@ -733,27 +879,40 @@ class RaycastVehicle:
             self.physics.apply_impulse(self.entity_id, self._impulse_scratch)
             self.physics.apply_torque_impulse(self.entity_id, self._torque_scratch)
 
-        # 7. Active Upright Self-Righting Stabilizer
-        # Rapidly restores chassis roll and pitch back to level after cornering or curb impacts
+        # 7. Active Upright & Dynamic Yaw Stabilizer
+        # Rapidly restores chassis roll and pitch back to level after cornering or curb impacts,
+        # while mass-scaled yaw damping gives a heavy, planted, grounded feeling without twitchiness
         grounded_count = sum(1 for w in self.wheel_states if w.is_grounded)
         if grounded_count >= 1 and self._up_vec[1] > 0.20:
             # Cross product: local_up x world_up (0, 1, 0) = (-uz, 0, ux)
             tau_x = -self._up_vec[2] * self.config.upright_stiffness
             tau_z = self._up_vec[0] * self.config.upright_stiffness
 
-            # Roll/pitch angular velocity damping (leaving yaw wy completely free for steering)
+            # Roll/pitch angular velocity damping (leaving steering responsive while absorbing sway)
             tau_x -= self._chassis_angvel[0] * self.config.upright_damping
             tau_z -= self._chassis_angvel[2] * self.config.upright_damping
 
+            # Mass-scaled dynamic yaw stabilization: keeps heavy cars planted and prevents spinouts
+            yaw_damp_factor = getattr(self.config, "dynamic_yaw_damping", 0.50) * (self.config.chassis_mass / 1500.0)
+            drift_scale = 0.55 if self.is_drifting else 1.0
+            tau_y = -self._chassis_angvel[1] * yaw_damp_factor * 2200.0 * drift_scale
+
+            # Turn-in bite assist: lightweight cars rotate with sharp agility, heavy trucks have deliberate inertia
+            turn_in_bite = getattr(self.config, "turn_in_bite_assist", 0.0)
+            if abs(self.steering_input) > 0.05 and abs(fwd_speed) > 2.0:
+                agility_factor = 1500.0 / max(500.0, self.config.chassis_mass)
+                tau_y -= self.steering_input * turn_in_bite * 2400.0 * agility_factor
+
             self._torque_scratch[0] = tau_x * dt
-            self._torque_scratch[1] = 0.0
+            self._torque_scratch[1] = tau_y * dt
             self._torque_scratch[2] = tau_z * dt
             self.physics.apply_torque_impulse(self.entity_id, self._torque_scratch)
 
         # 8. Road Holding Plant & Aerodynamic Downforce (Gives vehicle heavy, grounded asphalt feel)
         if grounded_count >= 2:
-            # Baseline road adhesion plant proportional to chassis mass (plants the vehicle firmly)
-            base_plant = self.config.chassis_mass * 4.2
+            # Baseline road adhesion plant scales smoothly with speed to eliminate resting jitter
+            plant_factor = min(1.0, max(0.0, (abs(fwd_speed) - 0.5) / 2.5))
+            base_plant = self.config.chassis_mass * 4.2 * plant_factor
             # Speed-dependent aerodynamic downforce
             aero_downforce = min(5500.0, 0.5 * 1.225 * (fwd_speed * fwd_speed) * 0.65) if fwd_speed > 2.0 else 0.0
             total_downforce = base_plant + aero_downforce
@@ -770,6 +929,26 @@ class RaycastVehicle:
         else:
             self.drift_angle_deg = 0.0
             self.is_drifting = False
+
+        # 10. Stationary Park Sleep Damping
+        # When all wheels are grounded, vehicle is off-throttle, and moving at sub-walking speeds,
+        # eliminate residual micro-drift and Euler discrete spring-damping jitter.
+        if grounded_count == num_wheels and abs(self.throttle) < 0.02 and abs(fwd_speed) < 0.35:
+            vx = self._chassis_linvel[0]
+            vz = self._chassis_linvel[2]
+            planar_speed_sq = vx * vx + vz * vz
+            if planar_speed_sq < 0.16:  # planar speed < 0.40 m/s
+                damp = min(1.0, dt * 15.0)
+                self._impulse_scratch[0] = -vx * self.config.chassis_mass * damp
+                self._impulse_scratch[1] = 0.0
+                self._impulse_scratch[2] = -vz * self.config.chassis_mass * damp
+                self.physics.apply_impulse(self.entity_id, self._impulse_scratch)
+
+                # Also damp residual yaw / pitch / roll angular velocity so chassis rests motionless
+                self._torque_scratch[0] = -self._chassis_angvel[0] * self.config.chassis_mass * 0.35 * damp
+                self._torque_scratch[1] = -self._chassis_angvel[1] * self.config.chassis_mass * 0.35 * damp
+                self._torque_scratch[2] = -self._chassis_angvel[2] * self.config.chassis_mass * 0.35 * damp
+                self.physics.apply_torque_impulse(self.entity_id, self._torque_scratch)
 
     def get_wheel_transform(self, wheel_idx: int) -> tuple[np.ndarray, np.ndarray]:
         """Returns the world position and orientation quaternion for a visual wheel mesh.

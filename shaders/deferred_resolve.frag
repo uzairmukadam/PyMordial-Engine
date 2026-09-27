@@ -221,7 +221,6 @@ float SampleSingleCascade(
     vec3 L,
     float cos_theta,
     float slope,
-    float ign_phi,
     float softness,
     out bool in_bounds
 ) {
@@ -259,20 +258,21 @@ float SampleSingleCascade(
 
     float cascade_scale = float(cascade) * 0.65 + 1.0;
 
-    // MODE 1: UNIFORM PCF (Vogel Disk)
+    // MODE 1: UNIFORM PCF (Low-Discrepancy Vogel Disk with Bilinear Hardware Taps)
+    // Zero-checkerboard noise: deterministic golden spiral provides smooth sub-texel gradients
     if (u_ShadowMode == 1) {
         float filter_radius = (0.0009 * softness) / cascade_scale;
         int samples = clamp(u_PCF_Samples, 8, 32);
         float shadow = 0.0;
         for (int i = 0; i < samples; ++i) {
-            vec2 offset = VogelDiskSample(i, samples, ign_phi) * filter_radius;
+            vec2 offset = VogelDiskSample(i, samples, 0.0) * filter_radius;
             vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
             shadow += SampleShadowBilinear(sample_uv, current_depth, bias, uv_min, uv_max);
         }
         return shadow / float(samples);
     }
 
-    // MODE 2: AAA DIRECTIONAL PCSS (Contact-Hardening Soft Shadows via Vogel Disk)
+    // MODE 2: AAA DIRECTIONAL PCSS (Physically-Based Contact-Hardening Soft Shadows)
     vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
     vec2 texel_size = 1.0 / full_size;
 
@@ -281,15 +281,23 @@ float SampleSingleCascade(
     float inv_far = length(vec3(u_LightViewProjection[cascade][0].z, u_LightViewProjection[cascade][1].z, u_LightViewProjection[cascade][2].z));
     float light_far = 1.0 / max(inv_far, 1e-6);
 
-    // Step 1: Blocker Search (Vogel Spiral)
-    float search_radius = clamp(texel_size.x * 4.5 * softness, texel_size.x * 2.0, 0.0035) / cascade_scale;
+    // Step 1: Blocker Search (Deterministic Vogel Spiral with central anchor)
+    // Radius covers physical occluder search space (scaled by cascade)
+    float search_radius = clamp(texel_size.x * 12.0 * softness, texel_size.x * 4.0, 0.007) / cascade_scale;
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
     int blocker_samples = 16;
-    float blocker_bias = bias + slope * search_radius * 1.5;
+    float blocker_bias = bias + slope * 0.0006;
+
+    // Central anchor sample: guarantees receivers under occluders never drop shadow
+    float center_d = texture(u_ShadowAtlas, uv).r;
+    if (center_d < current_depth - blocker_bias) {
+        blocker_depth_sum += center_d;
+        blocker_count++;
+    }
 
     for (int i = 0; i < blocker_samples; ++i) {
-        vec2 offset = VogelDiskSample(i, blocker_samples, ign_phi) * search_radius;
+        vec2 offset = VogelDiskSample(i, blocker_samples, 0.0) * search_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
         float d = texture(u_ShadowAtlas, sample_uv).r;
         if (d < current_depth - blocker_bias) {
@@ -298,7 +306,7 @@ float SampleSingleCascade(
         }
     }
 
-    // Fully illuminated if no blockers found in search footprint
+    // Fully illuminated if no blockers found anywhere in search footprint
     if (blocker_count == 0) {
         return 1.0;
     }
@@ -310,29 +318,40 @@ float SampleSingleCascade(
     float metric_depth_diff = depth_diff * light_far;
 
     // Physical sun angular diameter spread (~0.53 degrees):
-    // Penumbra world width expands with distance from blocker: metric_depth_diff * sun_spread
-    float sun_spread = 0.040 * softness;
+    // In game rendering, softness scales the penumbra width linearly with blocker distance
+    float sun_spread = 0.045 * softness;
     float penumbra_world = metric_depth_diff * sun_spread;
 
     // Convert penumbra from world units to atlas UV coordinates
-    float penumbra_uv = (penumbra_world * inv_rad) * 0.25;
+    // (In CSM: 2*radius world width maps to 0.5 atlas quad UV, so 1m = 0.25 * inv_rad)
+    float penumbra_uv = penumbra_world * (0.25 * inv_rad);
 
-    // Step 3: Anti-Aliased Filtered PCF with contact-hardening penumbra radius
-    // Anti-aliasing floor: minimum 1.6 texels radius guarantees every shadow edge is
-    // smoothly sampled across adjacent texels (eliminating 1-bit staircase jaggies),
-    // while expanding gracefully for distant casters into realistic soft penumbrae.
-    float min_filter_radius = texel_size.x * 1.6;
-    float max_filter_radius = (0.0028 * softness) / cascade_scale;
+    // Contact-hardening filter radius:
+    // Tight contact sharpness at ground contact (0.85 texels),
+    // expanding gracefully into realistic wide cinematic penumbrae for elevated casters.
+    float min_filter_radius = texel_size.x * 0.85;
+    float max_filter_radius = (0.0065 * softness) / cascade_scale;
     float filter_radius = clamp(min_filter_radius + penumbra_uv, min_filter_radius, max_filter_radius);
 
-    int filter_samples = clamp(u_PCF_Samples, 12, 32);
+    // Step 3: Anti-Aliased Filter with Gaussian Radial Falloff (Smooth Penumbra, Zero Banding)
+    int filter_samples = clamp(u_PCF_Samples, 16, 32);
     float pcss_shadow = 0.0;
+    float weight_sum = 0.0;
+    float pcss_bias = bias + (filter_radius / max_filter_radius) * slope * 0.0006;
+
     for (int i = 0; i < filter_samples; ++i) {
-        vec2 offset = VogelDiskSample(i, filter_samples, ign_phi) * filter_radius;
+        vec2 offset = VogelDiskSample(i, filter_samples, 0.0) * filter_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
-        pcss_shadow += SampleShadowBilinear(sample_uv, current_depth, bias, uv_min, uv_max);
+
+        // Smooth parabolic radial tent weighting: w = 1.0 - 0.85 * r^2
+        // Centers receive full weight; outer boundary smoothly approaches zero
+        float r_sq = (float(i) + 0.5) / float(filter_samples);
+        float w = 1.0 - r_sq * 0.85;
+
+        pcss_shadow += SampleShadowBilinear(sample_uv, current_depth, pcss_bias, uv_min, uv_max) * w;
+        weight_sum += w;
     }
-    return pcss_shadow / float(filter_samples);
+    return pcss_shadow / max(weight_sum, 1e-5);
 }
 
 // Cascaded Shadow Map Evaluation (CSM) supporting HARD, PCF, and PCSS with smooth split blending
@@ -356,18 +375,15 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
 
     float cos_theta = clamp(NdotL, 0.0, 1.0);
     float slope = clamp(sqrt(max(1.0 - cos_theta * cos_theta, 0.0)) / max(cos_theta, 0.001), 0.0, 3.5);
-
-    // Interleaved Gradient Noise rotation for smooth blue-noise spatial distribution
-    float ign_phi = InterleavedGradientNoise(gl_FragCoord.xy) * 6.2831853;
     float softness = clamp(u_ShadowSoftness, 0.1, 4.0);
 
     bool in_bounds = false;
-    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
+    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, softness, in_bounds);
 
     // Seamless fallback to wider cascades if local cascade is out of bounds
     while (!in_bounds && cascade < u_CascadeCount - 1) {
         cascade++;
-        shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, ign_phi, softness, in_bounds);
+        shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, softness, in_bounds);
     }
     if (!in_bounds) {
         return 1.0;
@@ -381,7 +397,7 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
         if (view_depth > blend_start) {
             float blend_t = clamp((view_depth - blend_start) / blend_range, 0.0, 1.0);
             bool next_in_bounds = false;
-            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, ign_phi, softness, next_in_bounds);
+            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, softness, next_in_bounds);
             if (next_in_bounds) {
                 shadow = mix(shadow, next_shadow, blend_t);
             }

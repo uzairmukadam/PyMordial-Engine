@@ -20,7 +20,7 @@ class ProjectConfig:
     vsync: bool = False
     quality_preset: str = "ultra"  # "low", "medium", "high", "ultra", "cinematic"
     fixed_hz: float = 60.0
-    gravity: tuple[float, float, float] = (0.0, -20.0, 0.0)
+    gravity: tuple[float, float, float] = (0.0, -9.81, 0.0)
     enable_debug: bool = True
     water_enabled: bool = False
     particles_enabled: bool = False

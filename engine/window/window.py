@@ -267,13 +267,19 @@ class Window:
 
     def set_cursor_visible(self, visible: bool) -> None:
         """Shows or hides the system mouse cursor."""
-        if not self.is_headless:
+        import os
+        if not self.is_headless and not os.environ.get("PYTEST_CURRENT_TEST"):
             pygame.mouse.set_visible(visible)
 
     def set_cursor_grab(self, grabbed: bool) -> None:
         """Locks the mouse cursor to the window bounds (relative mode)."""
-        if not self.is_headless:
+        import os
+        if not self.is_headless and not os.environ.get("PYTEST_CURRENT_TEST"):
             pygame.event.set_grab(grabbed)
+
+    def destroy(self) -> None:
+        """Releases window surface resources."""
+        self.surface = None
 
     def is_cursor_grabbed(self) -> bool:
         """Queries if mouse grab is currently active."""

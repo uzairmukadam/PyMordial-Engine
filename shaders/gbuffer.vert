@@ -41,6 +41,8 @@ layout (std430, binding = 2) readonly buffer MaterialBuffer {
 out vec3 v_WorldPos;
 out vec3 v_Normal;
 out vec2 v_UV;
+out vec3 v_ModelPos;
+out vec3 v_ModelNormal;
 out vec4 v_CurrClip;
 out vec4 v_PrevClip;
 out flat uint v_EntityID;
@@ -62,6 +64,8 @@ void main() {
 
     vec4 world_pos = model * vec4(in_position, 1.0);
     v_WorldPos = world_pos.xyz;
+    v_ModelPos = in_position;
+    v_ModelNormal = in_normal;
     v_Normal = normalize(normal_matrix * in_normal);
     v_UV = in_uv;
 

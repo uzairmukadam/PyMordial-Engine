@@ -12,6 +12,8 @@ in flat uint te_EntityID[];
 out vec3 v_WorldPos;
 out vec3 v_Normal;
 out vec2 v_UV;
+out vec3 v_ModelPos;
+out vec3 v_ModelNormal;
 out vec4 v_CurrClip;
 out vec4 v_PrevClip;
 out flat uint v_EntityID;
@@ -107,6 +109,8 @@ void main() {
     }
 
     v_WorldPos = pos;
+    v_ModelPos = pos;
+    v_ModelNormal = norm;
     v_Normal = norm;
     v_UV = uv;
 

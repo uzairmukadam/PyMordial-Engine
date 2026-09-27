@@ -75,6 +75,7 @@ class ProjectApp:
         # 2. ModernGL Deferred Pipeline
         self.pipeline = RenderPipeline(self.render_ctx, quality_cfg)
         self.pipeline.apply_config(self.pipeline.config)
+        self.render_ctx.pipeline = self.pipeline
 
 
         # 3. ECS & Native Rapier3D Physics
@@ -140,6 +141,7 @@ class ProjectApp:
         """Assigns and executes a world builder to generate map geometry and colliders."""
         if self.world_builder is not None:
             self.world_builder.teardown_world(self)
+            self._static_draw_batches.clear()
 
         self.world_builder = builder
         self.world_builder.build_world(self)
@@ -157,7 +159,19 @@ class ProjectApp:
         is_animated: bool = False,
         cast_shadow: bool = True,
     ) -> None:
-        """Registers a static or persistent MDI draw batch."""
+        """Registers a static or persistent MDI draw batch, coalescing contiguous runs."""
+        if instance_count <= 0:
+            return
+        if self._static_draw_batches:
+            prev = self._static_draw_batches[-1]
+            if (
+                prev[0] == alloc
+                and prev[3] == is_animated
+                and prev[4] == cast_shadow
+                and (prev[2] + prev[1] == first_instance)
+            ):
+                self._static_draw_batches[-1] = (alloc, prev[1] + instance_count, prev[2], is_animated, cast_shadow)
+                return
         self._static_draw_batches.append((alloc, instance_count, first_instance, is_animated, cast_shadow))
 
     # ---------------- Loop Callbacks ----------------

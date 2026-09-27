@@ -824,6 +824,9 @@ class InputManager:
     def set_mouse_grab(self, grab: bool) -> None:
         """Locks and hides mouse cursor for FPS or orbit cameras."""
         self.is_mouse_grabbed = grab
+        import os
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
         try:
             pygame.event.set_grab(grab)
             pygame.mouse.set_visible(not grab)

@@ -208,7 +208,7 @@ class EngineTweaks:
         self.ssdm_enabled = True
         self.ssdm_scale = 1.0
 
-        # Shadow Settings (AAA Default: 4096 Atlas, PCSS, zero delta offset)
+        # Shadow Settings (Default: 4096 Atlas, PCSS, zero delta offset)
         self.shadow_resolution = 4096
         self.shadow_mode = "PCSS"
         self.shadow_softness = 1.2

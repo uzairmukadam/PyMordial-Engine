@@ -18,6 +18,8 @@ from engine.core.materials import (
     encode_mat_flags,
     decode_mat_flags,
     MaterialRegistry,
+    MAT_FLAG_VEHICLE_CHASSIS,
+    MAT_FLAG_VEHICLE_WHEEL,
 )
 
 
@@ -248,6 +250,8 @@ class EntityManager:
         disp_mode: DisplacementMode | int | None = None,
         emissive_intensity: float = 0.0,
         is_static: bool = False,
+        is_vehicle_chassis: bool = False,
+        is_vehicle_wheel: bool = False,
     ) -> int:
         """Allocates an entity and initializes its slots in contiguous memory tables."""
         entity_id = self.pool.allocate()
@@ -257,8 +261,8 @@ class EntityManager:
         self.is_static[dense_idx] = bool(is_static)
         if is_static:
             self._static_dirty = True
-            if dense_idx >= self.static_count:
-                self.static_count = dense_idx + 1
+            if dense_idx == self.static_count:
+                self.static_count += 1
 
         # Initialize current and previous physics state identically
         self.rigid_body_state[0, dense_idx, 0:3] = position
@@ -336,8 +340,13 @@ class EntityManager:
         else:
             resolved_disp = DisplacementMode.NONE
 
+        chassis_flag = is_vehicle_chassis or (mat_def.is_vehicle_chassis if mat_def else False)
+        wheel_flag = is_vehicle_wheel or (mat_def.is_vehicle_wheel if mat_def else False)
+
         self.material_data[dense_idx, 6] = float(resolved_layer)
-        self.material_data[dense_idx, 7] = encode_mat_flags(has_tex, resolved_disp)
+        self.material_data[dense_idx, 7] = encode_mat_flags(
+            has_tex, resolved_disp, is_vehicle_chassis=chassis_flag, is_vehicle_wheel=wheel_flag
+        )
 
         self.recompute_matrix(dense_idx)
         return entity_id
@@ -353,6 +362,8 @@ class EntityManager:
         metallic: float | None = None,
         ao: float | None = None,
         emissive_intensity: float | None = None,
+        is_vehicle_chassis: bool | None = None,
+        is_vehicle_wheel: bool | None = None,
     ) -> None:
         """Applies a registered material or parameter overrides to an active entity."""
         dense_idx = self.pool.get_dense_index(entity_id)
@@ -409,15 +420,33 @@ class EntityManager:
             has_tex = (resolved_layer > 0)
 
         # 6. Displacement Mode
+        curr_raw = int(self.material_data[dense_idx, 7])
         if disp_mode is not None:
             resolved_disp = DisplacementMode(disp_mode)
         elif mat_def is not None:
             resolved_disp = mat_def.disp_mode
         else:
-            _, resolved_disp = decode_mat_flags(self.material_data[dense_idx, 7])
+            _, resolved_disp = decode_mat_flags(curr_raw)
+
+        # 7. Vehicle Tag Flags
+        if is_vehicle_chassis is not None:
+            chassis_flag = is_vehicle_chassis
+        elif mat_def is not None:
+            chassis_flag = mat_def.is_vehicle_chassis
+        else:
+            chassis_flag = bool(curr_raw & MAT_FLAG_VEHICLE_CHASSIS)
+
+        if is_vehicle_wheel is not None:
+            wheel_flag = is_vehicle_wheel
+        elif mat_def is not None:
+            wheel_flag = mat_def.is_vehicle_wheel
+        else:
+            wheel_flag = bool(curr_raw & MAT_FLAG_VEHICLE_WHEEL)
 
         self.material_data[dense_idx, 6] = float(resolved_layer)
-        self.material_data[dense_idx, 7] = encode_mat_flags(has_tex, resolved_disp)
+        self.material_data[dense_idx, 7] = encode_mat_flags(
+            has_tex, resolved_disp, is_vehicle_chassis=chassis_flag, is_vehicle_wheel=wheel_flag
+        )
 
     def get_entity_material(self, entity_id: int) -> dict[str, Any]:
         """Returns the material parameters for an active entity."""
@@ -426,6 +455,7 @@ class EntityManager:
             raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
         data = self.material_data[dense_idx]
         has_tex, disp_mode = decode_mat_flags(data[7])
+        raw_flags = int(data[7])
         return {
             "color": (float(data[0]), float(data[1]), float(data[2])),
             "roughness": float(data[3]),
@@ -434,6 +464,8 @@ class EntityManager:
             "layer_idx": int(data[6]),
             "has_texture": has_tex,
             "disp_mode": disp_mode,
+            "is_vehicle_chassis": bool(raw_flags & MAT_FLAG_VEHICLE_CHASSIS),
+            "is_vehicle_wheel": bool(raw_flags & MAT_FLAG_VEHICLE_WHEEL),
         }
 
     def destroy_entity(self, entity_id: int) -> bool:
@@ -463,7 +495,10 @@ class EntityManager:
         self.aabbs[last_dense_idx].fill(0.0)
         self.is_static[last_dense_idx] = False
 
-        if dense_idx < self.static_count or last_dense_idx < self.static_count:
+        if dense_idx < self.static_count:
+            self.static_count = dense_idx
+            self._static_dirty = True
+        elif last_dense_idx < self.static_count:
             self._static_dirty = True
 
         return True

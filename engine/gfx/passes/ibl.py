@@ -39,6 +39,26 @@ class IBLPass(RenderPass):
         self.env_tex.repeat_x = True
         self.env_tex.repeat_y = False
 
+        u = np.linspace(0.0, 1.0, self.w, endpoint=False, dtype=np.float32)
+        v = np.linspace(0.0, 1.0, self.h, endpoint=False, dtype=np.float32)
+        self._uu, self._vv = np.meshgrid(u, v)
+
+        # Precompute static base sky and ground gradient
+        zenith = np.array([0.15, 0.35, 0.75, 1.0], dtype=np.float32)
+        horizon = np.array([0.70, 0.80, 0.95, 1.0], dtype=np.float32)
+        ground = np.array([0.15, 0.18, 0.16, 1.0], dtype=np.float32)
+
+        self._base_sky = np.zeros((self.h, self.w, 4), dtype=np.float32)
+        sky_mask = self._vv >= 0.5
+        sky_t = ((self._vv[sky_mask] - 0.5) * 2.0)[..., np.newaxis]
+        self._base_sky[sky_mask] = horizon * (1.0 - sky_t) + zenith * sky_t
+
+        ground_mask = self._vv < 0.5
+        ground_t = (self._vv[ground_mask] * 2.0)[..., np.newaxis]
+        self._base_sky[ground_mask] = ground * (1.0 - ground_t) + horizon * ground_t
+
+        self._scratch_data = np.empty((self.h, self.w, 4), dtype=np.float32)
+
         self._update_procedural_env_map((0.5, -0.7, 0.4))
 
     def _generate_brdf_lut(self) -> None:
@@ -61,24 +81,7 @@ class IBLPass(RenderPass):
 
     def _update_procedural_env_map(self, sun_dir: tuple[float, float, float]) -> None:
         """Updates the procedural HDR physical sky panoramic texture aligned with the sun."""
-        w, h = self.w, self.h
-        u = np.linspace(0.0, 1.0, w, endpoint=False, dtype=np.float32)
-        v = np.linspace(0.0, 1.0, h, endpoint=False, dtype=np.float32)
-        uu, vv = np.meshgrid(u, v)
-
-        # Horizon to zenith gradient (physical atmospheric tones)
-        zenith = np.array([0.15, 0.35, 0.75, 1.0], dtype=np.float32)
-        horizon = np.array([0.70, 0.80, 0.95, 1.0], dtype=np.float32)
-        ground = np.array([0.15, 0.18, 0.16, 1.0], dtype=np.float32)
-
-        data = np.zeros((h, w, 4), dtype=np.float32)
-        sky_mask = vv >= 0.5
-        sky_t = ((vv[sky_mask] - 0.5) * 2.0)[..., np.newaxis]
-        data[sky_mask] = horizon * (1.0 - sky_t) + zenith * sky_t
-
-        ground_mask = vv < 0.5
-        ground_t = (vv[ground_mask] * 2.0)[..., np.newaxis]
-        data[ground_mask] = ground * (1.0 - ground_t) + horizon * ground_t
+        np.copyto(self._scratch_data, self._base_sky)
 
         # Dynamic sun position in panoramic spherical coordinates
         # sun_dir points from sun to scene, so -sun_dir points to the sun in the sky
@@ -90,13 +93,13 @@ class IBLPass(RenderPass):
         sun_v = max(0.001, min(0.999, math.asin(max(-0.999, min(0.999, ly))) / math.pi + 0.5))
 
         # Add HDR sun disc in the sky
-        dist_sq = (uu - sun_u) ** 2 + (vv - sun_v) ** 2
+        dist_sq = (self._uu - sun_u) ** 2 + (self._vv - sun_v) ** 2
         sun_mask = dist_sq < 0.006
-        data[sun_mask, :3] += (
+        self._scratch_data[sun_mask, :3] += (
             np.array([16.0, 14.0, 10.0], dtype=np.float32) * (1.0 - dist_sq[sun_mask] / 0.006)[..., np.newaxis]
         )
 
-        self.env_tex.write(data.astype(np.float16).tobytes())
+        self.env_tex.write(self._scratch_data.astype(np.float16).tobytes())
         self.env_tex.build_mipmaps()
         self._last_sun_dir = sun_dir
 
