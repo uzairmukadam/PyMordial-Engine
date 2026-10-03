@@ -75,3 +75,10 @@ class FreeFlyCamera(VirtualCamera):
         self.position += velocity
         self.target += velocity
         self.mark_dirty()
+
+
+# Canonical alias conforming to LLM instructions and camera guide
+FreeCamera = FreeFlyCamera
+
+__all__ = ["FreeFlyCamera", "FreeCamera"]
+

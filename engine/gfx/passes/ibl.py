@@ -6,14 +6,15 @@ synchronized with the active directional sun vector.
 """
 
 from __future__ import annotations
-from pathlib import Path
 import math
 import numpy as np
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class IBLPass(RenderPass):
@@ -62,8 +63,8 @@ class IBLPass(RenderPass):
         self._update_procedural_env_map((0.5, -0.7, 0.4))
 
     def _generate_brdf_lut(self) -> None:
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        brdf_frag = (SHADER_DIR / "brdf_lut.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        brdf_frag = load_shader("brdf_lut.frag")
 
         prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=brdf_frag)
         vao = self.ctx.vertex_array(prog, [])

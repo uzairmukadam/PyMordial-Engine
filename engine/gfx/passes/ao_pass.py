@@ -5,12 +5,13 @@ Supports SSAO (Hemisphere sampling), HBAO (Horizon-Based Ambient Occlusion), and
 """
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class AmbientOcclusionPass(RenderPass):
@@ -40,11 +41,11 @@ class AmbientOcclusionPass(RenderPass):
         self.white_fallback = self.ctx.texture((1, 1), 1, data=b"\xff", dtype="f1")
 
         # 2. Compile Shaders
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        ssao_frag = (SHADER_DIR / "ssao.frag").read_text(encoding="utf-8")
-        hbao_frag = (SHADER_DIR / "hbao.frag").read_text(encoding="utf-8")
-        gtao_frag = (SHADER_DIR / "gtao.frag").read_text(encoding="utf-8")
-        blur_frag = (SHADER_DIR / "bilateral_blur.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        ssao_frag = load_shader("ssao.frag")
+        hbao_frag = load_shader("hbao.frag")
+        gtao_frag = load_shader("gtao.frag")
+        blur_frag = load_shader("bilateral_blur.frag")
 
         self.ssao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssao_frag)
         self.hbao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=hbao_frag)

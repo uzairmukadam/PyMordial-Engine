@@ -54,48 +54,12 @@ except ImportError:
     gl = None
 
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
+_load_shader = load_shader
 
-_SHADER_FILE_CACHE: dict[Path, str] = {}
-
-
-def _read_shader_file(path: Path) -> str:
-    """Reads a GLSL shader file with memory caching to avoid redundant disk I/O."""
-    if path not in _SHADER_FILE_CACHE:
-        _SHADER_FILE_CACHE[path] = path.read_text(encoding="utf-8")
-    return _SHADER_FILE_CACHE[path]
-
-
-def _load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
-    """Loads a GLSL shader file and recursively expands #include directives."""
-    if visited is None:
-        visited = set()
-    if isinstance(rel_path, str):
-        path = ROOT_DIR / rel_path if (ROOT_DIR / rel_path).is_file() else SHADER_DIR / rel_path
-    else:
-        path = rel_path
-    path = path.resolve()
-    if path in visited:
-        return ""
-    visited.add(path)
-    raw = _read_shader_file(path)
-    lines: list[str] = []
-    for line in raw.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("#include"):
-            start_q = line.find('"')
-            end_q = line.rfind('"')
-            if start_q != -1 and end_q > start_q:
-                inc_rel = line[start_q + 1 : end_q]
-                inc_path = ROOT_DIR / inc_rel if (ROOT_DIR / inc_rel).is_file() else SHADER_DIR / inc_rel
-                inc_content = _load_shader(inc_path, visited)
-                lines.append(inc_content)
-            else:
-                lines.append(line)
-        else:
-            lines.append(line)
-    return "\n".join(lines)
 
 
 class RenderPipeline:

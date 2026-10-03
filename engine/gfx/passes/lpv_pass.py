@@ -5,14 +5,15 @@ injection and neighbor propagation to provide off-screen, camera-independent ind
 """
 
 from __future__ import annotations
-from pathlib import Path
 import math
 import numpy as np
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class LPVPass(RenderPass):
@@ -57,7 +58,7 @@ class LPVPass(RenderPass):
         )
 
         # 3. Compile LPV compute shader
-        comp_src = (SHADER_DIR / "lpv_propagate.comp").read_text(encoding="utf-8")
+        comp_src = load_shader("lpv_propagate.comp")
         self.compute_prog = self.ctx.compute_shader(comp_src)
 
         self._u_min = self.compute_prog.get("u_LPV_Min", None)

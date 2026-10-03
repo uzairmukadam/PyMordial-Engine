@@ -14,7 +14,7 @@ PyMordial-Engine/
 │   ├── world/                    # World builder interfaces and default builders
 │   └── tools/                    # Asset cooker and release packagers
 ├── projects/                     # Standalone game projects directory
-│   ├── shotgun_escape_the_heat/  # Example project
+│   ├── shotgun_beat_the_speed/  # Example project
 │   │   ├── modules/              # Self-contained, portable game feature modules
 │   │   ├── world/                # Project-specific level and world builders
 │   │   ├── assets/               # Project-local textures, audio, meshes
@@ -161,18 +161,18 @@ class JumpPadModule(ProjectModule):
 
 ### Development Mode (Interactive)
 ```powershell
-python projects/shotgun_escape_the_heat/main.py
+python projects/shotgun_beat_the_speed/main.py
 ```
 
 ### Headless Simulation (CI / Automated Testing)
 Run a fixed number of frames without opening a window or GPU swap:
 ```powershell
-python projects/shotgun_escape_the_heat/main.py --headless --frames 60
+python projects/shotgun_beat_the_speed/main.py --headless --frames 60
 ```
 
 ### Graphical Presets & Release Flags
 ```powershell
-python projects/shotgun_escape_the_heat/main.py --preset medium --release
+python projects/shotgun_beat_the_speed/main.py --preset medium --release
 ```
 
 ---
@@ -184,18 +184,18 @@ PyMordial includes a dual-target release packager (`engine/tools/packager.py`) t
 ### Target 1: PyInstaller (Beginner-Friendly, Zero C++ Setup)
 Best for rapid distribution without installing Visual Studio C++ build tools:
 ```powershell
-python -m engine.tools.packager --project shotgun_escape_the_heat --target pyinstaller --release
+python -m engine.tools.packager --project shotgun_beat_the_speed --target pyinstaller --release
 ```
 
 ### Target 2: Nuitka (Native C++ Optimized Binary)
 Best for production releases, native C++ performance, and code obfuscation:
 ```powershell
-python -m engine.tools.packager --project shotgun_escape_the_heat --target nuitka --release
+python -m engine.tools.packager --project shotgun_beat_the_speed --target nuitka --release
 ```
 
 ### Dry Run (Inspect build staging and flags)
 ```powershell
-python -m engine.tools.packager --project shotgun_escape_the_heat --dry-run
+python -m engine.tools.packager --project shotgun_beat_the_speed --dry-run
 ```
 Output artifact location defaults to `dist/<project_name>/`.
 

@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
+from engine.gfx.passes.clustered_lights import ClusteredLightingPass, SpotLight
 from engine.gfx.spot_shadows import SpotLightShadowMap
 from engine.gfx.quality_presets import RenderConfig
 from engine.debug.engine_tweaks import EngineTweaks
@@ -62,7 +62,7 @@ class TestSpotLightData:
         pass_instance = ClusteredLightingPass(ctx, max_lights=16, max_spot_lights=8)
 
         # Add point light
-        pl = pass_instance.add_light((0.0, 1.0, 2.0), radius=10.0, color=(1.0, 0.5, 0.2), intensity=3.0)
+        pass_instance.add_light((0.0, 1.0, 2.0), radius=10.0, color=(1.0, 0.5, 0.2), intensity=3.0)
         assert len(pass_instance.lights) == 1
 
         # Add spot lights: 5 total, 5 want shadows, but only 4 shadow slots exist

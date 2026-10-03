@@ -21,6 +21,7 @@ from engine.input import InputManager
 from engine.physics.rapier_world import PhysicsManager
 from engine.gfx.context import RenderContext
 from engine.window import VSyncMode
+from engine.ui import UIManager
 
 if TYPE_CHECKING:
     from engine.gfx.mega_buffer import MeshAllocation
@@ -41,6 +42,7 @@ class ProjectApp:
         "audio",
         "input_manager",
         "camera_manager",
+        "ui",
         "engine_loop",
         "world_builder",
         "is_running",
@@ -94,15 +96,17 @@ class ProjectApp:
         fixed_dt = 1.0 / max(1.0, float(self.config.fixed_hz))
         self.engine_loop = EngineLoop(ecs=self.ecs, input_manager=self.input_manager, fixed_dt=fixed_dt)
 
-        # 5. Audio & Cameras
+        # 5. Audio & Cameras & Native UI
         self.audio: AudioEngine = get_audio_engine()
         self.camera_manager = CameraManager()
+        self.ui: UIManager = UIManager(self.render_ctx.ctx, self.config.width, self.config.height)
+        self.ui.attach_app(self)
 
         # 6. Modules & World Generation
         self.world_builder: BaseWorldBuilder | None = None
         self._modules: list[ProjectModule] = []
-        self._static_draw_batches: list[tuple[MeshAllocation, int, int, bool]] = []
-        self._active_draw_batches: list[tuple[MeshAllocation, int, int, bool]] = []
+        self._static_draw_batches: list[tuple[MeshAllocation, int, int, bool, bool]] = []
+        self._active_draw_batches: list[tuple[MeshAllocation, int, int, bool, bool]] = []
         self._clock = pygame.time.Clock()
         self._frame_counter = 0
         self.is_running = False
@@ -164,10 +168,11 @@ class ProjectApp:
             return
         if self._static_draw_batches:
             prev = self._static_draw_batches[-1]
+            prev_cast = prev[4] if len(prev) > 4 else True
             if (
                 prev[0] == alloc
                 and prev[3] == is_animated
-                and prev[4] == cast_shadow
+                and prev_cast == cast_shadow
                 and (prev[2] + prev[1] == first_instance)
             ):
                 self._static_draw_batches[-1] = (alloc, prev[1] + instance_count, prev[2], is_animated, cast_shadow)
@@ -194,6 +199,14 @@ class ProjectApp:
             for m in self._modules:
                 if m.enabled:
                     m.on_update(self, dt)
+
+            # Synchronize 3D audio listener with active camera
+            cam = self.camera_manager.active_camera
+            if cam is not None and self.audio is not None:
+                self.audio.update(dt, cam.position, cam.forward)
+
+            if self.ui is not None:
+                self.ui.update(dt)
 
         def on_render_step(alpha: float) -> None:
             # 1. Determine active camera
@@ -235,6 +248,12 @@ class ProjectApp:
             )
 
         def on_ui_step() -> None:
+            if hasattr(self.pipeline, "post_process") and self.pipeline.post_process and self.pipeline.post_process.final_fbo:
+                self.pipeline.post_process.final_fbo.use()
+
+            if self.ui is not None:
+                self.ui.render()
+
             for m in self._modules:
                 if m.enabled:
                     m.on_ui(self)
@@ -281,6 +300,10 @@ class ProjectApp:
                         self.is_running = False
                         break
 
+                    # UI subsystem handles events first
+                    if self.ui is not None and self.ui.handle_event(ev):
+                        continue
+
                     # Dispatch event to modules
                     consumed = False
                     for m in self._modules:
@@ -322,5 +345,25 @@ class ProjectApp:
                 self.render_ctx.save_screenshot(str(self.config.screenshot))
             except Exception as e:
                 print(f"[WARN] Failed to save screenshot: {e}", file=sys.stderr)
+
+        if self.ui is not None:
+            try:
+                self.ui.destroy()
+            except Exception:
+                pass
+            self.ui = None
+
+        if hasattr(self, "audio") and self.audio is not None:
+            try:
+                self.audio.stop_all()
+            except Exception:
+                pass
+
+        if hasattr(self, "pipeline") and self.pipeline is not None:
+            try:
+                self.pipeline.destroy()
+            except Exception:
+                pass
+            self.pipeline = None
 
         self.render_ctx.destroy()

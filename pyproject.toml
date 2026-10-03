@@ -4,13 +4,22 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymordial-engine"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "A data-oriented, hybrid-tier 3D game engine"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = { text = "MIT" }
 authors = [
     { name = "PyMordial Team" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
     "pygame-ce>=2.5.0",
@@ -28,11 +37,22 @@ dev = [
     "ruff>=0.5.0",
 ]
 
+[project.scripts]
+pymordial-cooker = "engine.assets.cooker:main"
+pymordial-packager = "engine.tools.packager:main"
+
 [tool.setuptools.packages.find]
 include = ["engine*"]
 
+[tool.setuptools.package-dir]
+"engine.shaders" = "shaders"
+
+[tool.setuptools.package-data]
+"engine" = ["py.typed"]
+"engine.shaders" = ["*.*", "**/*.*", "*.vert", "*.frag", "*.comp", "*.tesc", "*.tese", "*.glsl", "common/*.glsl"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests", "projects/shotgun_escape_the_heat/tests"]
+testpaths = ["tests", "projects/shotgun_beat_the_speed/tests"]
 python_files = ["test_*.py"]
 
 [tool.ruff]
@@ -42,4 +62,3 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E501"]
-

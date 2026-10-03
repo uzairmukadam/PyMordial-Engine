@@ -7,46 +7,18 @@ Coordinates:
 """
 
 from __future__ import annotations
-from pathlib import Path
 from typing import Any
 import moderngl
 import numpy as np
 
 from engine.gfx.render_graph import RenderPass
 
-ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
-SHADER_DIR = ROOT_DIR / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
 
+SHADER_DIR = get_shader_dir()
+ROOT_DIR = SHADER_DIR.parent
+_load_shader = load_shader
 
-def _load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
-    """Loads a GLSL shader file and recursively expands #include directives."""
-    if visited is None:
-        visited = set()
-    if isinstance(rel_path, str):
-        path = ROOT_DIR / rel_path if (ROOT_DIR / rel_path).is_file() else SHADER_DIR / rel_path
-    else:
-        path = rel_path
-    path = path.resolve()
-    if path in visited:
-        return ""
-    visited.add(path)
-    raw = path.read_text(encoding="utf-8")
-    lines: list[str] = []
-    for line in raw.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("#include"):
-            start_q = line.find('"')
-            end_q = line.rfind('"')
-            if start_q != -1 and end_q > start_q:
-                inc_rel = line[start_q + 1 : end_q]
-                inc_path = ROOT_DIR / inc_rel if (ROOT_DIR / inc_rel).is_file() else SHADER_DIR / inc_rel
-                inc_content = _load_shader(inc_path, visited)
-                lines.append(inc_content)
-            else:
-                lines.append(line)
-        else:
-            lines.append(line)
-    return "\n".join(lines)
 
 
 class CameraOpticsPass(RenderPass):

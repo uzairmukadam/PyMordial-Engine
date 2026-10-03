@@ -42,8 +42,8 @@ class TestStaticDynamicSeparation:
         assert s_mat.shape == (3, 8)
 
         # Now spawn 2 dynamic entities
-        d1 = ecs.create_entity(position=(10.0, 1.0, 0.0), is_static=False)
-        d2 = ecs.create_entity(position=(20.0, 1.0, 0.0), is_static=False)
+        _d1 = ecs.create_entity(position=(10.0, 1.0, 0.0), is_static=False)
+        _d2 = ecs.create_entity(position=(20.0, 1.0, 0.0), is_static=False)
         assert ecs.active_count == 5
 
         # Dynamic entities must NOT mark static as dirty!
@@ -66,7 +66,7 @@ class TestStaticDynamicSeparation:
         ecs.clear_static_dirty()
 
         d1 = ecs.create_entity(position=(1.0, 0.0, 0.0), is_static=False)
-        d2 = ecs.create_entity(position=(2.0, 0.0, 0.0), is_static=False)
+        _d2 = ecs.create_entity(position=(2.0, 0.0, 0.0), is_static=False)
         assert ecs.is_static_dirty is False
 
         # Destroy dynamic entity d1 (swap and pop within dynamic range)

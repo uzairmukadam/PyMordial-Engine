@@ -10,7 +10,6 @@ Implements a 3D frustum voxel (Froxel) atmospheric scattering volume:
 """
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
@@ -26,7 +25,9 @@ try:
 except Exception:
     _HAS_GL_BARRIER = False
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class VolumetricFogPass(RenderPass):
@@ -91,14 +92,14 @@ class VolumetricFogPass(RenderPass):
         self.integrated_vol.repeat_z = False
 
         # 2. Compile Compute and Composite Shaders
-        inject_src = (SHADER_DIR / "volumetric_fog_inject.comp").read_text(encoding="utf-8")
+        inject_src = load_shader("volumetric_fog_inject.comp")
         self.inject_prog = self.ctx.compute_shader(inject_src)
 
-        integrate_src = (SHADER_DIR / "volumetric_fog_integrate.comp").read_text(encoding="utf-8")
+        integrate_src = load_shader("volumetric_fog_integrate.comp")
         self.integrate_prog = self.ctx.compute_shader(integrate_src)
 
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        comp_frag = (SHADER_DIR / "volumetric_fog_composite.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        comp_frag = load_shader("volumetric_fog_composite.frag")
         self.composite_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=comp_frag)
         self.composite_vao = self.ctx.vertex_array(self.composite_prog, [])
 

@@ -11,7 +11,6 @@ through completely untouched.
 """
 
 from __future__ import annotations
-from pathlib import Path
 import numpy as np
 import moderngl
 
@@ -23,11 +22,11 @@ except ImportError:
     gl = None
 
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
 
+SHADER_DIR = get_shader_dir()
+_load_shader = load_shader
 
-def _load_shader(name: str) -> str:
-    return (SHADER_DIR / name).read_text(encoding="utf-8")
 
 
 class SSDMPass(RenderPass):

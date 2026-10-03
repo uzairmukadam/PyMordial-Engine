@@ -444,7 +444,6 @@ class RaycastVehicle:
             curr_ox = self._wheel_attach_world[0]
             curr_oy = self._wheel_attach_world[1]
             curr_oz = self._wheel_attach_world[2]
-            accum_dist = 0.0
             rem_dist = max_ray_dist
             final_hit = None
 
@@ -826,7 +825,7 @@ class RaycastVehicle:
             # Ensures applying throttle or brake reserves cornering grip so the car doesn't slide off at turns
             f_drive_ratio = min(1.0, abs(f_long) / max(1.0, f_traction_max))
             lat_envelope = math.sqrt(max(0.0, 1.0 - (f_drive_ratio * 0.85) ** 2))
-            slip_reserve = getattr(self.config, "combined_slip_reserve", 0.42)
+            slip_reserve = getattr(self.config, "combined_slip_reserve", 0.62)
             f_lat_budget = f_traction_max * max(slip_reserve, lat_envelope)
 
             # Handbrake specifically induces rear-axle sliding breakaway
@@ -835,15 +834,15 @@ class RaycastVehicle:
 
             # 3. Progressive Pacejka Brush Slip Model
             # Broad peak and communicative plateau giving progressive feedback before sliding
-            s_norm = abs(math.tan(slip_angle)) / 0.22
+            s_norm = abs(math.tan(slip_angle)) / 0.28
             if s_norm < 1.0:
                 pacejka_factor = math.sin(s_norm * 1.570796)
             else:
-                # Dynamic sliding plateau (~86% of peak grip retains controllable drift feel)
-                pacejka_factor = 1.0 - 0.14 * min(1.0, (s_norm - 1.0) / 2.5)
+                # Dynamic sliding plateau (~88% of peak grip retains controllable drift feel)
+                pacejka_factor = 1.0 - 0.12 * min(1.0, (s_norm - 1.0) / 2.5)
 
             max_lat_force = f_lat_budget * pacejka_factor
-            desired_lateral_force = -v_lateral * (self.config.chassis_mass / num_wheels) / max(0.01, dt * 1.6)
+            desired_lateral_force = -v_lateral * (self.config.chassis_mass / num_wheels) / max(0.01, dt * 1.15)
             f_lat = max(-max_lat_force, min(max_lat_force, desired_lateral_force))
 
             # Small velocity deadzone to eliminate zero-speed oscillation

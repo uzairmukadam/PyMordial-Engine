@@ -6,13 +6,14 @@ and geometric aliasing without color shifting or temporal wobbling.
 """
 
 from __future__ import annotations
-from pathlib import Path
 import numpy as np
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 def _halton(index: int, base: int) -> float:
@@ -63,8 +64,8 @@ class TAAPass(RenderPass):
 
         self._prev_vp = np.identity(4, dtype=np.float32).flatten()
 
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        taa_frag = (SHADER_DIR / "taa.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        taa_frag = load_shader("taa.frag")
 
         self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=taa_frag)
         self.vao = self.ctx.vertex_array(self.prog, [])

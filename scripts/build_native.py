@@ -33,9 +33,9 @@ def find_compiler() -> tuple[str, str]:
 
 
 def build_pedestrian_accel() -> bool:
-    """Compiles projects/shotgun_escape_the_heat/native/pedestrian_accel.cpp."""
+    """Compiles projects/shotgun_beat_the_speed/native/pedestrian_accel.cpp."""
     repo_root = Path(__file__).resolve().parent.parent
-    src_dir = repo_root / "projects" / "shotgun_escape_the_heat" / "native"
+    src_dir = repo_root / "projects" / "shotgun_beat_the_speed" / "native"
     src_file = src_dir / "pedestrian_accel.cpp"
     out_dll = src_dir / ("pedestrian_accel.dll" if sys.platform == "win32" else "libpedestrian_accel.so")
 
@@ -85,9 +85,9 @@ def build_pedestrian_accel() -> bool:
 
 
 def build_vehicle_native() -> bool:
-    """Compiles projects/shotgun_escape_the_heat/native/vehicle_native.cpp."""
+    """Compiles projects/shotgun_beat_the_speed/native/vehicle_native.cpp."""
     repo_root = Path(__file__).resolve().parent.parent
-    src_dir = repo_root / "projects" / "shotgun_escape_the_heat" / "native"
+    src_dir = repo_root / "projects" / "shotgun_beat_the_speed" / "native"
     src_file = src_dir / "vehicle_native.cpp"
     out_dll = src_dir / ("vehicle_native.dll" if sys.platform == "win32" else "libvehicle_native.so")
 

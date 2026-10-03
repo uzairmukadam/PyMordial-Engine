@@ -1,12 +1,13 @@
 """Fast Approximate Anti-Aliasing (FXAA 3.11 Quality) Pass."""
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class FXAAPass(RenderPass):
@@ -25,8 +26,8 @@ class FXAAPass(RenderPass):
 
         self.fbo = self.ctx.framebuffer(color_attachments=[self.output_texture])
 
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        fxaa_frag = (SHADER_DIR / "fxaa.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        fxaa_frag = load_shader("fxaa.frag")
 
         self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=fxaa_frag)
         self.vao = self.ctx.vertex_array(self.prog, [])

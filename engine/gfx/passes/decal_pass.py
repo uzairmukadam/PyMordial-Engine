@@ -6,7 +6,6 @@ asphalt, curbs, slopes, and curved terrain without geometry clipping, hovering, 
 """
 
 from __future__ import annotations
-from pathlib import Path
 from typing import TYPE_CHECKING
 import numpy as np
 import moderngl
@@ -18,11 +17,11 @@ if TYPE_CHECKING:
     from engine.gfx.g_buffer import GBuffer
 
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
 
+SHADER_DIR = get_shader_dir()
+_load_shader = load_shader
 
-def _load_shader(name: str) -> str:
-    return (SHADER_DIR / name).read_text(encoding="utf-8")
 
 
 class DecalPass(RenderPass):

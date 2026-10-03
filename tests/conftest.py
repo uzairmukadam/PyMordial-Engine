@@ -27,3 +27,10 @@ def ecs():
 def engine_loop(ecs):
     """Provides a fresh EngineLoop instance."""
     return EngineLoop(ecs=ecs, fixed_dt=1.0 / 60.0)
+
+
+def pytest_runtest_teardown(item, nextitem):
+    """Ensures immediate garbage collection of GPU buffers and resources between tests."""
+    import gc
+    gc.collect()
+

@@ -6,12 +6,13 @@ roughness-guided edge-preserving bilateral blur.
 """
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class SSRPass(RenderPass):
@@ -40,9 +41,9 @@ class SSRPass(RenderPass):
         self.black_fallback = self.ctx.texture((1, 1), 4, data=b"\x00" * 8, dtype="f2")
 
         # 2. Compile Shaders
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        ssr_frag = (SHADER_DIR / "ssr.frag").read_text(encoding="utf-8")
-        blur_frag = (SHADER_DIR / "ssr_blur.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        ssr_frag = load_shader("ssr.frag")
+        blur_frag = load_shader("ssr_blur.frag")
 
         self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssr_frag)
         self.vao = self.ctx.vertex_array(self.prog, [])

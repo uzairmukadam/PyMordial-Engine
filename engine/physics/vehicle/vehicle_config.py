@@ -89,3 +89,8 @@ class VehicleConfig:
     surface_friction_mult: float = 1.0  # Environmental grip scalar (e.g. 0.65 in rain)
 
 
+# Canonical alias conforming to engine vehicle naming convention
+RaycastVehicleConfig = VehicleConfig
+
+
+

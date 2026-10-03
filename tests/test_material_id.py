@@ -3,9 +3,9 @@
 import pytest
 import numpy as np
 
-from engine.core.ecs import EntityManager, TransformProxy
-from engine.gfx.material_registry import MaterialDef, MaterialRegistry
-from engine.gfx.texture_atlas import DisplacementMode, encode_mat_flags, decode_mat_flags
+from engine.core.ecs import EntityManager
+from engine.gfx.material_registry import MaterialRegistry
+from engine.gfx.texture_atlas import DisplacementMode, decode_mat_flags
 
 
 def test_material_registry_builtins():
@@ -195,10 +195,10 @@ def test_ecs_multi_entity_ssbo_material_layout():
     registry = MaterialRegistry()
     ecs.set_material_registry(registry)
 
-    e1 = ecs.create_entity(material_id="asphalt_road")
-    e2 = ecs.create_entity(material_id="concrete_sidewalk", layer_idx=3, disp_mode=DisplacementMode.POM)
-    e3 = ecs.create_entity(material_id="metal_guardrail", layer_idx=4)
-    e4 = ecs.create_entity(color=(0.2, 0.4, 0.8), roughness=0.1, metallic=0.9)
+    _e1 = ecs.create_entity(material_id="asphalt_road")
+    _e2 = ecs.create_entity(material_id="concrete_sidewalk", layer_idx=3, disp_mode=DisplacementMode.POM)
+    _e3 = ecs.create_entity(material_id="metal_guardrail", layer_idx=4)
+    _e4 = ecs.create_entity(color=(0.2, 0.4, 0.8), roughness=0.1, metallic=0.9)
 
     raw_mat_view = ecs.get_active_materials_view()
     assert raw_mat_view.shape == (4, 8)

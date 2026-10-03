@@ -5,7 +5,6 @@ collide with vehicle multi-material shader branches even when assigned texture l
 1, 2, or 7, or when using tiled/negative UV coordinates.
 """
 
-import pytest
 import numpy as np
 
 from engine.core.ecs import EntityManager

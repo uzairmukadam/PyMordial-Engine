@@ -7,34 +7,16 @@ Implements the AAA production atmospheric scattering system:
 """
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
+_load_and_preprocess_shader = load_shader
 
-
-def _load_and_preprocess_shader(filename: str) -> str:
-    path = SHADER_DIR / filename
-    raw = path.read_text(encoding="utf-8")
-    lines: list[str] = []
-    for line in raw.splitlines():
-        trimmed = line.strip()
-        if trimmed.startswith("#include"):
-            start_q = line.find('"')
-            end_q = line.rfind('"')
-            if start_q != -1 and end_q > start_q:
-                inc_rel = line[start_q + 1 : end_q]
-                inc_path = ROOT_DIR / inc_rel if (ROOT_DIR / inc_rel).is_file() else SHADER_DIR / inc_rel
-                inc_content = inc_path.read_text(encoding="utf-8")
-                lines.append(inc_content)
-            else:
-                lines.append(line)
-        else:
-            lines.append(line)
-    return "\n".join(lines)
 
 
 class SkyAtmospherePass(RenderPass):

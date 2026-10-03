@@ -1,13 +1,11 @@
 """Automated Unit Tests for Raycast Vehicle Physics System."""
 
 import pytest
-import numpy as np
 
 from engine.core.ecs import EntityManager
 from engine.physics.rapier_world import PhysicsManager
 from engine.physics.vehicle import (
     DriveType,
-    WheelConfig,
     VehicleConfig,
     RaycastVehicle,
 )

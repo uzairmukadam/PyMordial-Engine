@@ -8,12 +8,13 @@ Optimized with vectorized precomputed unit templates for ~10x faster gizmo gener
 
 from __future__ import annotations
 import math
-from pathlib import Path
 import numpy as np
 import moderngl
 
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
 # Root shader directory
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
+SHADER_DIR = get_shader_dir()
 
 
 def _build_unit_box_template() -> np.ndarray:
@@ -138,11 +139,8 @@ class DebugDraw:
         if self.ctx is None:
             return
 
-        vert_path = SHADER_DIR / "debug_line.vert"
-        frag_path = SHADER_DIR / "debug_line.frag"
-
-        vert_src = vert_path.read_text(encoding="utf-8")
-        frag_src = frag_path.read_text(encoding="utf-8")
+        vert_src = load_shader("debug_line.vert")
+        frag_src = load_shader("debug_line.frag")
 
         self.prog = self.ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
         # 7 floats per vertex = 28 bytes

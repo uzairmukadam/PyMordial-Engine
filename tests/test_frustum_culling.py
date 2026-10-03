@@ -40,8 +40,8 @@ class TestFrustumPlanes:
         assert culler.planes.shape == (6, 4)
         # All 6 plane normal vectors must be unit length (length ~ 1.0)
         lengths = np.sqrt(np.sum(culler.planes[:, 0:3] ** 2, axis=1))
-        for l in lengths:
-            assert pytest.approx(l, abs=1e-4) == 1.0
+        for length in lengths:
+            assert pytest.approx(length, abs=1e-4) == 1.0
 
     def test_points_inside_and_outside_frustum(self):
         culler = FrustumCuller(max_entities=10)

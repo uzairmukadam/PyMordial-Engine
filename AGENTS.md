@@ -6,7 +6,7 @@ This repository contains **PyMordial Engine**, a high-performance 3D engine in P
 
 1. **Engine vs. Game Project Separation**:
    - `engine/`: Core engine systems only (Graphics, Physics, ECS, Audio, VFS, Tools, App host). Do NOT write game-specific features or scripts here.
-   - `projects/<project_name>/`: Self-contained game projects (e.g. `projects/shotgun_escape_the_heat/`).
+   - `projects/<project_name>/`: Self-contained game projects (e.g. `projects/shotgun_beat_the_speed/`).
    - `projects/<project_name>/modules/<module_name>/`: Portable, reusable gameplay modules implementing `ProjectModule`.
 2. **Zero-Allocation Inner Loop**:
    - Never allocate lists, dicts, sets, or NumPy arrays inside `on_fixed_update`, `on_update`, or `on_render`.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 import math
-from pathlib import Path
 from typing import Callable, TYPE_CHECKING
 import pygame
 import moderngl
@@ -14,7 +13,9 @@ if TYPE_CHECKING:
     from engine.gfx.texture_atlas import TextureArrayAtlas
     from engine.core.async_loader import BackgroundAssetLoader
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class LoadingScreen:
@@ -83,8 +84,8 @@ class LoadingScreen:
         self._init_fonts()
 
         if self.ctx is not None:
-            vert_src = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-            frag_src = (SHADER_DIR / "loading_screen.frag").read_text(encoding="utf-8")
+            vert_src = load_shader("fullscreen_quad.vert")
+            frag_src = load_shader("loading_screen.frag")
             self.prog = self.ctx.program(vertex_shader=vert_src, fragment_shader=frag_src)
             self.vao = self.ctx.vertex_array(self.prog, [])
 

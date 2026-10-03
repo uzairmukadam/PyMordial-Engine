@@ -1,12 +1,13 @@
 """Enhanced Subpixel Morphological Anti-Aliasing (SMAA 1x, 2x, and 4x) Pass."""
 
 from __future__ import annotations
-from pathlib import Path
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
-SHADER_DIR = Path(__file__).resolve().parent.parent.parent.parent / "shaders"
+from engine.gfx.shader_utils import get_shader_dir, load_shader
+
+SHADER_DIR = get_shader_dir()
 
 
 class SMAAPass(RenderPass):
@@ -33,11 +34,11 @@ class SMAAPass(RenderPass):
         self.height = height
         self.frame_idx = 0
 
-        quad_vert = (SHADER_DIR / "fullscreen_quad.vert").read_text(encoding="utf-8")
-        edge_frag = (SHADER_DIR / "smaa_edge.frag").read_text(encoding="utf-8")
-        blend_frag = (SHADER_DIR / "smaa_blend.frag").read_text(encoding="utf-8")
-        neigh_frag = (SHADER_DIR / "smaa_neighborhood.frag").read_text(encoding="utf-8")
-        resolve_frag = (SHADER_DIR / "smaa_resolve.frag").read_text(encoding="utf-8")
+        quad_vert = load_shader("fullscreen_quad.vert")
+        edge_frag = load_shader("smaa_edge.frag")
+        blend_frag = load_shader("smaa_blend.frag")
+        neigh_frag = load_shader("smaa_neighborhood.frag")
+        resolve_frag = load_shader("smaa_resolve.frag")
 
         self.prog_edge = self.ctx.program(vertex_shader=quad_vert, fragment_shader=edge_frag)
         self.prog_blend = self.ctx.program(vertex_shader=quad_vert, fragment_shader=blend_frag)

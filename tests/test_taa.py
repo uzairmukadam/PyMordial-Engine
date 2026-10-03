@@ -1,6 +1,5 @@
 """Unit tests for Phase 5: Temporal Anti-Aliasing (TAA) Mathematical Subsystems."""
 
-import math
 import numpy as np
 import pytest
 

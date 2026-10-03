@@ -132,6 +132,7 @@ def test_packager_commands_pyinstaller_and_nuitka(tmp_path: Path):
     assert "--onedir" in cmd_str_py
     assert "--windowed" in cmd_str_py
     assert "--hidden-import=moderngl" in cmd_str_py
+    assert "--hidden-import=pymordial_rapier" in cmd_str_py
     assert "--hidden-import=rapier2d" in cmd_str_py
 
     # Nuitka
@@ -143,3 +144,5 @@ def test_packager_commands_pyinstaller_and_nuitka(tmp_path: Path):
     assert "--standalone" in cmd_str_nk
     assert "--windows-disable-console" in cmd_str_nk
     assert "--include-package=moderngl" in cmd_str_nk
+    assert "--include-package=pymordial_rapier" in cmd_str_nk
+
