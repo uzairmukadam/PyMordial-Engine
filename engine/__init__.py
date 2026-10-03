@@ -20,6 +20,19 @@ from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
 from engine.physics.character_controller import KinematicCharacterMotor
 from engine.audio import AudioEngine, get_audio_engine, SoundCue
 from engine.input import InputManager
+from engine.core.state import GameState, GameStateManager
+from engine.ui import (
+    UIManager,
+    UIScreen,
+    UITheme,
+    UIStyle,
+    UIButton,
+    UIPanel,
+    UILabel,
+    UISlider,
+    UISegmentGroup,
+    UIImage,
+)
 
 __version__ = "0.1.0b1"
 
@@ -46,4 +59,16 @@ __all__ = [
     "get_audio_engine",
     "SoundCue",
     "InputManager",
+    "GameState",
+    "GameStateManager",
+    "UIManager",
+    "UIScreen",
+    "UITheme",
+    "UIStyle",
+    "UIButton",
+    "UIPanel",
+    "UILabel",
+    "UISlider",
+    "UISegmentGroup",
+    "UIImage",
 ]

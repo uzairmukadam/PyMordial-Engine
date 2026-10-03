@@ -22,6 +22,7 @@ from engine.physics.rapier_world import PhysicsManager
 from engine.gfx.context import RenderContext
 from engine.window import VSyncMode
 from engine.ui import UIManager
+from engine.core.state import GameStateManager
 
 if TYPE_CHECKING:
     from engine.gfx.mega_buffer import MeshAllocation
@@ -43,6 +44,7 @@ class ProjectApp:
         "input_manager",
         "camera_manager",
         "ui",
+        "state_manager",
         "engine_loop",
         "world_builder",
         "is_running",
@@ -96,11 +98,12 @@ class ProjectApp:
         fixed_dt = 1.0 / max(1.0, float(self.config.fixed_hz))
         self.engine_loop = EngineLoop(ecs=self.ecs, input_manager=self.input_manager, fixed_dt=fixed_dt)
 
-        # 5. Audio & Cameras & Native UI
+        # 5. Audio & Cameras & Native UI & State Management
         self.audio: AudioEngine = get_audio_engine()
         self.camera_manager = CameraManager()
         self.ui: UIManager = UIManager(self.render_ctx.ctx, self.config.width, self.config.height)
         self.ui.attach_app(self)
+        self.state_manager: GameStateManager = GameStateManager(app=self)
 
         # 6. Modules & World Generation
         self.world_builder: BaseWorldBuilder | None = None
@@ -183,6 +186,12 @@ class ProjectApp:
 
     def _bind_loop_callbacks(self) -> None:
         def on_fixed_step(dt: float) -> None:
+            c_state = self.state_manager.current_state
+            if c_state is not None:
+                if not c_state.allow_fixed_update:
+                    return
+                c_state.on_fixed_update(self, dt)
+
             # 1. Update active modules on fixed simulation tick
             for m in self._modules:
                 if m.enabled:
@@ -195,6 +204,14 @@ class ProjectApp:
             self.physics.sync_to_ecs(self.ecs)
 
         def on_variable_step(dt: float, alpha: float) -> None:
+            c_state = self.state_manager.current_state
+            if c_state is not None:
+                c_state.on_update(self, dt)
+                if not c_state.allow_variable_update:
+                    if self.ui is not None:
+                        self.ui.update(dt)
+                    return
+
             # Update active modules on variable render frame
             for m in self._modules:
                 if m.enabled:
@@ -209,6 +226,10 @@ class ProjectApp:
                 self.ui.update(dt)
 
         def on_render_step(alpha: float) -> None:
+            c_state = self.state_manager.current_state
+            if c_state is not None and not c_state.allow_render:
+                return
+
             # 1. Determine active camera
             cam = self.camera_manager.active_camera
             if cam is not None:
@@ -304,6 +325,10 @@ class ProjectApp:
                     if self.ui is not None and self.ui.handle_event(ev):
                         continue
 
+                    # Game state manager handles events second
+                    if self.state_manager.handle_event(ev):
+                        continue
+
                     # Dispatch event to modules
                     consumed = False
                     for m in self._modules:
@@ -329,6 +354,12 @@ class ProjectApp:
 
     def shutdown(self) -> None:
         """Cleans up all modules, world geometry, physics bodies, and window context."""
+        while self.state_manager.stack_depth > 0:
+            try:
+                self.state_manager.pop_state()
+            except Exception:
+                break
+
         for m in reversed(self._modules):
             try:
                 m.on_detach(self)

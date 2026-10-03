@@ -215,3 +215,18 @@ The engine is intentionally kept light so it provides only foundational primitiv
 - Abilities or menus must use gameplay keys (`Tab`, `Esc`, `M`, `C`, etc.).
 - When building in release mode (`--release`), the packager automatically tree-shakes and strips `debug_overlay`, ensuring zero debug code remains in the final distribution.
 
+---
+
+## 7. UI & Game State Management
+
+PyMordial Engine features a native ModernGL 2D UI framework and a stack-based finite state machine:
+- **`engine.ui`**: Native UI screens and widgets (`UIManager`, `UIScreen`, `UIPanel`, `UIButton`, `UISlider`, `UISegmentGroup`, `UILabel`).
+- **`engine.core.state`**: Game state machine (`GameState`, `GameStateManager`) providing automatic simulation gating, pause/resume lifecycles, and cursor management.
+
+For complete guides and architectural details, see [docs/UI_AND_STATE_MANAGEMENT.md](UI_AND_STATE_MANAGEMENT.md).
+
+Interactive examples are available in:
+- `examples/01_minimal_app.py`: Minimal 3D application.
+- `examples/02_game_states_and_ui.py`: Full Main Menu, Gameplay, and Pause state demo.
+
+

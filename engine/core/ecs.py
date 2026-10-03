@@ -509,6 +509,29 @@ class EntityManager:
             raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
         return TransformProxy(self, entity_id)
 
+    get_transform = get_transform_proxy
+
+    def set_position(self, entity_id: int, pos: tuple[float, float, float] | np.ndarray) -> None:
+        """Sets world position for an entity and updates its transform matrix."""
+        idx = self.pool.get_dense_index(entity_id)
+        if idx >= 0:
+            self.rigid_body_state[1, idx, 0:3] = pos
+            self.recompute_matrix(idx)
+
+    def set_rotation(self, entity_id: int, rot: tuple[float, float, float, float] | np.ndarray) -> None:
+        """Sets rotation quaternion [x, y, z, w] for an entity and updates its transform matrix."""
+        idx = self.pool.get_dense_index(entity_id)
+        if idx >= 0:
+            self.rigid_body_state[1, idx, 3:7] = rot
+            self.recompute_matrix(idx)
+
+    def set_scale(self, entity_id: int, scale: tuple[float, float, float] | np.ndarray) -> None:
+        """Sets local scale [sx, sy, sz] for an entity and updates its transform matrix."""
+        idx = self.pool.get_dense_index(entity_id)
+        if idx >= 0:
+            self.scales[idx] = scale
+            self.recompute_matrix(idx)
+
     def recompute_matrix(self, dense_idx: int) -> None:
         """Recomputes the 4x4 transform matrix and world-space AABB for a single dense entity slot."""
         pos = self.rigid_body_state[1, dense_idx, 0:3]

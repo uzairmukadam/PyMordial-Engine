@@ -84,31 +84,64 @@ def test_ui_segment_group():
 
 
 def test_ui_screen_stack_lifecycle():
-    screen_a = UIScreen(name="ScreenA")
-    screen_b = UIScreen(name="ScreenB")
+    from engine.ui import UIManager
+    mgr = UIManager(ctx=None)
 
-    # In headless / mock mode, test manager stack operations without GPU context
-    class MockManager:
-        def __init__(self):
-            self.screen_stack = []
+    entered = []
+    exited = []
 
-        def set_screen(self, s):
-            self.screen_stack = [s] if s else []
+    class TrackedScreen(UIScreen):
+        def on_enter(self, app):
+            entered.append(self.name)
 
-        def push_screen(self, s):
-            self.screen_stack.append(s)
+        def on_exit(self, app):
+            exited.append(self.name)
 
-        def pop_screen(self):
-            return self.screen_stack.pop() if self.screen_stack else None
+    screen_a = TrackedScreen(name="ScreenA")
+    screen_b = TrackedScreen(name="ScreenB")
 
-    mgr = MockManager()
     mgr.set_screen(screen_a)
-    assert mgr.screen_stack[-1].name == "ScreenA"
+    assert mgr.active_screen is screen_a
+    assert mgr.active_screen.name == "ScreenA"
 
     mgr.push_screen(screen_b)
     assert len(mgr.screen_stack) == 2
-    assert mgr.screen_stack[-1].name == "ScreenB"
+    assert mgr.active_screen.name == "ScreenB"
 
     popped = mgr.pop_screen()
     assert popped.name == "ScreenB"
-    assert mgr.screen_stack[-1].name == "ScreenA"
+    assert mgr.active_screen.name == "ScreenA"
+
+    mgr.set_screen(None)
+    assert mgr.active_screen is None
+
+
+def test_ui_event_dispatch():
+    import pygame
+    from engine.ui import UIManager
+
+    mgr = UIManager(ctx=None)
+    screen = UIScreen(name="EventScreen")
+    clicked = [False]
+
+    btn = UIButton(text="ClickMe", x=10, y=10, w=100, h=50, on_click=lambda: clicked.__setitem__(0, True))
+    screen.add_child(btn)
+    mgr.set_screen(screen)
+
+    # 1. Mouse motion event
+    ev_motion = pygame.event.Event(pygame.MOUSEMOTION, pos=(50, 30), rel=(0, 0), buttons=(0, 0, 0))
+    handled = mgr.handle_event(ev_motion)
+    assert handled is True
+    assert btn.is_hovered is True
+
+    # 2. Mouse down event
+    ev_down = pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(50, 30), button=1)
+    handled = mgr.handle_event(ev_down)
+    assert handled is True
+    assert btn.is_pressed is True
+
+    # 3. Mouse up event triggers click
+    ev_up = pygame.event.Event(pygame.MOUSEBUTTONUP, pos=(50, 30), button=1)
+    handled = mgr.handle_event(ev_up)
+    assert handled is True
+    assert clicked[0] is True

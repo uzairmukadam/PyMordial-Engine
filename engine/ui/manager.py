@@ -49,9 +49,9 @@ class UIManager:
         "_mouse_pos",
     )
 
-    def __init__(self, ctx: moderngl.Context, width: int = 1920, height: int = 1080, theme: UITheme | None = None) -> None:
+    def __init__(self, ctx: moderngl.Context | None = None, width: int = 1920, height: int = 1080, theme: UITheme | None = None) -> None:
         self.ctx = ctx
-        self.renderer = UIRenderer(ctx, width, height)
+        self.renderer: UIRenderer | None = UIRenderer(ctx, width, height) if ctx is not None else None
         self.theme = theme if theme is not None else UITheme()
         self.screen_stack: list[UIScreen] = []
         self._app: ProjectApp | None = None
@@ -59,7 +59,8 @@ class UIManager:
 
     def attach_app(self, app: ProjectApp) -> None:
         self._app = app
-        self.renderer.set_screen_size(app.config.width, app.config.height)
+        if self.renderer is not None:
+            self.renderer.set_screen_size(app.config.width, app.config.height)
 
     @property
     def active_screen(self) -> UIScreen | None:
@@ -128,7 +129,7 @@ class UIManager:
     def render(self) -> None:
         """Renders active UI screens on top of the ModernGL backbuffer."""
         top = self.active_screen
-        if top is None or not top.visible:
+        if top is None or not top.visible or self.renderer is None:
             return
 
         self.renderer.begin_frame()
@@ -138,4 +139,6 @@ class UIManager:
     def destroy(self) -> None:
         """Releases GPU buffers and cached textures."""
         self.set_screen(None)
-        self.renderer.destroy()
+        if self.renderer is not None:
+            self.renderer.destroy()
+            self.renderer = None

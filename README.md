@@ -59,6 +59,9 @@ PyMordial-Engine/
 │   ├── physics/                  # Rapier3D Rust integration, character motor, raycast vehicle
 │   ├── ui/                       # Native ModernGL 2D SDF UI subsystem
 │   └── tools/                    # Packager and distribution bundlers
+├── examples/                     # Standalone reference apps & demos
+│   ├── 01_minimal_app.py         # Minimal 3D setup, camera, entity rotation
+│   └── 02_game_states_and_ui.py  # Menu, Pause overlay, and Game State Manager
 ├── projects/                     # Standalone game projects directory
 │   └── shotgun_beat_the_speed/   # Example arcade muscle racer
 ├── shaders/                      # Consolidated GLSL 4.5 core shaders
@@ -96,22 +99,34 @@ pip install -e .[dev]
 
 ---
 
-## Quickstart
+## Interactive Demos & Quickstart
 
-### 1. Run the Example Game Project
+### 1. Minimal 3D App Demo
+Learn how to bootstrap a 3D app with camera controls and a rotating entity:
+```bash
+python examples/01_minimal_app.py
+```
+
+### 2. Game States & Native ModernGL UI Demo
+Explore the stack-based `GameStateManager` and native UI system (`MainMenu`, `Gameplay`, and `PauseMenu` with physics freezing):
+```bash
+python examples/02_game_states_and_ui.py
+```
+
+### 3. Run the Arcade Racer Project
 PyMordial includes a complete example game project: **Shotgun: Beat the Speed** (an arcade muscle racer):
 
 ```bash
 python -m projects.shotgun_beat_the_speed.main
 ```
 
-### 2. Run Headless Verification (Automated 60-Frame Benchmark)
+### 4. Run Headless Verification (Automated 60-Frame Benchmark)
 ```bash
 python projects/shotgun_beat_the_speed/main.py --headless --frames 60
 ```
 
-### 3. Run the Test Suite
-The engine includes over 380 automated tests verifying ECS memory alignment, determinism, rendering passes, audio, physics, and packaging:
+### 5. Run the Test Suite
+The engine includes over 380 automated tests verifying ECS memory alignment, determinism, rendering passes, audio, physics, UI, state management, and packaging:
 
 ```bash
 pytest
@@ -229,6 +244,7 @@ In developer builds (`enable_debug = True`), PyMordial reserves three central ho
 
 - [docs/ENGINE_FEATURES.md](docs/ENGINE_FEATURES.md) — Comprehensive technical specifications for all engine subsystems.
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — Detailed developer tutorials, module design patterns, and world-building guides.
+- [docs/UI_AND_STATE_MANAGEMENT.md](docs/UI_AND_STATE_MANAGEMENT.md) — Native ModernGL UI widgets and stack-based Game State Machine guide.
 - [docs/LLM_INSTRUCTIONS.md](docs/LLM_INSTRUCTIONS.md) — Strict architectural, memory, and coding guidelines for AI coding agents.
 
 ---

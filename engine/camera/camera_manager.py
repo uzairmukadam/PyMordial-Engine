@@ -64,6 +64,8 @@ class CameraManager:
             return True
         return False
 
+    set_active_camera = switch_to
+
     def blend_to(self, name: str, duration_seconds: float = 1.0) -> bool:
         """Initiates a smooth interpolated transition to the target camera."""
         key = name.lower()
