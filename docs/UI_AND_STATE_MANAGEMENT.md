@@ -35,8 +35,8 @@ The native UI subsystem (`engine.ui`) renders 2D vector primitives and text dire
 
 | Class | Description |
 |---|---|
-| `UIManager` | Central coordinator attached to `app.ui`. Manages screen stack, event hit-testing, and rendering. |
-| `UIScreen` | Base container representing a fullscreen page, menu, or modal dialog. |
+| `UIManager` | Central coordinator attached to `app.ui`. Manages screen stack, event hit-testing, canvas scaling, and rendering. |
+| `UIScreen` | Base container representing a fullscreen page, menu, or modal dialog in $1280 \times 720$ reference space. |
 | `UIPanel` | Rectangular container supporting vertical gradients, borders, and rounded corners. |
 | `UILabel` | Antialiased text widget supporting custom font sizes, colors, and alignments. |
 | `UIButton` | Interactive clickable button with hover, pressed states, variants (`primary`, `secondary`, `danger`), and audio feedback hooks. |
@@ -45,6 +45,23 @@ The native UI subsystem (`engine.ui`) renders 2D vector primitives and text dire
 | `UIImage` | Texture blitter for icons, logos, and HUD badges. |
 | `UIStyle` | Dataclass configuring colors, corner radii, borders, and paddings. |
 | `UITheme` | Global aesthetic palette applied across UI elements. |
+
+### Responsive Canvas Scaling ($1280 \times 720$)
+
+All UI screens, cards, menus, and widgets in PyMordial are authored in a standard virtual reference resolution: **$1280 \times 720$**.
+
+When the application window size or resolution changes (e.g., $1600 \times 900$, $1920 \times 1080$, $2560 \times 1440$, $4\text{K}$, or $21:9$ ultrawide):
+1. **Aspect-Ratio Preserving Scale**:
+   The engine computes a uniform scale factor and centering offsets:
+   $$\text{ui\_scale} = \min\left(\frac{\text{width}}{1280.0}, \frac{\text{height}}{720.0}\right)$$
+   $$\text{offset\_x} = (\text{width} - 1280.0 \times \text{ui\_scale}) \times 0.5$$
+   $$\text{offset\_y} = (\text{height} - 720.0 \times \text{ui\_scale}) \times 0.5$$
+2. **Exact Mouse Hit-Testing**:
+   `UIManager.handle_event` maps incoming OS/PyGame window mouse coordinates into virtual reference space before running widget hit tests. As a result, buttons, sliders, and interactive tabs hit-test with 100% precision at any screen resolution.
+3. **High-DPI Font Rasterization**:
+   Rather than stretching a low-resolution font texture (which causes blur), `UIRenderer.draw_text` scales font sizes dynamically ($\text{scaled\_size} = \max(8, \text{round}(\text{font\_size} \times \text{ui\_scale}))$) and renders glyphs natively at physical screen resolution for maximum sharpness.
+4. **Full-Bleed Modal Overlays**:
+   Panels authored to cover $(0, 0, 1280, 720)$ automatically extend edge-to-edge across non-16:9 displays (such as 21:9 ultrawide or 16:10) to provide seamless backdrop dimming without unshaded margin bars.
 
 ### Creating a Custom Screen
 

@@ -115,7 +115,7 @@ class MainMenuUI(UIScreen):
         )
         header.add_child(subtitle)
 
-        version_badge = UILabel("v0.1.0 Beta", x=900, y=64, w=180, h=24, font_size=14, align="right", color=(0.6, 0.7, 0.8, 0.8))
+        version_badge = UILabel("v0.1.0 Alpha", x=900, y=64, w=180, h=24, font_size=14, align="right", color=(0.6, 0.7, 0.8, 0.8))
         header.add_child(version_badge)
 
         # 4. Left Column: Action Buttons Card (x=80, y=190, w=480, h=470)

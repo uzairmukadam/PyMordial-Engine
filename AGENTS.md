@@ -22,9 +22,13 @@ This repository contains **PyMordial Engine**, a high-performance 3D engine in P
    - Game projects must **NEVER** override, intercept, or swallow reserved engine debug hotkeys (`F1`: System Monitor/Profiler, `F2`: Engine Graphics & G-Buffer Tweaks, `F3`: Game Tweaks).
    - Game-specific camera toggles, gameplay abilities, or HUD actions must use standard gameplay keys (`V`, `C`, `Tab`, `F10`) and never capture `F1-F3`.
    - The central debug subsystem (`DebugMenu`, `DebugDraw`, `SystemMonitor`, `EngineTweaks`) must always remain functional in developer builds, being stripped only in final release packaging (`--release`).
+6. **Responsive UI Canvas Scaling ($1280 \times 720$)**:
+   - All UI screens (`UIScreen`), cards, widgets, and layouts are authored strictly in the reference coordinate system ($1280 \times 720$).
+   - Never hardcode physical window pixel positions into widget layouts. The engine `UIManager` and `UIRenderer` scale and letterbox proportionally with 100% pixel-accurate hit-testing across any resolution ($720\text{p}, 900\text{p}, 1080\text{p}, 1440\text{p}, 4\text{K}$).
 
 For the complete technical specification and rules, see:
 - [docs/LLM_INSTRUCTIONS.md](docs/LLM_INSTRUCTIONS.md)
 - [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
 - [docs/ENGINE_FEATURES.md](docs/ENGINE_FEATURES.md)
+- [docs/UI_AND_STATE_MANAGEMENT.md](docs/UI_AND_STATE_MANAGEMENT.md)
 

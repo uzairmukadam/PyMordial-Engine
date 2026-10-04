@@ -1,4 +1,4 @@
-"""PyMordial Game Engine (Beta).
+"""PyMordial Game Engine (Alpha).
 
 A high-performance, modular 3D game engine built in Python 3.11+, ModernGL,
 Rapier3D physics, and PyGame-CE. Designed for zero-allocation runtime performance
