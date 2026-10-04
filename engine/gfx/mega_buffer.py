@@ -272,32 +272,50 @@ class MegaBuffer:
         self,
         radius: float = 0.4,
         half_height: float = 0.5,
-        sectors: int = 24,
-        stacks: int = 8,
+        sectors: int = 32,
+        stacks: int = 12,
     ) -> None:
-        """Generates a Y-aligned unit capsule primitive (total height 1.8m, radius 0.4m)."""
+        """Generates a Y-aligned unit capsule primitive (total height 1.8m, radius 0.4m).
+
+        The capsule consists of:
+        - Bottom hemisphere: stacks intervals from phi = -pi/2 to 0 centered at y = -half_height
+        - Middle cylinder: vertical wall from y = -half_height to y = +half_height with radius `radius`
+        - Top hemisphere: stacks intervals from phi = 0 to +pi/2 centered at y = +half_height
+        """
         verts_list = []
         indices = []
 
-        total_rings = stacks * 2 + 1
+        # Total rings = (stacks + 1 for bottom dome) + (stacks + 1 for top dome)
+        # Ring index 'stacks' is at y = -half_height (phi = 0)
+        # Ring index 'stacks + 1' is at y = +half_height (phi = 0)
+        # The quad between stacks and stacks + 1 forms the perfect cylinder!
+        total_rings = (stacks + 1) * 2
+
         for i in range(total_rings):
             if i <= stacks:
-                # Bottom hemisphere: angle from -pi/2 to 0
+                # Bottom hemisphere: phi from -pi/2 to 0
                 phi = -math.pi * 0.5 + (i / stacks) * (math.pi * 0.5)
                 y_offset = -half_height
             else:
-                # Top hemisphere: angle from 0 to pi/2
-                phi = ((i - stacks) / stacks) * (math.pi * 0.5)
+                # Top hemisphere: phi from 0 to +pi/2
+                top_idx = i - (stacks + 1)
+                phi = (top_idx / stacks) * (math.pi * 0.5)
                 y_offset = half_height
 
             ring_radius = radius * math.cos(phi)
             ring_y = y_offset + radius * math.sin(phi)
             ny = math.sin(phi)
+            cos_phi = math.cos(phi)
+
+            v = i / (total_rings - 1)
 
             for j in range(sectors + 1):
                 theta = j * 2.0 * math.pi / sectors
-                nx = math.cos(theta) * math.cos(phi)
-                nz = math.sin(theta) * math.cos(phi)
+                cos_theta = math.cos(theta)
+                sin_theta = math.sin(theta)
+
+                nx = cos_theta * cos_phi
+                nz = sin_theta * cos_phi
 
                 n_len = math.sqrt(nx * nx + ny * ny + nz * nz)
                 if n_len > 1e-6:
@@ -305,16 +323,15 @@ class MegaBuffer:
                     ny /= n_len
                     nz /= n_len
 
-                x = ring_radius * math.cos(theta)
-                z = ring_radius * math.sin(theta)
+                x = ring_radius * cos_theta
                 y = ring_y
+                z = ring_radius * sin_theta
 
                 u = j / sectors
-                v = i / (stacks * 2)
 
-                tx = -math.sin(theta)
+                tx = -sin_theta
                 ty = 0.0
-                tz = math.cos(theta)
+                tz = cos_theta
 
                 verts_list.extend([x, y, z, nx, ny, nz, u, v, tx, ty, tz, 1.0])
 

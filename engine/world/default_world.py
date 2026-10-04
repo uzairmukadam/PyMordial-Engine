@@ -153,9 +153,13 @@ class DefaultWorldBuilder(BaseWorldBuilder):
 
         # 1. PBR Texture Array Atlas upload (if material is specified)
         if self.material_name:
-            raw_mat_dir = Path("assets/textures") / self.material_name
-            cooked_mat_dir = Path("build/cooked_assets/textures") / self.material_name
-            target_res = 4096
+            raw_mat_dir = Path("assets/materials") / self.material_name
+            if not raw_mat_dir.is_dir():
+                raw_mat_dir = Path("assets/textures") / self.material_name
+            cooked_mat_dir = Path("build/cooked_assets/materials") / self.material_name
+            if not cooked_mat_dir.is_dir():
+                cooked_mat_dir = Path("build/cooked_assets/textures") / self.material_name
+            target_res = pipeline.texture_atlas.width
 
             if raw_mat_dir.is_dir():
                 decoded = decode_material_folder(
@@ -163,11 +167,12 @@ class DefaultWorldBuilder(BaseWorldBuilder):
                     width=target_res,
                     height=target_res,
                     name=self.material_name,
-                    cooked_folder=cooked_mat_dir if cooked_mat_dir.is_dir() else None,
+                    cooked_folder=raw_mat_dir if (raw_mat_dir / "diff.pm_tex").is_file() else (cooked_mat_dir if cooked_mat_dir.is_dir() else None),
                 )
                 layer_idx = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
                 pipeline.material_registry.sync_with_atlas(pipeline.texture_atlas)
                 disp_mode = DisplacementMode.POM
+                pipeline.config.pom_enabled = True
 
         # 2. Add tiled plane to MegaBuffer
         tiled_pm = make_tiled_plane_pm_mesh(size=self.size, uv_tiles=self.uv_tiles)

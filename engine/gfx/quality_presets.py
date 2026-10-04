@@ -61,7 +61,7 @@ class RenderConfig:
     # Ambient Occlusion (GTAO / HBAO / SSAO)
     ao_mode: str = "GTAO"          # "OFF", "SSAO", "HBAO", "GTAO"
     ao_intensity: float = 1.0
-    ao_radius: float = 0.75
+    ao_radius: float = 0.35
 
     # Global Illumination (SSGI & LPV)
     gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID"
@@ -75,7 +75,7 @@ class RenderConfig:
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
     ssr_enabled: bool = True
-    ssr_steps: int = 32
+    ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.40
     ssr_max_distance: float = 20.0
@@ -83,7 +83,7 @@ class RenderConfig:
     # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
     aa_mode: str = "OFF"
     taa_enabled: bool = False
-    taa_feedback: float = 0.95
+    taa_feedback: float = 0.82
     taa_sharpness: float = 0.35
     taa_gamma: float = 1.25
     fxaa_subpixel: float = 0.75
@@ -156,7 +156,7 @@ class RenderConfig:
 
     # Phase 3: Cinematic Camera Optics & Lens Effects
     # Bokeh Depth of Field
-    dof_enabled: bool = True
+    dof_enabled: bool = False
     dof_focus_distance: float = 5.0      # Focus plane distance in meters
     dof_focal_length: float = 50.0       # Lens focal length in mm
     dof_aperture: float = 2.8            # Aperture f-stop (e.g. 1.4, 2.8, 5.6)
@@ -165,7 +165,7 @@ class RenderConfig:
     dof_max_coc: float = 24.0            # Max blur radius in pixels
 
     # Velocity Motion Blur
-    motion_blur_enabled: bool = True
+    motion_blur_enabled: bool = False
     motion_blur_samples: int = 12        # Directional blur taps (4 to 32)
     motion_blur_intensity: float = 1.0   # Shutter angle / blur strength scale
     motion_blur_max_radius: float = 32.0 # Max blur vector in pixels
@@ -175,7 +175,7 @@ class RenderConfig:
     lens_flare_threshold: float = 1.8    # Luminance cutoff for specular streaks
     lens_flare_streak_intensity: float = 0.6
     lens_flare_streak_width: float = 32.0 # Horizontal spread in pixels
-    lens_flare_ghost_intensity: float = 0.35
+    lens_flare_ghost_intensity: float = 0.0
     lens_flare_halo_intensity: float = 0.25
     lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0) # Anamorphic blue/cyan
 
@@ -187,11 +187,11 @@ class RenderConfig:
     vignette_roundness: float = 0.85
     vignette_smoothness: float = 0.50
     film_grain_enabled: bool = True
-    film_grain_intensity: float = 0.04
+    film_grain_intensity: float = 0.03
 
     # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
-    water_enabled: bool = False
-    water_height: float = 0.0
+    water_enabled: bool = True
+    water_height: float = 0.45
     water_wave_amplitude: float = 0.15
     water_wave_speed: float = 1.0
     water_wave_steepness: float = 0.8
@@ -249,9 +249,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=False,
         vignette_enabled=True,
         vignette_intensity=0.20,
-        film_grain_enabled=False,
-        water_enabled=False,
-        water_refraction_enabled=False,
+        film_grain_enabled=True,
+        film_grain_intensity=0.03,
+        water_enabled=True,
+        water_refraction_enabled=True,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
@@ -287,14 +288,14 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particle_count=8192,
         particle_mode="DUST_MOTES",
         dof_enabled=False,
-        motion_blur_enabled=True,
+        motion_blur_enabled=False,
         motion_blur_samples=6,
         lens_flare_enabled=False,
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.003,
         vignette_enabled=True,
         film_grain_enabled=True,
-        film_grain_intensity=0.02,
+        film_grain_intensity=0.03,
         water_enabled=True,
         water_refraction_enabled=True,
         water_wave_amplitude=0.10,
@@ -315,7 +316,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ssgi_steps=12,
         ibl_enabled=True,
         ssr_enabled=True,
-        ssr_steps=20,
+        ssr_steps=36,
         aa_mode="OFF",
         taa_enabled=False,
         clustered_lights_enabled=True,
@@ -337,16 +338,16 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=16384,
         particle_mode="DUST_MOTES",
-        dof_enabled=True,
+        dof_enabled=False,
         dof_bokeh_shape="CIRCULAR",
-        motion_blur_enabled=True,
+        motion_blur_enabled=False,
         motion_blur_samples=12,
         lens_flare_enabled=True,
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.005,
         vignette_enabled=True,
         film_grain_enabled=True,
-        film_grain_intensity=0.04,
+        film_grain_intensity=0.03,
         water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,
@@ -367,7 +368,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ssgi_steps=16,
         ibl_enabled=True,
         ssr_enabled=True,
-        ssr_steps=28,
+        ssr_steps=48,
         aa_mode="OFF",
         taa_enabled=False,
         clustered_lights_enabled=True,
@@ -389,16 +390,16 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         particles_enabled=True,
         particle_count=32768,
         particle_mode="DUST_MOTES",
-        dof_enabled=True,
+        dof_enabled=False,
         dof_bokeh_shape="HEXAGONAL",
-        motion_blur_enabled=True,
+        motion_blur_enabled=False,
         motion_blur_samples=16,
         lens_flare_enabled=True,
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.007,
         vignette_enabled=True,
         film_grain_enabled=True,
-        film_grain_intensity=0.05,
+        film_grain_intensity=0.03,
         water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,
@@ -419,7 +420,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ssgi_steps=24,
         ibl_enabled=True,
         ssr_enabled=True,
-        ssr_steps=40,
+        ssr_steps=64,
         aa_mode="OFF",
         taa_enabled=False,
         clustered_lights_enabled=True,
@@ -439,20 +440,20 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         tess_enabled=True,
         tess_max_level=32.0,
         tess_displacement_scale=0.12,
-        particles_enabled=True,
-        particle_count=65536,
-        particle_mode="DUST_MOTES",
-        dof_enabled=True,
+        particles_enabled=False,
+        particle_count=0,
+        particle_mode="OFF",
+        dof_enabled=False,
         dof_bokeh_shape="ANAMORPHIC",
         dof_anamorphic_ratio=2.0,
-        motion_blur_enabled=True,
+        motion_blur_enabled=False,
         motion_blur_samples=24,
         lens_flare_enabled=True,
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.008,
         vignette_enabled=True,
         film_grain_enabled=True,
-        film_grain_intensity=0.06,
+        film_grain_intensity=0.03,
         water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,

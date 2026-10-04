@@ -300,6 +300,7 @@ class UIRenderer:
         self.vao.render(mode=moderngl.TRIANGLE_STRIP, vertices=4, instances=self.quad_count)
 
         self.quad_count = 0
+        self.ctx.disable(moderngl.BLEND)
 
     def destroy(self) -> None:
         """Releases all ModernGL resources."""

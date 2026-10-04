@@ -151,7 +151,7 @@ class CameraOpticsPass(RenderPass):
         depth_texture.use(location=1)
 
         # Upload DoF uniforms
-        dof_on = getattr(config, "dof_enabled", True)
+        dof_on = getattr(config, "dof_enabled", False)
         if self._u_dof_enabled is not None:
             self._u_dof_enabled.value = 1 if dof_on else 0
         if self._u_focus_dist is not None:

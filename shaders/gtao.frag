@@ -26,7 +26,7 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform float u_Radius = 0.75;
+uniform float u_Radius = 0.35;
 uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
 uniform int u_Directions = 3;
@@ -127,8 +127,9 @@ void main() {
                     vec3 p0 = GetViewPos(uv0, d0);
                     vec3 delta0 = p0 - view_pos;
                     float dist0 = length(delta0);
-                    if (dist0 > 0.002) {
-                        float weight0 = clamp(1.0 - (dist0 / (u_Radius * 1.5)), 0.0, 1.0);
+                    if (dist0 > 0.002 && dist0 < u_Radius && dot(delta0, view_normal) > 0.005) {
+                        float dist_ratio0 = dist0 / u_Radius;
+                        float weight0 = clamp(1.0 - dist_ratio0 * dist_ratio0, 0.0, 1.0);
                         float shc0 = dot(delta0 / dist0, view_dir);
                         shc0 = mix(low_horizon_cos0, shc0, weight0);
                         horizon_cos0 = max(horizon_cos0, shc0);
@@ -144,8 +145,9 @@ void main() {
                     vec3 p1 = GetViewPos(uv1, d1);
                     vec3 delta1 = p1 - view_pos;
                     float dist1 = length(delta1);
-                    if (dist1 > 0.002) {
-                        float weight1 = clamp(1.0 - (dist1 / (u_Radius * 1.5)), 0.0, 1.0);
+                    if (dist1 > 0.002 && dist1 < u_Radius && dot(delta1, view_normal) > 0.005) {
+                        float dist_ratio1 = dist1 / u_Radius;
+                        float weight1 = clamp(1.0 - dist_ratio1 * dist_ratio1, 0.0, 1.0);
                         float shc1 = dot(delta1 / dist1, view_dir);
                         shc1 = mix(low_horizon_cos1, shc1, weight1);
                         horizon_cos1 = max(horizon_cos1, shc1);

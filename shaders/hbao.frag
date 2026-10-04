@@ -26,7 +26,7 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform float u_Radius = 0.75;
+uniform float u_Radius = 0.35;
 uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
 uniform float u_AngleBias = 0.15; // In radians (~8.6 degrees)
@@ -108,7 +108,7 @@ void main() {
             vec3 delta = sample_pos - view_pos;
             float dist = length(delta);
 
-            if (dist < u_Radius * 1.5 && dist > 0.002) {
+            if (dist < u_Radius && dist > 0.002) {
                 vec3 delta_dir = delta / dist;
                 // Elevation relative to view-space surface normal
                 float elevation = dot(delta_dir, view_normal);

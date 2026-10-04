@@ -107,6 +107,8 @@ class SSGIPass(RenderPass):
         self.raw_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
 
         g_buffer.albedo_roughness_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)

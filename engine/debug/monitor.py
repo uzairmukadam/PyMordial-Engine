@@ -87,6 +87,15 @@ class SystemMonitor:
         # Exponential moving average (alpha = 0.05)
         self.stage_averages_us[stage_name] = prev_avg * 0.95 + elapsed_us * 0.05
 
+    def update(self, dt: float = 0.0) -> None:
+        """Alias for begin_frame() updating performance telemetry."""
+        self.begin_frame()
+
+    def record_fps(self, fps: float) -> None:
+        """Explicitly records instant FPS."""
+        if fps > 0.0:
+            self.fps = fps
+
     def begin_frame(self) -> None:
         """Marks the start of a frame and updates rolling metrics."""
         now = time.perf_counter()

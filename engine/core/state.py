@@ -141,8 +141,11 @@ class GameStateManager:
 
     def _apply_cursor_policy(self, state: GameState) -> None:
         if self._app and not self._app.config.headless:
-            pygame.mouse.set_visible(state.show_cursor)
+            # Always hide OS cursor; in-engine AAA cursor handles UI visual representation
+            pygame.mouse.set_visible(False)
             self._app.input_manager.set_mouse_grab(state.grab_mouse)
+            if self._app.ui is not None:
+                self._app.ui.cursor_visible = state.show_cursor
 
     def _resolve_state(self, name_or_state: str | GameState) -> GameState:
         if isinstance(name_or_state, str):

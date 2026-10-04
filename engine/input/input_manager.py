@@ -512,6 +512,14 @@ class InputManager:
 
         elif ev_type == pygame.MOUSEBUTTONDOWN:
             self.active_device = DeviceType.KEYBOARD_MOUSE
+            if self.is_mouse_grabbed and not pygame.event.get_grab():
+                try:
+                    pygame.event.set_grab(True)
+                    pygame.mouse.set_visible(False)
+                    pygame.mouse.get_rel()
+                except Exception:
+                    pass
+
             btn = event.button
             self._mouse_down.add(btn)
             self._mouse_pressed.add(btn)
@@ -830,6 +838,8 @@ class InputManager:
         try:
             pygame.event.set_grab(grab)
             pygame.mouse.set_visible(not grab)
+            if grab:
+                pygame.mouse.get_rel()
         except Exception:
             pass
 
@@ -844,3 +854,33 @@ class InputManager:
             if self._was_mouse_grabbed:
                 self.set_mouse_grab(True)
                 self._was_mouse_grabbed = False
+
+    def reset(self) -> None:
+        """Flushes all held physical keys, buttons, axes, and action states."""
+        self._keys_down.clear()
+        self._keys_pressed.clear()
+        self._keys_released.clear()
+        self._mouse_down.clear()
+        self._mouse_pressed.clear()
+        self._mouse_released.clear()
+        self._pad_down.clear()
+        self._pad_pressed.clear()
+        self._pad_released.clear()
+        self._pad_axes.clear()
+        for k in self._action_down:
+            self._action_down[k] = False
+        for k in self._action_pressed:
+            self._action_pressed[k] = False
+        for k in self._action_released:
+            self._action_released[k] = False
+        for k in self._debug_action_down:
+            self._debug_action_down[k] = False
+        for k in self._debug_action_pressed:
+            self._debug_action_pressed[k] = False
+        for k in self._debug_action_released:
+            self._debug_action_released[k] = False
+        for k in self._axes_values:
+            self._axes_values[k] = 0.0
+        self.mouse_delta = (0, 0)
+        self.mouse_wheel = 0.0
+

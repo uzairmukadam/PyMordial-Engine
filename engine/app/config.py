@@ -22,7 +22,7 @@ class ProjectConfig:
     fixed_hz: float = 60.0
     gravity: tuple[float, float, float] = (0.0, -9.81, 0.0)
     enable_debug: bool = True
-    water_enabled: bool = False
+    water_enabled: bool = True
     particles_enabled: bool = False
     headless: bool = False
     max_frames: int | None = None

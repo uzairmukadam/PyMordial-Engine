@@ -162,6 +162,8 @@ class DecalPass(RenderPass):
         self.decal_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
 
         # Bind inputs
         g_buffer.rt_albedo_roughness.use(location=0)

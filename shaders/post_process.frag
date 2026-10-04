@@ -106,7 +106,7 @@ void main() {
         float lum = dot(ldr, vec3(0.2126, 0.7152, 0.0722));
         // Mask grain: pronounced in midtones/shadows, soft in highlights
         float grainMask = 1.0 - smoothstep(0.75, 1.0, lum);
-        ldr += (grain - 0.5) * u_FilmGrainIntensity * grainMask;
+        ldr += (grain - 0.5) * (u_FilmGrainIntensity * 0.05) * grainMask;
         ldr = max(vec3(0.0), ldr);
     }
 

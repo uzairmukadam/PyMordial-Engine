@@ -41,7 +41,7 @@ vec3 OctahedralDecode(vec2 f) {
 vec3 GetViewPos(vec2 uv, float raw_depth) {
     vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
     vec4 view = u_InvProjection * clip;
-    return view.xyz / view.w;
+    return view.xyz / max(abs(view.w), 1e-6);
 }
 
 void main() {
@@ -61,12 +61,13 @@ void main() {
     vec4 total_color = center_ssgi * weights[0];
     float total_weight = weights[0];
 
-    // Tangent plane tolerance: 8cm along surface normal
-    const float PLANE_SIGMA_SQ2 = 2.0 * 0.08 * 0.08;
+    // Distance-adaptive tangent plane tolerance prevents neighbor rejection at camera distance
+    float plane_sigma = max(0.12, abs(center_pos_view.z) * 0.025);
+    float plane_sigma_sq2 = 2.0 * plane_sigma * plane_sigma;
 
     for (int i = 1; i <= 4; ++i) {
         float w = weights[i];
-        vec2 offset = u_BlurDirection * (float(i) * 1.5);
+        vec2 offset = u_BlurDirection * (float(i) * 2.0);
 
         // Positive offset
         vec2 uv_pos = v_UV + offset;
@@ -78,8 +79,8 @@ void main() {
 
             // Plane distance test: distance of neighbor point to center surface tangent plane
             float plane_dist = abs(dot(center_normal_view, pos_pos - center_pos_view));
-            float w_z = exp(-(plane_dist * plane_dist) / PLANE_SIGMA_SQ2);
-            float w_n = pow(max(dot(center_normal_view, norm_view_pos), 0.0), 4.0);
+            float w_z = exp(-(plane_dist * plane_dist) / plane_sigma_sq2);
+            float w_n = pow(max(dot(center_normal_view, norm_view_pos), 0.0), 2.0);
             float weight_pos = w * w_z * w_n;
 
             total_color += texture(u_InputSSGI, uv_pos) * weight_pos;
@@ -95,8 +96,8 @@ void main() {
             vec3 norm_view_neg = normalize(mat3(u_View) * norm_world_neg);
 
             float plane_dist = abs(dot(center_normal_view, pos_neg - center_pos_view));
-            float w_z = exp(-(plane_dist * plane_dist) / PLANE_SIGMA_SQ2);
-            float w_n = pow(max(dot(center_normal_view, norm_view_neg), 0.0), 4.0);
+            float w_z = exp(-(plane_dist * plane_dist) / plane_sigma_sq2);
+            float w_n = pow(max(dot(center_normal_view, norm_view_neg), 0.0), 2.0);
             float weight_neg = w * w_z * w_n;
 
             total_color += texture(u_InputSSGI, uv_neg) * weight_neg;
@@ -104,5 +105,10 @@ void main() {
         }
     }
 
-    out_FilteredSSGI = total_color / max(total_weight, 0.0001);
+    vec4 result = total_color / max(total_weight, 0.0001);
+    if (isnan(result.r) || isnan(result.g) || isnan(result.b) || isnan(result.a) ||
+        isinf(result.r) || isinf(result.g) || isinf(result.b) || isinf(result.a)) {
+        result = vec4(0.0);
+    }
+    out_FilteredSSGI = clamp(result, vec4(0.0), vec4(40.0, 40.0, 40.0, 1.0));
 }

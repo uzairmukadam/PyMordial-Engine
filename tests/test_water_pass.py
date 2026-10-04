@@ -129,8 +129,8 @@ def test_water_pass_rendering_execution(gl_context):
 def test_water_quality_presets():
     """Verifies that all GraphicsQuality presets scale water parameters appropriately."""
     cfg_low = get_quality_preset(GraphicsQuality.LOW)
-    assert cfg_low.water_enabled is False
-    assert cfg_low.water_refraction_enabled is False
+    assert cfg_low.water_enabled is True
+    assert cfg_low.water_refraction_enabled is True
 
     cfg_med = get_quality_preset(GraphicsQuality.MEDIUM)
     assert cfg_med.water_enabled is True
@@ -179,9 +179,9 @@ def test_pipeline_water_integration():
         dt=0.016,
     )
 
-    # Disable water and verify pipeline still renders cleanly
-    cfg_low = get_quality_preset(GraphicsQuality.LOW)
-    pipeline.apply_config(cfg_low)
+    # Disable water via custom RenderConfig and verify pipeline still renders cleanly
+    cfg_off = RenderConfig(water_enabled=False)
+    pipeline.apply_config(cfg_off)
     assert pipeline.water_pass.enabled is False
 
     pipeline.render_frame(

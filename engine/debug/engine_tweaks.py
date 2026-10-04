@@ -228,7 +228,7 @@ class EngineTweaks:
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
         self.ao_intensity = 1.2
-        self.ao_radius = 0.75
+        self.ao_radius = 0.35
         self.gi_mode = GIMode.HYBRID.value
         self.ssgi_steps = 16
         self.ssgi_rays = 8
@@ -287,7 +287,7 @@ class EngineTweaks:
         self.bloom_enabled = True
         self.bloom_intensity = 0.045
 
-        self.dof_enabled = True
+        self.dof_enabled = False
         self.dof_focus_distance = 5.0
         self.dof_focal_length = 50.0
         self.dof_aperture = 2.8
@@ -314,11 +314,11 @@ class EngineTweaks:
         self.vignette_roundness = 0.85
         self.vignette_smoothness = 0.50
         self.film_grain_enabled = True
-        self.film_grain_intensity = 0.04
+        self.film_grain_intensity = 0.03
 
         # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
         self.water_enabled = False
-        self.water_height = 0.0
+        self.water_height = 0.45
         self.water_wave_amplitude = 0.15
         self.water_wave_speed = 1.0
         self.water_wave_steepness = 0.8
@@ -361,7 +361,11 @@ class EngineTweaks:
 
     def set_quality_preset(self, preset: GraphicsQuality) -> None:
         """Updates the graphics preset and triggers registered reconfigure listeners."""
+        from engine.gfx.quality_presets import QUALITY_PRESETS
         self.quality_preset = preset
+        if preset != GraphicsQuality.CUSTOM and preset in QUALITY_PRESETS:
+            cfg = QUALITY_PRESETS[preset]
+            self.sync_from_config(cfg)
         for cb in self._on_quality_changed:
             cb(preset)
 
@@ -612,6 +616,66 @@ class EngineTweaks:
                 atmo.config.star_intensity = float(self.star_intensity)
 
         self._applied_version = self._version
+
+    sync_to_pipeline = apply_to_pipeline
+
+    def sync_from_config(self, cfg: Any) -> None:
+        """Copies graphics properties from a RenderConfig instance."""
+        if cfg is None:
+            return
+        for prop in (
+            "tonemap_mode", "exposure", "bloom_enabled", "bloom_intensity",
+            "chromatic_aberration_enabled", "chromatic_aberration_intensity",
+            "vignette_enabled", "vignette_intensity", "vignette_roundness", "vignette_smoothness",
+            "film_grain_enabled", "film_grain_intensity",
+            "dof_enabled", "dof_focus_distance", "dof_focal_length", "dof_aperture",
+            "dof_bokeh_shape", "dof_anamorphic_ratio", "dof_max_coc",
+            "motion_blur_enabled", "motion_blur_samples", "motion_blur_intensity", "motion_blur_max_radius",
+            "lens_flare_enabled", "lens_flare_threshold", "lens_flare_streak_intensity",
+            "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
+            "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
+            "ssgi_intensity", "lpv_intensity",
+            "ao_mode", "ao_intensity", "ao_radius",
+            "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
+            "aa_mode", "taa_enabled", "taa_feedback", "taa_sharpness", "taa_gamma",
+            "shadow_mode", "shadow_softness", "shadow_bias", "shadow_normal_bias",
+            "shadow_distance", "csm_cascades", "shadow_resolution", "csm_stabilization",
+            "pom_enabled", "pom_height_scale", "pom_self_shadow",
+            "disp_near_radius", "disp_mid_radius", "tess_enabled", "tess_max_level",
+            "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled",
+            "ssdm_enabled", "ssdm_scale",
+            "volumetric_fog_enabled", "fog_resolution", "fog_point_lights", "fog_density",
+            "fog_height_falloff", "fog_anisotropy", "fog_distance", "fog_ambient", "fog_debug_mode",
+            "water_enabled", "water_height", "water_wave_amplitude", "water_wave_speed",
+            "water_wave_steepness", "water_refraction_enabled", "water_refraction_strength",
+            "water_foam_enabled", "water_foam_threshold", "water_foam_scale", "water_foam_intensity",
+            "water_clarity", "water_roughness",
+            "particles_enabled", "particle_count", "particle_mode", "particle_size", "particle_turbulence",
+        ):
+            if hasattr(cfg, prop):
+                setattr(self, prop, getattr(cfg, prop))
+        if hasattr(cfg, "clustered_lights_enabled"):
+            self.point_lights_enabled = bool(cfg.clustered_lights_enabled)
+        if hasattr(cfg, "wireframe"):
+            self.show_wireframe = bool(cfg.wireframe)
+        if hasattr(cfg, "debug_gbuffer"):
+            self.gbuffer_debug = GBufferDebugMode(cfg.debug_gbuffer)
+        if hasattr(cfg, "sun_intensity"):
+            self.sun_lux = float(cfg.sun_intensity)
+
+    def sync_from_pipeline(self, pipeline: Any) -> None:
+        """Initializes tweak fields from active pipeline and marks versions as synchronized."""
+        if pipeline is None:
+            return
+        p_cfg = getattr(pipeline, "config", None)
+        if p_cfg is not None:
+            self.sync_from_config(p_cfg)
+        if hasattr(pipeline, "atmosphere") and pipeline.atmosphere is not None:
+            atmo = pipeline.atmosphere
+            if hasattr(atmo, "config") and atmo.config is not None:
+                self.time_of_day = float(getattr(atmo.config, "time_of_day", 12.0))
+                self.day_speed = float(getattr(atmo.config, "day_speed", 0.0))
+        super().__setattr__("_applied_version", self._version)
 
     def to_dict(self) -> dict[str, Any]:
         """Serializes current graphics configuration into a JSON-compatible dictionary."""

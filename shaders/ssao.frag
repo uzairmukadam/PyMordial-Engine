@@ -26,7 +26,7 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform float u_Radius = 0.75;
+uniform float u_Radius = 0.35;
 uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
 uniform float u_Bias = 0.025;
@@ -115,8 +115,9 @@ void main() {
         float depth_delta = (-actual_view_pos.z) - (-sample_view_pos.z);
         float dist_to_surface = abs(view_pos.z - actual_view_pos.z);
 
-        // Smooth distance attenuation to avoid occluding across depth discontinuities
-        float range_atten = smoothstep(0.0, 1.0, u_Radius / (dist_to_surface + 0.001));
+        // Smooth quadratic distance attenuation to avoid occluding across depth discontinuities
+        float dist_ratio = dist_to_surface / u_Radius;
+        float range_atten = clamp(1.0 - dist_ratio * dist_ratio, 0.0, 1.0);
 
         if (depth_delta < -u_Bias) {
             occlusion += range_atten;

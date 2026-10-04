@@ -95,7 +95,7 @@ class CharacterMotor:
         self.distance_traversed: float = 0.0
         self.walk_stride: float = 1.85
         self.run_stride: float = 1.25
-        self.water_height: float = 0.0
+        self.water_height: float = 0.45
         self.on_footstep: Callable[[tuple[float, float, float], bool], None] | None = None
 
         # Register native kinematic character controller in Rapier world
@@ -121,6 +121,19 @@ class CharacterMotor:
                 rbs[buf_idx, dense_idx, 4] = 0.0
                 rbs[buf_idx, dense_idx, 5] = 0.0
                 rbs[buf_idx, dense_idx, 6] = 1.0
+
+    @property
+    def position(self) -> tuple[float, float, float]:
+        """Current character world position."""
+        dense_idx = self.ecs.pool.get_dense_index(self.entity_id)
+        if dense_idx >= 0:
+            return (
+                float(self.ecs.rigid_body_state[1, dense_idx, 0]),
+                float(self.ecs.rigid_body_state[1, dense_idx, 1]),
+                float(self.ecs.rigid_body_state[1, dense_idx, 2]),
+            )
+        pos, _ = self.physics.get_transform(self.entity_id)
+        return (float(pos[0]), float(pos[1]), float(pos[2]))
 
     def set_position(
         self,

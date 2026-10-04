@@ -65,6 +65,7 @@ DEFAULT_MATERIAL_DEPTHS: dict[str, float] = {
     "metal_grate_rusty": 0.015,       # Metal floor grate (1.5 cm physical depth)
     "castle_brick_02_red": 0.035,     # Exterior masonry brick (3.5 cm depth)
     "mud_cracked_dry_03": 0.045,      # Dry cracked ground fissures (4.5 cm depth)
+    "cracked_dry_mud": 0.045,         # Dry cracked ground fissures (4.5 cm depth)
     "floor_pattern_02": 0.025,        # Decorative stone floor tiles (2.5 cm depth)
     "ribbed_corduroy": 0.008,         # Fabric corduroy micro-ribs (0.8 cm depth)
     "concrete_floor_worn_02": 0.005,  # Worn industrial concrete (0.5 cm depth)

@@ -627,6 +627,13 @@ class RenderPipeline:
         if self.water_pass is not None:
             self.water_pass.enabled = getattr(new_config, "water_enabled", True)
 
+        if self.ao_pass is not None:
+            self.ao_pass.enabled = getattr(new_config, "ao_mode", "GTAO") != "OFF"
+        if self.ssr_pass is not None:
+            self.ssr_pass.enabled = getattr(new_config, "ssr_enabled", True)
+        if self.volumetric_fog_pass is not None:
+            self.volumetric_fog_pass.enabled = getattr(new_config, "volumetric_fog_enabled", True)
+
     def resize(self, width: int, height: int) -> None:
         """Resizes MRT G-Buffer and all post-processing/intermediate pass buffers."""
         self.ctx_wrapper.width = width
@@ -1103,6 +1110,8 @@ class RenderPipeline:
         self.post_process.hdr_fbo.use()
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
 
         # Bind all required texture units
         self.g_buffer.bind_textures(base_unit=0)     # 0: AlbedoRough, 1: NormalMetal, 2: Depth
@@ -1279,8 +1288,8 @@ class RenderPipeline:
         flare_tex = None
         if self.camera_optics_pass is not None:
             optics_needed = (
-                getattr(self.config, "dof_enabled", True)
-                or getattr(self.config, "motion_blur_enabled", True)
+                getattr(self.config, "dof_enabled", False)
+                or getattr(self.config, "motion_blur_enabled", False)
             )
             if optics_needed:
                 scene_hdr_tex = self.post_process.hdr_fbo.color_attachments[0]

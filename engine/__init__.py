@@ -8,7 +8,8 @@ and clean isolation between core engine infrastructure and project-specific game
 from engine.app.project_app import ProjectApp
 from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
-from engine.gfx.quality_presets import GraphicsQuality, RenderConfig
+from engine.window.window import WindowMode, VSyncMode
+from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
 from engine.gfx.context import RenderContext
 from engine.gfx.pipeline import RenderPipeline
 from engine.core.ecs import EntityManager
@@ -41,8 +42,11 @@ __all__ = [
     "ProjectApp",
     "ProjectConfig",
     "ProjectModule",
+    "WindowMode",
+    "VSyncMode",
     "GraphicsQuality",
     "RenderConfig",
+    "get_quality_preset",
     "RenderContext",
     "RenderPipeline",
     "EntityManager",

@@ -201,8 +201,8 @@ def test_quality_presets_particle_scaling():
     assert ultra.particle_count == 32768
 
     cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-    assert cinematic.particles_enabled is True
-    assert cinematic.particle_count == 65536
+    assert cinematic.particles_enabled is False
+    assert cinematic.particle_count == 0
 
 
 def test_pipeline_particle_system_integration(render_ctx: RenderContext):

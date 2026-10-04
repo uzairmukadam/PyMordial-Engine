@@ -12,15 +12,15 @@ from engine.physics.rapier_world import PhysicsManager
 @dataclass(slots=True)
 class FollowCameraConfig:
     """Tuning parameters for the third-person follow camera."""
-    distance: float = 5.2           # Default camera follow distance in meters
+    distance: float = 3.8           # Default camera follow distance in meters
     min_distance: float = 1.0       # Minimum pull-in distance in meters
     max_distance: float = 20.0      # Maximum zoomed out distance in meters
-    target_offset_y: float = 0.55   # Height offset above character origin in meters
+    target_offset_y: float = 0.65   # Height offset above character origin in meters (head/shoulder level)
     camera_radius: float = 0.20     # Margin from obstacles to avoid clipping in meters
-    yaw_sensitivity: float = 0.22   # Mouse drag yaw sensitivity
-    pitch_sensitivity: float = 0.22 # Mouse drag pitch sensitivity
-    min_pitch_deg: float = -12.0    # Lowest downward pitch angle
-    max_pitch_deg: float = 65.0     # Highest upward pitch angle
+    yaw_sensitivity: float = 0.20   # Mouse drag yaw sensitivity
+    pitch_sensitivity: float = 0.18 # Mouse drag pitch sensitivity
+    min_pitch_deg: float = -20.0    # Lowest downward pitch angle (allows looking up at sky)
+    max_pitch_deg: float = 65.0     # Highest upward pitch angle (overhead angle)
     zoom_speed: float = 12.0        # Smoothing rate when zooming out
 
 
@@ -52,7 +52,7 @@ class FollowCamera(VirtualCamera):
         self.camera_pos = self.position
 
     def handle_mouse_orbit(self, rel_x: float, rel_y: float) -> None:
-        """Applies hardware relative mouse delta to camera orbit angles."""
+        """Applies hardware relative mouse delta to camera orbit angles (matching Example 1 FreeCamera)."""
         self.yaw_deg += rel_x * self.config.yaw_sensitivity
         self.pitch_deg = max(
             self.config.min_pitch_deg,
@@ -134,7 +134,7 @@ class FollowCamera(VirtualCamera):
             self.current_distance += (hit_dist - self.current_distance) * t
 
         self.camera_pos[0] = cx + dir_x * self.current_distance
-        self.camera_pos[1] = cy + dir_y * self.current_distance
+        self.camera_pos[1] = max(0.20, cy + dir_y * self.current_distance)
         self.camera_pos[2] = cz + dir_z * self.current_distance
 
         self.mark_dirty()

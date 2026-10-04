@@ -101,35 +101,41 @@ pip install -e .[dev]
 
 ## Interactive Demos & Quickstart
 
-### 1. Minimal 3D App Demo
-Learn how to bootstrap a 3D app with camera controls and a rotating entity:
+### 1. Modern AAA UI, Menus & Game State Transitions
+Explore modern glassmorphic ModernGL UI screens, widgets (buttons, sliders, segmented tabs), and stack-based `GameStateManager` transitions:
 ```bash
-python examples/01_minimal_app.py
+python examples/01_modern_ui_and_menu.py
 ```
 
-### 2. Game States & Native ModernGL UI Demo
-Explore the stack-based `GameStateManager` and native UI system (`MainMenu`, `Gameplay`, and `PauseMenu` with physics freezing):
+### 2. Player Kinematics & Dynamic Physics Cubes
+Experience 60 Hz decoupled `CharacterMotor` movement (WASD, sprint, jump), curb autostepping, collision-aware `FollowCamera`, dynamic Rapier3D physics cubes, and an in-game telemetry HUD:
 ```bash
-python examples/02_game_states_and_ui.py
+python examples/02_player_physics_and_cubes.py
 ```
 
-### 3. Run the Arcade Racer Project
+### 3. Full Graphics & Display In-Game Configuration Menu
+Live in-game ModernGL pipeline adjustment without debug overlays: Resolution (720p/900p/1080p), Mode (Windowed/Borderless), VSync, Master Presets (Low to Cinematic), and granular toggles (SSAO/GTAO, Bloom, SSR, Fog, AA):
+```bash
+python examples/03_full_graphics_and_display_menu.py
+```
+
+### 4. Run the Arcade Racer Project
 PyMordial includes a complete example game project: **Shotgun: Beat the Speed** (an arcade muscle racer):
 
 ```bash
 python -m projects.shotgun_beat_the_speed.main
 ```
 
-### 4. Run Headless Verification (Automated 60-Frame Benchmark)
+### 5. Run Headless Verification (Automated 60-Frame Benchmark)
 ```bash
 python projects/shotgun_beat_the_speed/main.py --headless --frames 60
 ```
 
-### 5. Run the Test Suite
+### 6. Run the Test Suite
 The engine includes over 380 automated tests verifying ECS memory alignment, determinism, rendering passes, audio, physics, UI, state management, and packaging:
 
 ```bash
-pytest
+python -m pytest
 ```
 
 ---

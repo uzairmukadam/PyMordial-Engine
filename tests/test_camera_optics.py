@@ -178,37 +178,40 @@ def test_quality_presets_camera_optics_scaling():
     assert low.lens_flare_enabled is False
     assert low.chromatic_aberration_enabled is False
     assert low.vignette_enabled is True
-    assert low.film_grain_enabled is False
+    assert low.film_grain_enabled is True
+    assert low.film_grain_intensity == 0.03
 
     med = get_quality_preset(GraphicsQuality.MEDIUM)
     assert med.dof_enabled is False
-    assert med.motion_blur_enabled is True
+    assert med.motion_blur_enabled is False
     assert med.motion_blur_samples == 6
     assert med.chromatic_aberration_enabled is True
     assert med.vignette_enabled is True
     assert med.film_grain_enabled is True
+    assert med.film_grain_intensity == 0.03
 
     high = get_quality_preset(GraphicsQuality.HIGH)
-    assert high.dof_enabled is True
+    assert high.dof_enabled is False
     assert high.dof_bokeh_shape == "CIRCULAR"
-    assert high.motion_blur_enabled is True
+    assert high.motion_blur_enabled is False
     assert high.motion_blur_samples == 12
     assert high.lens_flare_enabled is True
     assert high.chromatic_aberration_enabled is True
     assert high.film_grain_enabled is True
+    assert high.film_grain_intensity == 0.03
 
     ultra = get_quality_preset(GraphicsQuality.ULTRA)
-    assert ultra.dof_enabled is True
+    assert ultra.dof_enabled is False
     assert ultra.dof_bokeh_shape == "HEXAGONAL"
-    assert ultra.motion_blur_enabled is True
+    assert ultra.motion_blur_enabled is False
     assert ultra.motion_blur_samples == 16
     assert ultra.lens_flare_enabled is True
 
     cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-    assert cinematic.dof_enabled is True
+    assert cinematic.dof_enabled is False
     assert cinematic.dof_bokeh_shape == "ANAMORPHIC"
     assert cinematic.dof_anamorphic_ratio == 2.0
-    assert cinematic.motion_blur_enabled is True
+    assert cinematic.motion_blur_enabled is False
     assert cinematic.motion_blur_samples == 24
     assert cinematic.lens_flare_enabled is True
 

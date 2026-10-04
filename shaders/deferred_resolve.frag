@@ -669,7 +669,7 @@ void main() {
     vec3 sky_color = mix(vec3(0.25, 0.35, 0.50), u_SunColor_Ambient.rgb * 0.5 + vec3(0.15), 0.4);
     vec3 ground_color = vec3(0.18, 0.19, 0.18);
     vec3 hemisphere_light = mix(ground_color, sky_color, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) * sky_intensity;
-    float base_ambient_scale = (u_GIEnabled > 0) ? 0.65 : 1.0;
+    float base_ambient_scale = 1.0;
     vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic) * base_ambient_scale;
 
     // Image-Based Lighting (IBL) & Screen-Space Reflections (SSR)
@@ -696,7 +696,11 @@ void main() {
             }
             vec3 safe_ssr_rgb = clamp(ssr_sample.rgb, vec3(0.0), vec3(30.0));
             float safe_ssr_a = clamp(ssr_sample.a, 0.0, 1.0);
-            env_radiance = mix(env_radiance, safe_ssr_rgb, safe_ssr_a);
+            if (safe_ssr_a > 0.001) {
+                // Blend SSR with environment IBL, ensuring local reflections never create a dark void below ambient sky fill
+                vec3 blended_refl = mix(env_radiance, safe_ssr_rgb, safe_ssr_a);
+                env_radiance = max(blended_refl, env_radiance * (1.0 - safe_ssr_a * 0.70));
+            }
         }
 
         // Specular occlusion (Lagarde / Frostbite) prevents specular light leaks into deep crevices

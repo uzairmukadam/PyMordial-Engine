@@ -48,6 +48,11 @@ class ProjectApp:
         "engine_loop",
         "world_builder",
         "is_running",
+        "system_monitor",
+        "engine_tweaks",
+        "game_tweaks",
+        "debug_toast",
+        "debug_menu",
         "_modules",
         "_static_draw_batches",
         "_active_draw_batches",
@@ -105,7 +110,45 @@ class ProjectApp:
         self.ui.attach_app(self)
         self.state_manager: GameStateManager = GameStateManager(app=self)
 
-        # 6. Modules & World Generation
+        # 6. Central Sacred Debug Subsystem (F1, F2, F3)
+        self.system_monitor = None
+        self.engine_tweaks = None
+        self.game_tweaks = None
+        self.debug_toast = None
+        self.debug_menu = None
+
+        if self.config.enable_debug and not self.config.headless:
+            try:
+                from engine.debug import (
+                    SystemMonitor,
+                    EngineTweaks,
+                    GameTweaks,
+                    DebugToast,
+                    DebugMenu,
+                )
+
+                self.system_monitor = SystemMonitor()
+                self.engine_tweaks = EngineTweaks()
+                self.game_tweaks = GameTweaks()
+                self.debug_toast = DebugToast()
+                self.debug_menu = DebugMenu(
+                    ctx=self.render_ctx.ctx,
+                    monitor=self.system_monitor,
+                    engine_tweaks=self.engine_tweaks,
+                    game_tweaks=self.game_tweaks,
+                    toast=self.debug_toast,
+                    input_mgr=self.input_manager,
+                    screen_width=self.config.width,
+                    screen_height=self.config.height,
+                    app=self,
+                )
+                if self.engine_tweaks is not None:
+                    self.engine_tweaks.sync_from_pipeline(self.pipeline)
+            except Exception as e:
+                import logging
+                logging.getLogger("PyMordial").warning("Failed to initialize DebugMenu: %s", e)
+
+        # 7. Modules & World Generation
         self.world_builder: BaseWorldBuilder | None = None
         self._modules: list[ProjectModule] = []
         self._static_draw_batches: list[tuple[MeshAllocation, int, int, bool, bool]] = []
@@ -217,6 +260,8 @@ class ProjectApp:
                 if m.enabled:
                     m.on_update(self, dt)
 
+            self.camera_manager.update(dt)
+
             # Synchronize 3D audio listener with active camera
             cam = self.camera_manager.active_camera
             if cam is not None and self.audio is not None:
@@ -224,6 +269,10 @@ class ProjectApp:
 
             if self.ui is not None:
                 self.ui.update(dt)
+
+            if self.system_monitor is not None:
+                self.system_monitor.update(dt)
+                self.system_monitor.record_fps(1.0 / max(1e-4, dt))
 
         def on_render_step(alpha: float) -> None:
             c_state = self.state_manager.current_state
@@ -250,11 +299,21 @@ class ProjectApp:
                     if extra_batches:
                         self._active_draw_batches.extend(extra_batches)
 
-            # 3. Sun & lighting parameters
+            # Fallback: if entities exist in ECS but no custom draw batches were registered, render them as cubes
+            if not self._active_draw_batches and self.ecs.active_count > 0:
+                alloc_cube = self.pipeline.mega_buffer.allocations.get("cube")
+                if alloc_cube is not None:
+                    self._active_draw_batches.append((alloc_cube, self.ecs.active_count, 0, False, True))
+
+            # 3. Synchronize live graphical tweaks to render pipeline
+            if self.engine_tweaks is not None:
+                self.engine_tweaks.apply_to_pipeline(self.pipeline)
+
+            # 4. Sun & lighting parameters
             sun_dir = getattr(self.pipeline.atmosphere, "sun_direction", (0.35, -0.85, 0.40))
             sun_lux = getattr(self.pipeline.config, "sun_intensity", 4.0)
 
-            # 4. Submit frame to deferred render pipeline
+            # 5. Submit frame to deferred render pipeline
             self.pipeline.render_frame(
                 ecs=self.ecs,
                 camera_pos=cam_pos,
@@ -290,6 +349,11 @@ class ProjectApp:
                         self.render_ctx.ctx.screen,
                         self.pipeline.post_process.final_fbo,
                     )
+
+                # Render Dear ImGui Sacred Debug Overlays on top of the screen
+                if self.debug_menu is not None:
+                    self.debug_menu.render()
+
                 self.render_ctx.window.swap_buffers()
 
 
@@ -304,6 +368,10 @@ class ProjectApp:
         """Executes a single deterministic frame step (useful for headless test suites)."""
         return self.engine_loop.step_frame(dt)
 
+    def stop(self) -> None:
+        """Signals the engine main loop to stop and commence orderly shutdown."""
+        self.is_running = False
+
     def run(self) -> None:
         """Runs the main real-time game loop until window close or quit requested."""
         self.is_running = True
@@ -314,12 +382,63 @@ class ProjectApp:
                 raw_ms = self._clock.tick(0)
                 dt = min(raw_ms * 0.001, 0.1)
 
+                # Maintain mouse grab policy if active state requests it and debug menu is closed
+                c_state = self.state_manager.current_state
+                if (
+                    c_state is not None
+                    and c_state.grab_mouse
+                    and not self.config.headless
+                    and (self.debug_menu is None or not self.debug_menu.visible)
+                ):
+                    if not pygame.event.get_grab():
+                        try:
+                            pygame.event.set_grab(True)
+                            pygame.mouse.set_visible(False)
+                            pygame.mouse.get_rel()
+                        except Exception:
+                            pass
+
                 # 1. Input event polling & dispatch
                 events = self.input_manager.poll_events()
                 for ev in events:
                     if ev.type == pygame.QUIT:
                         self.is_running = False
                         break
+
+                    # Sacred debug hotkeys (F1, F2, F3) are handled first if debug subsystem is active
+                    if self.debug_menu is not None:
+                        if ev.type == pygame.KEYDOWN:
+                            if ev.key == pygame.K_F1:
+                                style = self.debug_menu.cycle_f1()
+                                if style == 2 and self.input_manager.is_mouse_grabbed:
+                                    self.input_manager.set_mouse_grab(False)
+                                    self.input_manager._was_mouse_grabbed = False
+                                if self.debug_toast:
+                                    msg = "Debug: Performance HUD [F1]" if style == 1 else ("Debug: Profiler [F1]" if style == 2 else "Debug HUD Closed")
+                                    self.debug_toast.show(msg, duration=2.0, color=(56, 189, 248))
+                                continue
+                            elif ev.key == pygame.K_F2:
+                                is_open = self.debug_menu.toggle_graphics()
+                                if is_open and self.input_manager.is_mouse_grabbed:
+                                    self.input_manager.set_mouse_grab(False)
+                                    self.input_manager._was_mouse_grabbed = False
+                                if self.debug_toast:
+                                    msg = "Debug: Graphics Options [F2]" if is_open else "Graphics Options Closed"
+                                    self.debug_toast.show(msg, duration=1.5, color=(147, 197, 253))
+                                continue
+                            elif ev.key == pygame.K_F3:
+                                is_open = self.debug_menu.toggle_game_tweaks()
+                                if is_open and self.input_manager.is_mouse_grabbed:
+                                    self.input_manager.set_mouse_grab(False)
+                                    self.input_manager._was_mouse_grabbed = False
+                                if self.debug_toast:
+                                    msg = "Debug: Game Developer Tweaks [F3]" if is_open else "Game Tweaks Closed"
+                                    self.debug_toast.show(msg, duration=1.5, color=(147, 197, 253))
+                                continue
+
+                        # Forward events to ImGui if debug menu is currently open and visible
+                        if self.debug_menu.visible and self.debug_menu.process_event(ev):
+                            continue
 
                     # UI subsystem handles events first
                     if self.ui is not None and self.ui.handle_event(ev):

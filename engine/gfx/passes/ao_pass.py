@@ -112,8 +112,8 @@ class AmbientOcclusionPass(RenderPass):
             context.resources["ao_texture"] = self.white_fallback
             return
 
-        radius = float(getattr(context.config, "ao_radius", 0.75))
-        intensity = float(getattr(context.config, "ao_intensity", 1.2))
+        radius = float(getattr(context.config, "ao_radius", 0.35))
+        intensity = float(getattr(context.config, "ao_intensity", 1.0))
 
         # 1. Select AO program and VAO
         if ao_mode == "SSAO":
@@ -133,6 +133,8 @@ class AmbientOcclusionPass(RenderPass):
         self.raw_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
 
         g_buffer.depth_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)

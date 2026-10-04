@@ -114,6 +114,12 @@ void main() {
                 break;
             }
 
+            // Self-intersection rejection prevents immediate origin surface hits
+            if (length(sample_uv - v_UV) < 0.008 || t < step_len * 1.25) {
+                prev_p = curr_p;
+                continue;
+            }
+
             float scene_depth = texture(u_GBufferDepth, sample_uv).r;
             if (scene_depth <= 0.000001) {
                 prev_p = curr_p;
@@ -147,6 +153,12 @@ void main() {
                     }
                 }
 
+                // Self-intersection check at refined hit UV
+                if (length(hit_uv - v_UV) < 0.008) {
+                    prev_p = curr_p;
+                    continue;
+                }
+
                 // Backface rejection
                 vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, hit_uv).rg);
                 vec3 hit_normal_view = normalize(mat3(u_View) * hit_normal_world);
@@ -154,8 +166,12 @@ void main() {
                 if (dot(hit_normal_view, -ray_dir) > 0.05) {
                     hit = true;
                     curr_p = b_end;
+                    break;
+                } else {
+                    // Backface or silhouette glance: keep marching along the ray
+                    prev_p = curr_p;
+                    continue;
                 }
-                break;
             }
 
             prev_p = curr_p;
@@ -173,10 +189,9 @@ void main() {
 
             // Suppress extreme specular fireflies in indirect diffuse
             float lum = dot(hit_radiance, vec3(0.2126, 0.7152, 0.0722));
-            float max_lum = 3.5;
-            if (lum > max_lum) {
-                hit_radiance *= (max_lum / lum);
-            }
+            // Soft-compression Karis-style curve on indirect bounce prevents fireflies and speckle dots
+            hit_radiance *= 1.0 / (1.0 + lum * 0.75);
+            hit_radiance = clamp(hit_radiance, vec3(0.0), vec3(1.75));
 
             float d = length(curr_p - ray_origin);
             float dist_atten = clamp(1.0 - (d * d) / (u_SSGI_RayDistance * u_SSGI_RayDistance), 0.0, 1.0);

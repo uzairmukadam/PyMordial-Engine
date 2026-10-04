@@ -199,7 +199,7 @@ class PostProcessPipeline:
         if self._u_film_grain_enabled is not None:
             self._u_film_grain_enabled.value = 1 if grain_on else 0
         if self._u_film_grain_intensity is not None:
-            self._u_film_grain_intensity.value = float(getattr(self.config, "film_grain_intensity", 0.04))
+            self._u_film_grain_intensity.value = float(getattr(self.config, "film_grain_intensity", 0.03))
 
         if self._u_time is not None:
             self._u_time.value = float(time_elapsed)

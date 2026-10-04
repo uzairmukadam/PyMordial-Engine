@@ -74,6 +74,7 @@ class RenderContext:
         # Configure standard 3D state
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.enable(moderngl.CULL_FACE)
+        self.ctx.cull_face = "back"
         self.ctx.front_face = "ccw"
 
         # Apply Reversed-Z depth function if enabled
