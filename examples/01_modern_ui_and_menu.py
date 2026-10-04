@@ -404,10 +404,10 @@ class ExhibitionWorldModule(ProjectModule):
 
         # 3. Rotating Exhibition Metallic Cubes
         cube_configs = [
-            ((0.0, 2.0, 0.0), (1.5, 1.5, 1.5), (0.15, 0.85, 1.0, 1.0), 0.15, 0.10),
-            ((-3.0, 1.5, 0.0), (1.0, 1.0, 1.0), (0.95, 0.25, 0.35, 1.0), 0.3, 0.6),
-            ((3.0, 1.5, 0.0), (1.0, 1.0, 1.0), (0.25, 0.95, 0.45, 1.0), 0.3, 0.6),
-            ((0.0, 1.5, -3.0), (1.0, 1.0, 1.0), (0.85, 0.35, 0.95, 1.0), 0.3, 0.6),
+            ((0.0, 1.8, -0.2), (1.3, 1.3, 1.3), (0.15, 0.85, 1.0, 1.0), 0.08, 0.85),
+            ((-3.2, 1.6, 0.8), (1.1, 1.1, 1.1), (0.95, 0.25, 0.35, 1.0), 0.08, 0.85),
+            ((3.2, 1.6, 0.8), (1.1, 1.1, 1.1), (0.25, 0.95, 0.45, 1.0), 0.08, 0.85),
+            ((0.0, 2.3, -3.2), (1.1, 1.1, 1.1), (0.85, 0.35, 0.95, 1.0), 0.08, 0.85),
         ]
         self.cube_ids.clear()
         for pos, scale, color, rough, metal in cube_configs:
@@ -423,15 +423,26 @@ class ExhibitionWorldModule(ProjectModule):
 
     def on_update(self, app: ProjectApp, dt: float) -> None:
         self._rot_time += dt
-        # Smoothly rotate the central floating cube
-        if self.cube_ids:
-            center_eid = self.cube_ids[0]
-            d_idx = app.ecs.pool.get_dense_index(center_eid)
+        # Smoothly rotate and animate all exhibition cubes across distinct axes
+        speeds = [0.80, -0.65, 0.70, -0.55]
+        pitch_wobbles = [0.0, 0.12, -0.10, 0.14]
+        for i, eid in enumerate(self.cube_ids):
+            d_idx = app.ecs.pool.get_dense_index(eid)
             if d_idx >= 0:
-                angle = self._rot_time * 0.8
-                qy = math.sin(angle * 0.5)
-                qw = math.cos(angle * 0.5)
-                app.ecs.rigid_body_state[1, d_idx, 3:7] = (0.0, qy, 0.0, qw)
+                ang_y = self._rot_time * speeds[i % len(speeds)] + i * 1.5708
+                wobble = math.sin(self._rot_time * 1.2 + i * 1.1) * pitch_wobbles[i % len(pitch_wobbles)]
+
+                cy = math.cos(ang_y * 0.5)
+                sy = math.sin(ang_y * 0.5)
+                cp = math.cos(wobble * 0.5)
+                sp = math.sin(wobble * 0.5)
+
+                qx = sp * cy
+                qy = cp * sy
+                qz = -sp * sy
+                qw = cp * cy
+
+                app.ecs.rigid_body_state[1, d_idx, 3:7] = (qx, qy, qz, qw)
                 app.ecs.recompute_matrix(d_idx)
 
 

@@ -33,6 +33,11 @@ uniform float u_SSR_MaxDistance = 20.0;
 uniform float u_SSR_Thickness = 0.40;
 uniform float u_SSR_MaxRoughness = 0.65;
 
+uniform int u_WaterEnabled = 0;
+uniform float u_WaterHeight = 0.0;
+uniform vec3 u_WaterColorShallow = vec3(0.05, 0.45, 0.55);
+uniform vec3 u_WaterColorDeep = vec3(0.005, 0.04, 0.15);
+
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
     vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
@@ -95,6 +100,15 @@ void main() {
     int steps = clamp(u_SSR_Steps, 24, 80);
     float step_len = u_SSR_MaxDistance / float(steps);
 
+    // Analytical water plane intersection test in world space
+    vec3 ray_origin_world = (u_InvView * vec4(ray_origin, 1.0)).xyz;
+    vec3 R_world = normalize((u_InvView * vec4(R, 0.0)).xyz);
+
+    float t_water = -1.0;
+    if (u_WaterEnabled == 1 && ray_origin_world.y > u_WaterHeight && R_world.y < -0.001) {
+        t_water = (u_WaterHeight - ray_origin_world.y) / R_world.y;
+    }
+
     vec2 hit_uv = vec2(0.0);
     float hit_found = 0.0;
     float hit_dist = 0.0;
@@ -103,6 +117,23 @@ void main() {
     for (int s = 1; s <= steps; ++s) {
         // Dithered ray marching: eliminates uniform stepping bands
         float t = (float(s) - 0.5 + jitter) * step_len;
+
+        // Check if ray crosses below the water plane before encountering an opaque hit
+        if (t_water > 0.0 && t >= t_water && hit_found <= 0.0) {
+            vec3 p_water = ray_origin_world + R_world * t_water;
+            vec4 c_water = u_ViewProjection * vec4(p_water, 1.0);
+            if (c_water.w > 0.01) {
+                vec2 uv_w = (c_water.xy / c_water.w) * 0.5 + 0.5;
+                if (uv_w.x >= 0.0 && uv_w.x <= 1.0 && uv_w.y >= 0.0 && uv_w.y <= 1.0) {
+                    hit_uv = uv_w;
+                    hit_found = 1.0;
+                    hit_dist = t_water;
+                    final_hit_normal = vec3(0.0, 1.0, 0.0);
+                    break;
+                }
+            }
+        }
+
         vec3 curr_view = ray_origin + R * t;
 
         // Abort if ray passes behind the near clipping plane
@@ -128,7 +159,7 @@ void main() {
         float depth_diff = ray_depth - geo_depth;
 
         // Adaptive thickness threshold guarantees step_len cannot overshoot geometry
-        float adaptive_thickness = clamp(max(u_SSR_Thickness, step_len * 0.85) * (1.0 + ray_depth * 0.02), 0.15, 0.65);
+        float adaptive_thickness = clamp(max(u_SSR_Thickness, step_len * 1.25) * (1.0 + ray_depth * 0.03), 0.25, 1.20);
 
         if (depth_diff >= 0.0 && depth_diff < adaptive_thickness) {
             // Sub-pixel binary search bisection (6 iterations)
@@ -174,26 +205,23 @@ void main() {
             vec3 hit_view_pos = GetViewPos(best_uv, hit_depth);
 
             // 1. Tangent plane distance check:
-            // A reflection ray traveling in direction R (where dot(view_normal, R) > 0) strictly travels into the
-            // positive half-space of the originating surface plane. Any geometry lying behind or on the plane is
-            // a self-intersection or background occlusion error.
             float plane_dist = dot(hit_view_pos - view_pos, view_normal);
             if (plane_dist <= 0.02) {
                 continue;
             }
 
-            // 2. Surface orientation check:
-            // The reflection ray travels along vector R. For a valid front-facing collision, the hit surface's normal
-            // must face towards the incoming ray (dot(R, hit_normal_view) < 0).
-            // If dot(R, hit_normal_view) >= -0.05, the surface faces away from the ray (ray is hitting it from behind or passing behind it).
+            // 2. Originating convex surface self-hit rejection:
+            // A reflection ray traveling away from a convex object (dot(R, view_normal) > 0)
+            // cannot hit geometry with a matching normal (dot(view_normal, hit_normal_view) > 0.65)
+            // within the object's neighborhood (best_t < 2.5 or plane_dist < 1.5).
             vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, best_uv).rg);
             vec3 hit_normal_view = normalize((u_View * vec4(hit_normal_world, 0.0)).xyz);
-            if (dot(R, hit_normal_view) >= -0.05) {
+            if (dot(view_normal, hit_normal_view) > 0.65 && (best_t < 2.5 || plane_dist < 1.5)) {
                 continue;
             }
 
-            // 3. Planar self-intersection check: if surface normal is identical to originating surface and very close to the plane
-            if (dot(view_normal, hit_normal_view) > 0.98 && plane_dist < 0.10) {
+            // 3. Surface orientation check: ray must hit a front-facing surface (dot(R, hit_normal_view) <= -0.05)
+            if (dot(R, hit_normal_view) > -0.05) {
                 continue;
             }
 
@@ -205,11 +233,35 @@ void main() {
         }
     }
 
+    // Secondary fallback: if ray marched downwards to the water plane without hitting an obstacle
+    if (hit_found <= 0.0 && t_water > 0.0 && t_water <= u_SSR_MaxDistance) {
+        vec3 p_water = ray_origin_world + R_world * t_water;
+        vec4 c_water = u_ViewProjection * vec4(p_water, 1.0);
+        if (c_water.w > 0.01) {
+            vec2 uv_w = clamp((c_water.xy / c_water.w) * 0.5 + 0.5, 0.0, 1.0);
+            hit_uv = uv_w;
+            hit_found = 1.0;
+            hit_dist = t_water;
+            final_hit_normal = vec3(0.0, 1.0, 0.0);
+        } else {
+            // Water hit point is behind camera: still register water hit analytically
+            hit_uv = clamp(v_UV, 0.05, 0.95);
+            hit_found = 1.0;
+            hit_dist = t_water;
+            final_hit_normal = vec3(0.0, 1.0, 0.0);
+        }
+    }
+
     if (hit_found > 0.0) {
-        // Screen edge vignette fade to eliminate hard boundary popping
+        bool is_water = (t_water > 0.0 && abs(hit_dist - t_water) < 0.35);
+
+        // Screen edge vignette fade to eliminate hard boundary popping (exempt water from fading at screen edge)
         vec2 edge_coords = abs(hit_uv - 0.5) * 2.0;
         float edge_factor = clamp(1.0 - max(edge_coords.x, edge_coords.y), 0.0, 1.0);
         edge_factor = smoothstep(0.0, 0.15, edge_factor);
+        if (is_water) {
+            edge_factor = max(edge_factor, 0.85);
+        }
 
         // Ray travel distance attenuation
         float dist_fade = clamp(1.0 - (hit_dist / u_SSR_MaxDistance), 0.0, 1.0);
@@ -227,17 +279,34 @@ void main() {
         }
         reflected_color = clamp(reflected_color, vec3(0.0), vec3(40.0));
 
-        // In PyMordial's deferred architecture, Pass 6 (SSR) samples G-Buffer albedo before
-        // Pass 7 (Deferred Resolve). We calculate realistic daylight radiance for the hit geometry:
-        vec3 to_sun = normalize(-u_SunDirection_Intensity.xyz);
-        float NdotL = max(dot(final_hit_normal, to_sun), 0.0);
-        vec3 sun_radiance = u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * 0.35);
-        vec3 hit_lit_radiance = reflected_color * (sun_radiance * NdotL + vec3(0.40));
-        reflected_color = max(reflected_color * 0.6, hit_lit_radiance);
+        if (is_water) {
+            vec3 water_fill = mix(u_WaterColorShallow, u_WaterColorDeep, 0.35);
+            float water_lum = dot(reflected_color, vec3(0.2126, 0.7152, 0.0722));
+            if (water_lum < 0.05) {
+                reflected_color = water_fill;
+            } else {
+                reflected_color = mix(reflected_color, water_fill, 0.50);
+            }
+            reflected_color = max(reflected_color, water_fill * 0.90);
+
+            // Add sunlight specular glint on water reflection
+            vec3 to_sun = normalize(-u_SunDirection_Intensity.xyz);
+            vec3 H_sun = normalize(to_sun - R_world);
+            float sun_spec = pow(max(dot(vec3(0.0, 1.0, 0.0), H_sun), 0.0), 32.0);
+            reflected_color += u_SunColor_Ambient.rgb * (sun_spec * u_SunDirection_Intensity.w * 0.50);
+        } else {
+            // In PyMordial's deferred architecture, Pass 6 (SSR) samples G-Buffer albedo before
+            // Pass 7 (Deferred Resolve). We calculate realistic daylight radiance for the hit geometry:
+            vec3 to_sun = normalize(-u_SunDirection_Intensity.xyz);
+            float NdotL = max(dot(final_hit_normal, to_sun), 0.0);
+            vec3 sun_radiance = u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * 0.35);
+            vec3 hit_lit_radiance = reflected_color * (sun_radiance * NdotL + vec3(0.40));
+            reflected_color = max(reflected_color * 0.7, hit_lit_radiance);
+        }
 
         // Energy fade: smoothly fade alpha if surface is unlit/dark so it gracefully falls back to sky reflection
         float refl_lum = dot(reflected_color, vec3(0.2126, 0.7152, 0.0722));
-        float energy_fade = smoothstep(0.01, 0.08, refl_lum);
+        float energy_fade = is_water ? 1.0 : smoothstep(0.01, 0.08, refl_lum);
 
         float alpha = edge_factor * dist_fade * rough_fade * grazing_fade * energy_fade;
         if (isnan(alpha) || isinf(alpha)) alpha = 0.0;

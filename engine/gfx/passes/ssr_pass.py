@@ -55,6 +55,10 @@ class SSRPass(RenderPass):
         self._u_max_dist = self.prog.get("u_SSR_MaxDistance", None)
         self._u_thickness = self.prog.get("u_SSR_Thickness", None)
         self._u_max_rough = self.prog.get("u_SSR_MaxRoughness", None)
+        self._u_water_enabled = self.prog.get("u_WaterEnabled", None)
+        self._u_water_height = self.prog.get("u_WaterHeight", None)
+        self._u_water_shallow = self.prog.get("u_WaterColorShallow", None)
+        self._u_water_deep = self.prog.get("u_WaterColorDeep", None)
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
@@ -128,6 +132,16 @@ class SSRPass(RenderPass):
             self._u_thickness.value = float(getattr(context.config, "ssr_thickness", 0.40))
         if self._u_max_rough is not None:
             self._u_max_rough.value = float(getattr(context.config, "ssr_max_roughness", 0.65))
+        if self._u_water_enabled is not None:
+            self._u_water_enabled.value = 1 if getattr(context.config, "water_enabled", False) else 0
+        if self._u_water_height is not None:
+            self._u_water_height.value = float(getattr(context.config, "water_height", 0.0))
+        if self._u_water_shallow is not None:
+            col = getattr(context.config, "water_color_shallow", (0.05, 0.45, 0.55))
+            self._u_water_shallow.value = (float(col[0]), float(col[1]), float(col[2]))
+        if self._u_water_deep is not None:
+            col = getattr(context.config, "water_color_deep", (0.005, 0.04, 0.15))
+            self._u_water_deep.value = (float(col[0]), float(col[1]), float(col[2]))
 
         self.vao.render(moderngl.TRIANGLES, vertices=3)
 
