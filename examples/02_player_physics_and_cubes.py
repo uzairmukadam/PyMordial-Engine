@@ -364,7 +364,7 @@ class PlayerWorldModule(ProjectModule):
         elif event.type == pygame.MOUSEMOTION:
             if self.camera is not None and app.state_manager.is_in_state("Gameplay"):
                 rel_x, rel_y = float(event.rel[0]), float(event.rel[1])
-                self.camera.handle_mouse_orbit(rel_x, rel_y)
+                self.camera.handle_mouse_orbit(-rel_x, -rel_y)
                 return True
 
         elif event.type == pygame.MOUSEWHEEL:

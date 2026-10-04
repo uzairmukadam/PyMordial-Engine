@@ -24,6 +24,9 @@ class UIRenderer:
         "ctx",
         "screen_width",
         "screen_height",
+        "ui_scale",
+        "offset_x",
+        "offset_y",
         "prog",
         "vao",
         "vbo",
@@ -46,10 +49,13 @@ class UIRenderer:
     # 20..23: in_Params [corner_radius, border_width, tex_mode, glow_radius]
     FLOATS_PER_QUAD = 24
 
-    def __init__(self, ctx: moderngl.Context, screen_width: int = 1920, screen_height: int = 1080, max_quads: int = 2048) -> None:
+    def __init__(self, ctx: moderngl.Context, screen_width: int = 1280, screen_height: int = 720, max_quads: int = 2048) -> None:
         self.ctx = ctx
         self.screen_width = screen_width
         self.screen_height = screen_height
+        self.ui_scale = 1.0
+        self.offset_x = 0.0
+        self.offset_y = 0.0
         self.max_quads = max_quads
         self.quad_count = 0
 
@@ -97,6 +103,20 @@ class UIRenderer:
         self.screen_width = max(1, width)
         self.screen_height = max(1, height)
 
+    def set_scale(self, ui_scale: float, offset_x: float = 0.0, offset_y: float = 0.0) -> None:
+        """Updates UI canvas scaling factor and centering offsets, invalidating text textures if scale changed."""
+        new_scale = max(0.01, float(ui_scale))
+        if abs(self.ui_scale - new_scale) > 1e-4:
+            for tex, _, _ in self._text_texture_cache.values():
+                try:
+                    tex.release()
+                except Exception:
+                    pass
+            self._text_texture_cache.clear()
+        self.ui_scale = new_scale
+        self.offset_x = float(offset_x)
+        self.offset_y = float(offset_y)
+
     def begin_frame(self) -> None:
         """Resets the quad batch buffer for a new frame."""
         self.quad_count = 0
@@ -108,19 +128,40 @@ class UIRenderer:
         w: float,
         h: float,
         style: UIStyle,
+        scale_coords: bool = True,
     ) -> None:
-        """Enqueues a styled rounded rectangle."""
+        """Enqueues a styled rounded rectangle with canvas scaling."""
         if self.quad_count >= self.max_quads:
             self.flush()
 
         idx = self.quad_count * self.FLOATS_PER_QUAD
         vd = self._vertex_data
 
+        scale = self.ui_scale if scale_coords else 1.0
+        ox = self.offset_x if scale_coords else 0.0
+        oy = self.offset_y if scale_coords else 0.0
+
+        rx = x * scale + ox
+        ry = y * scale + oy
+        rw = w * scale
+        rh = h * scale
+
+        # Extend full-bleed panels edge-to-edge if covering canvas
+        if scale_coords and self.screen_width > 0 and self.screen_height > 0:
+            ref_w = (float(self.screen_width) - 2.0 * ox) / scale
+            ref_h = (float(self.screen_height) - 2.0 * oy) / scale
+            if x <= 0.0 and w >= ref_w - 1.0:
+                rx = 0.0
+                rw = float(self.screen_width)
+            if y <= 0.0 and h >= ref_h - 1.0:
+                ry = 0.0
+                rh = float(self.screen_height)
+
         # in_Position
-        vd[idx + 0] = x
-        vd[idx + 1] = y
-        vd[idx + 2] = w
-        vd[idx + 3] = h
+        vd[idx + 0] = rx
+        vd[idx + 1] = ry
+        vd[idx + 2] = rw
+        vd[idx + 3] = rh
 
         # in_UV (default full quad)
         vd[idx + 4] = 0.0
@@ -147,10 +188,10 @@ class UIRenderer:
         vd[idx + 19] = style.border_color[3]
 
         # in_Params: [corner_radius, border_width, tex_mode=0, glow_radius]
-        vd[idx + 20] = style.corner_radius
-        vd[idx + 21] = style.border_width
+        vd[idx + 20] = style.corner_radius * scale
+        vd[idx + 21] = style.border_width * scale
         vd[idx + 22] = 0.0  # Flat / Gradient
-        vd[idx + 23] = style.glow_radius
+        vd[idx + 23] = style.glow_radius * scale
 
         self.quad_count += 1
 
@@ -166,6 +207,7 @@ class UIRenderer:
         corner_radius: float = 0.0,
         border_color: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0),
         border_width: float = 0.0,
+        scale_coords: bool = True,
     ) -> None:
         """Draws a textured quad by flushing existing quads and binding texture."""
         self.flush()
@@ -175,10 +217,14 @@ class UIRenderer:
         idx = 0
         vd = self._vertex_data
 
-        vd[idx + 0] = x
-        vd[idx + 1] = y
-        vd[idx + 2] = w
-        vd[idx + 3] = h
+        scale = self.ui_scale if scale_coords else 1.0
+        ox = self.offset_x if scale_coords else 0.0
+        oy = self.offset_y if scale_coords else 0.0
+
+        vd[idx + 0] = x * scale + ox
+        vd[idx + 1] = y * scale + oy
+        vd[idx + 2] = w * scale
+        vd[idx + 3] = h * scale
 
         vd[idx + 4] = uv[0]
         vd[idx + 5] = uv[1]
@@ -196,8 +242,8 @@ class UIRenderer:
         vd[idx + 18] = border_color[2]
         vd[idx + 19] = border_color[3]
 
-        vd[idx + 20] = corner_radius
-        vd[idx + 21] = border_width
+        vd[idx + 20] = corner_radius * scale
+        vd[idx + 21] = border_width * scale
         vd[idx + 22] = 1.0  # Texture mode
         vd[idx + 23] = 0.0
 
@@ -214,28 +260,46 @@ class UIRenderer:
         align: str = "left",
         bold: bool = False,
     ) -> tuple[int, int]:
-        """Draws cached high-definition text glyphs to the screen."""
+        """Draws cached high-definition text glyphs to the screen with canvas scaling."""
         if not text:
             return (0, 0)
 
-        tex, tw, th = self._get_or_create_text_texture(text, font_size, bold)
+        if "\n" in text:
+            lines = text.split("\n")
+            line_h = float(font_size) * 1.35
+            max_w = 0
+            total_h = 0
+            for i, line in enumerate(lines):
+                lw, lh = self.draw_text(line, x, y + float(i) * line_h, font_size, color, align, bold)
+                max_w = max(max_w, lw)
+                total_h += lh
+            return (max_w, total_h)
+
+        # Scale font size dynamically to physical screen resolution for maximum crispness
+        scaled_size = max(8, int(round(float(font_size) * self.ui_scale)))
+        tex, tw_phys, th_phys = self._get_or_create_text_texture(text, scaled_size, bold)
+
+        # Virtual dimensions in reference canvas space
+        tw_virt = float(tw_phys) / self.ui_scale
+        th_virt = float(th_phys) / self.ui_scale
 
         draw_x = x
         if align == "center":
-            draw_x = x - tw * 0.5
+            draw_x = x - tw_virt * 0.5
         elif align == "right":
-            draw_x = x - tw
+            draw_x = x - tw_virt
 
         self.draw_textured_rect(
             x=draw_x,
             y=y,
-            w=float(tw),
-            h=float(th),
+            w=tw_virt,
+            h=th_virt,
             texture=tex,
             tint=color,
             corner_radius=0.0,
+            scale_coords=True,
         )
-        return (tw, th)
+        return (int(round(tw_virt)), int(round(th_virt)))
 
     def _get_font(self, size: int, bold: bool = False) -> pygame.font.Font:
         key = ("default", size, bold)

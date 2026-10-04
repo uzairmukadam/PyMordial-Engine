@@ -241,3 +241,98 @@ def test_ui_captured_virtual_cursor():
         except Exception:
             pass
 
+
+def test_ui_canvas_scaling_and_resolution_independence():
+    """Validates that UIManager scales canvas proportionally to screen resolution with accurate hit-testing."""
+    import pygame
+    from engine.ui import UIManager, UIScreen, UIButton
+    from engine.events import WindowResizeEvent
+
+    # Reference resolution: 1280x720
+    mgr = UIManager(ctx=None, width=1280, height=720, reference_width=1280.0, reference_height=720.0)
+    screen = UIScreen(name="ScalingMenu", is_modal=True)
+    clicked = [False]
+
+    # Button centered at x=540, y=320, w=200, h=80 in virtual 1280x720 canvas
+    btn = UIButton(text="Start", x=540, y=320, w=200, h=80, on_click=lambda: clicked.__setitem__(0, True))
+    screen.add_child(btn)
+    mgr.set_screen(screen)
+
+    # 1. At 1280x720 (native reference)
+    assert abs(mgr.ui_scale - 1.0) < 1e-4
+    assert abs(mgr.offset_x) < 1e-4
+    assert abs(mgr.offset_y) < 1e-4
+
+    # 2. Resize to 1920x1080 (1.5x scaling)
+    mgr._on_window_resize(WindowResizeEvent(width=1920, height=1080))
+    assert abs(mgr.ui_scale - 1.5) < 1e-4
+    assert abs(mgr.offset_x) < 1e-4
+    assert abs(mgr.offset_y) < 1e-4
+
+    # Window click at physical screen center: (1920 * 0.5, 1080 * 0.5) = (960, 540)
+    # Virtual canvas position: (960 / 1.5, 540 / 1.5) = (640, 360)
+    # Button bounds: [540..740, 320..400]. (640, 360) is exactly in the center!
+    ev_motion = pygame.event.Event(pygame.MOUSEMOTION, pos=(960, 540), rel=(0, 0), buttons=(0, 0, 0))
+    mgr.handle_event(ev_motion)
+    assert abs(mgr.cursor_pos[0] - 640.0) < 1e-3
+    assert abs(mgr.cursor_pos[1] - 360.0) < 1e-3
+    assert btn.is_hovered is True
+
+    # Mouse down and up at physical (960, 540)
+    ev_down = pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=(960, 540), button=1)
+    mgr.handle_event(ev_down)
+    assert btn.is_pressed is True
+
+    ev_up = pygame.event.Event(pygame.MOUSEBUTTONUP, pos=(960, 540), button=1)
+    mgr.handle_event(ev_up)
+    assert btn.is_pressed is False
+    assert clicked[0] is True
+
+    # 3. Resize to 2560x1440 (2.0x scaling)
+    mgr._on_window_resize(WindowResizeEvent(width=2560, height=1440))
+    assert abs(mgr.ui_scale - 2.0) < 1e-4
+
+    # 4. Ultrawide 21:9 resolution: 2560x1080
+    mgr._on_window_resize(WindowResizeEvent(width=2560, height=1080))
+    # Vertical scale is 1080 / 720 = 1.5; horizontal scale is 2560 / 1280 = 2.0.
+    # Uniform aspect-ratio scale is min(1.5, 2.0) = 1.5
+    assert abs(mgr.ui_scale - 1.5) < 1e-4
+    # Centering offset_x = (2560 - 1280 * 1.5) * 0.5 = (2560 - 1920) * 0.5 = 320.0
+    assert abs(mgr.offset_x - 320.0) < 1e-4
+    assert abs(mgr.offset_y - 0.0) < 1e-4
+
+    # Physical click at center of ultrawide: x = 1280, y = 540
+    # Virtual canvas: vx = (1280 - 320) / 1.5 = 960 / 1.5 = 640.0; vy = 540 / 1.5 = 360.0
+    ev_motion_uw = pygame.event.Event(pygame.MOUSEMOTION, pos=(1280, 540), rel=(0, 0), buttons=(0, 0, 0))
+    mgr.handle_event(ev_motion_uw)
+    assert abs(mgr.cursor_pos[0] - 640.0) < 1e-3
+    assert abs(mgr.cursor_pos[1] - 360.0) < 1e-3
+    assert btn.is_hovered is True
+
+
+def test_ui_renderer_quad_scaling():
+    """Validates that UIRenderer correctly scales quad vertex data based on active scale and offsets."""
+    import moderngl
+    from engine.ui import UIRenderer, UIStyle
+
+    ctx = moderngl.create_context(standalone=True)
+    renderer = UIRenderer(ctx, screen_width=1920, screen_height=1080)
+    renderer.set_scale(ui_scale=1.5, offset_x=100.0, offset_y=50.0)
+
+    # Draw a 200x100 rectangle at (10, 20) in virtual space
+    style = UIStyle(corner_radius=8.0, border_width=2.0)
+    renderer.draw_rect(10.0, 20.0, 200.0, 100.0, style)
+
+    # In vertex buffer:
+    # Position: [x*1.5 + 100, y*1.5 + 50, w*1.5, h*1.5] = [115.0, 80.0, 300.0, 150.0]
+    vd = renderer._vertex_data
+    assert abs(vd[0] - 115.0) < 1e-3
+    assert abs(vd[1] - 80.0) < 1e-3
+    assert abs(vd[2] - 300.0) < 1e-3
+    assert abs(vd[3] - 150.0) < 1e-3
+
+    # Params: [corner_radius*1.5, border_width*1.5, ...] = [12.0, 3.0, ...]
+    assert abs(vd[20] - 12.0) < 1e-3
+    assert abs(vd[21] - 3.0) < 1e-3
+
+

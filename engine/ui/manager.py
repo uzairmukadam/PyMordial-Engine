@@ -21,8 +21,14 @@ if TYPE_CHECKING:
 class UIScreen(UIElement):
     """Represents a fullscreen UI page or menu."""
 
-    def __init__(self, name: str = "Screen", is_modal: bool = True) -> None:
-        super().__init__(x=0.0, y=0.0, w=1920.0, h=1080.0)
+    def __init__(
+        self,
+        name: str = "Screen",
+        is_modal: bool = True,
+        reference_width: float = 1280.0,
+        reference_height: float = 720.0,
+    ) -> None:
+        super().__init__(x=0.0, y=0.0, w=reference_width, h=reference_height)
         self.name = name
         self.is_modal = is_modal
 
@@ -67,7 +73,7 @@ class UIScreen(UIElement):
 
 
 class UIManager:
-    """Master UI Subsystem coordinating OpenGL UI rendering, captured AAA cursor, and interaction."""
+    """Master UI Subsystem coordinating OpenGL UI rendering, captured AAA cursor, and responsive canvas scaling."""
 
     __slots__ = (
         "ctx",
@@ -76,6 +82,11 @@ class UIManager:
         "screen_stack",
         "width",
         "height",
+        "reference_width",
+        "reference_height",
+        "ui_scale",
+        "offset_x",
+        "offset_y",
         "cursor_pos",
         "cursor_visible",
         "_app",
@@ -84,36 +95,64 @@ class UIManager:
         "_cursor_texture",
     )
 
-    def __init__(self, ctx: moderngl.Context | None = None, width: int = 1920, height: int = 1080, theme: UITheme | None = None) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context | None = None,
+        width: int = 1280,
+        height: int = 720,
+        theme: UITheme | None = None,
+        reference_width: float = 1280.0,
+        reference_height: float = 720.0,
+    ) -> None:
         self.ctx = ctx
         self.width = max(1, width)
         self.height = max(1, height)
-        self.renderer: UIRenderer | None = UIRenderer(ctx, width, height) if ctx is not None else None
+        self.reference_width = float(reference_width)
+        self.reference_height = float(reference_height)
+        self.ui_scale = 1.0
+        self.offset_x = 0.0
+        self.offset_y = 0.0
+        self._update_scale()
+
+        self.renderer: UIRenderer | None = UIRenderer(ctx, self.width, self.height) if ctx is not None else None
+        if self.renderer is not None:
+            self.renderer.set_scale(self.ui_scale, self.offset_x, self.offset_y)
+
         self.theme = theme if theme is not None else UITheme()
         self.screen_stack: list[UIScreen] = []
         self._app: ProjectApp | None = None
-        self.cursor_pos: list[float] = [float(width) * 0.5, float(height) * 0.5]
+        self.cursor_pos: list[float] = [self.reference_width * 0.5, self.reference_height * 0.5]
         self.cursor_visible: bool = False
         self._mouse_pos: tuple[float, float] = (self.cursor_pos[0], self.cursor_pos[1])
         self._is_clicking: bool = False
         self._cursor_texture: moderngl.Texture | None = None
 
-    def attach_app(self, app: ProjectApp) -> None:
-        self._app = app
-        self.width = app.config.width
-        self.height = app.config.height
+    def _update_scale(self) -> None:
+        sx = float(self.width) / max(1.0, self.reference_width)
+        sy = float(self.height) / max(1.0, self.reference_height)
+        self.ui_scale = min(sx, sy)
+        self.offset_x = (float(self.width) - self.reference_width * self.ui_scale) * 0.5
+        self.offset_y = (float(self.height) - self.reference_height * self.ui_scale) * 0.5
+
+    def set_screen_size(self, width: int, height: int) -> None:
+        """Updates active resolution, recomputes proportional canvas scale, and syncs UI screens."""
+        self.width = max(1, width)
+        self.height = max(1, height)
+        self._update_scale()
         if self.renderer is not None:
             self.renderer.set_screen_size(self.width, self.height)
+            self.renderer.set_scale(self.ui_scale, self.offset_x, self.offset_y)
+        for screen in self.screen_stack:
+            screen.w = self.reference_width
+            screen.h = self.reference_height
+
+    def attach_app(self, app: ProjectApp) -> None:
+        self._app = app
+        self.set_screen_size(app.config.width, app.config.height)
         subscribe_event(WindowResizeEvent, self._on_window_resize, priority=85)
 
     def _on_window_resize(self, event: WindowResizeEvent) -> None:
-        self.width = event.width
-        self.height = event.height
-        if self.renderer is not None:
-            self.renderer.set_screen_size(event.width, event.height)
-        for screen in self.screen_stack:
-            screen.w = float(event.width)
-            screen.h = float(event.height)
+        self.set_screen_size(event.width, event.height)
 
     @property
     def active_screen(self) -> UIScreen | None:
@@ -128,17 +167,17 @@ class UIManager:
 
         if screen is not None:
             self.screen_stack.append(screen)
+            screen.w = self.reference_width
+            screen.h = self.reference_height
             if self._app:
-                screen.w = float(self.width)
-                screen.h = float(self.height)
                 screen.on_enter(self._app)
 
     def push_screen(self, screen: UIScreen) -> None:
         """Pushes an overlay screen onto the stack."""
         self.screen_stack.append(screen)
+        screen.w = self.reference_width
+        screen.h = self.reference_height
         if self._app:
-            screen.w = float(self.width)
-            screen.h = float(self.height)
             screen.on_enter(self._app)
 
     def pop_screen(self) -> UIScreen | None:
@@ -183,7 +222,7 @@ class UIManager:
         return self._cursor_texture
 
     def handle_event(self, event: pygame.event.Event) -> bool:
-        """Dispatches SDL2/PyGame events to the top UI screen using virtual cursor coordinates."""
+        """Dispatches SDL2/PyGame events to the top UI screen using virtual canvas coordinates."""
         top = self.active_screen
         if top is None or not top.visible or not top.enabled:
             return False
@@ -195,11 +234,13 @@ class UIManager:
             rel = getattr(event, "rel", (0, 0))
             is_grabbed = bool(pygame.display.get_init() and pygame.event.get_grab())
             if is_grabbed or (self.cursor_visible and rel != (0, 0)):
-                self.cursor_pos[0] = max(0.0, min(float(self.width), self.cursor_pos[0] + float(rel[0])))
-                self.cursor_pos[1] = max(0.0, min(float(self.height), self.cursor_pos[1] + float(rel[1])))
+                self.cursor_pos[0] = max(0.0, min(self.reference_width, self.cursor_pos[0] + float(rel[0]) / self.ui_scale))
+                self.cursor_pos[1] = max(0.0, min(self.reference_height, self.cursor_pos[1] + float(rel[1]) / self.ui_scale))
             else:
-                self.cursor_pos[0] = float(event.pos[0])
-                self.cursor_pos[1] = float(event.pos[1])
+                vx = (float(event.pos[0]) - self.offset_x) / self.ui_scale
+                vy = (float(event.pos[1]) - self.offset_y) / self.ui_scale
+                self.cursor_pos[0] = max(0.0, min(self.reference_width, vx))
+                self.cursor_pos[1] = max(0.0, min(self.reference_height, vy))
 
             self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
             return top.on_mouse_move(self.cursor_pos[0], self.cursor_pos[1])
@@ -207,8 +248,10 @@ class UIManager:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             is_grabbed = bool(pygame.display.get_init() and pygame.event.get_grab())
             if not is_grabbed and not self.cursor_visible:
-                self.cursor_pos[0] = float(event.pos[0])
-                self.cursor_pos[1] = float(event.pos[1])
+                vx = (float(event.pos[0]) - self.offset_x) / self.ui_scale
+                vy = (float(event.pos[1]) - self.offset_y) / self.ui_scale
+                self.cursor_pos[0] = max(0.0, min(self.reference_width, vx))
+                self.cursor_pos[1] = max(0.0, min(self.reference_height, vy))
             self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
             self._is_clicking = True
             return top.on_mouse_down(self.cursor_pos[0], self.cursor_pos[1], event.button)
@@ -216,8 +259,10 @@ class UIManager:
         elif event.type == pygame.MOUSEBUTTONUP:
             is_grabbed = bool(pygame.display.get_init() and pygame.event.get_grab())
             if not is_grabbed and not self.cursor_visible:
-                self.cursor_pos[0] = float(event.pos[0])
-                self.cursor_pos[1] = float(event.pos[1])
+                vx = (float(event.pos[0]) - self.offset_x) / self.ui_scale
+                vy = (float(event.pos[1]) - self.offset_y) / self.ui_scale
+                self.cursor_pos[0] = max(0.0, min(self.reference_width, vx))
+                self.cursor_pos[1] = max(0.0, min(self.reference_height, vy))
             self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
             self._is_clicking = False
             return top.on_mouse_up(self.cursor_pos[0], self.cursor_pos[1], event.button)
@@ -235,8 +280,8 @@ class UIManager:
                 pad_move = self._app.input_manager.get_vector2("move")
                 if abs(pad_move[0]) > 0.08 or abs(pad_move[1]) > 0.08:
                     speed = 950.0  # Pixels per second
-                    self.cursor_pos[0] = max(0.0, min(float(self.width), self.cursor_pos[0] + pad_move[0] * speed * dt))
-                    self.cursor_pos[1] = max(0.0, min(float(self.height), self.cursor_pos[1] - pad_move[1] * speed * dt))
+                    self.cursor_pos[0] = max(0.0, min(self.reference_width, self.cursor_pos[0] + pad_move[0] * speed * dt))
+                    self.cursor_pos[1] = max(0.0, min(self.reference_height, self.cursor_pos[1] - pad_move[1] * speed * dt))
                     self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
                     top.on_mouse_move(self.cursor_pos[0], self.cursor_pos[1])
 
@@ -262,6 +307,7 @@ class UIManager:
                     texture=tex,
                     tint=(1.0, 1.0, 1.0, 1.0),
                     corner_radius=0.0,
+                    scale_coords=True,
                 )
 
         self.renderer.flush()

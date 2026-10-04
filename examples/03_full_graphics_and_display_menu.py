@@ -1006,7 +1006,7 @@ class WorldAndPlayerModule(ProjectModule):
 
         if event.type == pygame.MOUSEMOTION:
             rel_x, rel_y = float(event.rel[0]), float(event.rel[1])
-            self.camera.handle_mouse_orbit(rel_x, rel_y)
+            self.camera.handle_mouse_orbit(-rel_x, -rel_y)
             return True
 
         elif event.type == pygame.MOUSEWHEEL:
