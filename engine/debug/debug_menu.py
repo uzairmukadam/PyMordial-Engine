@@ -482,8 +482,8 @@ class DebugMenu:
             imgui.separator()
             imgui.text("Global Illumination & Ambient Occlusion")
 
-            # GI Mode (OFF, SSGI, LPV, HYBRID)
-            gi_modes = ["OFF", "SSGI", "LPV", "HYBRID"]
+            # GI Mode (OFF, SSGI, LPV, HYBRID, RADIANCE_CASCADES)
+            gi_modes = ["OFF", "SSGI", "LPV", "HYBRID", "RADIANCE_CASCADES"]
             curr_gi_idx = gi_modes.index(et.gi_mode) if et.gi_mode in gi_modes else 3
             gi_changed, new_gi_idx = imgui.combo("GI Mode", curr_gi_idx, gi_modes)
             if gi_changed and new_gi_idx != curr_gi_idx:
@@ -521,6 +521,27 @@ class DebugMenu:
                 lpv_in_changed, lpv_in_val = imgui.slider_float("LPV Intensity", et.lpv_intensity, 0.1, 3.0, "%.2f")
                 if lpv_in_changed:
                     et.lpv_intensity = lpv_in_val
+                    et.mark_custom()
+
+            if et.gi_mode == "RADIANCE_CASCADES":
+                rc_in_changed, rc_in_val = imgui.slider_float("RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f")
+                if rc_in_changed:
+                    et.rc_intensity = rc_in_val
+                    et.mark_custom()
+
+                rc_c0_changed, rc_c0_val = imgui.slider_float("RC C0 Range", getattr(et, "rc_interval_c0", 0.40), 0.1, 1.0, "%.2fm")
+                if rc_c0_changed:
+                    et.rc_interval_c0 = rc_c0_val
+                    et.mark_custom()
+
+                rc_c1_changed, rc_c1_val = imgui.slider_float("RC C1 Range", getattr(et, "rc_interval_c1", 2.50), 1.0, 6.0, "%.1fm")
+                if rc_c1_changed:
+                    et.rc_interval_c1 = rc_c1_val
+                    et.mark_custom()
+
+                rc_blend_changed, rc_blend_val = imgui.slider_float("RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.85), 0.0, 0.95, "%.2f")
+                if rc_blend_changed:
+                    et.rc_temporal_blend = rc_blend_val
                     et.mark_custom()
 
             # AO Mode (OFF, SSAO, HBAO, GTAO)

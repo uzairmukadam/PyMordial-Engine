@@ -314,7 +314,7 @@ class GraphicsSettingsUI(UIScreen):
         right_card.add_child(lbl_adv)
 
         # Ambient Occlusion (AO)
-        lbl_ao = UILabel("AMBIENT OCCLUSION (AO)", x=24, y=44, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_ao = UILabel("AMBIENT OCCLUSION (AO)", x=24, y=34, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_ao)
 
         self.seg_ao = UISegmentGroup(
@@ -325,15 +325,34 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=2,
             x=24,
-            y=64,
+            y=52,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("ao", val),
         )
         right_card.add_child(self.seg_ao)
 
+        # Global Illumination (GI Pipeline)
+        lbl_gi = UILabel("GLOBAL ILLUMINATION (GI PIPELINE)", x=24, y=84, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        right_card.add_child(lbl_gi)
+
+        self.seg_gi = UISegmentGroup(
+            options=[
+                ("Disabled", "OFF"),
+                ("Classic (LPV+SSGI)", "HYBRID"),
+                ("Radiance Cascades", "RADIANCE_CASCADES"),
+            ],
+            selected_index=2,
+            x=24,
+            y=102,
+            w=517,
+            h=28,
+            on_change=lambda val: self._on_staged_change("gi", val),
+        )
+        right_card.add_child(self.seg_gi)
+
         # Bloom & HDR
-        lbl_bloom = UILabel("BLOOM & HDR GLOW", x=24, y=102, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_bloom = UILabel("BLOOM & HDR GLOW", x=24, y=134, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_bloom)
 
         self.seg_bloom = UISegmentGroup(
@@ -343,15 +362,15 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=1,
             x=24,
-            y=122,
+            y=152,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("bloom", val),
         )
         right_card.add_child(self.seg_bloom)
 
         # Screen-Space Reflections (SSR)
-        lbl_ssr = UILabel("SCREEN-SPACE REFLECTIONS (SSR)", x=24, y=160, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_ssr = UILabel("SCREEN-SPACE REFLECTIONS (SSR)", x=24, y=184, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_ssr)
 
         self.seg_ssr = UISegmentGroup(
@@ -361,15 +380,15 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=1,
             x=24,
-            y=180,
+            y=202,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("ssr", val),
         )
         right_card.add_child(self.seg_ssr)
 
         # Volumetric Fog
-        lbl_fog = UILabel("VOLUMETRIC FROXEL FOG", x=24, y=218, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_fog = UILabel("VOLUMETRIC FROXEL FOG", x=24, y=234, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_fog)
 
         self.seg_fog = UISegmentGroup(
@@ -379,15 +398,15 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=1,
             x=24,
-            y=238,
+            y=252,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("fog", val),
         )
         right_card.add_child(self.seg_fog)
 
         # Anamorphic Lens Flare
-        lbl_flare = UILabel("ANAMORPHIC LENS FLARE", x=24, y=276, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_flare = UILabel("ANAMORPHIC LENS FLARE", x=24, y=284, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_flare)
 
         self.seg_flare = UISegmentGroup(
@@ -397,15 +416,15 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=1,
             x=24,
-            y=296,
+            y=302,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("lens_flare", val),
         )
         right_card.add_child(self.seg_flare)
 
         # Anti-Aliasing
-        lbl_aa = UILabel("ANTI-ALIASING (AA)", x=24, y=334, w=500, h=18, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
+        lbl_aa = UILabel("ANTI-ALIASING (AA)", x=24, y=334, w=500, h=16, font_size=11, bold=True, color=(0.7, 0.75, 0.85, 0.8))
         right_card.add_child(lbl_aa)
 
         self.seg_aa = UISegmentGroup(
@@ -416,9 +435,9 @@ class GraphicsSettingsUI(UIScreen):
             ],
             selected_index=1,
             x=24,
-            y=354,
+            y=352,
             w=517,
-            h=32,
+            h=28,
             on_change=lambda val: self._on_staged_change("aa", val),
         )
         right_card.add_child(self.seg_aa)
@@ -426,7 +445,7 @@ class GraphicsSettingsUI(UIScreen):
         lbl_note = UILabel(
             "Individual toggles override presets. Nothing is modified until [APPLY CHANGES] is clicked.",
             x=24,
-            y=400,
+            y=395,
             w=517,
             h=30,
             font_size=11,
@@ -503,6 +522,7 @@ class GraphicsSettingsUI(UIScreen):
             "vsync": win.vsync,
             "preset": preset_val,
             "ao": getattr(cfg, "ao_mode", "GTAO"),
+            "gi": getattr(cfg, "gi_mode", "RADIANCE_CASCADES"),
             "bloom": bool(getattr(cfg, "bloom_enabled", True)),
             "ssr": bool(getattr(cfg, "ssr_enabled", True)),
             "fog": bool(getattr(cfg, "volumetric_fog_enabled", True)),
@@ -547,6 +567,13 @@ class GraphicsSettingsUI(UIScreen):
         for i, opt in enumerate(self.seg_ao.options):
             if opt[1] == cur_ao:
                 self.seg_ao.selected_index = i
+                break
+
+        # GI
+        cur_gi = self.pending_settings.get("gi", "RADIANCE_CASCADES")
+        for i, opt in enumerate(self.seg_gi.options):
+            if opt[1] == cur_gi:
+                self.seg_gi.selected_index = i
                 break
 
         # Bloom
@@ -598,6 +625,7 @@ class GraphicsSettingsUI(UIScreen):
         self.pending_settings["preset"] = preset_key
         p_cfg = get_quality_preset(preset_key)
         self.pending_settings["ao"] = p_cfg.ao_mode
+        self.pending_settings["gi"] = getattr(p_cfg, "gi_mode", "RADIANCE_CASCADES")
         self.pending_settings["bloom"] = p_cfg.bloom_enabled
         self.pending_settings["ssr"] = p_cfg.ssr_enabled
         self.pending_settings["fog"] = p_cfg.volumetric_fog_enabled
@@ -614,6 +642,7 @@ class GraphicsSettingsUI(UIScreen):
             "vsync": VSyncMode.OFF,
             "preset": "high",
             "ao": p_cfg.ao_mode,
+            "gi": getattr(p_cfg, "gi_mode", "RADIANCE_CASCADES"),
             "bloom": p_cfg.bloom_enabled,
             "ssr": p_cfg.ssr_enabled,
             "fog": p_cfg.volumetric_fog_enabled,
@@ -649,6 +678,7 @@ class GraphicsSettingsUI(UIScreen):
         preset_key = self.pending_settings["preset"]
         new_cfg = get_quality_preset(preset_key)
         new_cfg.ao_mode = self.pending_settings["ao"]
+        new_cfg.gi_mode = self.pending_settings.get("gi", "RADIANCE_CASCADES")
         new_cfg.bloom_enabled = self.pending_settings["bloom"]
         new_cfg.ssr_enabled = self.pending_settings["ssr"]
         new_cfg.volumetric_fog_enabled = self.pending_settings["fog"]

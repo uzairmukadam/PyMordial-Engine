@@ -61,6 +61,8 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - **Ground Truth Ambient Occlusion (GTAO)**: High-performance horizon-based occlusion with spatial bilateral blur filter.
 - **Screen-Space Global Illumination (SSGI)**: Real-time indirect diffuse bounce from on-screen surfaces.
 - **Light Propagation Volumes (LPV)**: 3D spatial grid for low-frequency multi-bounce indirect lighting.
+- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination. Interval raymarching computes per-cascade radiance at descending angular resolutions, merged via bilateral/temporal resolve for noise-free indirect lighting. Mutually exclusive with the classic SSGI/LPV path.
+- **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `SSGI`, `LPV`, `HYBRID` (SSGI + LPV), and `RADIANCE_CASCADES` (SSRC + FFPC).
 - **Clustered Forward+ Local Lights (`engine.gfx.passes.clustered_lights.ClusteredLightingPass`)**: Computes 3D screen frustum grid clusters to evaluate hundreds of dynamic point and spot lights simultaneously.
 - **Screen-Space Reflections (SSR)**: Hi-Z traced glossy/rough reflections with edge fade and fallback to IBL.
 - **Image-Based Lighting (IBL)**: Split-sum approximation using prefiltered environment cubemaps and BRDF integration LUT.

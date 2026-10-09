@@ -1,0 +1,136 @@
+#version 450 core
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (rgba16f, binding = 0) uniform writeonly image2D u_OutFilteredIrradiance;
+
+layout (binding = 1) uniform sampler2D u_RawIrradiance;
+layout (binding = 2) uniform sampler2D u_GBufferDepth;
+layout (binding = 3) uniform sampler2D u_GBufferNormalMetallic;
+layout (binding = 4) uniform sampler2D u_HistoryIrradiance;
+
+layout (std140, binding = 0) uniform FrameData {
+    mat4 u_View;
+    mat4 u_Projection;
+    mat4 u_ViewProjection;
+    mat4 u_InvProjection;
+    mat4 u_InvView;
+
+    vec4 u_CameraPos_Time;
+    vec4 u_ScreenSize_Jitter;
+
+    vec4 u_SunDirection_Intensity;
+    vec4 u_SunColor_Ambient;
+
+    mat4 u_LightViewProjection[4];
+    vec4 u_CascadeSplits;
+
+    vec4 u_FogColor_Density;
+    vec4 u_FogParams;
+};
+
+uniform mat4 u_PrevViewProjection;
+uniform float u_TemporalBlend = 0.85;
+uniform vec2 u_TargetResolution;
+
+vec3 OctahedralDecode(vec2 f) {
+    f = f * 2.0 - 1.0;
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = clamp(-n.z, 0.0, 1.0);
+    n.x += (n.x >= 0.0) ? -t : t;
+    n.y += (n.y >= 0.0) ? -t : t;
+    return normalize(n);
+}
+
+vec3 GetViewPos(vec2 uv, float raw_depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
+    vec4 view = u_InvProjection * clip;
+    return view.xyz / max(abs(view.w), 1e-6);
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(u_TargetResolution.x) || pixel.y >= int(u_TargetResolution.y)) {
+        return;
+    }
+
+    vec2 texel_size = 1.0 / u_TargetResolution;
+    vec2 uv = (vec2(pixel) + 0.5) * texel_size;
+
+    float center_depth = texture(u_GBufferDepth, uv).r;
+    if (center_depth <= 0.000001) {
+        imageStore(u_OutFilteredIrradiance, pixel, vec4(0.0));
+        return;
+    }
+
+    vec3 center_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg);
+    vec3 center_view_pos = GetViewPos(uv, center_depth);
+    float center_view_z = center_view_pos.z;
+
+    // 1. Bilateral Spatial Cross Reconstruction
+    vec3 accum_irradiance = vec3(0.0);
+    float accum_weight = 0.0;
+
+    vec3 box_min = vec3(1e6);
+    vec3 box_max = vec3(-1e6);
+
+    const int RADIUS = 2;
+    for (int dy = -RADIUS; dy <= RADIUS; ++dy) {
+        for (int dx = -RADIUS; dx <= RADIUS; ++dx) {
+            vec2 sample_uv = uv + vec2(float(dx), float(dy)) * texel_size;
+            if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
+                continue;
+            }
+
+            vec3 sample_raw = texture(u_RawIrradiance, sample_uv).rgb;
+            float sample_d = texture(u_GBufferDepth, sample_uv).r;
+            vec3 sample_n = OctahedralDecode(texture(u_GBufferNormalMetallic, sample_uv).rg);
+            float sample_z = GetViewPos(sample_uv, sample_d).z;
+
+            // Compute edge-preserving weights
+            float spatial_dist_sq = float(dx * dx + dy * dy);
+            float w_spatial = exp(-spatial_dist_sq * 0.25);
+
+            float z_diff = abs(sample_z - center_view_z);
+            float z_tolerance = max(0.04 * abs(center_view_z), 0.08);
+            float w_depth = exp(-z_diff / z_tolerance);
+
+            float n_dot = clamp(dot(sample_n, center_normal), 0.0, 1.0);
+            float w_normal = pow(n_dot, 16.0);
+
+            float w = w_spatial * w_depth * w_normal;
+            accum_irradiance += sample_raw * w;
+            accum_weight += w;
+
+            // Track 3x3 local neighborhood AABB for temporal clamping
+            if (abs(dx) <= 1 && abs(dy) <= 1) {
+                box_min = min(box_min, sample_raw);
+                box_max = max(box_max, sample_raw);
+            }
+        }
+    }
+
+    vec3 spatial_irradiance = (accum_weight > 1e-4) ? (accum_irradiance / accum_weight) : texture(u_RawIrradiance, uv).rgb;
+
+    // 2. Temporal Accumulation with Neighborhood AABB Clamping
+    vec4 world_pos = u_InvView * vec4(center_view_pos, 1.0);
+    vec4 prev_clip = u_PrevViewProjection * world_pos;
+
+    vec3 final_irradiance = spatial_irradiance;
+
+    if (prev_clip.w > 1e-4) {
+        vec2 prev_uv = (prev_clip.xy / prev_clip.w) * 0.5 + 0.5;
+
+        if (prev_uv.x >= 0.0 && prev_uv.x <= 1.0 && prev_uv.y >= 0.0 && prev_uv.y <= 1.0) {
+            vec3 history_sample = texture(u_HistoryIrradiance, prev_uv).rgb;
+
+            // Clamp history to current neighborhood bounding box to prevent ghosting
+            vec3 clamped_history = clamp(history_sample, box_min, box_max);
+
+            float alpha = clamp(u_TemporalBlend, 0.0, 0.95);
+            final_irradiance = mix(spatial_irradiance, clamped_history, alpha);
+        }
+    }
+
+    imageStore(u_OutFilteredIrradiance, pixel, vec4(final_irradiance, 1.0));
+}

@@ -18,6 +18,7 @@ layout (binding = 8) uniform sampler2D u_SSRTexture;           // Screen-Space R
 layout (binding = 9) uniform sampler3D u_LPVVolume;            // 3D Light Propagation Volume
 layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light Perspective Shadow Depth Atlas
 layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
+layout (binding = 15) uniform sampler2D u_RCTexture;           // Hybrid Radiance Cascades (SSRC + FFPC)
 
 // Unified Frame Context UBO 0
 layout (std140, binding = 0) uniform FrameData {
@@ -61,7 +62,7 @@ layout (std430, binding = 3) buffer LightBuffer {
 // Configurable quality & feature uniforms
 uniform int u_PCF_Samples = 24;  // 16 to 32 samples (Default: 24)
 uniform int u_CascadeCount = 4;  // 1 to 4
-uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 11=HiZ, 12=SpotLights
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 8=SSGI, 9=LPV, 10=IndirectDiffuse, 11=HiZ, 12=SpotLights, 13=RadianceCascades
 uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug == 11
 
 // AAA Shadow Parametrization
@@ -76,7 +77,7 @@ const vec2 CALIBRATED_SHADOW_OFFSET = vec2(-0.0004, 0.0011);
 
 // Phase 5 Toggles & Settings
 uniform int u_AOEnabled = 1;
-uniform int u_GIEnabled = 3;     // 0=Off, 1=SSGI, 2=LPV, 3=Hybrid
+uniform int u_GIEnabled = 3;     // 0=Off, 1=SSGI, 2=LPV, 3=Hybrid (Classic SSGI+LPV), 4=Radiance Cascades (SSRC+FFPC)
 uniform int u_IBLEnabled = 1;
 uniform int u_SSREnabled = 1;
 uniform int u_PointLightCount = 0;
@@ -615,41 +616,54 @@ void main() {
         return;
     }
 
-    // Global Illumination (SSGI + LPV)
+    // Global Illumination (SSGI + LPV vs Radiance Cascades)
     vec3 indirect_diffuse = vec3(0.0);
     vec4 ssgi_sample = vec4(0.0);
     vec4 lpv_sample = vec4(0.0);
+    vec4 rc_sample = vec4(0.0);
 
-    // 1. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
-    if (u_GIEnabled == 1 || u_GIEnabled == 3) {
-        ssgi_sample = texture(u_SSGITexture, v_UV);
-        if (isnan(ssgi_sample.r) || isnan(ssgi_sample.g) || isnan(ssgi_sample.b) ||
-            isinf(ssgi_sample.r) || isinf(ssgi_sample.g) || isinf(ssgi_sample.b) ||
-            isnan(ssgi_sample.a) || isinf(ssgi_sample.a)) {
-            ssgi_sample = vec4(0.0);
+    if (u_GIEnabled == 4) {
+        // Next-Gen Hybrid Radiance Cascades (SSRC + FFPC)
+        rc_sample = texture(u_RCTexture, v_UV);
+        if (isnan(rc_sample.r) || isnan(rc_sample.g) || isnan(rc_sample.b) ||
+            isinf(rc_sample.r) || isinf(rc_sample.g) || isinf(rc_sample.b)) {
+            rc_sample = vec4(0.0);
         }
-        vec3 ssgi_diffuse = clamp(ssgi_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
-        indirect_diffuse += ssgi_diffuse;
-    }
-
-    // 2. LPV (Volumetric 3D Indirect Diffuse Bounce)
-    if (u_GIEnabled == 2 || u_GIEnabled == 3) {
-        // Normal-Oriented Volumetric Sampling: offset along N by 75% voxel cell
-        vec3 voxel_cell = u_LPV_Size / 32.0;
-        vec3 lpv_sample_pos = world_pos.xyz + N * (voxel_cell * 0.75);
-        vec3 lpv_uvw = clamp((lpv_sample_pos - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
-        lpv_sample = texture(u_LPVVolume, lpv_uvw);
-        if (isnan(lpv_sample.r) || isnan(lpv_sample.g) || isnan(lpv_sample.b) ||
-            isinf(lpv_sample.r) || isinf(lpv_sample.g) || isinf(lpv_sample.b)) {
-            lpv_sample = vec4(0.0);
+        vec3 rc_diffuse = clamp(rc_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
+        indirect_diffuse += rc_diffuse;
+    } else {
+        // Classic Global Illumination Pipeline
+        // 1. SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
+        if (u_GIEnabled == 1 || u_GIEnabled == 3) {
+            ssgi_sample = texture(u_SSGITexture, v_UV);
+            if (isnan(ssgi_sample.r) || isnan(ssgi_sample.g) || isnan(ssgi_sample.b) ||
+                isinf(ssgi_sample.r) || isinf(ssgi_sample.g) || isinf(ssgi_sample.b) ||
+                isnan(ssgi_sample.a) || isinf(ssgi_sample.a)) {
+                ssgi_sample = vec4(0.0);
+            }
+            vec3 ssgi_diffuse = clamp(ssgi_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
+            indirect_diffuse += ssgi_diffuse;
         }
 
-        vec3 lpv_diffuse = clamp(lpv_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic) * 0.40;
-        if (u_GIEnabled == 2) {
-            indirect_diffuse += lpv_diffuse;
-        } else {
-            // In HYBRID mode: where SSGI hits, SSGI takes precedence; where SSGI misses, LPV smoothly fills in
-            indirect_diffuse += lpv_diffuse * (1.0 - clamp(ssgi_sample.a * 1.5, 0.0, 1.0));
+        // 2. LPV (Volumetric 3D Indirect Diffuse Bounce)
+        if (u_GIEnabled == 2 || u_GIEnabled == 3) {
+            // Normal-Oriented Volumetric Sampling: offset along N by 75% voxel cell
+            vec3 voxel_cell = u_LPV_Size / 32.0;
+            vec3 lpv_sample_pos = world_pos.xyz + N * (voxel_cell * 0.75);
+            vec3 lpv_uvw = clamp((lpv_sample_pos - u_LPV_Min) / u_LPV_Size, vec3(0.0), vec3(1.0));
+            lpv_sample = texture(u_LPVVolume, lpv_uvw);
+            if (isnan(lpv_sample.r) || isnan(lpv_sample.g) || isnan(lpv_sample.b) ||
+                isinf(lpv_sample.r) || isinf(lpv_sample.g) || isinf(lpv_sample.b)) {
+                lpv_sample = vec4(0.0);
+            }
+
+            vec3 lpv_diffuse = clamp(lpv_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic) * 0.40;
+            if (u_GIEnabled == 2) {
+                indirect_diffuse += lpv_diffuse;
+            } else {
+                // In HYBRID mode: where SSGI hits, SSGI takes precedence; where SSGI misses, LPV smoothly fills in
+                indirect_diffuse += lpv_diffuse * (1.0 - clamp(ssgi_sample.a * 1.5, 0.0, 1.0));
+            }
         }
     }
 
@@ -661,6 +675,9 @@ void main() {
         return;
     } else if (u_GBufferDebug == 10) {
         out_HDRColor = vec4(indirect_diffuse, 1.0);
+        return;
+    } else if (u_GBufferDebug == 13) {
+        out_HDRColor = vec4(rc_sample.rgb, 1.0);
         return;
     }
 

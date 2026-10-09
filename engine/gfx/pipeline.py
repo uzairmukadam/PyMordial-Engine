@@ -28,6 +28,7 @@ from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.ao_pass import AmbientOcclusionPass
 from engine.gfx.passes.ssgi_pass import SSGIPass
 from engine.gfx.passes.lpv_pass import LPVPass
+from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
 from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
@@ -79,6 +80,7 @@ class RenderPipeline:
         "ao_pass",
         "ssgi_pass",
         "lpv_pass",
+        "rc_pass",
         "lights_pass",
         "ssr_pass",
         "taa_pass",
@@ -263,6 +265,7 @@ class RenderPipeline:
         self.ao_pass = AmbientOcclusionPass(self.ctx, w, h)
         self.ssgi_pass = SSGIPass(self.ctx, w, h)
         self.lpv_pass = LPVPass(self.ctx)
+        self.rc_pass = RadianceCascadesPass(self.ctx, w, h)
         self.lights_pass = ClusteredLightingPass(
             self.ctx,
             max_lights=self.config.max_point_lights,
@@ -394,6 +397,7 @@ class RenderPipeline:
             "u_TransmittanceLUT": 11,
             "u_SpotShadowAtlas": 12,
             "u_HiZTexture": 14,
+            "u_RCTexture": 15,
         }
         for name, unit in tex_uniforms.items():
             if name in self.resolve_prog:
@@ -648,6 +652,7 @@ class RenderPipeline:
         self.hiz_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(width, height)
+        self.rc_pass.resize(width, height)
         self.ssr_pass.resize(width, height)
         self.taa_pass.resize(width, height)
         self.fxaa_pass.resize(width, height)
@@ -1088,10 +1093,14 @@ class RenderPipeline:
 
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
-        # ---- PASS 5: Global Illumination (SSGI + LPV) ----
+        # ---- PASS 5: Global Illumination (Mutually Exclusive: Classic SSGI+LPV vs Radiance Cascades) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
-        self.ssgi_pass.execute(ctx)
-        self.lpv_pass.execute(ctx)
+        ctx.resources["sky_view_lut"] = self.sky_atmosphere_pass.sky_view_lut
+        if self.config.gi_mode == "RADIANCE_CASCADES":
+            self.rc_pass.execute(ctx)
+        else:
+            self.ssgi_pass.execute(ctx)
+            self.lpv_pass.execute(ctx)
 
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)
@@ -1137,6 +1146,9 @@ class RenderPipeline:
         self.spot_shadow_map.depth_texture.use(location=12)
         self.hiz_pass.hiz_texture.use(location=14)
 
+        rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
+        rc_tex.use(location=15)
+
         # Set resolve uniforms
         if self._u_pcf_samples is not None:
             self._u_pcf_samples.value = self.config.pcf_samples
@@ -1172,6 +1184,8 @@ class RenderPipeline:
             gi_enum_val = 2
         elif self.config.gi_mode == "HYBRID":
             gi_enum_val = 3
+        elif self.config.gi_mode == "RADIANCE_CASCADES":
+            gi_enum_val = 4
         if self._u_gi_enabled is not None:
             self._u_gi_enabled.value = gi_enum_val
 
@@ -1367,6 +1381,7 @@ class RenderPipeline:
         self.ao_pass.destroy()
         self.ssgi_pass.destroy()
         self.lpv_pass.destroy()
+        self.rc_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
         self.taa_pass.destroy()

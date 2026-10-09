@@ -69,6 +69,14 @@ class EngineTweaks:
         "ssgi_ray_distance",
         "ssgi_intensity",
         "lpv_intensity",
+        "rc_intensity",
+        "rc_interval_c0",
+        "rc_interval_c1",
+        "rc_interval_c2",
+        "rc_steps_c0",
+        "rc_steps_c1",
+        "rc_thickness",
+        "rc_temporal_blend",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
@@ -236,6 +244,14 @@ class EngineTweaks:
         self.ssgi_ray_distance = 3.0
         self.ssgi_intensity = 1.5
         self.lpv_intensity = 1.0
+        self.rc_intensity = 1.0
+        self.rc_interval_c0 = 0.40
+        self.rc_interval_c1 = 2.50
+        self.rc_interval_c2 = 40.0
+        self.rc_steps_c0 = 6
+        self.rc_steps_c1 = 10
+        self.rc_thickness = 0.30
+        self.rc_temporal_blend = 0.85
         self.ibl_enabled = True
         self.ssr_enabled = True
         self.ssr_steps = 32
@@ -489,6 +505,14 @@ class EngineTweaks:
             p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
             p_cfg.ssgi_intensity = float(self.ssgi_intensity)
             p_cfg.lpv_intensity = float(self.lpv_intensity)
+            p_cfg.rc_intensity = float(self.rc_intensity)
+            p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
+            p_cfg.rc_interval_c1 = float(self.rc_interval_c1)
+            p_cfg.rc_interval_c2 = float(self.rc_interval_c2)
+            p_cfg.rc_steps_c0 = int(self.rc_steps_c0)
+            p_cfg.rc_steps_c1 = int(self.rc_steps_c1)
+            p_cfg.rc_thickness = float(self.rc_thickness)
+            p_cfg.rc_temporal_blend = float(self.rc_temporal_blend)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
@@ -635,6 +659,8 @@ class EngineTweaks:
             "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
             "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
             "ssgi_intensity", "lpv_intensity",
+            "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
+            "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
             "ao_mode", "ao_intensity", "ao_radius",
             "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
             "aa_mode", "taa_enabled", "taa_feedback", "taa_sharpness", "taa_gamma",
@@ -719,6 +745,14 @@ class EngineTweaks:
             "ssgi_ray_distance": float(self.ssgi_ray_distance),
             "ssgi_intensity": float(self.ssgi_intensity),
             "lpv_intensity": float(self.lpv_intensity),
+            "rc_intensity": float(self.rc_intensity),
+            "rc_interval_c0": float(self.rc_interval_c0),
+            "rc_interval_c1": float(self.rc_interval_c1),
+            "rc_interval_c2": float(self.rc_interval_c2),
+            "rc_steps_c0": int(self.rc_steps_c0),
+            "rc_steps_c1": int(self.rc_steps_c1),
+            "rc_thickness": float(self.rc_thickness),
+            "rc_temporal_blend": float(self.rc_temporal_blend),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),

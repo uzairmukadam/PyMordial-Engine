@@ -12,7 +12,7 @@
 Designed to bridge the gap between high-level Python productivity and AAA-grade visual fidelity, PyMordial combines an expressive component and module lifecycle with a zero-allocation, contiguous data-oriented execution core.
 
 > [!NOTE]
-> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. All core foundational subsystems—including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and sacred debug suite—are fully functional, thoroughly tested (240+ automated tests), and ready for game development.
+> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. All core foundational subsystems—including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and sacred debug suite—are fully functional, thoroughly tested (246 automated tests), and ready for game development.
 
 ---
 
@@ -35,6 +35,7 @@ Designed to bridge the gap between high-level Python productivity and AAA-grade 
 - **Ground Truth Ambient Occlusion (GTAO) & SSAO**: Horizon-based ambient occlusion with bilateral cross-bilateral blur for contact shadows and depth shading.
 - **Screen-Space Reflections (SSR)**: Traces glossy and rough reflections across G-Buffer surfaces with edge fading, roughness blur, and multi-object line-of-sight support for complex scene geometry and water planes.
 - **Screen-Space Global Illumination (SSGI) & Light Propagation Volumes (LPV)**: Dynamic indirect diffuse bounces and low-frequency volumetric light grids.
+- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination with interval raymarching and bilateral/temporal resolve. Runtime-switchable via `GIMode` enum (`OFF`, `SSGI`, `LPV`, `HYBRID`, `RADIANCE_CASCADES`).
 - **Clustered Forward+ Local Lighting**: 3D screen frustum cluster binning evaluating hundreds of dynamic point and spot lights simultaneously.
 - **Physical Sky & Atmosphere**: Precomputed Rayleigh and Mie atmospheric scattering with ozone absorption and real-time sun/moon solar cycles.
 - **Volumetric Fog & Light Shafts**: 3D Froxel grid integration through anisotropic participating media.
@@ -113,7 +114,7 @@ PyMordial-Engine/
 ├── projects/                     # Standalone game projects directory (git-ignored for user games)
 │   └── shotgun_beat_the_speed/   # Example arcade muscle racer project
 ├── shaders/                      # Consolidated GLSL 4.5 core shaders
-├── tests/                        # Comprehensive unit and integration test suite (240+ tests)
+├── tests/                        # Comprehensive unit and integration test suite (246 tests)
 └── docs/                         # Specifications, guides, and LLM coding instructions
     ├── DEVELOPER_GUIDE.md        # Architecture overview and developer workflows
     ├── ENGINE_FEATURES.md        # Technical subsystem specification
@@ -303,7 +304,7 @@ python -m engine.tools.packager --project projects/my_game --target nuitka --rel
 
 ## Automated Test Suite
 
-PyMordial includes over 240 automated unit, integration, and regression tests:
+PyMordial includes 246 automated unit, integration, and regression tests:
 
 ```bash
 # Run all tests

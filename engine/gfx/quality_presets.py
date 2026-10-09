@@ -19,6 +19,7 @@ class GIMode(str, Enum):
     SSGI = "SSGI"
     LPV = "LPV"
     HYBRID = "HYBRID"
+    RADIANCE_CASCADES = "RADIANCE_CASCADES"
 
 
 FROXEL_RESOLUTIONS: dict[str, tuple[int, int, int]] = {
@@ -63,14 +64,25 @@ class RenderConfig:
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
 
-    # Global Illumination (SSGI & LPV)
-    gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID"
+    # Global Illumination (SSGI & LPV vs Radiance Cascades)
+    gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID", "RADIANCE_CASCADES"
     ssgi_steps: int = 16
     ssgi_rays: int = 8
     ssgi_ray_distance: float = 3.0
     ssgi_thickness: float = 0.35
     ssgi_intensity: float = 1.5
     lpv_intensity: float = 1.0
+
+    # Hybrid Radiance Cascades (SSRC + FFPC)
+    rc_cascades: int = 3
+    rc_interval_c0: float = 0.40
+    rc_interval_c1: float = 2.50
+    rc_interval_c2: float = 40.0
+    rc_steps_c0: int = 6
+    rc_steps_c1: int = 10
+    rc_thickness: float = 0.30
+    rc_intensity: float = 1.0
+    rc_temporal_blend: float = 0.85
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

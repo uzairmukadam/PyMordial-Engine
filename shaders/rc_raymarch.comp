@@ -1,0 +1,286 @@
+#version 450 core
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (rgba16f, binding = 0) uniform writeonly image2D u_OutRawIrradiance;
+
+layout (binding = 1) uniform sampler2D u_GBufferDepth;
+layout (binding = 2) uniform sampler2D u_GBufferNormalMetallic;
+layout (binding = 3) uniform sampler2D u_GBufferAlbedoRoughness;
+layout (binding = 4) uniform sampler2D u_SceneColor;
+layout (binding = 5) uniform sampler2D u_SkyViewLUT;
+
+layout (std140, binding = 0) uniform FrameData {
+    mat4 u_View;
+    mat4 u_Projection;
+    mat4 u_ViewProjection;
+    mat4 u_InvProjection;
+    mat4 u_InvView;
+
+    vec4 u_CameraPos_Time;
+    vec4 u_ScreenSize_Jitter;
+
+    vec4 u_SunDirection_Intensity;
+    vec4 u_SunColor_Ambient;
+
+    mat4 u_LightViewProjection[4];
+    vec4 u_CascadeSplits;
+
+    vec4 u_FogColor_Density;
+    vec4 u_FogParams;
+};
+
+uniform float u_RC_IntervalC0 = 0.40;   // Cascade 0 max range (m)
+uniform float u_RC_IntervalC1 = 2.50;   // Cascade 1 max range (m)
+uniform float u_RC_IntervalC2 = 40.0;   // Cascade 2 max range (m) - FFPC
+uniform int u_RC_StepsC0 = 6;           // Cascade 0 raymarch steps
+uniform int u_RC_StepsC1 = 10;          // Cascade 1 raymarch steps
+uniform float u_RC_Thickness = 0.30;    // Depth thickness threshold (m)
+uniform float u_RC_Intensity = 1.0;     // GI Intensity multiplier
+uniform vec2 u_TargetResolution;
+
+const float PI = 3.14159265358979323846;
+
+vec3 OctahedralDecode(vec2 f) {
+    f = f * 2.0 - 1.0;
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = clamp(-n.z, 0.0, 1.0);
+    n.x += (n.x >= 0.0) ? -t : t;
+    n.y += (n.y >= 0.0) ? -t : t;
+    return normalize(n);
+}
+
+float InterleavedGradientNoise(vec2 screen_pos) {
+    return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
+}
+
+vec3 GetViewPos(vec2 uv, float raw_depth) {
+    vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
+    vec4 view = u_InvProjection * clip;
+    return view.xyz / max(abs(view.w), 1e-6);
+}
+
+// Evaluates Far-Field Probe Cascades (FFPC) along world ray direction
+vec3 EvaluateFFPC(vec3 dir_world) {
+    vec3 d = normalize(dir_world);
+    vec3 L = normalize(-u_SunDirection_Intensity.xyz);
+    float sun_lux = u_SunDirection_Intensity.w;
+
+    if (d.y > -0.05) {
+        float cosZenith = clamp(d.y, -1.0, 1.0);
+        float viewZenith = acos(cosZenith);
+        vec3 d_horiz = vec3(d.x, 0.0, d.z);
+        vec3 L_horiz = vec3(L.x, 0.0, L.z);
+        float len_dh = length(d_horiz);
+        float len_lh = length(L_horiz);
+        float sunAzimuth = 0.0;
+        if (len_dh > 1e-5 && len_lh > 1e-5) {
+            float cosAz = clamp(dot(d_horiz / len_dh, L_horiz / len_lh), -1.0, 1.0);
+            sunAzimuth = acos(cosAz);
+        }
+
+        float u = sunAzimuth / PI;
+        float v = sqrt(max(viewZenith / PI, 0.0));
+        vec3 lut_sky = texture(u_SkyViewLUT, vec2(u, v)).rgb * 3.5;
+
+        vec3 base_sky = mix(vec3(0.10, 0.22, 0.42), vec3(0.38, 0.58, 0.82), clamp(d.y * 2.0, 0.0, 1.0));
+        vec3 sky_color = (dot(lut_sky, lut_sky) > 0.001) ? lut_sky : (base_sky * (sun_lux * 0.15 + 0.12));
+
+        float horizon_blend = smoothstep(-0.05, 0.05, d.y);
+        vec3 ground_color = vec3(0.20, 0.22, 0.18) * u_SunColor_Ambient.rgb * max(0.0, L.y) * sun_lux * 0.15;
+        return mix(ground_color, sky_color, horizon_blend);
+    } else {
+        vec3 ground_albedo = vec3(0.22, 0.24, 0.20);
+        float ground_sun_factor = max(0.0, L.y);
+        vec3 ground_bounce = ground_albedo * (u_SunColor_Ambient.rgb * ground_sun_factor * (sun_lux * 0.20) + vec3(0.03));
+        return ground_bounce;
+    }
+}
+
+// Raymarches a discrete radial interval [r_start, r_end] in view space
+bool RaymarchInterval(
+    vec3 origin_v,
+    vec3 dir_v,
+    float r_start,
+    float r_end,
+    int steps,
+    float jitter,
+    vec2 origin_uv,
+    out vec2 hit_uv,
+    out vec3 hit_pos_v
+) {
+    float interval_len = r_end - r_start;
+    float step_dt = interval_len / float(steps);
+    vec3 prev_p = origin_v + dir_v * r_start;
+
+    for (int s = 1; s <= steps; ++s) {
+        float t = r_start + (float(s) - 0.5 + jitter) * step_dt;
+        vec3 curr_p = origin_v + dir_v * t;
+
+        vec4 clip = u_Projection * vec4(curr_p, 1.0);
+        if (clip.w <= 1e-5) return false;
+        vec2 sample_uv = (clip.xy / clip.w) * 0.5 + 0.5;
+
+        if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
+            return false;
+        }
+
+        // Avoid self-intersection near probe origin
+        if (t < r_start + step_dt * 0.75 || length(sample_uv - origin_uv) < 0.005) {
+            prev_p = curr_p;
+            continue;
+        }
+
+        float scene_d = texture(u_GBufferDepth, sample_uv).r;
+        if (scene_d <= 0.000001) {
+            prev_p = curr_p;
+            continue;
+        }
+
+        float scene_z = GetViewPos(sample_uv, scene_d).z;
+        float diff = scene_z - curr_p.z;
+        float th = max(u_RC_Thickness, step_dt * 1.35) * (1.0 + abs(curr_p.z) * 0.02);
+
+        if (diff >= 0.0 && diff < th) {
+            // Binary search bisection (3 iterations)
+            vec3 b_start = prev_p;
+            vec3 b_end = curr_p;
+            vec2 refined_uv = sample_uv;
+            for (int b = 0; b < 3; ++b) {
+                vec3 b_mid = (b_start + b_end) * 0.5;
+                vec4 c_mid = u_Projection * vec4(b_mid, 1.0);
+                if (c_mid.w <= 1e-5) break;
+                vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
+                float d_mid = texture(u_GBufferDepth, uv_mid).r;
+                float z_mid = GetViewPos(uv_mid, d_mid).z;
+                if (z_mid - b_mid.z >= 0.0) {
+                    b_end = b_mid;
+                    refined_uv = uv_mid;
+                } else {
+                    b_start = b_mid;
+                }
+            }
+
+            if (length(refined_uv - origin_uv) < 0.005) {
+                prev_p = curr_p;
+                continue;
+            }
+
+            vec3 hit_nw = OctahedralDecode(texture(u_GBufferNormalMetallic, refined_uv).rg);
+            vec3 hit_nv = normalize(mat3(u_View) * hit_nw);
+            if (dot(hit_nv, -dir_v) > 0.02) {
+                hit_uv = refined_uv;
+                hit_pos_v = b_end;
+                return true;
+            }
+        }
+        prev_p = curr_p;
+    }
+    return false;
+}
+
+vec3 SampleHitRadiance(vec2 hit_uv, float hit_dist, float max_dist) {
+    vec3 hit_rad = texture(u_SceneColor, hit_uv).rgb;
+    if (isnan(hit_rad.r) || isnan(hit_rad.g) || isnan(hit_rad.b) ||
+        isinf(hit_rad.r) || isinf(hit_rad.g) || isinf(hit_rad.b) ||
+        dot(hit_rad, hit_rad) < 0.0001) {
+        vec3 hit_alb = texture(u_GBufferAlbedoRoughness, hit_uv).rgb;
+        hit_rad = hit_alb * u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * 0.25);
+    }
+    float lum = dot(hit_rad, vec3(0.2126, 0.7152, 0.0722));
+    hit_rad *= 1.0 / (1.0 + lum * 0.65);
+    float atten = clamp(1.0 - (hit_dist * hit_dist) / (max_dist * max_dist), 0.0, 1.0);
+    return clamp(hit_rad * atten, vec3(0.0), vec3(3.0));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(u_TargetResolution.x) || pixel.y >= int(u_TargetResolution.y)) {
+        return;
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) / u_TargetResolution;
+    float raw_depth = texture(u_GBufferDepth, uv).r;
+    if (raw_depth <= 0.000001) {
+        imageStore(u_OutRawIrradiance, pixel, vec4(0.0));
+        return;
+    }
+
+    vec3 view_pos = GetViewPos(uv, raw_depth);
+    vec3 normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg);
+    vec3 normal_view = normalize(mat3(u_View) * normal_world);
+
+    // Tangent basis in view space
+    vec3 up = abs(normal_view.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 T = normalize(cross(up, normal_view));
+    vec3 B = cross(normal_view, T);
+
+    vec3 ray_origin_v = view_pos + normal_view * 0.035;
+    float noise = InterleavedGradientNoise(vec2(pixel));
+
+    // Radiance Cascades interval definitions
+    float r0 = 0.04;
+    float r1 = max(u_RC_IntervalC0, 0.15);
+    float r2 = max(u_RC_IntervalC1, r1 + 0.50);
+
+    vec3 raw_irradiance = vec3(0.0);
+    float total_weight = 0.0;
+
+    // Cascade 0: 4 Directions (quadrant distribution across hemisphere)
+    for (int k = 0; k < 4; ++k) {
+        float phi0 = (float(k) + 0.5) * (0.5 * PI) + (noise - 0.5) * 0.25;
+        float cosTheta0 = 0.65;
+        float sinTheta0 = 0.7599; // sqrt(1.0 - 0.65^2)
+        vec3 dir0_v = normalize(T * (cos(phi0) * sinTheta0) + B * (sin(phi0) * sinTheta0) + normal_view * cosTheta0);
+
+        vec2 hit_uv0;
+        vec3 hit_p0;
+        bool hit0 = RaymarchInterval(ray_origin_v, dir0_v, r0, r1, u_RC_StepsC0, noise, uv, hit_uv0, hit_p0);
+
+        vec3 L0 = vec3(0.0);
+        if (hit0) {
+            float d0 = length(hit_p0 - ray_origin_v);
+            L0 = SampleHitRadiance(hit_uv0, d0, r1);
+        } else {
+            // Unobstructed in Cascade 0: merge from Cascade 1 (branching into 4 child directions)
+            vec3 L1_sum = vec3(0.0);
+            for (int j = 0; j < 4; ++j) {
+                float d_phi = (-0.35 + float(j) * 0.2333) * (0.5 * PI);
+                float phi1 = phi0 + d_phi;
+                float cosTheta1 = 0.45 + float(j & 1) * 0.40;
+                float sinTheta1 = sqrt(max(1.0 - cosTheta1 * cosTheta1, 0.0));
+                vec3 dir1_v = normalize(T * (cos(phi1) * sinTheta1) + B * (sin(phi1) * sinTheta1) + normal_view * cosTheta1);
+
+                vec2 hit_uv1;
+                vec3 hit_p1;
+                bool hit1 = RaymarchInterval(ray_origin_v, dir1_v, r1, r2, u_RC_StepsC1, noise, uv, hit_uv1, hit_p1);
+
+                vec3 L1 = vec3(0.0);
+                if (hit1) {
+                    float d1 = length(hit_p1 - ray_origin_v);
+                    L1 = SampleHitRadiance(hit_uv1, d1, r2);
+                } else {
+                    // Cascade 2 (Far-Field Probe Cascades - FFPC)
+                    vec3 dir1_w = normalize(mat3(u_InvView) * dir1_v);
+                    L1 = EvaluateFFPC(dir1_w);
+                }
+                L1_sum += L1;
+            }
+            L0 = L1_sum * 0.25;
+        }
+
+        float NdotL = max(0.0, dot(normal_view, dir0_v));
+        raw_irradiance += L0 * NdotL;
+        total_weight += NdotL;
+    }
+
+    if (total_weight > 1e-4) {
+        raw_irradiance = (raw_irradiance / total_weight) * (PI * 0.5) * u_RC_Intensity;
+    }
+
+    // Suppress extreme specular fireflies with soft Karis-style tonemap
+    float lum = dot(raw_irradiance, vec3(0.2126, 0.7152, 0.0722));
+    raw_irradiance *= 1.0 / (1.0 + lum * 0.5);
+
+    imageStore(u_OutRawIrradiance, pixel, vec4(raw_irradiance, 1.0));
+}
