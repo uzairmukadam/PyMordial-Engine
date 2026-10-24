@@ -43,26 +43,20 @@ class AmbientOcclusionPass(RenderPass):
         # 2. Compile Shaders
         quad_vert = load_shader("fullscreen_quad.vert")
         ssao_frag = load_shader("ssao.frag")
-        hbao_frag = load_shader("hbao.frag")
         gtao_frag = load_shader("gtao.frag")
         blur_frag = load_shader("bilateral_blur.frag")
 
         self.ssao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssao_frag)
-        self.hbao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=hbao_frag)
         self.gtao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=gtao_frag)
         self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=blur_frag)
 
         self.ssao_vao = self.ctx.vertex_array(self.ssao_prog, [])
-        self.hbao_vao = self.ctx.vertex_array(self.hbao_prog, [])
         self.gtao_vao = self.ctx.vertex_array(self.gtao_prog, [])
         self.blur_vao = self.ctx.vertex_array(self.blur_prog, [])
 
         # Pre-cache uniform handles
         self._u_ssao_radius = self.ssao_prog.get("u_Radius", None)
         self._u_ssao_intensity = self.ssao_prog.get("u_Intensity", None)
-
-        self._u_hbao_radius = self.hbao_prog.get("u_Radius", None)
-        self._u_hbao_intensity = self.hbao_prog.get("u_Intensity", None)
 
         self._u_gtao_radius = self.gtao_prog.get("u_Radius", None)
         self._u_gtao_intensity = self.gtao_prog.get("u_Intensity", None)
@@ -120,10 +114,6 @@ class AmbientOcclusionPass(RenderPass):
             vao = self.ssao_vao
             u_rad = self._u_ssao_radius
             u_int = self._u_ssao_intensity
-        elif ao_mode == "HBAO":
-            vao = self.hbao_vao
-            u_rad = self._u_hbao_radius
-            u_int = self._u_hbao_intensity
         else:  # "GTAO"
             vao = self.gtao_vao
             u_rad = self._u_gtao_radius
@@ -172,10 +162,8 @@ class AmbientOcclusionPass(RenderPass):
         self.blur_ao_tex.release()
         self.white_fallback.release()
         self.ssao_vao.release()
-        self.hbao_vao.release()
         self.gtao_vao.release()
         self.blur_vao.release()
         self.ssao_prog.release()
-        self.hbao_prog.release()
         self.gtao_prog.release()
         self.blur_prog.release()

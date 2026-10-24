@@ -55,7 +55,6 @@ class CVarRegistry:
         self.register(CVar("r_height", 720, "Window height in pixels", min_val=480, max_val=4320))
         self.register(CVar("r_fov", 75.0, "Vertical field of view in degrees", min_val=30.0, max_val=120.0))
         self.register(CVar("r_csm_cascades", 4, "Cascaded shadow map cascade count", min_val=1, max_val=4))
-        self.register(CVar("r_sscs_enabled", True, "Screen-space contact shadows toggle"))
         self.register(CVar("r_pcf_samples", 16, "Poisson shadow filtering samples (4, 8, 16)", min_val=4, max_val=16))
         self.register(CVar("r_tonemap", "aces", "Active tonemapping operator ('aces', 'agx', 'reinhard')"))
         self.register(CVar("r_bloom", True, "HDR bloom pyramid pass toggle"))

@@ -29,7 +29,6 @@ class TestQualityPresets:
 
         assert low.shadow_resolution < cinematic.shadow_resolution
         assert low.pcf_samples <= cinematic.pcf_samples
-        assert low.sscs_steps < cinematic.sscs_steps
         assert low.shadow_distance < cinematic.shadow_distance
 
 

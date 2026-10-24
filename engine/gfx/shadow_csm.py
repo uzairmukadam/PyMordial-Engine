@@ -25,6 +25,9 @@ class CascadedShadowMap:
         "_view_scratch",
         "_center_scratch",
         "_light_pos_scratch",
+        "cullers",
+        "cascade_visible_masks",
+        "cascade_draw_batches",
     )
 
     def __init__(
@@ -48,6 +51,12 @@ class CascadedShadowMap:
         self.update_splits(max_distance=max_distance, cascade_count=cascade_count)
         self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
         self.stabilize_cascades: bool = True
+
+        # Phase 1: Per-Cascade Frustum Culling
+        from engine.gfx.culling import FrustumCuller
+        self.cullers = [FrustumCuller(max_entities=100_000) for _ in range(4)]
+        self.cascade_visible_masks: list[np.ndarray | None] = [None] * 4
+        self.cascade_draw_batches: list[list[tuple]] = [[] for _ in range(4)]
 
     def update_splits(
         self,
@@ -183,6 +192,36 @@ class CascadedShadowMap:
         self.destroy()
         self.atlas_size = new_size
         self._create_atlas()
+
+    def cull_cascades(
+        self,
+        aabbs: np.ndarray,
+        active_count: int,
+        draw_batches: list[tuple],
+        cascade_count: int | None = None,
+    ) -> list[list[tuple]]:
+        """Extracts planes and filters shadow draw batches for each active cascade frustum.
+
+        Args:
+            aabbs: (N, 6) float32 array of world-space AABBs [cx, cy, cz, ex, ey, ez].
+            active_count: Number of active entity AABBs to evaluate.
+            draw_batches: Base unfiltered shadow caster batches [(mesh, count, base_inst, is_tess, cast_shadow), ...].
+            cascade_count: Number of active cascades (defaults to self.cascade_count).
+
+        Returns:
+            List of 4 filtered batch lists, one per cascade.
+        """
+        count = self.cascade_count if cascade_count is None else min(4, cascade_count)
+        for i in range(count):
+            culler = self.cullers[i]
+            # Standard orthographic projection under GL_ZERO_TO_ONE (reverse_z=False for shadow maps)
+            culler.extract_planes(self.light_matrices[i], reverse_z=False)
+            vis_mask = culler.cull_aabbs(aabbs, active_count)
+            self.cascade_visible_masks[i] = vis_mask
+            filtered = culler.filter_draw_batches(draw_batches, vis_mask)
+            self.cascade_draw_batches[i] = filtered
+
+        return self.cascade_draw_batches
 
     def destroy(self) -> None:
         if self.fbo is not None:

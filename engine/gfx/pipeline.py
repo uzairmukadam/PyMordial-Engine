@@ -74,6 +74,7 @@ class RenderPipeline:
         "mega_buffer",
         "mdi",
         "shadow_mdi",
+        "cascade_shadow_mdis",
         "g_buffer",
         "csm",
         "ibl_pass",
@@ -235,6 +236,7 @@ class RenderPipeline:
         self.mega_buffer = MegaBuffer(self.ctx)
         self.mdi = MultiDrawIndirect(self.ctx)
         self.shadow_mdi = MultiDrawIndirect(self.ctx)
+        self.cascade_shadow_mdis = [MultiDrawIndirect(self.ctx) for _ in range(4)]
 
         # 3. Initialize MRT G-Buffer (Reversed-Z 32F)
         self.g_buffer = GBuffer(
@@ -863,28 +865,37 @@ class RenderPipeline:
         # Prepare MDI batch commands (camera view, tessellated, and shadow passes)
         self.mdi.begin_frame()
         self.tess_mdi.begin_frame()
-        self.shadow_mdi.begin_frame()
+        # Synchronize dynamic entity AABBs from current world transforms (compound vehicle parts, props, etc.)
+        ecs.sync_dynamic_aabbs()
 
-        # Populate shadow MDI with all shadow casters (independent of camera view frustum)
+        # Phase 1: Per-Cascade Frustum Culling for Shadow MDI Commands
+        for m in self.cascade_shadow_mdis:
+            m.begin_frame()
+
         if draw_batches is not None:
-            for item in draw_batches:
-                item_len = len(item)
-                mesh_item = item[0]
-                count = item[1]
-                base_inst = item[2]
-                is_tess = item[3] if item_len >= 4 else False
-                cast_shadow = item[4] if item_len >= 5 else True
-
-                if count > 0 and not is_tess and cast_shadow:
+            active_aabbs = ecs.get_active_aabbs_view()
+            # Filter shadow caster batches per active cascade
+            caster_batches = [
+                b for b in draw_batches
+                if b[1] > 0 and (not b[3] if len(b) >= 4 else True) and (b[4] if len(b) >= 5 else True)
+            ]
+            culled_cascades = self.csm.cull_cascades(
+                aabbs=active_aabbs,
+                active_count=active_count,
+                draw_batches=caster_batches,
+                cascade_count=self.config.csm_cascades,
+            )
+            for c_idx in range(self.config.csm_cascades):
+                casc_mdi = self.cascade_shadow_mdis[c_idx]
+                for item in culled_cascades[c_idx]:
+                    mesh_item, count, base_inst = item[0], item[1], item[2]
                     alloc = (
                         self.mega_buffer.allocations[mesh_item]
                         if isinstance(mesh_item, str)
                         else mesh_item
                     )
-                    self.shadow_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+                    casc_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
 
-        # Synchronize dynamic entity AABBs from current world transforms (compound vehicle parts, props, etc.)
-        ecs.sync_dynamic_aabbs()
 
         # Phase 3: Frustum Culling for Camera MDI Draw Calls
         frustum_cull_active = getattr(self.config, "frustum_cull_enabled", True)
@@ -951,7 +962,10 @@ class RenderPipeline:
             self.csm.begin_cascade(c)
             if self._csm_cascade_idx_uniform is not None:
                 self._csm_cascade_idx_uniform.value = c
-            self.shadow_mdi.submit(self.csm_vao, self.csm_prog)
+            # Submit only meshes that are within this specific cascade's bounds
+            casc_mdi = self.cascade_shadow_mdis[c]
+            if casc_mdi.command_count > 0:
+                casc_mdi.submit(self.csm_vao, self.csm_prog)
             if getattr(self.config, "tess_enabled", True) and self.tess_mdi.command_count > 0:
                 self.ctx.patch_vertices = 3
                 if self._u_csm_tess_cascade_idx is not None:

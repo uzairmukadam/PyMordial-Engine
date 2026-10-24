@@ -54,11 +54,6 @@ class EngineTweaks:
         "shadow_distance",
         "csm_cascades",
         "csm_stabilization",
-        "sscs_enabled",
-        "sscs_steps",
-        "sscs_thickness",
-        "sscs_ray_distance",
-        "sscs_max_distance",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
@@ -227,11 +222,6 @@ class EngineTweaks:
         self.shadow_distance = 500.0
         self.csm_cascades = 4
         self.csm_stabilization = True
-        self.sscs_enabled = False
-        self.sscs_steps = 16
-        self.sscs_thickness = 0.10
-        self.sscs_ray_distance = 0.20
-        self.sscs_max_distance = 50.0
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
@@ -814,11 +804,6 @@ class EngineTweaks:
             "show_physics_colliders": bool(self.show_physics_colliders),
             "shadow_offset_x": float(self.shadow_offset_x),
             "shadow_offset_y": float(self.shadow_offset_y),
-            "sscs_enabled": bool(self.sscs_enabled),
-            "sscs_steps": int(self.sscs_steps),
-            "sscs_thickness": float(self.sscs_thickness),
-            "sscs_ray_distance": float(self.sscs_ray_distance),
-            "sscs_max_distance": float(self.sscs_max_distance),
             "taa_enabled": bool(self.taa_enabled),
             "taa_feedback": float(self.taa_feedback),
             "taa_sharpness": float(self.taa_sharpness),

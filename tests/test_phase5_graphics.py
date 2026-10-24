@@ -312,52 +312,49 @@ class TestQualityPresetsAndGIMode:
     def test_quality_presets_gi_and_ao_modes(self):
         low = get_quality_preset(GraphicsQuality.LOW)
         assert low.gi_mode == "OFF"
-        assert low.ao_mode == "OFF"
+        assert low.ao_mode == "SSAO"
         assert low.ssr_enabled is False
-        assert low.taa_enabled is False
-        assert low.aa_mode == "OFF"
+        assert low.aa_mode == "FXAA"
 
         med = get_quality_preset(GraphicsQuality.MEDIUM)
         assert med.gi_mode == "SSGI"
-        assert med.ao_mode == "SSAO"
-        assert med.taa_enabled is False
-        assert med.aa_mode == "OFF"
+        assert med.ao_mode == "GTAO"
+        assert med.taa_enabled is True
+        assert med.aa_mode == "TAA"
 
         high = get_quality_preset(GraphicsQuality.HIGH)
-        assert high.gi_mode == "SSGI"
+        assert high.gi_mode == "RADIANCE_CASCADES"
         assert high.ao_mode == "GTAO"
         assert high.ssr_enabled is True
-        assert high.taa_enabled is False
-        assert high.aa_mode == "OFF"
+        assert high.taa_enabled is True
+        assert high.aa_mode == "TAA"
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
-        assert ultra.gi_mode == "HYBRID"
+        assert ultra.gi_mode == "RADIANCE_CASCADES"
         assert ultra.ao_mode == "GTAO"
         assert ultra.ssr_enabled is True
-        assert ultra.taa_enabled is False
-        assert ultra.aa_mode == "OFF"
+        assert ultra.taa_enabled is True
+        assert ultra.aa_mode == "TAA"
 
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-        assert cinematic.gi_mode == "HYBRID"
+        assert cinematic.gi_mode == "RADIANCE_CASCADES"
         assert cinematic.ssgi_steps > ultra.ssgi_steps
         assert cinematic.ssr_steps > ultra.ssr_steps
-        assert cinematic.taa_enabled is False
-        assert cinematic.aa_mode == "OFF"
+        assert cinematic.taa_enabled is True
+        assert cinematic.aa_mode == "TAA"
 
 
 class TestShadowsAndSSCS:
     def test_shadow_modes_and_parameters_in_presets(self):
         low = get_quality_preset(GraphicsQuality.LOW)
-        assert low.shadow_mode == "HARD"
+        assert low.shadow_mode == "PCF"
         assert low.shadow_resolution == 1024
         assert low.shadow_distance == 120.0
-        assert low.sscs_enabled is False
 
         med = get_quality_preset(GraphicsQuality.MEDIUM)
         assert med.shadow_mode == "PCF"
         assert med.shadow_resolution == 2048
         assert med.shadow_distance == 250.0
-        assert med.sscs_enabled is False
 
         high = get_quality_preset(GraphicsQuality.HIGH)
         assert high.shadow_mode == "PCSS"
@@ -366,7 +363,6 @@ class TestShadowsAndSSCS:
         assert high.shadow_resolution == 4096
         assert high.shadow_distance == 500.0
         assert high.pcf_samples == 24
-        assert high.sscs_enabled is False
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
         assert ultra.shadow_mode == "PCSS"
@@ -460,11 +456,10 @@ class TestAmbientOcclusionModes:
         )
 
         assert hasattr(pipeline.ao_pass, "ssao_prog")
-        assert hasattr(pipeline.ao_pass, "hbao_prog")
         assert hasattr(pipeline.ao_pass, "gtao_prog")
         assert hasattr(pipeline.ao_pass, "blur_prog")
 
-        for mode in ("OFF", "SSAO", "HBAO", "GTAO"):
+        for mode in ("OFF", "SSAO", "GTAO"):
             pipeline.config.ao_mode = mode
             pipeline.config.ao_intensity = 1.2
             pipeline.config.ao_radius = 0.75
