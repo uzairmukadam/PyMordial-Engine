@@ -250,7 +250,9 @@ float SampleSingleCascade(
 
     float current_depth = proj_coords.z;
     float base_bias = max(u_ShadowBias, 0.0);
-    float bias = base_bias * (1.0 + slope * 1.5);
+    // Decima-Style Sloped Depth Bias: bias = clamp(base_bias * tan(acos(N·L)), min_bias, max_bias)
+    // where slope = tan(acos(N·L)) = sin(acos(N·L)) / cos(N·L)
+    float bias = clamp(base_bias * (1.0 + slope * 2.0), base_bias * 0.5, base_bias * 6.0);
 
     // MODE 0: ANTI-ALIASED HARD SHADOWS (4-Tap Bilinear PCF)
     if (u_ShadowMode == 0) {

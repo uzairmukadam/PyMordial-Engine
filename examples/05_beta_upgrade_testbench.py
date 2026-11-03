@@ -425,8 +425,8 @@ def main() -> None:
 
     config = ProjectConfig(
         title="PyMordial Engine - Beta Upgrade Testbench & Showcase",
-        width=1280,
-        height=720,
+        width=1920,
+        height=1080,
         headless=args.headless,
         max_frames=args.frames,
         enable_debug=True,

@@ -59,6 +59,14 @@ class CVarRegistry:
         self.register(CVar("r_tonemap", "aces", "Active tonemapping operator ('aces', 'agx', 'reinhard')"))
         self.register(CVar("r_bloom", True, "HDR bloom pyramid pass toggle"))
 
+        # Player-Taste Creative Camera Optics (Not reset by hardware quality presets)
+        self.register(CVar("r_dof", False, "Cinematic bokeh depth of field (lens blur) toggle"))
+        self.register(CVar("r_lens_flare", True, "Anamorphic specular lens flare toggle"))
+        self.register(CVar("r_vignette", True, "Peripheral optical vignette toggle"))
+        self.register(CVar("r_chromatic_aberration", True, "Radial spectral chromatic aberration toggle"))
+        self.register(CVar("r_film_grain", True, "Cinematic luminance-modulated film grain toggle"))
+        self.register(CVar("r_motion_blur", False, "Velocity motion blur toggle"))
+
         # Time & Simulation
         self.register(CVar("t_timescale", 1.0, "Global time dilation factor (0.1 = slow-mo, 1.0 = normal)", min_val=0.0, max_val=10.0))
         self.register(CVar("t_max_dt", 0.20, "Maximum frame time accumulator clamp in seconds", min_val=0.05, max_val=1.0))

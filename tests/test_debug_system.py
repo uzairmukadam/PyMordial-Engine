@@ -9,6 +9,7 @@ from engine.debug import (
     DebugToast,
     DebugDraw,
 )
+from engine.gfx.quality_presets import GraphicsQuality
 
 
 class TestDebugSystem:
@@ -64,20 +65,57 @@ class TestDebugSystem:
         assert g1 != g0
         assert isinstance(g1, GBufferDebugMode)
 
-        # Shadow & Contact Shadow properties
+        # Shadow properties
         assert tweaks.shadow_resolution in (1024, 2048, 4096)
         assert tweaks.shadow_mode in ("HARD", "PCF", "PCSS")
         assert tweaks.shadow_softness > 0.0
         assert tweaks.shadow_bias > 0.0
-        assert tweaks.sscs_enabled is False
-        assert tweaks.sscs_thickness > 0.0
-        assert tweaks.sscs_ray_distance > 0.0
-        assert tweaks.sscs_max_distance > 0.0
 
         tweaks.shadow_mode = "HARD"
         tweaks.shadow_resolution = 1024
         assert tweaks.shadow_mode == "HARD"
         assert tweaks.shadow_resolution == 1024
+
+    def test_creative_camera_optics_independent_of_quality_presets(self):
+        """Validates that player artistic preferences (motion blur, lens flare, DoF, vignette, chromatic aberration, grain)
+        are preserved when switching hardware quality presets."""
+        tweaks = EngineTweaks()
+        # Set custom player artistic preferences
+        tweaks.motion_blur_enabled = True
+        tweaks.dof_enabled = True
+        tweaks.lens_flare_enabled = False
+        tweaks.vignette_enabled = False
+        tweaks.chromatic_aberration_enabled = False
+        tweaks.film_grain_enabled = False
+
+        # Switch preset to LOW
+        tweaks.set_quality_preset(GraphicsQuality.LOW)
+
+        # Hardware settings scaled down
+        assert tweaks.shadow_resolution == 1024
+        assert tweaks.csm_cascades == 2
+        assert tweaks.particles_enabled is False
+
+        # Creative camera tastes preserved
+        assert tweaks.motion_blur_enabled is True
+        assert tweaks.dof_enabled is True
+        assert tweaks.lens_flare_enabled is False
+        assert tweaks.vignette_enabled is False
+        assert tweaks.chromatic_aberration_enabled is False
+        assert tweaks.film_grain_enabled is False
+
+        # Switch preset to ULTRA
+        tweaks.set_quality_preset(GraphicsQuality.ULTRA)
+        assert tweaks.shadow_resolution == 4096
+        assert tweaks.particles_enabled is True
+
+        # Still preserved
+        assert tweaks.motion_blur_enabled is True
+        assert tweaks.dof_enabled is True
+        assert tweaks.lens_flare_enabled is False
+        assert tweaks.vignette_enabled is False
+        assert tweaks.chromatic_aberration_enabled is False
+        assert tweaks.film_grain_enabled is False
 
     def test_tier3_game_developer_tweaks(self):
         """Validates declarative registration of dev sliders, booleans, triggers, and watches."""

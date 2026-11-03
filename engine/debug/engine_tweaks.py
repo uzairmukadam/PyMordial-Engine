@@ -365,13 +365,20 @@ class EngineTweaks:
             if "star_intensity" in preset:
                 self.star_intensity = float(preset["star_intensity"])
 
-    def set_quality_preset(self, preset: GraphicsQuality) -> None:
-        """Updates the graphics preset and triggers registered reconfigure listeners."""
+    def set_quality_preset(self, preset: GraphicsQuality, preserve_creative_optics: bool = True) -> None:
+        """Updates the graphics preset and triggers registered reconfigure listeners.
+
+        Args:
+            preset: Target hardware graphics quality preset.
+            preserve_creative_optics: If True, preserves player artistic camera choices
+                (DoF/lens blur, motion blur, lens flare, vignette, chromatic aberration, film grain)
+                rather than resetting them to hardware tier defaults.
+        """
         from engine.gfx.quality_presets import QUALITY_PRESETS
         self.quality_preset = preset
         if preset != GraphicsQuality.CUSTOM and preset in QUALITY_PRESETS:
             cfg = QUALITY_PRESETS[preset]
-            self.sync_from_config(cfg)
+            self.sync_from_config(cfg, preserve_creative_optics=preserve_creative_optics)
         for cb in self._on_quality_changed:
             cb(preset)
 
@@ -633,7 +640,16 @@ class EngineTweaks:
 
     sync_to_pipeline = apply_to_pipeline
 
-    def sync_from_config(self, cfg: Any) -> None:
+    CREATIVE_OPTICS_PROPERTIES = frozenset({
+        "dof_enabled",
+        "motion_blur_enabled",
+        "lens_flare_enabled",
+        "chromatic_aberration_enabled",
+        "vignette_enabled",
+        "film_grain_enabled",
+    })
+
+    def sync_from_config(self, cfg: Any, preserve_creative_optics: bool = False) -> None:
         """Copies graphics properties from a RenderConfig instance."""
         if cfg is None:
             return
@@ -668,6 +684,8 @@ class EngineTweaks:
             "water_clarity", "water_roughness",
             "particles_enabled", "particle_count", "particle_mode", "particle_size", "particle_turbulence",
         ):
+            if preserve_creative_optics and prop in self.CREATIVE_OPTICS_PROPERTIES:
+                continue
             if hasattr(cfg, prop):
                 setattr(self, prop, getattr(cfg, prop))
         if hasattr(cfg, "clustered_lights_enabled"):
