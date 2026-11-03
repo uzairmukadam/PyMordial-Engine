@@ -300,6 +300,7 @@ class BetaShowcaseState(GameState):
         (2, "World Normals"),
         (4, "Reversed-Z Depth"),
         (5, "CSM Shadow Atlas"),
+        (11, "Hi-Z Depth Pyramid"),
     ]
 
     def __init__(self) -> None:
