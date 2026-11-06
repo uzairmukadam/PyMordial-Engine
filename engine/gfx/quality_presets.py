@@ -46,7 +46,7 @@ class RenderConfig:
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
     pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
-    csm_split_lambda: float = 0.55 # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_split_lambda: float = 0.60 # Practical Split Scheme (PSSM) log-linear blend factor
     csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
 
     # Depth Precision

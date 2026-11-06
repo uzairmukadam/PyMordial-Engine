@@ -26,11 +26,12 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
+// High-quality defaults: increased directions and steps to eliminate banding
 uniform float u_Radius = 0.35;
 uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
-uniform int u_Directions = 3;
-uniform int u_Steps = 4;
+uniform int u_Directions = 4; // Upgraded from 3 for smoother angular coverage
+uniform int u_Steps = 6;      // Upgraded from 4 to remove step quantization on flat surfaces
 
 const float PI = 3.14159265358979323846;
 const float HALF_PI = 1.5707963267948966;
@@ -89,7 +90,7 @@ void main() {
     screen_radius_uv = clamp(screen_radius_uv, min_radius_uv, max_radius_uv);
 
     int num_dirs = clamp(u_Directions, 1, 6);
-    int num_steps = clamp(u_Steps, 2, 8);
+    int num_steps = clamp(u_Steps, 2, 12);
 
     float visibility = 0.0;
 
@@ -109,7 +110,6 @@ void main() {
         float cos_norm = clamp(dot(proj_normal, view_dir) / proj_norm_len, 0.0, 1.0);
         float n = sign_norm * FastACos(cos_norm);
 
-        // Natural unoccluded horizon target limits defined by tangent plane
         float low_horizon_cos0 = cos(n + HALF_PI);
         float low_horizon_cos1 = cos(n - HALF_PI);
 
@@ -117,7 +117,8 @@ void main() {
         float horizon_cos1 = low_horizon_cos1;
 
         for (int s = 1; s <= num_steps; ++s) {
-            float alpha = (float(s) - 0.5 + noise * 0.5) / float(num_steps);
+            // Full-range noise distribution across steps to prevent flat-surface contour banding
+            float alpha = (float(s) + noise) / float(num_steps);
 
             // Step along positive side
             vec2 uv0 = v_UV + dir_2d * screen_radius_uv * alpha;
@@ -127,7 +128,7 @@ void main() {
                     vec3 p0 = GetViewPos(uv0, d0);
                     vec3 delta0 = p0 - view_pos;
                     float dist0 = length(delta0);
-                    if (dist0 > 0.002 && dist0 < u_Radius && dot(delta0, view_normal) > 0.005) {
+                    if (dist0 > 0.002 && dist0 < u_Radius && dot(delta0, view_normal) > 0.002) {
                         float dist_ratio0 = dist0 / u_Radius;
                         float weight0 = clamp(1.0 - dist_ratio0 * dist_ratio0, 0.0, 1.0);
                         float shc0 = dot(delta0 / dist0, view_dir);
@@ -145,7 +146,7 @@ void main() {
                     vec3 p1 = GetViewPos(uv1, d1);
                     vec3 delta1 = p1 - view_pos;
                     float dist1 = length(delta1);
-                    if (dist1 > 0.002 && dist1 < u_Radius && dot(delta1, view_normal) > 0.005) {
+                    if (dist1 > 0.002 && dist1 < u_Radius && dot(delta1, view_normal) > 0.002) {
                         float dist_ratio1 = dist1 / u_Radius;
                         float weight1 = clamp(1.0 - dist_ratio1 * dist_ratio1, 0.0, 1.0);
                         float shc1 = dot(delta1 / dist1, view_dir);
@@ -156,14 +157,12 @@ void main() {
             }
         }
 
-        // Compute horizon angles
         float h0 = -FastACos(clamp(horizon_cos1, -1.0, 1.0));
         float h1 = FastACos(clamp(horizon_cos0, -1.0, 1.0));
 
         h0 = n + clamp(h0 - n, -HALF_PI, HALF_PI);
         h1 = n + clamp(h1 - n, -HALF_PI, HALF_PI);
 
-        // Jimenez analytical slice integral
         float iarc0 = (cos_norm + 2.0 * h0 * sin(n) - cos(2.0 * h0 - n)) * 0.25;
         float iarc1 = (cos_norm + 2.0 * h1 * sin(n) - cos(2.0 * h1 - n)) * 0.25;
 
@@ -173,8 +172,9 @@ void main() {
     visibility /= float(num_dirs);
     float ao = clamp(pow(clamp(visibility, 0.0, 1.0), u_Power * u_Intensity), 0.0, 1.0);
 
-    // Distance fade-out: Screen-space ambient occlusion represents localized contact crevices;
-    // fade smoothly to unoccluded (1.0) beyond 70m to eliminate far-distance screen-space noise
-    float dist_fade = clamp((view_z - 70.0) / 50.0, 0.0, 1.0);
+    // Smooth Hermite distance fade-out (50m to 90m) to eliminate distance banding completely
+    float fade_start = 50.0;
+    float fade_end = 90.0;
+    float dist_fade = smoothstep(fade_start, fade_end, view_z);
     out_AO = mix(ao, 1.0, dist_fade);
 }

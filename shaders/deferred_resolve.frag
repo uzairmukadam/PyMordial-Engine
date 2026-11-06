@@ -333,8 +333,10 @@ float SampleSingleCascade(
     // Tight contact sharpness at ground contact (0.85 texels),
     // expanding gracefully into realistic wide cinematic penumbrae for elevated casters.
     float min_filter_radius = texel_size.x * 0.85;
-    float max_filter_radius = (0.0065 * softness) / cascade_scale;
-    float filter_radius = clamp(min_filter_radius + penumbra_uv, min_filter_radius, max_filter_radius);
+    float max_filter_radius = (0.0085 * softness) / cascade_scale;
+    float penumbra_factor = penumbra_uv / (max_filter_radius + 1e-5);
+    float smooth_penumbra = smoothstep(0.0, 1.0, penumbra_factor) * (max_filter_radius - min_filter_radius);
+    float filter_radius = min_filter_radius + smooth_penumbra;
 
     // Step 3: Anti-Aliased Filter with Gaussian Radial Falloff (Smooth Penumbra, Zero Banding)
     int filter_samples = clamp(u_PCF_Samples, 16, 32);

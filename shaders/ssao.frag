@@ -30,7 +30,7 @@ uniform float u_Radius = 0.35;
 uniform float u_Intensity = 1.2;
 uniform float u_Power = 1.5;
 uniform float u_Bias = 0.025;
-uniform int u_Samples = 20;
+uniform int u_Samples = 24;
 
 const float PI = 3.14159265358979323846;
 
@@ -84,10 +84,11 @@ void main() {
     float valid_samples = 0.0;
 
     for (int i = 0; i < num_samples; ++i) {
-        // Fibonacci hemisphere point
-        float z = (float(i) + 0.5) / float(num_samples);
+        // Fibonacci hemisphere point with noise offset
+        float z = (float(i) + noise) / float(num_samples);
         float r_xy = sqrt(max(0.0, 1.0 - z * z));
-        float phi = float(i) * 2.39996323; // Golden angle (137.5 deg)
+        float phi = float(i) * 2.39996323 + noise * PI;
+
         vec3 hemi_sample = vec3(r_xy * cos(phi), r_xy * sin(phi), z);
 
         // Cubic distance scaling: concentrate samples close to surface for contact crevices
@@ -111,17 +112,19 @@ void main() {
 
         vec3 actual_view_pos = GetViewPos(sample_uv, sample_depth);
 
-        // Depth test in view space (-Z is distance from camera)
+        // Depth test in view space
         float depth_delta = (-actual_view_pos.z) - (-sample_view_pos.z);
         float dist_to_surface = abs(view_pos.z - actual_view_pos.z);
 
-        // Smooth quadratic distance attenuation to avoid occluding across depth discontinuities
+        // Smooth quadratic distance attenuation
         float dist_ratio = dist_to_surface / u_Radius;
         float range_atten = clamp(1.0 - dist_ratio * dist_ratio, 0.0, 1.0);
 
-        if (depth_delta < -u_Bias) {
-            occlusion += range_atten;
-        }
+        // REPLACED HARD IF-STATEMENT WITH SMOOTHSTEP TO ELIMINATE FLAT-SURFACE CONTOUR BANDING
+        float occlusion_weight = 1.0 - smoothstep(-u_Bias - 0.04, -u_Bias, depth_delta);
+        float range_mask = step(-u_Radius * 2.0, depth_delta);
+
+        occlusion += range_atten * occlusion_weight * range_mask;
         valid_samples += 1.0;
     }
 
@@ -131,9 +134,10 @@ void main() {
         ao = pow(ao, u_Power);
     }
 
-    // Distance fade-out: Ambient Occlusion is localized to close-range contact crevices;
-    // fade smoothly to unoccluded (1.0) beyond 70m to eliminate distant screen-space noise
+    // Smooth Hermite distance fade-out (50m to 90m)
     float view_z = max(-view_pos.z, 0.1);
-    float dist_fade = clamp((view_z - 70.0) / 50.0, 0.0, 1.0);
+    float fade_start = 50.0;
+    float fade_end = 90.0;
+    float dist_fade = smoothstep(fade_start, fade_end, view_z);
     out_AO = mix(ao, 1.0, dist_fade);
 }
