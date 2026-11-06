@@ -189,6 +189,10 @@ class RadianceCascadesPass(RenderPass):
         g_buffer.normal_metallic_texture.use(location=3)
         self._current_history.use(location=4)
 
+        # Bind motion vectors (RT2) and albedo/roughness for roughness-aware filtering
+        g_buffer.velocity_texture.use(location=5)
+        g_buffer.albedo_roughness_texture.use(location=6)
+
         if self._u_merge_target_res is not None:
             self._u_merge_target_res.value = self._target_res_tuple
 

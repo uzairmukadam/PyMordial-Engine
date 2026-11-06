@@ -8,6 +8,8 @@ layout (binding = 1) uniform sampler2D u_RawIrradiance;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;
 layout (binding = 3) uniform sampler2D u_GBufferNormalMetallic;
 layout (binding = 4) uniform sampler2D u_HistoryIrradiance;
+layout (binding = 5) uniform sampler2D u_GBufferMotionVectors; // RT2: Screen-space velocity
+layout (binding = 6) uniform sampler2D u_GBufferAlbedoRoughness; // For roughness awareness
 
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -29,7 +31,6 @@ layout (std140, binding = 0) uniform FrameData {
     vec4 u_FogParams;
 };
 
-uniform mat4 u_PrevViewProjection;
 uniform float u_TemporalBlend = 0.85;
 uniform vec2 u_TargetResolution;
 
@@ -66,11 +67,14 @@ void main() {
     vec3 center_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg);
     vec3 center_view_pos = GetViewPos(uv, center_depth);
     float center_view_z = center_view_pos.z;
+    float center_roughness = texture(u_GBufferAlbedoRoughness, uv).a;
 
-    // 1. Bilateral Spatial Cross Reconstruction
+    // 1. Roughness-Aware Bilateral Spatial Cross Reconstruction
     vec3 accum_irradiance = vec3(0.0);
     float accum_weight = 0.0;
 
+    vec3 m1 = vec3(0.0);
+    vec3 m2 = vec3(0.0);
     vec3 box_min = vec3(1e6);
     vec3 box_max = vec3(-1e6);
 
@@ -87,23 +91,27 @@ void main() {
             vec3 sample_n = OctahedralDecode(texture(u_GBufferNormalMetallic, sample_uv).rg);
             float sample_z = GetViewPos(sample_uv, sample_d).z;
 
-            // Compute edge-preserving weights
+            // Compute edge-preserving weights (wider spatial footprint allowed for rough surfaces)
+            // Tighter spatial sigma to keep color bleed localized and sharp near corners
             float spatial_dist_sq = float(dx * dx + dy * dy);
-            float w_spatial = exp(-spatial_dist_sq * 0.25);
+            float spatial_sigma = mix(0.8, 1.8, center_roughness); 
+            float w_spatial = exp(-spatial_dist_sq / (2.0 * spatial_sigma * spatial_sigma));
 
             float z_diff = abs(sample_z - center_view_z);
-            float z_tolerance = max(0.04 * abs(center_view_z), 0.08);
+            float z_tolerance = max(0.02 * abs(center_view_z), 0.04); // Stricter depth edge preservation
             float w_depth = exp(-z_diff / z_tolerance);
 
             float n_dot = clamp(dot(sample_n, center_normal), 0.0, 1.0);
-            float w_normal = pow(n_dot, 16.0);
+            float w_normal = pow(n_dot, 20.0); // Steeper normal separation for sharp corner bleeding
 
             float w = w_spatial * w_depth * w_normal;
             accum_irradiance += sample_raw * w;
             accum_weight += w;
 
-            // Track 3x3 local neighborhood AABB for temporal clamping
+            // Track neighborhood moments for variance-guided clamping
             if (abs(dx) <= 1 && abs(dy) <= 1) {
+                m1 += sample_raw;
+                m2 += sample_raw * sample_raw;
                 box_min = min(box_min, sample_raw);
                 box_max = max(box_max, sample_raw);
             }
@@ -112,24 +120,31 @@ void main() {
 
     vec3 spatial_irradiance = (accum_weight > 1e-4) ? (accum_irradiance / accum_weight) : texture(u_RawIrradiance, uv).rgb;
 
-    // 2. Temporal Accumulation with Neighborhood AABB Clamping
-    vec4 world_pos = u_InvView * vec4(center_view_pos, 1.0);
-    vec4 prev_clip = u_PrevViewProjection * world_pos;
+    // Compute mean and variance for bounding box expansion
+    vec3 mu = m1 / 9.0;
+    vec3 sigma = sqrt(max(vec3(0.0), (m2 / 9.0) - (mu * mu)));
+    vec3 relaxed_min = mu - 1.25 * sigma;
+    vec3 relaxed_max = mu + 1.25 * sigma;
+    vec3 final_box_min = min(box_min, relaxed_min);
+    vec3 final_box_max = max(box_max, relaxed_max);
+
+    // 2. Motion Vector Reprojection & Variance-Guided Temporal Accumulation
+    vec2 motion = texture(u_GBufferMotionVectors, uv).rg;
+    vec2 prev_uv = uv - motion;
 
     vec3 final_irradiance = spatial_irradiance;
 
-    if (prev_clip.w > 1e-4) {
-        vec2 prev_uv = (prev_clip.xy / prev_clip.w) * 0.5 + 0.5;
+    if (prev_uv.x >= 0.0 && prev_uv.x <= 1.0 && prev_uv.y >= 0.0 && prev_uv.y <= 1.0) {
+        vec3 history_sample = texture(u_HistoryIrradiance, prev_uv).rgb;
 
-        if (prev_uv.x >= 0.0 && prev_uv.x <= 1.0 && prev_uv.y >= 0.0 && prev_uv.y <= 1.0) {
-            vec3 history_sample = texture(u_HistoryIrradiance, prev_uv).rgb;
+        // Clamp history to variance-expanded bounding box to prevent ghosting while avoiding darkening
+        vec3 clamped_history = clamp(history_sample, final_box_min, final_box_max);
 
-            // Clamp history to current neighborhood bounding box to prevent ghosting
-            vec3 clamped_history = clamp(history_sample, box_min, box_max);
+        // Adaptive temporal blend: reduce history weight during rapid disocclusion / fast motion
+        float motion_speed = length(motion);
+        float alpha = clamp(u_TemporalBlend * (1.0 - clamp(motion_speed * 15.0, 0.0, 0.75)), 0.1, 0.95);
 
-            float alpha = clamp(u_TemporalBlend, 0.0, 0.95);
-            final_irradiance = mix(spatial_irradiance, clamped_history, alpha);
-        }
+        final_irradiance = mix(spatial_irradiance, clamped_history, alpha);
     }
 
     imageStore(u_OutFilteredIrradiance, pixel, vec4(final_irradiance, 1.0));
