@@ -277,7 +277,12 @@ class RenderPipeline:
             self.ctx,
             atlas_size=getattr(self.config, "spot_shadow_resolution", 2048),
         )
-        self.ssr_pass = SSRPass(self.ctx, w, h)
+        self.ssr_pass = SSRPass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "ssr_resolution_scale", 0.5),
+        )
         self.taa_pass = TAAPass(self.ctx, w, h)
         self.fxaa_pass = FXAAPass(self.ctx, w, h)
         self.smaa_pass = SMAAPass(self.ctx, w, h)
@@ -638,6 +643,11 @@ class RenderPipeline:
             self.ao_pass.enabled = getattr(new_config, "ao_mode", "GTAO") != "OFF"
         if self.ssr_pass is not None:
             self.ssr_pass.enabled = getattr(new_config, "ssr_enabled", True)
+            self.ssr_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "ssr_resolution_scale", 0.5),
+            )
         if self.volumetric_fog_pass is not None:
             self.volumetric_fog_pass.enabled = getattr(new_config, "volumetric_fog_enabled", True)
 
@@ -656,7 +666,11 @@ class RenderPipeline:
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(width, height)
         self.rc_pass.resize(width, height)
-        self.ssr_pass.resize(width, height)
+        self.ssr_pass.resize(
+            width,
+            height,
+            getattr(self.config, "ssr_resolution_scale", 0.5),
+        )
         self.taa_pass.resize(width, height)
         self.fxaa_pass.resize(width, height)
         self.smaa_pass.resize(width, height)

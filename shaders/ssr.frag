@@ -97,7 +97,7 @@ void main() {
 
     // Normal offset to avoid self-reflection acne
     vec3 ray_origin = view_pos + view_normal * 0.02;
-    int steps = clamp(u_SSR_Steps, 24, 80);
+    int steps = clamp(u_SSR_Steps, 24, 128);
     float step_len = u_SSR_MaxDistance / float(steps);
 
     // Analytical water plane intersection test in world space
@@ -158,8 +158,12 @@ void main() {
         float geo_depth = -scene_view.z;
         float depth_diff = ray_depth - geo_depth;
 
-        // Adaptive thickness threshold guarantees step_len cannot overshoot geometry
-        float adaptive_thickness = clamp(max(u_SSR_Thickness, step_len * 1.25) * (1.0 + ray_depth * 0.03), 0.25, 1.20);
+        // Keep the depth slab tight to avoid snapping reflections onto nearby unrelated surfaces.
+        float adaptive_thickness = clamp(
+            max(u_SSR_Thickness, step_len * 0.20) * (1.0 + ray_depth * 0.004),
+            0.03,
+            0.35
+        );
 
         if (depth_diff >= 0.0 && depth_diff < adaptive_thickness) {
             // Sub-pixel binary search bisection (6 iterations)

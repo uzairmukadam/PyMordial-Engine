@@ -18,11 +18,18 @@ SHADER_DIR = get_shader_dir()
 class SSRPass(RenderPass):
     """Computes screen-space specular reflections with edge-preserving bilateral blur."""
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 0.5,
+    ) -> None:
         super().__init__(name="SSRPass", enabled=True)
         self.ctx = ctx
-        self.width = max(width // 2, 1)
-        self.height = max(height // 2, 1)
+        self.resolution_scale = min(max(resolution_scale, 0.25), 1.0)
+        self.width = max(int(round(width * self.resolution_scale)), 1)
+        self.height = max(int(round(height * self.resolution_scale)), 1)
 
         # 1. Ping-pong textures for raw SSR raymarching & bilateral filtering (RGBA16F)
         self.raw_ssr_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
@@ -69,12 +76,14 @@ class SSRPass(RenderPass):
         """Exposes primary SSR texture for backward-compatibility with tests."""
         return self.raw_ssr_tex
 
-    def resize(self, width: int, height: int) -> None:
-        new_w = max(width // 2, 1)
-        new_h = max(height // 2, 1)
-        if new_w == self.width and new_h == self.height:
+    def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
+        new_scale = self.resolution_scale if resolution_scale is None else min(max(resolution_scale, 0.25), 1.0)
+        new_w = max(int(round(width * new_scale)), 1)
+        new_h = max(int(round(height * new_scale)), 1)
+        if new_w == self.width and new_h == self.height and new_scale == self.resolution_scale:
             return
 
+        self.resolution_scale = new_scale
         self.width = new_w
         self.height = new_h
 
@@ -125,11 +134,11 @@ class SSRPass(RenderPass):
         scene_tex.use(location=3)
 
         if self._u_steps is not None:
-            self._u_steps.value = int(getattr(context.config, "ssr_steps", 32))
+            self._u_steps.value = int(getattr(context.config, "ssr_steps", 48))
         if self._u_max_dist is not None:
             self._u_max_dist.value = float(getattr(context.config, "ssr_max_distance", 20.0))
         if self._u_thickness is not None:
-            self._u_thickness.value = float(getattr(context.config, "ssr_thickness", 0.40))
+            self._u_thickness.value = float(getattr(context.config, "ssr_thickness", 0.12))
         if self._u_max_rough is not None:
             self._u_max_rough.value = float(getattr(context.config, "ssr_max_roughness", 0.65))
         if self._u_water_enabled is not None:
@@ -150,6 +159,7 @@ class SSRPass(RenderPass):
         self.raw_ssr_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         g_buffer.albedo_roughness_texture.use(location=2)
+        g_buffer.normal_metallic_texture.use(location=3)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_h
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
@@ -159,6 +169,7 @@ class SSRPass(RenderPass):
         self.blur_ssr_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         g_buffer.albedo_roughness_texture.use(location=2)
+        g_buffer.normal_metallic_texture.use(location=3)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_v
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)

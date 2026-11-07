@@ -582,12 +582,12 @@ class DebugMenu:
                 self.toast.show(f"SSR: {'ON' if ssr_val else 'OFF'}", duration=1.5)
 
             if et.ssr_enabled:
-                ssr_st_changed, ssr_st_val = imgui.slider_int("SSR Steps", et.ssr_steps, 8, 64)
+                ssr_st_changed, ssr_st_val = imgui.slider_int("SSR Steps", et.ssr_steps, 24, 128)
                 if ssr_st_changed:
                     et.ssr_steps = ssr_st_val
                     et.mark_custom()
 
-                ssr_tk_changed, ssr_tk_val = imgui.slider_float("SSR Thickness", et.ssr_thickness, 0.05, 1.5, "%.2fm")
+                ssr_tk_changed, ssr_tk_val = imgui.slider_float("SSR Thickness", et.ssr_thickness, 0.03, 0.65, "%.2fm")
                 if ssr_tk_changed:
                     et.ssr_thickness = ssr_tk_val
                     et.mark_custom()

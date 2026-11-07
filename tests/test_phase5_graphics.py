@@ -262,8 +262,14 @@ class TestClusteredLightingAndSSR:
             camera_target=(0.0, 0.0, 0.0),
         )
 
+        assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
         ssr_data = pipeline.ssr_pass.ssr_tex.read()
-        assert len(ssr_data) == (320 // 2) * (240 // 2) * 4 * 2
+        assert len(ssr_data) == pipeline.ssr_pass.width * pipeline.ssr_pass.height * 4 * 2
+
+        pipeline.ssr_pass.resize(640, 480, 1.0)
+        assert pipeline.ssr_pass.raw_ssr_tex.size == (640, 480)
+        pipeline.ssr_pass.resize(640, 480, 0.5)
+        assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
 
         pipeline.destroy()
 
@@ -334,6 +340,8 @@ class TestQualityPresetsAndGIMode:
         assert high.gi_mode == "RADIANCE_CASCADES"
         assert high.ao_mode == "GTAO"
         assert high.ssr_enabled is True
+        assert high.ssr_resolution_scale == 1.0
+        assert high.ssr_steps == 64
         assert high.taa_enabled is True
         assert high.aa_mode == "TAA"
 
@@ -348,6 +356,7 @@ class TestQualityPresetsAndGIMode:
         assert cinematic.gi_mode == "RADIANCE_CASCADES"
         assert cinematic.ssgi_steps > ultra.ssgi_steps
         assert cinematic.ssr_steps > ultra.ssr_steps
+        assert cinematic.ssr_resolution_scale == 1.0
         assert cinematic.taa_enabled is True
         assert cinematic.aa_mode == "TAA"
 

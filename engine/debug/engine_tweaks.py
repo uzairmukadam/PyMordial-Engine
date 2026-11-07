@@ -244,8 +244,8 @@ class EngineTweaks:
         self.rc_temporal_blend = 0.96
         self.ibl_enabled = True
         self.ssr_enabled = True
-        self.ssr_steps = 32
-        self.ssr_thickness = 0.40
+        self.ssr_steps = 64
+        self.ssr_thickness = 0.10
         self.ssr_max_roughness = 0.65
         self.aa_mode = "OFF"
         self.taa_enabled = False
