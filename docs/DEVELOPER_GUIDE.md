@@ -225,9 +225,7 @@ PyMordial Engine features a native ModernGL 2D UI framework and a stack-based fi
 
 For complete guides and architectural details, see [docs/UI_AND_STATE_MANAGEMENT.md](UI_AND_STATE_MANAGEMENT.md).
 
-Interactive examples are available in:
-- `examples/01_modern_ui_and_menu.py`: AAA-quality ModernGL glassmorphic UI, interactive widgets (buttons, sliders, segmented tabs), and stack-based `GameStateManager`.
-- `examples/02_player_physics_and_cubes.py`: 60 Hz kinematic `CharacterMotor`, dynamic Rapier3D physics cubes, curb autostepping, collision-aware `FollowCamera`, telemetry HUD, and pause menu.
-- `examples/03_full_graphics_and_display_menu.py`: Full in-game graphics and window settings menu (Resolution, Mode, VSync, Presets Low-Cinematic, SSAO/GTAO, Bloom, SSR, Fog, AA, GI Pipeline: SSGI/LPV/Hybrid/Radiance Cascades) with live player and physics scene.
-
-
+The [examples guide](../examples/README.md) describes six interactive samples,
+including flycam controls, a capsule character, water and GI rooms, a
+data-driven platformer, a menu flow, and a repeatable graphics benchmark. Run
+one from the repository root, for example `python examples/02_physics_player.py`.

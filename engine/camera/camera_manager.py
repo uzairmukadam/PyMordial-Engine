@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+
 from engine.camera.camera import VirtualCamera
 from engine.logging import log_info, LogChannel
 
@@ -24,6 +26,7 @@ class CameraManager:
         "_blend_time",
         "_is_blending",
         "_blended_cam",
+        "_blend_delta",
     )
 
     def __init__(self) -> None:
@@ -35,6 +38,7 @@ class CameraManager:
         self._blend_time: float = 0.0
         self._is_blending: bool = False
         self._blended_cam = VirtualCamera()
+        self._blend_delta = np.empty(3, dtype=np.float32)
 
     def register_camera(self, name: str, camera: VirtualCamera, make_active: bool = False) -> None:
         """Registers a named virtual camera."""
@@ -102,9 +106,15 @@ class CameraManager:
         src = self._blend_source
         dst = self._blend_target
 
-        self._blended_cam.position = src.position + (dst.position - src.position) * alpha
-        self._blended_cam.target = src.target + (dst.target - src.target) * alpha
-        self._blended_cam.up = src.up + (dst.up - src.up) * alpha
+        np.subtract(dst.position, src.position, out=self._blend_delta)
+        np.multiply(self._blend_delta, alpha, out=self._blend_delta)
+        np.add(src.position, self._blend_delta, out=self._blended_cam.position)
+        np.subtract(dst.target, src.target, out=self._blend_delta)
+        np.multiply(self._blend_delta, alpha, out=self._blend_delta)
+        np.add(src.target, self._blend_delta, out=self._blended_cam.target)
+        np.subtract(dst.up, src.up, out=self._blend_delta)
+        np.multiply(self._blend_delta, alpha, out=self._blend_delta)
+        np.add(src.up, self._blend_delta, out=self._blended_cam.up)
         self._blended_cam.fov = src.fov + (dst.fov - src.fov) * alpha
         self._blended_cam.aspect_ratio = dst.aspect_ratio
         self._blended_cam.near = dst.near

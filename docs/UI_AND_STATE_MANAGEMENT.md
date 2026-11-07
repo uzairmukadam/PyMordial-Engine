@@ -223,8 +223,5 @@ app.run()
 
 ## 4. Examples in the Repository
  
-Refer to the runnable standalone examples in the `examples/` directory:
- 
-- **[examples/01_modern_ui_and_menu.py](file:///d:/Projects/PyMordial-Engine/examples/01_modern_ui_and_menu.py)**: AAA-quality ModernGL glassmorphic UI cards, category badges, sliders (Volume, FOV), segmented buttons (Difficulty), and stack-based `GameStateManager` (Main Menu, Settings, Gameplay, Pause).
-- **[examples/02_player_physics_and_cubes.py](file:///d:/Projects/PyMordial-Engine/examples/02_player_physics_and_cubes.py)**: 60 Hz kinematic `CharacterMotor` (WASD, sprint, jump), curb autostepping, dynamic Rapier3D physics cubes, collision-aware `FollowCamera`, in-game telemetry HUD, and pause menu.
-- **[examples/03_full_graphics_and_display_menu.py](file:///d:/Projects/PyMordial-Engine/examples/03_full_graphics_and_display_menu.py)**: Complete in-game graphics and window settings menu (Resolution, Mode, VSync, Presets Low-Cinematic, SSAO/GTAO, Bloom, SSR, Fog, AA) with live player and physics scene.
+Runnable examples for UI, physics, modules, and other engine features are
+listed in [examples/README.md](../examples/README.md).

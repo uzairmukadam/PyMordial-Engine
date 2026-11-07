@@ -12,7 +12,7 @@
 Designed to bridge the gap between high-level Python productivity and AAA-grade visual fidelity, PyMordial combines an expressive component and module lifecycle with a zero-allocation, contiguous data-oriented execution core.
 
 > [!NOTE]
-> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. All core foundational subsystems—including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and sacred debug suite—are fully functional, thoroughly tested (246 automated tests), and ready for game development.
+> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. Its core subsystems—including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and debug suite—are covered by automated unit, integration, and regression tests.
 
 ---
 
@@ -27,9 +27,10 @@ Designed to bridge the gap between high-level Python productivity and AAA-grade 
 ### 2. State-of-the-Art ModernGL 4.5 Deferred Rendering Pipeline
 - **Deferred G-Buffer MRT Layout**:
   - `RT0 (RGBA16F)`: Albedo RGB + Roughness A
-  - `RT1 (RGBA16F)`: World Normal RGB + Metallic A
-  - `RT2 (RGBA16F)`: Screen-Space Motion Vectors (2D velocity) + Material Layer ID
-  - `RT3 (R11G11B10F)`: Emissive RGB + Ambient Occlusion
+  - `RT1 (RGBA16F)`: World Normal RG + Metallic B + Ambient Occlusion A
+  - `RT2 (RG16F)`: Screen-Space Motion Vectors
+  - `RT3 (RGBA16F)`: Mesh UV + Material Layer ID + Displacement Mode
+  - `RT4 (R32F)`: Stable entity surface ID for temporal and GI rejection
   - `Depth (DEPTH32F)`: High-precision Reversed-Z depth buffer
 - **Cascaded Shadow Maps (CSM)**: Up to 4 shadow cascades with logarithmic/linear split blending, sub-texel stabilization, and 16-tap Poisson disc PCF filtering.
 - **Ground Truth Ambient Occlusion (GTAO) & SSAO**: Horizon-based ambient occlusion with bilateral cross-bilateral blur for contact shadows and depth shading.
@@ -107,14 +108,16 @@ PyMordial-Engine/
 │   ├── physics/                  # Rapier3D Rust integration, character motor, raycast vehicle
 │   ├── ui/                       # Native ModernGL 2D SDF UI subsystem & canvas scaler
 │   └── tools/                    # Packager and distribution bundlers
-├── examples/                     # Standalone reference apps & demos
-│   ├── 01_modern_ui_and_menu.py  # Modern AAA glassmorphic UI, audio sliders, settings modal
-│   ├── 02_player_physics_and_cubes.py # Kinematic character controller, physics cubes, grabber, HUD
-│   └── 03_full_graphics_and_display_menu.py # Live in-game graphics & display configuration menu
+├── examples/                     # Progressive standalone API examples and showcases
+│   ├── README.md                 # Example list and run instructions
+│   ├── 01_shapes_flycam.py       # Built-in shapes, PBR values, and free camera
+│   ├── 02_physics_player.py     # Rapier bodies and controllable capsule player
+│   ├── 03_water_lighting_lab.py # Water, skylight, local lighting, and GI
+│   └── ...                       # Platformer, menu flow, and graphics benchmark
 ├── projects/                     # Standalone game projects directory (git-ignored for user games)
 │   └── shotgun_beat_the_speed/   # Example arcade muscle racer project
 ├── shaders/                      # Consolidated GLSL 4.5 core shaders
-├── tests/                        # Comprehensive unit and integration test suite (246 tests)
+├── tests/                        # Unit, integration, and regression test suite
 └── docs/                         # Specifications, guides, and LLM coding instructions
     ├── DEVELOPER_GUIDE.md        # Architecture overview and developer workflows
     ├── ENGINE_FEATURES.md        # Technical subsystem specification
@@ -157,46 +160,19 @@ pip install -e .[dev]
 
 ---
 
-## Interactive Examples & Demos
+## Examples
 
-PyMordial includes three standalone, fully featured interactive examples demonstrating the major engine capabilities:
+The six standalone samples cover built-in shapes and flycam, physics and a
+character capsule, a connected water-and-lighting lab, a data-driven platformer,
+a menu flow, and a graphics benchmark. Mouse look is captured automatically
+during gameplay. See [examples/README.md](examples/README.md) for controls and
+launch options.
+For example:
 
-### Example 1: Modern AAA UI, Settings Modal & State Machine
-Demonstrates the native ModernGL 2D UI system, glassmorphic obsidian styling, category badges, audio volume sliders, graphic quality tabs, pause overlay, and stack-based `GameStateManager` transitions:
 ```bash
-python examples/01_modern_ui_and_menu.py
+python examples/01_shapes_flycam.py
+python examples/03_water_lighting_lab.py --headless --frames 30
 ```
-- **Controls**:
-  - `Mouse`: Navigate menus, click buttons, drag sliders, toggle segmented tabs.
-  - `ESC`: Pause / Resume simulation or return to menu.
-
----
-
-### Example 2: Player Kinematics, Dynamic Physics Cubes & Object Grabber
-Demonstrates the 60 Hz authoritative `CharacterMotor` with collision-aware `FollowCamera`, autostepping curbs, slope sliding, dynamic Rapier3D rigid body cubes, interactive pick-and-carry grabber, and real-time telemetry HUD:
-```bash
-python examples/02_player_physics_and_cubes.py
-```
-- **Controls**:
-  - `W, A, S, D` or `Left Analog Stick`: Walk / Strafe
-  - `Left Shift` or `(L3) / (LB)`: Sprint
-  - `Space` or `Gamepad (A)`: Jump
-  - `Mouse Motion` or `Right Analog Stick`: Inverted 3D Camera Look (Yaw & Pitch)
-  - `Mouse Wheel`: Camera Distance Zoom
-  - `E` or `Left Mouse Button` or `Gamepad (X)`: Grab, carry, or throw physics cubes
-  - `ESC` or `Gamepad Start`: Pause Menu / Reset Position
-
----
-
-### Example 3: Full In-Game Graphics & Display Configuration Menu
-Demonstrates live runtime ModernGL pipeline reconfiguration without debug overlays: resolution scaling ($1280 \times 720$, $1600 \times 900$, $1920 \times 1080$), window modes (Windowed, Borderless Fullscreen), VSync, Master Quality Presets (Low, Medium, High, Ultra, Cinematic), and granular pipeline toggles (GTAO, SSR, Volumetric Fog, Bloom, Anamorphic Flare, FXAA/SMAA/TAA):
-```bash
-python examples/03_full_graphics_and_display_menu.py
-```
-- **Controls**:
-  - `W, A, S, D` / `Space` / `Shift`: Player Movement & Jump
-  - `Mouse Motion`: Inverted 3D Camera Look
-  - `ESC`: Open / Close Graphics & Display Configuration Menu
 
 ---
 
@@ -304,7 +280,7 @@ python -m engine.tools.packager --project projects/my_game --target nuitka --rel
 
 ## Automated Test Suite
 
-PyMordial includes 246 automated unit, integration, and regression tests:
+PyMordial includes automated unit, integration, and regression tests:
 
 ```bash
 # Run all tests

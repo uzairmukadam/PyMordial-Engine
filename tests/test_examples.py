@@ -12,9 +12,12 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 @pytest.mark.parametrize(
     "example_script",
     [
-        "01_modern_ui_and_menu.py",
-        "02_player_physics_and_cubes.py",
-        "03_full_graphics_and_display_menu.py",
+        "01_shapes_flycam.py",
+        "02_physics_player.py",
+        "03_water_lighting_lab.py",
+        "04_data_driven_platformer.py",
+        "05_menu_system.py",
+        "06_graphics_benchmark.py",
     ],
 )
 def test_example_headless_execution(example_script: str) -> None:
@@ -23,6 +26,8 @@ def test_example_headless_execution(example_script: str) -> None:
     assert script_path.exists(), f"Example script not found: {script_path}"
 
     cmd = [sys.executable, str(script_path), "--headless", "--frames", "30"]
+    if example_script == "06_graphics_benchmark.py":
+        cmd.extend(("--entities", "64"))
     proc = subprocess.run(
         cmd,
         capture_output=True,

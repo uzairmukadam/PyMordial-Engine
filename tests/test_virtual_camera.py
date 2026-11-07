@@ -58,6 +58,14 @@ def test_camera_manager_blending():
     blended = mgr.active_camera
     assert 0.0 < blended.position[0] < 10.0
     assert 60.0 < blended.fov < 90.0
+    position_buffer = blended.position
+    target_buffer = blended.target
+    up_buffer = blended.up
+
+    mgr.update(0.1)
+    assert blended.position is position_buffer
+    assert blended.target is target_buffer
+    assert blended.up is up_buffer
 
     # Finish blend
     mgr.update(0.6)

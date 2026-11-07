@@ -48,9 +48,10 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 
 ### 2.4 Deferred G-Buffer MRT Layout (`engine.gfx.g_buffer.GBuffer`)
 - **RT0 (RGBA16F)**: Albedo RGB + Roughness A.
-- **RT1 (RGBA16F)**: Octahedron/World Normal RGB + Metallic A.
-- **RT2 (RGBA16F)**: Motion Vectors (Screen-space 2D velocity) + Material Layer ID.
-- **RT3 (R11G11B10F)**: Emissive RGB + Ambient Occlusion.
+- **RT1 (RGBA16F)**: World Normal RG + Metallic B + Ambient Occlusion A.
+- **RT2 (RG16F)**: Screen-space motion vectors.
+- **RT3 (RGBA16F)**: Mesh UV + Material Layer ID + Displacement Mode.
+- **RT4 (R32F)**: Stable entity surface ID for temporal and GI rejection.
 - **Depth (DEPTH32F)**: High-precision Reversed-Z depth buffer.
 
 ### 2.5 Material Atlas & Parallax Occlusion Mapping (POM)
