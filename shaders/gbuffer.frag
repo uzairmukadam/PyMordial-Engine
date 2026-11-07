@@ -5,6 +5,7 @@ layout (location = 0) out vec4 out_AlbedoRoughness; // RT0: Albedo (RGB) + Rough
 layout (location = 1) out vec4 out_NormalMetallic;   // RT1: Octahedral Normal (RG) + Metallic (B) + AO (A)
 layout (location = 2) out vec2 out_Velocity;         // RT2: Velocity Vectors (RG16F)
 layout (location = 3) out vec4 out_DispInfo;         // RT3: Displacement Info (RG=Mesh UV, B=TexLayer, A=DispMode)
+layout (location = 4) out float out_SurfaceID;       // RT4: Entity ID (+1; zero is background)
 
 in vec3 v_WorldPos;
 in vec3 v_Normal;
@@ -333,4 +334,5 @@ void main() {
     out_NormalMetallic = vec4(OctahedralEncode(N), metallic, ao);
     out_Velocity = velocity;
     out_DispInfo = vec4(sample_uv, tex_layer, float(disp_mode));
+    out_SurfaceID = float(v_EntityID + 1u);
 }

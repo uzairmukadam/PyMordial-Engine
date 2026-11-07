@@ -12,6 +12,7 @@ class GBuffer:
     - RT1: Octahedral Normal (RG) + Metallic (B) + AO (A) (RGBA16F)
     - RT2: Velocity Vectors (RG16F)
     - RT3: Displacement Info (RG16F) -> R=TextureLayerIndex, G=DisplacementMode
+    - RT4: Entity Surface ID (R32F, exact integer IDs)
     - Depth: 32-bit Floating Point Depth (Reversed-Z)
     """
 
@@ -24,6 +25,7 @@ class GBuffer:
         "rt_normal_metallic",
         "rt_velocity",
         "rt_displacement",
+        "rt_surface_id",
         "depth_texture",
         "fbo",
     )
@@ -43,6 +45,10 @@ class GBuffer:
     @property
     def displacement_texture(self) -> moderngl.Texture:
         return self.rt_displacement
+
+    @property
+    def surface_id_texture(self) -> moderngl.Texture:
+        return self.rt_surface_id
 
     def __init__(
         self,
@@ -83,6 +89,14 @@ class GBuffer:
         )
         self.rt_displacement.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
+        # RT4: Stable object identity used to reject same-surface GI self-hits.
+        self.rt_surface_id = self.ctx.texture(
+            (self.width, self.height), 1, dtype="f4"
+        )
+        self.rt_surface_id.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        self.rt_surface_id.repeat_x = False
+        self.rt_surface_id.repeat_y = False
+
         # Depth: 32-bit Floating Point Depth (Reversed-Z)
         self.depth_texture = self.ctx.depth_texture((self.width, self.height))
         self.depth_texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
@@ -95,6 +109,7 @@ class GBuffer:
                 self.rt_normal_metallic,
                 self.rt_velocity,
                 self.rt_displacement,
+                self.rt_surface_id,
             ],
             depth_attachment=self.depth_texture,
         )
@@ -126,5 +141,6 @@ class GBuffer:
         self.rt_normal_metallic.release()
         self.rt_velocity.release()
         self.rt_displacement.release()
+        self.rt_surface_id.release()
         self.depth_texture.release()
         self.fbo.release()

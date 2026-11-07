@@ -17,6 +17,7 @@ layout (binding = 7) uniform sampler2D u_EnvironmentMap;       // Prefiltered HD
 layout (binding = 8) uniform sampler2D u_SSRTexture;           // Screen-Space Reflections
 layout (binding = 9) uniform sampler3D u_LPVVolume;            // 3D Light Propagation Volume
 layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light Perspective Shadow Depth Atlas
+layout (binding = 13) uniform sampler2D u_IrradianceMap;       // Diffuse environment irradiance
 layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
 layout (binding = 15) uniform sampler2D u_RCTexture;           // Hybrid Radiance Cascades (SSRC + FFPC)
 
@@ -685,13 +686,19 @@ void main() {
         return;
     }
 
-    // Ambient Sky / Ground Foundation with minimum physical exposure floor
+    // Diffuse IBL uses the cosine-convolved environment; retain a stable fallback when disabled.
     float sky_intensity = max(u_SunColor_Ambient.w * 3.5, 0.12);
     vec3 sky_color = mix(vec3(0.25, 0.35, 0.50), u_SunColor_Ambient.rgb * 0.5 + vec3(0.15), 0.4);
     vec3 ground_color = vec3(0.18, 0.19, 0.18);
     vec3 hemisphere_light = mix(ground_color, sky_color, clamp(N.y * 0.5 + 0.5, 0.0, 1.0)) * sky_intensity;
-    float base_ambient_scale = 1.0;
-    vec3 ambient_base = hemisphere_light * albedo * (vec3(1.0) - F0) * (1.0 - metallic) * base_ambient_scale;
+    vec3 diffuse_energy = (vec3(1.0) - FresnelSchlickRoughness(max(dot(N, V), 0.0), F0, roughness))
+                        * (1.0 - metallic);
+    vec2 irradiance_uv = vec2(atan(N.z, N.x) / (2.0 * PI) + 0.5,
+                              asin(clamp(N.y, -0.999, 0.999)) / PI + 0.5);
+    vec3 diffuse_irradiance = u_IBLEnabled == 1
+        ? texture(u_IrradianceMap, irradiance_uv).rgb
+        : hemisphere_light;
+    vec3 ambient_base = diffuse_irradiance * albedo * diffuse_energy;
 
     // Image-Based Lighting (IBL) & Screen-Space Reflections (SSR)
     vec3 indirect_specular = vec3(0.0);
@@ -705,7 +712,8 @@ void main() {
 
         // Sample Prefiltered Environment Map
         vec2 env_uv = vec2(atan(R.z, R.x) / (2.0 * PI) + 0.5, asin(clamp(R.y, -0.999, 0.999)) / PI + 0.5);
-        vec3 env_radiance = textureLod(u_EnvironmentMap, env_uv, roughness * 5.0).rgb;
+        float max_env_lod = float(max(textureQueryLevels(u_EnvironmentMap) - 1, 0));
+        vec3 env_radiance = textureLod(u_EnvironmentMap, env_uv, roughness * max_env_lod).rgb;
 
         // Sample SSR
         if (u_SSREnabled == 1) {

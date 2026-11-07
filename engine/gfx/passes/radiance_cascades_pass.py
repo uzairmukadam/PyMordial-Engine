@@ -8,8 +8,6 @@ Implements Alexander Sannikov's Radiance Cascades adapted to 3D Deferred Lightin
 """
 
 from __future__ import annotations
-import math
-import numpy as np
 import moderngl
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
@@ -40,9 +38,8 @@ class RadianceCascadesPass(RenderPass):
         "_u_rm_thickness",
         "_u_rm_intensity",
         "_u_merge_target_res",
-        "_u_merge_prev_vp",
         "_u_merge_temporal_blend",
-        "prev_view_proj_mat",
+        "_u_merge_history_valid",
         "_first_frame",
         "_target_res_tuple",
     )
@@ -94,10 +91,9 @@ class RadianceCascadesPass(RenderPass):
         self._u_rm_intensity = self.raymarch_prog.get("u_RC_Intensity", None)
 
         self._u_merge_target_res = self.merge_prog.get("u_TargetResolution", None)
-        self._u_merge_prev_vp = self.merge_prog.get("u_PrevViewProjection", None)
         self._u_merge_temporal_blend = self.merge_prog.get("u_TemporalBlend", None)
+        self._u_merge_history_valid = self.merge_prog.get("u_HistoryValid", None)
 
-        self.prev_view_proj_mat = np.eye(4, dtype=np.float32)
         self._first_frame = True
 
     def resize(self, width: int, height: int) -> None:
@@ -150,15 +146,7 @@ class RadianceCascadesPass(RenderPass):
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
         g_buffer.albedo_roughness_texture.use(location=3)
-
-        scene_color = context.resources.get("scene_color", g_buffer.albedo_roughness_texture)
-        scene_color.use(location=4)
-
-        sky_lut = context.resources.get("sky_view_lut", None)
-        if sky_lut is not None:
-            sky_lut.use(location=5)
-        else:
-            self.black_fallback.use(location=5)
+        g_buffer.surface_id_texture.use(location=4)
 
         if self._u_rm_target_res is not None:
             self._u_rm_target_res.value = self._target_res_tuple
@@ -169,11 +157,11 @@ class RadianceCascadesPass(RenderPass):
         if self._u_rm_interval_c2 is not None:
             self._u_rm_interval_c2.value = float(getattr(context.config, "rc_interval_c2", 40.0))
         if self._u_rm_steps_c0 is not None:
-            self._u_rm_steps_c0.value = int(getattr(context.config, "rc_steps_c0", 6))
+            self._u_rm_steps_c0.value = int(getattr(context.config, "rc_steps_c0", 8))
         if self._u_rm_steps_c1 is not None:
-            self._u_rm_steps_c1.value = int(getattr(context.config, "rc_steps_c1", 10))
+            self._u_rm_steps_c1.value = int(getattr(context.config, "rc_steps_c1", 12))
         if self._u_rm_thickness is not None:
-            self._u_rm_thickness.value = float(getattr(context.config, "rc_thickness", 0.30))
+            self._u_rm_thickness.value = float(getattr(context.config, "rc_thickness", 0.15))
         if self._u_rm_intensity is not None:
             self._u_rm_intensity.value = float(getattr(context.config, "rc_intensity", 1.0))
 
@@ -189,35 +177,22 @@ class RadianceCascadesPass(RenderPass):
         g_buffer.normal_metallic_texture.use(location=3)
         self._current_history.use(location=4)
 
-        # Bind motion vectors (RT2) and albedo/roughness for roughness-aware filtering
+        # Bind motion vectors for temporal reprojection.
         g_buffer.velocity_texture.use(location=5)
-        g_buffer.albedo_roughness_texture.use(location=6)
 
         if self._u_merge_target_res is not None:
             self._u_merge_target_res.value = self._target_res_tuple
 
-        # Update previous view projection matrix
-        curr_vp = getattr(context, "view_proj_mat", None)
-        if curr_vp is None and context.frame_context is not None:
-            # Reconstruct from UBO 0 buffer if directly accessible
-            curr_vp = context.frame_context.buffer[32:48].reshape((4, 4))
-
-        if self._first_frame and curr_vp is not None:
-            np.copyto(self.prev_view_proj_mat, curr_vp)
-            self._first_frame = False
-
-        if self._u_merge_prev_vp is not None:
-            self._u_merge_prev_vp.write(self.prev_view_proj_mat.tobytes())
+        history_valid = not self._first_frame
+        self._first_frame = False
 
         if self._u_merge_temporal_blend is not None:
-            blend_val = float(getattr(context.config, "rc_temporal_blend", 0.85))
+            blend_val = float(getattr(context.config, "rc_temporal_blend", 0.96))
             self._u_merge_temporal_blend.value = blend_val
+        if self._u_merge_history_valid is not None:
+            self._u_merge_history_valid.value = int(history_valid)
 
         self.merge_prog.run(group_x=gx, group_y=gy, group_z=1)
-
-        # Update history matrix for subsequent frame
-        if curr_vp is not None:
-            np.copyto(self.prev_view_proj_mat, curr_vp)
 
         # Publish filtered irradiance texture
         context.resources["rc_texture"] = self._current_filtered

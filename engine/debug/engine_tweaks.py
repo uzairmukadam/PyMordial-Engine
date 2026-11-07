@@ -238,10 +238,10 @@ class EngineTweaks:
         self.rc_interval_c0 = 0.40
         self.rc_interval_c1 = 2.50
         self.rc_interval_c2 = 40.0
-        self.rc_steps_c0 = 6
-        self.rc_steps_c1 = 10
-        self.rc_thickness = 0.30
-        self.rc_temporal_blend = 0.85
+        self.rc_steps_c0 = 8
+        self.rc_steps_c1 = 12
+        self.rc_thickness = 0.15
+        self.rc_temporal_blend = 0.96
         self.ibl_enabled = True
         self.ssr_enabled = True
         self.ssr_steps = 32

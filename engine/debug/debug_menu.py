@@ -539,7 +539,7 @@ class DebugMenu:
                     et.rc_interval_c1 = rc_c1_val
                     et.mark_custom()
 
-                rc_blend_changed, rc_blend_val = imgui.slider_float("RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.85), 0.0, 0.95, "%.2f")
+                rc_blend_changed, rc_blend_val = imgui.slider_float("RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.96), 0.0, 0.98, "%.2f")
                 if rc_blend_changed:
                     et.rc_temporal_blend = rc_blend_val
                     et.mark_custom()

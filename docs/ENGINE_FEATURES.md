@@ -61,11 +61,11 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - **Ground Truth Ambient Occlusion (GTAO)**: High-performance horizon-based occlusion with spatial bilateral blur filter.
 - **Screen-Space Global Illumination (SSGI)**: Real-time indirect diffuse bounce from on-screen surfaces.
 - **Light Propagation Volumes (LPV)**: 3D spatial grid for low-frequency multi-bounce indirect lighting.
-- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination. Interval raymarching computes per-cascade radiance at descending angular resolutions, merged via bilateral/temporal resolve for noise-free indirect lighting. Mutually exclusive with the classic SSGI/LPV path.
+- **Radiance Cascades (SSRC + FFPC)**: Half-resolution cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI/LPV path.
 - **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `SSGI`, `LPV`, `HYBRID` (SSGI + LPV), and `RADIANCE_CASCADES` (SSRC + FFPC).
 - **Clustered Forward+ Local Lights (`engine.gfx.passes.clustered_lights.ClusteredLightingPass`)**: Computes 3D screen frustum grid clusters to evaluate hundreds of dynamic point and spot lights simultaneously.
 - **Screen-Space Reflections (SSR)**: Hi-Z traced glossy/rough reflections with edge fade and fallback to IBL.
-- **Image-Based Lighting (IBL)**: Split-sum approximation using prefiltered environment cubemaps and BRDF integration LUT.
+- **Image-Based Lighting (IBL)**: Split-sum GGX specular lighting with a runtime sun-driven linear HDR sky, solid-angle-aware roughness prefiltering across the full mip chain, cosine-convolved diffuse irradiance, and a BRDF integration LUT.
 - **Atmosphere & Sky (`engine.gfx.atmosphere.AtmosphereSystem`)**: Physically-based Rayleigh and Mie atmospheric scattering with dynamic sun and moon positions.
 - **Volumetric Fog**: Light-shaft raymarching through anisotropic participating media.
 

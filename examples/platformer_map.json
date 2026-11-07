@@ -1,0 +1,909 @@
+{
+  "settings": {
+    "world_size": 500.0,
+    "uv_tiles": 50.0,
+    "material_name": "concrete_clean",
+    "gi_mode": "RADIANCE_CASCADES",
+    "ao_mode": "GTAO",
+    "bloom": true,
+    "ssr": true,
+    "fog": true
+  },
+  "player_spawn": {
+    "position": [
+      0.0,
+      1.5,
+      0.0
+    ],
+    "scale": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "color": [
+      0.2,
+      0.85,
+      1.0,
+      1.0
+    ],
+    "walk_speed": 6.0,
+    "run_speed": 10.5,
+    "jump_force": 8.0,
+    "step_height": 0.4,
+    "snap_to_ground": 0.25
+  },
+  "props": [
+    {
+      "name": "Room A Floor (Start)",
+      "position": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "scale": [
+        12.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.25,
+        0.28,
+        0.32,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_room_floor"
+    },
+    {
+      "name": "Room A Ceiling",
+      "position": [
+        0.0,
+        6.0,
+        0.0
+      ],
+      "scale": [
+        12.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.20,
+        0.22,
+        0.25,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Room A North Wall Left (Leaving Passage 1 Doorway)",
+      "position": [
+        -4.0,
+        3.0,
+        6.0
+      ],
+      "scale": [
+        4.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room A North Wall Right",
+      "position": [
+        4.0,
+        3.0,
+        6.0
+      ],
+      "scale": [
+        4.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room A South Wall",
+      "position": [
+        0.0,
+        3.0,
+        -6.0
+      ],
+      "scale": [
+        12.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room A West Wall",
+      "position": [
+        -6.0,
+        3.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        12.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room A East Wall",
+      "position": [
+        6.0,
+        3.0,
+        0.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        12.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Connecting Passage 1 Floor",
+      "position": [
+        0.0,
+        0.0,
+        10.0
+      ],
+      "scale": [
+        4.0,
+        1.0,
+        8.0
+      ],
+      "color": [
+        0.22,
+        0.25,
+        0.28,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_corridor_floor"
+    },
+    {
+      "name": "Passage 1 Roof",
+      "position": [
+        0.0,
+        6.0,
+        10.0
+      ],
+      "scale": [
+        4.0,
+        1.0,
+        8.0
+      ],
+      "color": [
+        0.18,
+        0.20,
+        0.24,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Passage 1 Left Wall",
+      "position": [
+        -2.0,
+        3.0,
+        10.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        8.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Passage 1 Right Wall",
+      "position": [
+        2.0,
+        3.0,
+        10.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        8.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room B Floor",
+      "position": [
+        0.0,
+        0.0,
+        20.0
+      ],
+      "scale": [
+        14.0,
+        1.0,
+        14.0
+      ],
+      "color": [
+        0.25,
+        0.28,
+        0.32,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_room_floor"
+    },
+    {
+      "name": "Room B Ceiling",
+      "position": [
+        0.0,
+        6.0,
+        20.0
+      ],
+      "scale": [
+        14.0,
+        1.0,
+        14.0
+      ],
+      "color": [
+        0.20,
+        0.22,
+        0.25,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Room B South Wall Left (Leaving Passage 1 Doorway)",
+      "position": [
+        -4.0,
+        3.0,
+        14.0
+      ],
+      "scale": [
+        6.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room B South Wall Right",
+      "position": [
+        4.0,
+        3.0,
+        14.0
+      ],
+      "scale": [
+        6.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room B North Wall",
+      "position": [
+        0.0,
+        3.0,
+        27.0
+      ],
+      "scale": [
+        14.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room B East Wall",
+      "position": [
+        7.0,
+        3.0,
+        20.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        14.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Connecting Passage 2 Floor (Room B to C)",
+      "position": [
+        -8.0,
+        0.0,
+        20.0
+      ],
+      "scale": [
+        8.0,
+        1.0,
+        4.0
+      ],
+      "color": [
+        0.22,
+        0.25,
+        0.28,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_corridor_floor"
+    },
+    {
+      "name": "Passage 2 Roof",
+      "position": [
+        -8.0,
+        6.0,
+        20.0
+      ],
+      "scale": [
+        8.0,
+        1.0,
+        4.0
+      ],
+      "color": [
+        0.18,
+        0.20,
+        0.24,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Passage 2 North Wall",
+      "position": [
+        -8.0,
+        3.0,
+        22.0
+      ],
+      "scale": [
+        8.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Passage 2 South Wall",
+      "position": [
+        -8.0,
+        3.0,
+        18.0
+      ],
+      "scale": [
+        8.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room C Floor (Archive)",
+      "position": [
+        -16.0,
+        0.0,
+        20.0
+      ],
+      "scale": [
+        12.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.25,
+        0.28,
+        0.32,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_room_floor"
+    },
+    {
+      "name": "Room C Ceiling",
+      "position": [
+        -16.0,
+        6.0,
+        20.0
+      ],
+      "scale": [
+        12.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.20,
+        0.22,
+        0.25,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Room C West Wall",
+      "position": [
+        -22.0,
+        3.0,
+        20.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        12.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room C North Wall",
+      "position": [
+        -16.0,
+        3.0,
+        26.0
+      ],
+      "scale": [
+        12.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room C South Wall",
+      "position": [
+        -16.0,
+        3.0,
+        14.0
+      ],
+      "scale": [
+        12.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Connecting Passage 3 Floor (Room B to D)",
+      "position": [
+        0.0,
+        0.0,
+        31.0
+      ],
+      "scale": [
+        4.0,
+        1.0,
+        8.0
+      ],
+      "color": [
+        0.22,
+        0.25,
+        0.28,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_corridor_floor"
+    },
+    {
+      "name": "Passage 3 Roof",
+      "position": [
+        0.0,
+        6.0,
+        31.0
+      ],
+      "scale": [
+        4.0,
+        1.0,
+        8.0
+      ],
+      "color": [
+        0.18,
+        0.20,
+        0.24,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Passage 3 Left Wall",
+      "position": [
+        -2.0,
+        3.0,
+        31.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        8.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Passage 3 Right Wall",
+      "position": [
+        2.0,
+        3.0,
+        31.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        8.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room D Floor (Terminal)",
+      "position": [
+        0.0,
+        0.0,
+        40.0
+      ],
+      "scale": [
+        16.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.25,
+        0.28,
+        0.32,
+        1.0
+      ],
+      "roughness": 0.5,
+      "metallic": 0.3,
+      "material": "mat_room_floor"
+    },
+    {
+      "name": "Room D Ceiling",
+      "position": [
+        0.0,
+        6.0,
+        40.0
+      ],
+      "scale": [
+        16.0,
+        1.0,
+        12.0
+      ],
+      "color": [
+        0.20,
+        0.22,
+        0.25,
+        1.0
+      ],
+      "roughness": 0.6,
+      "metallic": 0.4,
+      "material": "mat_roof_concrete"
+    },
+    {
+      "name": "Room D North Wall",
+      "position": [
+        0.0,
+        3.0,
+        46.0
+      ],
+      "scale": [
+        16.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room D South Wall Left (Leaving Passage 3 Doorway)",
+      "position": [
+        -6.0,
+        3.0,
+        34.0
+      ],
+      "scale": [
+        4.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room D South Wall Right",
+      "position": [
+        6.0,
+        3.0,
+        34.0
+      ],
+      "scale": [
+        4.0,
+        6.0,
+        1.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room D West Wall",
+      "position": [
+        -8.0,
+        3.0,
+        40.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        12.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    },
+    {
+      "name": "Room D East Wall",
+      "position": [
+        8.0,
+        3.0,
+        40.0
+      ],
+      "scale": [
+        1.0,
+        6.0,
+        12.0
+      ],
+      "color": [
+        0.15,
+        0.18,
+        0.22,
+        1.0
+      ],
+      "roughness": 0.7,
+      "metallic": 0.2,
+      "material": "mat_facility_wall"
+    }
+  ],
+  "point_lights": [
+    {
+      "position": [
+        0.0,
+        4.5,
+        0.0
+      ],
+      "radius": 15.0,
+      "color": [
+        0.8,
+        0.9,
+        1.0
+      ],
+      "intensity": 5.0
+    },
+    {
+      "position": [
+        0.0,
+        4.5,
+        20.0
+      ],
+      "radius": 18.0,
+      "color": [
+        1.0,
+        0.7,
+        0.4
+      ],
+      "intensity": 6.0
+    },
+    {
+      "position": [
+        -16.0,
+        4.5,
+        20.0
+      ],
+      "radius": 12.0,
+      "color": [
+        0.3,
+        0.6,
+        1.0
+      ],
+      "intensity": 4.0
+    },
+    {
+      "position": [
+        0.0,
+        4.5,
+        40.0
+      ],
+      "radius": 20.0,
+      "color": [
+        1.0,
+        0.9,
+        0.6
+      ],
+      "intensity": 7.0
+    }
+  ]
+}

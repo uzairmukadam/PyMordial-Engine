@@ -86,11 +86,19 @@ class TestIBLAndSplitSumBRDF:
 
         assert ibl.lut_tex.size == (256, 256)
         assert ibl.env_tex.size == (512, 256)
+        assert ibl.irradiance_tex.size == (128, 64)
 
         # Read back a portion of BRDF LUT to ensure non-zero values
         lut_data = ibl.lut_tex.read()
         lut_arr = np.frombuffer(lut_data, dtype=np.float16)
         assert np.any(lut_arr > 0.0)
+
+        env_arr = np.frombuffer(ibl.env_tex.read(), dtype=np.float16)
+        assert np.max(env_arr) > 1.0  # Environment radiance remains linear HDR.
+        rough_env_arr = np.frombuffer(ibl.env_tex.read(level=ibl.max_mip), dtype=np.float16)
+        assert np.any(rough_env_arr > 0.0)  # GGX-prefiltered roughness mip.
+        irradiance_arr = np.frombuffer(ibl.irradiance_tex.read(), dtype=np.float16)
+        assert np.any(irradiance_arr > 0.0)
 
         ibl.destroy()
 
@@ -532,4 +540,3 @@ class TestFroxelVolumetricFog:
         assert len(data_off) == 320 * 240 * 4
 
         pipeline.destroy()
-

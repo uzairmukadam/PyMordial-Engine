@@ -71,11 +71,11 @@ class RenderConfig:
     rc_interval_c0: float = 0.40
     rc_interval_c1: float = 2.50
     rc_interval_c2: float = 40.0
-    rc_steps_c0: int = 6
-    rc_steps_c1: int = 10
-    rc_thickness: float = 0.30
+    rc_steps_c0: int = 8
+    rc_steps_c1: int = 12
+    rc_thickness: float = 0.15
     rc_intensity: float = 1.0
-    rc_temporal_blend: float = 0.85
+    rc_temporal_blend: float = 0.96
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

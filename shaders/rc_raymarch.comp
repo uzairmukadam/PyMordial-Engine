@@ -1,278 +1,198 @@
-#version 450 core
+#version 430 core
 
-layout (local_size_x = 8, local_size_y = 8) in;
+layout(local_size_x = 8, local_size_y = 8) in;
 
-layout (rgba16f, binding = 0) uniform writeonly image2D u_OutRawIrradiance;
+layout(rgba16f, binding = 0) writeonly uniform image2D u_OutputRadiance;
+layout(binding = 1) uniform sampler2D u_GBufferDepth;
+layout(binding = 2) uniform sampler2D u_GBufferNormalMetallic;
+layout(binding = 3) uniform sampler2D u_GBufferAlbedoRoughness;
+layout(binding = 4) uniform sampler2D u_GBufferSurfaceID;
 
-layout (binding = 1) uniform sampler2D u_GBufferDepth;
-layout (binding = 2) uniform sampler2D u_GBufferNormalMetallic;
-layout (binding = 3) uniform sampler2D u_GBufferAlbedoRoughness;
-layout (binding = 4) uniform sampler2D u_SceneColor;
-layout (binding = 5) uniform sampler2D u_SkyViewLUT;
-
-layout (std140, binding = 0) uniform FrameData {
+layout(std140, binding = 0) uniform FrameData {
     mat4 u_View;
     mat4 u_Projection;
     mat4 u_ViewProjection;
     mat4 u_InvProjection;
     mat4 u_InvView;
-
     vec4 u_CameraPos_Time;
     vec4 u_ScreenSize_Jitter;
-
     vec4 u_SunDirection_Intensity;
     vec4 u_SunColor_Ambient;
-
     mat4 u_LightViewProjection[4];
     vec4 u_CascadeSplits;
-
     vec4 u_FogColor_Density;
     vec4 u_FogParams;
 };
 
-uniform float u_RC_IntervalC0 = 0.40;   
-uniform float u_RC_IntervalC1 = 2.50;   
-uniform float u_RC_IntervalC2 = 40.0;   
-uniform int u_RC_StepsC0 = 6;           
-uniform int u_RC_StepsC1 = 10;          
-uniform float u_RC_Thickness = 0.30;    
-uniform float u_RC_Intensity = 1.0;     
 uniform vec2 u_TargetResolution;
+uniform float u_RC_IntervalC0;
+uniform float u_RC_IntervalC1;
+uniform float u_RC_IntervalC2;
+uniform int u_RC_StepsC0;
+uniform int u_RC_StepsC1;
+uniform float u_RC_Thickness;
+uniform float u_RC_Intensity;
 
-const float PI = 3.14159265358979323846;
+const float PI = 3.14159265359;
+const float GOLDEN_RATIO = 1.61803398875;
+const int RAY_COUNT = 32;
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
     vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
     float t = clamp(-n.z, 0.0, 1.0);
-    n.x += (n.x >= 0.0) ? -t : t;
-    n.y += (n.y >= 0.0) ? -t : t;
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
     return normalize(n);
 }
 
-float InterleavedGradientNoise(vec2 screen_pos) {
-    return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
+vec3 ViewPosition(vec2 uv, float depth) {
+    vec4 p = u_InvProjection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+    return p.xyz / max(abs(p.w), 1e-6);
 }
 
-vec3 GetViewPos(vec2 uv, float raw_depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
-    vec4 view = u_InvProjection * clip;
-    return view.xyz / max(abs(view.w), 1e-6);
+vec3 CosineHemisphereRay(int index, vec3 n, float rotation) {
+    float phi = 2.0 * PI * fract(float(index) * GOLDEN_RATIO + rotation);
+    float cosTheta = sqrt((float(index) + 0.5) / float(RAY_COUNT));
+    float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+    vec3 h = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+    vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, n));
+    return normalize(tangent * h.x + cross(n, tangent) * h.y + n * h.z);
 }
 
-vec3 EvaluateFFPC(vec3 dir_world) {
-    vec3 d = normalize(dir_world);
-    vec3 L = normalize(-u_SunDirection_Intensity.xyz);
-    float sun_lux = u_SunDirection_Intensity.w;
-
-    if (d.y > -0.05) {
-        float cosZenith = clamp(d.y, -1.0, 1.0);
-        float viewZenith = acos(cosZenith);
-        vec3 d_horiz = vec3(d.x, 0.0, d.z);
-        vec3 L_horiz = vec3(L.x, 0.0, L.z);
-        float len_dh = length(d_horiz);
-        float len_lh = length(L_horiz);
-        float sunAzimuth = 0.0;
-        if (len_dh > 1e-5 && len_lh > 1e-5) {
-            float cosAz = clamp(dot(d_horiz / len_dh, L_horiz / len_lh), -1.0, 1.0);
-            sunAzimuth = acos(cosAz);
-        }
-
-        float u = sunAzimuth / PI;
-        float v = sqrt(max(viewZenith / PI, 0.0));
-        vec3 lut_sky = texture(u_SkyViewLUT, vec2(u, v)).rgb * 3.5;
-
-        vec3 base_sky = mix(vec3(0.10, 0.22, 0.42), vec3(0.38, 0.58, 0.82), clamp(d.y * 2.0, 0.0, 1.0));
-        vec3 sky_color = (dot(lut_sky, lut_sky) > 0.001) ? lut_sky : (base_sky * (sun_lux * 0.15 + 0.12));
-
-        float horizon_blend = smoothstep(-0.05, 0.05, d.y);
-        vec3 ground_color = vec3(0.20, 0.22, 0.18) * u_SunColor_Ambient.rgb * max(0.0, L.y) * sun_lux * 0.15;
-        return mix(ground_color, sky_color, horizon_blend);
-    } else {
-        vec3 ground_albedo = vec3(0.22, 0.24, 0.20);
-        float ground_sun_factor = max(0.0, L.y);
-        vec3 ground_bounce = ground_albedo * (u_SunColor_Ambient.rgb * ground_sun_factor * (sun_lux * 0.20) + vec3(0.03));
-        return ground_bounce;
-    }
+float InterleavedNoise(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
-bool RaymarchInterval(
-    vec3 origin_v,
-    vec3 dir_v,
-    float r_start,
-    float r_end,
-    int steps,
-    float jitter,
-    vec2 origin_uv,
-    out vec2 hit_uv,
-    out vec3 hit_pos_v
-) {
-    float interval_len = r_end - r_start;
-    float step_dt = interval_len / float(steps);
-    vec3 prev_p = origin_v + dir_v * r_start;
+vec3 SurfaceRadiance(vec2 uv) {
+    vec4 packedAlbedo = texture(u_GBufferAlbedoRoughness, uv);
+    vec3 rawAlbedo = packedAlbedo.rgb;
+    float maxChannel = max(max(rawAlbedo.r, rawAlbedo.g), rawAlbedo.b);
+    vec3 albedo = maxChannel > 1.0 ? rawAlbedo / maxChannel : rawAlbedo;
+    vec3 emissive = maxChannel > 1.0 ? rawAlbedo - albedo : vec3(0.0);
 
-    for (int s = 1; s <= steps; ++s) {
-        float t = r_start + (float(s) - 0.5 + jitter) * step_dt;
-        vec3 curr_p = origin_v + dir_v * t;
+    vec3 hitNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg));
+    vec3 sunDirection = normalize(mat3(u_View) * -u_SunDirection_Intensity.xyz);
+    float sun = max(dot(hitNormal, sunDirection), 0.0);
+    vec3 direct = albedo * u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * sun / PI);
+    vec3 ambient = albedo * u_SunColor_Ambient.rgb * max(u_SunColor_Ambient.w, 0.025) * 0.35;
 
-        vec4 clip = u_Projection * vec4(curr_p, 1.0);
-        if (clip.w <= 1e-5) return false;
-        vec2 sample_uv = (clip.xy / clip.w) * 0.5 + 0.5;
-
-        if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
-            return false;
-        }
-
-        if (t < r_start + step_dt * 0.75 || length(sample_uv - origin_uv) < 0.003) {
-            prev_p = curr_p;
-            continue;
-        }
-
-        float scene_d = texture(u_GBufferDepth, sample_uv).r;
-        if (scene_d <= 0.000001) {
-            prev_p = curr_p;
-            continue;
-        }
-
-        float scene_z = GetViewPos(sample_uv, scene_d).z;
-        float diff = scene_z - curr_p.z;
-        float th = max(u_RC_Thickness, step_dt * 1.35) * (1.0 + abs(curr_p.z) * 0.02);
-
-        if (diff >= 0.0 && diff < th) {
-            vec3 b_start = prev_p;
-            vec3 b_end = curr_p;
-            vec2 refined_uv = sample_uv;
-            for (int b = 0; b < 3; ++b) {
-                vec3 b_mid = (b_start + b_end) * 0.5;
-                vec4 c_mid = u_Projection * vec4(b_mid, 1.0);
-                if (c_mid.w <= 1e-5) break;
-                vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
-                float d_mid = texture(u_GBufferDepth, uv_mid).r;
-                float z_mid = GetViewPos(uv_mid, d_mid).z;
-                if (z_mid - b_mid.z >= 0.0) {
-                    b_end = b_mid;
-                    refined_uv = uv_mid;
-                } else {
-                    b_start = b_mid;
-                }
-            }
-
-            if (length(refined_uv - origin_uv) < 0.003) {
-                prev_p = curr_p;
-                continue;
-            }
-
-            vec3 hit_nw = OctahedralDecode(texture(u_GBufferNormalMetallic, refined_uv).rg);
-            vec3 hit_nv = normalize(mat3(u_View) * hit_nw);
-            if (dot(hit_nv, -dir_v) > 0.02) {
-                hit_uv = refined_uv;
-                hit_pos_v = b_end;
-                return true;
-            }
-        }
-        prev_p = curr_p;
-    }
-    return false;
-}
-
-vec3 SampleHitRadiance(vec2 hit_uv, float hit_dist, float max_dist) {
-    vec3 hit_rad = texture(u_SceneColor, hit_uv).rgb;
-    if (isnan(hit_rad.r) || isnan(hit_rad.g) || isnan(hit_rad.b) ||
-        isinf(hit_rad.r) || isinf(hit_rad.g) || isinf(hit_rad.b) ||
-        dot(hit_rad, hit_rad) < 0.0001) {
-        vec3 hit_alb = texture(u_GBufferAlbedoRoughness, hit_uv).rgb;
-        hit_rad = hit_alb * u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * 0.25);
-    }
-    // Milder luminance compression to protect rich wall saturation (e.g. red/blue bounce)
-    float lum = dot(hit_rad, vec3(0.2126, 0.7152, 0.0722));
-    vec3 chromatic = hit_rad / max(lum, 1e-5);
-    lum = lum / (1.0 + lum * 0.35); // Softer curve preserves color punch
-    hit_rad = chromatic * lum;
-    float atten = clamp(1.0 - (hit_dist * hit_dist) / (max_dist * max_dist), 0.0, 1.0);
-    return clamp(hit_rad * atten, vec3(0.0), vec3(4.0));
+    // Limit single-hit fireflies so tiny bright samples cannot dominate corner bounce.
+    vec3 radiance = emissive + direct + ambient;
+    float luminance = dot(radiance, vec3(0.2126, 0.7152, 0.0722));
+    radiance *= min(1.0, 2.0 / max(luminance, 1e-5));
+    return min(radiance, vec3(2.0));
 }
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    if (pixel.x >= int(u_TargetResolution.x) || pixel.y >= int(u_TargetResolution.y)) {
+    ivec2 outputSize = imageSize(u_OutputRadiance);
+    if (pixel.x >= outputSize.x || pixel.y >= outputSize.y) {
         return;
     }
 
     vec2 uv = (vec2(pixel) + 0.5) / u_TargetResolution;
-    float raw_depth = texture(u_GBufferDepth, uv).r;
-    if (raw_depth <= 0.000001) {
-        imageStore(u_OutRawIrradiance, pixel, vec4(0.0));
+    float depth = texture(u_GBufferDepth, uv).r;
+    if (depth <= 1e-6) {
+        imageStore(u_OutputRadiance, pixel, vec4(0.0));
         return;
     }
 
-    vec3 view_pos = GetViewPos(uv, raw_depth);
-    vec3 normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg);
-    vec3 normal_view = normalize(mat3(u_View) * normal_world);
+    vec3 origin = ViewPosition(uv, depth);
+    vec3 normalView = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg));
+    float originSurfaceID = texture(u_GBufferSurfaceID, uv).r;
+    origin += normalView * max(0.025, abs(origin.z) * 0.0005);
 
-    vec3 up = abs(normal_view.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 T = normalize(cross(up, normal_view));
-    vec3 B = cross(normal_view, T);
+    float frameIndex = floor(u_CameraPos_Time.w * 30.0);
+    float noise = InterleavedNoise(vec2(pixel) + vec2(frameIndex * 17.0, frameIndex * 31.0));
+    vec3 incomingRadiance = vec3(0.0);
+    float hitWeight = 0.0;
+    int nearSteps = clamp(u_RC_StepsC0, 2, 12);
+    int midSteps = clamp(u_RC_StepsC1, 2, 16);
+    int farSteps = 6;
 
-    vec3 ray_origin_v = view_pos + normal_view * 0.02;
-    float noise = InterleavedGradientNoise(vec2(pixel));
+    for (int ray = 0; ray < RAY_COUNT; ++ray) {
+        vec3 direction = CosineHemisphereRay(ray, normalView, noise);
+        float hitDistance = 0.0;
+        vec2 hitUV = vec2(0.0);
+        bool hit = false;
 
-    float r0 = 0.02;
-    float r1 = max(u_RC_IntervalC0, 0.20);
-    float r2 = max(u_RC_IntervalC1, r1 + 1.0);
-
-    vec3 raw_irradiance = vec3(0.0);
-    float total_weight = 0.0;
-
-    for (int k = 0; k < 4; ++k) {
-        float phi0 = (float(k) + 0.5) * (0.5 * PI) + (noise - 0.5) * 0.20;
-        float cosTheta0 = 0.65;
-        float sinTheta0 = 0.7599;
-        vec3 dir0_v = normalize(T * (cos(phi0) * sinTheta0) + B * (sin(phi0) * sinTheta0) + normal_view * cosTheta0);
-
-        vec2 hit_uv0;
-        vec3 hit_p0;
-        bool hit0 = RaymarchInterval(ray_origin_v, dir0_v, r0, r1, u_RC_StepsC0, noise, uv, hit_uv0, hit_p0);
-
-        vec3 L0 = vec3(0.0);
-        if (hit0) {
-            float d0 = length(hit_p0 - ray_origin_v);
-            L0 = SampleHitRadiance(hit_uv0, d0, r1);
-        } else {
-            vec3 L1_sum = vec3(0.0);
-            for (int j = 0; j < 4; ++j) {
-                float d_phi = (-0.35 + float(j) * 0.2333) * (0.5 * PI);
-                float phi1 = phi0 + d_phi;
-                float cosTheta1 = 0.45 + float(j & 1) * 0.40;
-                float sinTheta1 = sqrt(max(1.0 - cosTheta1 * cosTheta1, 0.0));
-                vec3 dir1_v = normalize(T * (cos(phi1) * sinTheta1) + B * (sin(phi1) * sinTheta1) + normal_view * cosTheta1);
-
-                vec2 hit_uv1;
-                vec3 hit_p1;
-                bool hit1 = RaymarchInterval(ray_origin_v, dir1_v, r1, r2, u_RC_StepsC1, noise, uv, hit_uv1, hit_p1);
-
-                vec3 L1 = vec3(0.0);
-                if (hit1) {
-                    float d1 = length(hit_p1 - ray_origin_v);
-                    L1 = SampleHitRadiance(hit_uv1, d1, r2);
-                } else {
-                    vec3 dir1_w = normalize(mat3(u_InvView) * dir1_v);
-                    L1 = EvaluateFFPC(dir1_w);
-                }
-                L1_sum += L1;
+        for (int step = 0; step < nearSteps + midSteps + farSteps; ++step) {
+            float t;
+            if (step < nearSteps) {
+                t = u_RC_IntervalC0 * (float(step) + 0.5 + noise) / float(nearSteps);
+            } else if (step < nearSteps + midSteps) {
+                int midStep = step - nearSteps;
+                t = mix(u_RC_IntervalC0, u_RC_IntervalC1,
+                    (float(midStep) + 0.5 + noise) / float(midSteps));
+            } else {
+                int farStep = step - nearSteps - midSteps;
+                t = mix(u_RC_IntervalC1, u_RC_IntervalC2,
+                    (float(farStep) + 0.5 + noise) / float(farSteps));
             }
-            L0 = L1_sum * 0.25;
+
+            vec3 rayPosition = origin + direction * t;
+            vec4 clip = u_Projection * vec4(rayPosition, 1.0);
+            if (clip.w <= 1e-5) {
+                break;
+            }
+            vec2 sampleUV = clip.xy / clip.w * 0.5 + 0.5;
+            if (any(lessThan(sampleUV, vec2(0.0))) || any(greaterThan(sampleUV, vec2(1.0)))) {
+                break;
+            }
+            if (distance(sampleUV, uv) < 0.006 || t < max(u_RC_IntervalC0 * 0.5, 0.08)) {
+                continue;
+            }
+
+            float sceneDepth = texture(u_GBufferDepth, sampleUV).r;
+            if (sceneDepth <= 1e-6) {
+                continue;
+            }
+
+            float sceneZ = ViewPosition(sampleUV, sceneDepth).z;
+            float depthDelta = sceneZ - rayPosition.z;
+            float thickness = max(u_RC_Thickness, t * 0.003);
+            if (depthDelta >= 0.0 && depthDelta < thickness) {
+                float hitSurfaceID = texture(u_GBufferSurfaceID, sampleUV).r;
+                vec3 hitNormal = normalize(mat3(u_View) * OctahedralDecode(
+                    texture(u_GBufferNormalMetallic, sampleUV).rg
+                ));
+                vec3 hitPosition = ViewPosition(sampleUV, sceneDepth);
+                float tangentDistance = abs(dot(normalView, hitPosition - origin));
+                bool sameSurface = originSurfaceID > 0.0 &&
+                    abs(hitSurfaceID - originSurfaceID) < 0.25 &&
+                    dot(normalView, hitNormal) > 0.96 &&
+                    tangentDistance < max(0.03, t * 0.02);
+                if (sameSurface) {
+                    continue;
+                }
+                hit = true;
+                hitUV = sampleUV;
+                hitDistance = t;
+                break;
+            }
         }
 
-        float NdotL = max(0.0, dot(normal_view, dir0_v));
-        raw_irradiance += L0 * NdotL;
-        total_weight += NdotL;
+        if (hit) {
+            vec3 hitNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, hitUV).rg));
+            if (dot(hitNormal, -direction) > 0.0) {
+                float distanceFade = clamp(1.0 - hitDistance / max(u_RC_IntervalC2, 1e-3), 0.0, 1.0);
+                vec2 edge = smoothstep(vec2(0.0), vec2(0.06), hitUV)
+                          * (1.0 - smoothstep(vec2(0.94), vec2(1.0), hitUV));
+                float confidence = edge.x * edge.y * distanceFade;
+                incomingRadiance += SurfaceRadiance(hitUV) * confidence;
+                hitWeight += confidence;
+            }
+        }
     }
 
-    if (total_weight > 1e-4) {
-        raw_irradiance = (raw_irradiance / total_weight) * u_RC_Intensity;
+    vec3 irradiance = incomingRadiance * (u_RC_Intensity / float(RAY_COUNT));
+    float irradianceLuminance = dot(irradiance, vec3(0.2126, 0.7152, 0.0722));
+    irradiance *= min(1.0, 2.0 / max(irradianceLuminance, 1e-5));
+    irradiance = min(irradiance, vec3(2.0));
+    if (any(isnan(irradiance)) || any(isinf(irradiance))) {
+        irradiance = vec3(0.0);
     }
-
-    raw_irradiance = clamp(raw_irradiance, vec3(0.0), vec3(3.5));
-
-    imageStore(u_OutRawIrradiance, pixel, vec4(raw_irradiance, 1.0));
+    imageStore(u_OutputRadiance, pixel, vec4(irradiance, hitWeight / float(RAY_COUNT)));
 }

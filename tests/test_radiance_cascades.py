@@ -12,7 +12,7 @@ import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import GIMode, RenderConfig
+from engine.gfx.quality_presets import GIMode
 from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
 from engine.gfx.pipeline import RenderPipeline
 
@@ -73,11 +73,53 @@ class TestRadianceCascadesPass:
         )
 
         # Verify filtered RC texture has data
-        rc_tex = pipeline.rc_pass._current_filtered
+        rc_tex = pipeline.rc_pass._current_history
         data = rc_tex.read()
         assert len(data) == 160 * 120 * 4 * 2  # RGBA16F (2 bytes per component)
-        pixel_array = np.frombuffer(data, dtype=np.float16)
+        pixel_array = np.frombuffer(data, dtype=np.float16).reshape(120, 160, 4)
         assert np.any(pixel_array > 0.0)
+        # The red object must tint nearby diffuse bounce instead of only contributing emissive light.
+        assert pixel_array[..., 0].mean() > pixel_array[..., 1].mean() * 1.5
+        surface_ids = np.frombuffer(pipeline.g_buffer.surface_id_texture.read(), dtype=np.float32)
+        assert np.any(surface_ids == 1.0)
+        assert np.any(surface_ids == 2.0)
+
+        raw_frames = [
+            np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
+            .reshape(120, 160, 4)[..., :3].astype(np.float32)
+        ]
+        filtered_frames = [pixel_array[..., :3].astype(np.float32)]
+        raw_spatial_delta = (
+            np.mean(np.abs(raw_frames[0][1:] - raw_frames[0][:-1]))
+            + np.mean(np.abs(raw_frames[0][:, 1:] - raw_frames[0][:, :-1]))
+        )
+        filtered_spatial_delta = (
+            np.mean(np.abs(filtered_frames[0][1:] - filtered_frames[0][:-1]))
+            + np.mean(np.abs(filtered_frames[0][:, 1:] - filtered_frames[0][:, :-1]))
+        )
+        assert filtered_spatial_delta < raw_spatial_delta * 0.50
+        raw_luminance = raw_frames[0] @ np.array((0.2126, 0.7152, 0.0722))
+        assert raw_luminance.max() <= 2.01
+
+        for frame in range(1, 4):
+            pipeline.render_frame(
+                ecs=ecs,
+                camera_pos=(0.0, 2.0, 4.0),
+                camera_target=(0.0, 0.0, 0.0),
+                time_elapsed=0.1 + frame / 30.0,
+            )
+            raw_frames.append(
+                np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
+                .reshape(120, 160, 4)[..., :3].astype(np.float32)
+            )
+            filtered_frames.append(
+                np.frombuffer(pipeline.rc_pass._current_history.read(), dtype=np.float16)
+                .reshape(120, 160, 4)[..., :3].astype(np.float32)
+            )
+
+        raw_frame_delta = np.mean(np.abs(raw_frames[-1] - raw_frames[-2]))
+        filtered_frame_delta = np.mean(np.abs(filtered_frames[-1] - filtered_frames[-2]))
+        assert filtered_frame_delta < raw_frame_delta * 0.5
 
         # Test debug mode 13 (Radiance Cascades visualization)
         pipeline.config.debug_gbuffer = 13

@@ -398,6 +398,7 @@ class RenderPipeline:
             "u_SkyViewLUT": 10,
             "u_TransmittanceLUT": 11,
             "u_SpotShadowAtlas": 12,
+            "u_IrradianceMap": 13,
             "u_HiZTexture": 14,
             "u_RCTexture": 15,
         }
@@ -1158,6 +1159,7 @@ class RenderPipeline:
         self.sky_atmosphere_pass.sky_view_lut.use(location=10)
         self.sky_atmosphere_pass.transmittance_lut.use(location=11)
         self.spot_shadow_map.depth_texture.use(location=12)
+        self.ibl_pass.irradiance_tex.use(location=13)
         self.hiz_pass.hiz_texture.use(location=14)
 
         rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
