@@ -133,9 +133,6 @@ class RenderPipeline:
         "_mie_beta_tuple",
         "_prev_mie_beta",
         "_atmo_sun_tuple",
-        "_cube_alloc",
-        "_sphere_alloc",
-        "_capsule_alloc",
         "_csm_cascade_idx_uniform",
         "_u_pcf_samples",
         "_u_shadow_mode",
@@ -417,10 +414,7 @@ class RenderPipeline:
         self._u_spot_depth_vp = self.spot_depth_prog.get("u_SpotLightViewProjection", None)
         self._spot_matrices_bytes = bytearray(4 * 16 * 4)
 
-        # Pre-cache mesh allocations and uniforms
-        self._cube_alloc = self.mega_buffer.allocations["cube"]
-        self._sphere_alloc = self.mega_buffer.allocations["sphere"]
-        self._capsule_alloc = self.mega_buffer.allocations["capsule"]
+        # Pre-cache mesh uniforms
         self._csm_cascade_idx_uniform = self.csm_prog.get("u_CascadeIndex", None)
 
         self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
@@ -635,9 +629,6 @@ class RenderPipeline:
             self.particle_pass.set_active_count(part_count if part_enabled else 0)
             self.particle_pass.base_size_multiplier = getattr(new_config, "particle_size", 1.0)
             self.particle_pass.turbulence_strength = getattr(new_config, "particle_turbulence", 0.85)
-
-        if self.water_pass is not None:
-            self.water_pass.enabled = getattr(new_config, "water_enabled", True)
 
         if self.ao_pass is not None:
             self.ao_pass.enabled = getattr(new_config, "ao_mode", "GTAO") != "OFF"
@@ -882,6 +873,8 @@ class RenderPipeline:
         self.tess_mdi.begin_frame()
         # Synchronize dynamic entity AABBs from current world transforms (compound vehicle parts, props, etc.)
         ecs.sync_dynamic_aabbs()
+        if draw_batches is None:
+            draw_batches = ecs.mesh_draw_batches
 
         # Phase 1: Per-Cascade Frustum Culling for Shadow MDI Commands
         for m in self.cascade_shadow_mdis:
@@ -946,11 +939,6 @@ class RenderPipeline:
                         self.tess_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
                     else:
                         self.mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
-        else:
-            self.mdi.add_command(self._cube_alloc, instance_count=1, base_instance=0)
-            if active_count > 1:
-                self.mdi.add_command(self._sphere_alloc, instance_count=active_count - 1, base_instance=1)
-
         # Setup Graph Context Blackboard
         ctx = self._graph_context
         ctx.camera_pos = (self._cam_pos[0], self._cam_pos[1], self._cam_pos[2])
@@ -1309,12 +1297,13 @@ class RenderPipeline:
         self.volumetric_fog_pass.execute(ctx)
 
         # ---- PASS 7.65: Dynamic Water Simulation & Screen-Space Refraction (Phase 4) ----
-        if self.water_pass is not None and getattr(self.config, "water_enabled", True):
+        if self.water_pass is not None:
             self.water_pass.render_water(
                 hdr_fbo=self.post_process.hdr_fbo,
                 depth_texture=self.g_buffer.depth_texture,
                 config=self.config,
                 time_elapsed=time_elapsed,
+                ecs=ecs,
             )
 
         # ---- PASS 7.7: GPU Compute Particles & Volumetric VFX (Phase 2) ----

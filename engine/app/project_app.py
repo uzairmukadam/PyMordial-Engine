@@ -66,8 +66,6 @@ class ProjectApp:
         # 1. Window & ModernGL Render Context
         preset_enum = GraphicsQuality(self.config.quality_preset.lower())
         quality_cfg = get_quality_preset(preset_enum)
-        if hasattr(self.config, "water_enabled") and not self.config.water_enabled:
-            quality_cfg.water_enabled = False
         if hasattr(self.config, "particles_enabled") and not self.config.particles_enabled:
             quality_cfg.particles_enabled = False
             quality_cfg.particle_mode = "OFF"
@@ -299,11 +297,12 @@ class ProjectApp:
                     if extra_batches:
                         self._active_draw_batches.extend(extra_batches)
 
-            # Fallback: if entities exist in ECS but no custom draw batches were registered, render them as cubes
-            if not self._active_draw_batches and self.ecs.active_count > 0:
-                alloc_cube = self.pipeline.mega_buffer.allocations.get("cube")
-                if alloc_cube is not None:
-                    self._active_draw_batches.append((alloc_cube, self.ecs.active_count, 0, False, True))
+            if self._active_draw_batches:
+                # Explicit built-in shapes can coexist with project-owned mesh batches.
+                self._active_draw_batches.extend(self.ecs.explicit_mesh_draw_batches)
+            elif self.ecs.active_count > 0:
+                # Fallback: draw ECS entities with their selected built-in primitive shapes.
+                self._active_draw_batches.extend(self.ecs.mesh_draw_batches)
 
             # 3. Synchronize live graphical tweaks to render pipeline
             if self.engine_tweaks is not None:

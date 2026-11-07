@@ -69,7 +69,21 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - **Atmosphere & Sky (`engine.gfx.atmosphere.AtmosphereSystem`)**: Physically-based Rayleigh and Mie atmospheric scattering with dynamic sun and moon positions.
 - **Volumetric Fog**: Light-shaft raymarching through anisotropic participating media.
 
-### 2.7 Anti-Aliasing & Post-Processing
+### 2.7 Entity Shapes & Water Surfaces
+- `EntityManager.create_entity` supports the built-in `cube`, `sphere`, `plane`, `capsule`, `cylinder`, `cone`, and `water` shapes. `dimensions` sets local mesh size in meters; `shape`, `position`, `rotation`, `scale`, and material values can also be edited later through `TransformProxy`.
+- Water is an ECS surface rather than an implicit graphics-preset plane. Create and size each surface explicitly:
+  ```python
+  water_id = app.ecs.create_entity(
+      shape="water",
+      position=(0.0, 0.5, 0.0),
+      dimensions=(80.0, 0.0, 40.0),
+      is_static=True,
+  )
+  app.ecs.get_transform(water_id).position = (4.0, 0.75, -2.0)
+  ```
+- Water has no global enable toggle: each water entity in the scene is rendered. Graphics presets configure shared optical quality only; they do not create or remove surfaces.
+
+### 2.8 Anti-Aliasing & Post-Processing
 - **Temporal Anti-Aliasing (TAA)**: Subpixel Halton jittering with neighborhood color clamping to prevent ghosting.
 - **Subpixel Morphological Anti-Aliasing (SMAA 1X / 2X / 4X)** & **Fast Approximate Anti-Aliasing (FXAA)**.
 - **Tone-Mapping**: ACES filmic curve, AgX, Reinhard, Uncharted 2, and neutral exposure operators.

@@ -24,7 +24,6 @@ layout (std140, binding = 0) uniform FrameData {
 
 // Water Mesh & Simulation Uniforms
 uniform mat4  u_Model;
-uniform float u_WaterHeight;
 uniform float u_WaveAmplitude;
 uniform float u_WaveSpeed;
 uniform float u_WaveSteepness;
@@ -110,7 +109,7 @@ void evaluateGerstnerWaves(
         peakCrest += max(sinTheta, 0.0) * (A / max(octaves[0].amplitude * ampScale, 0.001));
     }
 
-    displacedPos = vec3(xz0.x + disp.x, u_WaterHeight + disp.y, xz0.y + disp.z);
+    displacedPos = vec3(xz0.x + disp.x, disp.y, xz0.y + disp.z);
     normal = normalize(N);
     tangent = normalize(T);
     crestFactor = clamp(peakCrest * 0.5, 0.0, 1.0);
@@ -119,17 +118,13 @@ void evaluateGerstnerWaves(
 void main() {
     v_UV = in_position.xz;
 
-    // Evaluate world position starting from model transform
-    vec4 worldOrigin = u_Model * vec4(in_position, 1.0);
-    vec2 xz0 = worldOrigin.xz;
-
     vec3 worldPos;
     vec3 normal;
     vec3 tangent;
     float crest;
 
     evaluateGerstnerWaves(
-        xz0,
+        in_position.xz,
         u_Time,
         u_WaveAmplitude,
         u_WaveSpeed,
@@ -140,12 +135,15 @@ void main() {
         crest
     );
 
-    v_WorldPos = worldPos;
-    v_Normal = normal;
-    v_Tangent = tangent;
+    mat3 model3 = mat3(u_Model);
+    mat3 normalMatrix = transpose(inverse(model3));
+    vec4 transformedPos = u_Model * vec4(worldPos, 1.0);
+    v_WorldPos = transformedPos.xyz;
+    v_Normal = normalize(normalMatrix * normal);
+    v_Tangent = normalize(model3 * tangent);
     v_WaveCrest = crest;
-    v_WaterViewDepth = max(-(u_View * vec4(worldPos, 1.0)).z, 0.05);
+    v_WaterViewDepth = max(-(u_View * transformedPos).z, 0.05);
 
-    v_ClipPos = u_ViewProjection * vec4(worldPos, 1.0);
+    v_ClipPos = u_ViewProjection * transformedPos;
     gl_Position = v_ClipPos;
 }

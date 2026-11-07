@@ -213,11 +213,6 @@ class GIBoxWorldModule(ProjectModule):
         self.spot_light_enabled = True
 
     def on_attach(self, app: ProjectApp) -> None:
-        # Disable water rendering in indoor box
-        app.pipeline.config.water_enabled = False
-        if app.engine_tweaks is not None:
-            app.engine_tweaks.water_enabled = False
-
         # Configure High-Performance Radiance Cascades as default GI pipeline
         app.pipeline.config.gi_mode = "RADIANCE_CASCADES"
         app.pipeline.config.rc_intensity = 1.00

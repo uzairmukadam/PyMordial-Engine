@@ -193,9 +193,7 @@ class RenderConfig:
     film_grain_enabled: bool = True
     film_grain_intensity: float = 0.03
 
-    # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
-    water_enabled: bool = True
-    water_height: float = 0.45
+    # Water rendering quality; surfaces are explicitly created ECS entities.
     water_wave_amplitude: float = 0.15
     water_wave_speed: float = 1.0
     water_wave_steepness: float = 0.8
@@ -253,7 +251,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_intensity=0.20,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_enabled=True,
         water_refraction_enabled=True,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
@@ -296,7 +293,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_enabled=True,
         water_refraction_enabled=True,
         water_wave_amplitude=0.10,
         water_foam_enabled=False,
@@ -349,7 +345,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,
         water_wave_amplitude=0.15,
@@ -402,7 +397,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,
         water_wave_amplitude=0.20,
@@ -457,7 +451,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_enabled=True,
         water_refraction_enabled=True,
         water_foam_enabled=True,
         water_wave_amplitude=0.25,

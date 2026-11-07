@@ -840,15 +840,19 @@ class WorldAndPlayerModule(ProjectModule):
         # Enforce fine 0.03 film grain, universal water, zero ghosting, and disable DOF
         app.pipeline.config.film_grain_intensity = 0.03
         app.pipeline.config.film_grain_enabled = True
-        app.pipeline.config.water_enabled = True
-        app.pipeline.config.water_height = 0.45
         app.pipeline.config.motion_blur_enabled = False
         app.pipeline.config.lens_flare_ghost_intensity = 0.0
         app.pipeline.config.dof_enabled = False
         if app.engine_tweaks is not None:
             app.engine_tweaks.film_grain_intensity = 0.03
-            app.engine_tweaks.water_height = 0.45
             app.engine_tweaks.dof_enabled = False
+
+        app.ecs.create_entity(
+            shape="water",
+            position=(0.0, 0.45, 0.0),
+            dimensions=(160.0, 0.0, 160.0),
+            is_static=True,
+        )
 
         # 1. Spawn Fixed Ground Platform with cracked_dry_mud POM
         app.set_world_builder(DefaultWorldBuilder(size=80.0, uv_tiles=40.0, material_name="cracked_dry_mud"))

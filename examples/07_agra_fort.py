@@ -151,11 +151,6 @@ class PhotorealWorldModule(ProjectModule):
             app.engine_tweaks.gi_mode = "RADIANCE_CASCADES"
             app.engine_tweaks.rc_intensity = self.rc_intensity
 
-        # Disable water for indoor/gallery environment
-        app.pipeline.config.water_enabled = False
-        if app.engine_tweaks is not None:
-            app.engine_tweaks.water_enabled = False
-
         # --- Material Swatches ---
         white_marble = (0.92, 0.93, 0.95, 1.0)
         vibrant_red = (0.90, 0.12, 0.12, 1.0)      # Left wall color bleeding test

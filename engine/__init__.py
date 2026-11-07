@@ -12,7 +12,7 @@ from engine.window.window import WindowMode, VSyncMode
 from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
 from engine.gfx.context import RenderContext
 from engine.gfx.pipeline import RenderPipeline
-from engine.core.ecs import EntityManager
+from engine.core.ecs import ENTITY_SHAPES, EntityManager
 from engine.camera.camera import VirtualCamera
 from engine.camera.follow_camera import FollowCamera, FollowCameraConfig
 from engine.camera.free_camera import FreeFlyCamera, FreeCamera
@@ -50,6 +50,7 @@ __all__ = [
     "RenderContext",
     "RenderPipeline",
     "EntityManager",
+    "ENTITY_SHAPES",
     "VirtualCamera",
     "FollowCamera",
     "FollowCameraConfig",

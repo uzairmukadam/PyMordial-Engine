@@ -94,6 +94,41 @@ class TestEntityManagerMemory:
         # Slot 2 (previously e2) should now be cleared
         np.testing.assert_allclose(ecs.rigid_body_state[1, 2, 0:3], [0.0, 0.0, 0.0])
 
+    def test_entity_shapes_dimensions_and_batches(self, ecs: EntityManager):
+        cube = ecs.create_entity(dimensions=(2.0, 1.0, 3.0))
+        sphere = ecs.create_entity(shape="sphere", dimensions=(2.0, 2.0, 2.0))
+        water = ecs.create_entity(
+            shape="water",
+            position=(3.0, 4.0, 5.0),
+            dimensions=(20.0, 0.0, 12.0),
+        )
+
+        assert ecs.mesh_draw_batches == [
+            ("cube", 1, 0, False, True),
+            ("sphere", 1, 1, False, True),
+        ]
+        assert ecs.explicit_mesh_draw_batches == [("sphere", 1, 1, False, True)]
+        np.testing.assert_allclose(ecs.get_transform(cube).dimensions, (2.0, 1.0, 3.0))
+        np.testing.assert_allclose(ecs.get_transform(sphere).size, (2.0, 2.0, 2.0))
+        np.testing.assert_allclose(ecs.get_transform(water).dimensions, (20.0, 0.0, 12.0))
+
+        ecs.get_transform(cube).shape = "cone"
+        assert ecs.mesh_draw_batches[0][0] == "cone"
+        np.testing.assert_allclose(ecs.get_transform(cube).dimensions, (2.0, 1.0, 3.0))
+
+        assert ecs.destroy_entity(sphere)
+        assert ecs.mesh_draw_batches == [("cone", 1, 0, False, True)]
+        np.testing.assert_allclose(ecs.get_transform(water).position, (3.0, 4.0, 5.0))
+
+    def test_invalid_shape_does_not_allocate_entity(self, ecs: EntityManager):
+        try:
+            ecs.create_entity(shape="torus")
+        except ValueError as exc:
+            assert "Unsupported entity shape" in str(exc)
+        else:
+            raise AssertionError("Unsupported shapes must be rejected.")
+        assert ecs.active_count == 0
+
     def test_transform_proxy(self, ecs: EntityManager):
         ent = ecs.create_entity(position=(0.0, 0.0, 0.0))
         proxy = ecs.get_transform_proxy(ent)
@@ -120,6 +155,7 @@ class TestEntityManagerMemory:
         # Simulate gameplay modifications
         proxy0 = ecs.get_transform_proxy(e0)
         proxy0.position = (99.0, 99.0, 99.0)
+        proxy0.shape = "sphere"
         e2 = ecs.create_entity(position=(7.0, 8.0, 9.0))
         assert ecs.active_count == 3
 
@@ -127,6 +163,7 @@ class TestEntityManagerMemory:
         ecs.restore_snapshot(snapshot)
 
         assert ecs.active_count == 2
+        assert ecs.get_transform(e0).shape == "cube"
         np.testing.assert_allclose(ecs.rigid_body_state[1, 0, 0:3], [1.0, 2.0, 3.0])
         np.testing.assert_allclose(ecs.rigid_body_state[1, 1, 0:3], [4.0, 5.0, 6.0])
         assert not ecs.pool.is_valid(e2)
@@ -151,4 +188,3 @@ class TestEntityManagerMemory:
         proxy = ecs.get_transform_proxy(ent)
         proxy.mesh_half_extents = (25.0, 1.0, 25.0)
         np.testing.assert_allclose(ecs.aabbs[dense_idx, 3:6], [50.0, 1.0, 50.0])
-

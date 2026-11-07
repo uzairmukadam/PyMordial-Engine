@@ -162,7 +162,6 @@ def main() -> None:
     parser.add_argument("--chromatic-aberration", action=argparse.BooleanOptionalAction, default=True, help="Enable Chromatic Aberration")
     parser.add_argument("--vignette", action=argparse.BooleanOptionalAction, default=True, help="Enable Physical Lens Vignette")
     parser.add_argument("--film-grain", action=argparse.BooleanOptionalAction, default=True, help="Enable Filmic 35mm Grain")
-    parser.add_argument("--water", action=argparse.BooleanOptionalAction, default=True, help="Enable Dynamic Water & Screen-Space Refraction")
     parser.add_argument("--water-height", type=float, default=0.0, help="Water surface height in meters")
     parser.add_argument("--water-waves", type=float, default=0.15, help="Water wave amplitude in meters")
     parser.add_argument("--water-speed", type=float, default=1.0, help="Water wave speed multiplier")
@@ -247,6 +246,12 @@ def main() -> None:
         color=(0.65, 0.55, 0.42),
         roughness=0.85,
         metallic=0.02,
+    )
+    water_id = ecs.create_entity(
+        shape="water",
+        position=(0.0, float(args.water_height), 0.0),
+        dimensions=(plane_size, 0.0, plane_size),
+        is_static=True,
     )
     physics.create_body(plane_id, body_type="fixed", position=(0.0, -0.5, 0.0))
     physics.attach_box_collider(plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5, friction=0.80, restitution=0.05)
@@ -353,10 +358,6 @@ def main() -> None:
     engine_tweaks.chromatic_aberration_enabled = args.chromatic_aberration
     engine_tweaks.vignette_enabled = args.vignette
     engine_tweaks.film_grain_enabled = args.film_grain
-    if args.water is not None:
-        engine_tweaks.water_enabled = args.water
-    if args.water_height is not None:
-        engine_tweaks.water_height = float(args.water_height)
     if args.water_waves is not None:
         engine_tweaks.water_wave_amplitude = float(args.water_waves)
     if args.water_speed is not None:
@@ -439,7 +440,6 @@ def main() -> None:
         engine_tweaks.chromatic_aberration_intensity = getattr(cfg, "chromatic_aberration_intensity", 0.005)
         engine_tweaks.vignette_enabled = getattr(cfg, "vignette_enabled", True)
         engine_tweaks.film_grain_enabled = getattr(cfg, "film_grain_enabled", True)
-        engine_tweaks.water_enabled = getattr(cfg, "water_enabled", True)
         engine_tweaks.water_wave_amplitude = getattr(cfg, "water_wave_amplitude", 0.15)
         engine_tweaks.water_refraction_enabled = getattr(cfg, "water_refraction_enabled", True)
         engine_tweaks.water_foam_enabled = getattr(cfg, "water_foam_enabled", True)
@@ -465,8 +465,7 @@ def main() -> None:
     game_tweaks.add_watch("Optics", "DoF", lambda: f"{engine_tweaks.dof_focus_distance:.1f}m (f/{engine_tweaks.dof_aperture:.1f})" if engine_tweaks.dof_enabled else "OFF")
     game_tweaks.add_watch("Optics", "Motion Blur", lambda: f"{engine_tweaks.motion_blur_intensity:.1f}x" if engine_tweaks.motion_blur_enabled else "OFF")
     game_tweaks.add_watch("Optics", "Lens Flare", lambda: "ON" if engine_tweaks.lens_flare_enabled else "OFF")
-    game_tweaks.add_watch("Water", "Active", lambda: "ON" if engine_tweaks.water_enabled else "OFF")
-    game_tweaks.add_watch("Water", "Height", lambda: f"{engine_tweaks.water_height:.2f}m")
+    game_tweaks.add_watch("Water", "Height", lambda: f"{float(ecs.get_transform_proxy(water_id).position[1]):.2f}m")
     game_tweaks.add_watch("Water", "Wave Amp", lambda: f"{engine_tweaks.water_wave_amplitude:.2f}m")
 
     # Physics & Interactive Props Game Tweaks
@@ -883,8 +882,6 @@ def main() -> None:
         pipeline.config.film_grain_intensity = engine_tweaks.film_grain_intensity
 
         # Dynamic Water & Screen-Space Refraction (Phase 4)
-        pipeline.config.water_enabled = engine_tweaks.water_enabled
-        pipeline.config.water_height = engine_tweaks.water_height
         pipeline.config.water_wave_amplitude = engine_tweaks.water_wave_amplitude
         pipeline.config.water_wave_speed = engine_tweaks.water_wave_speed
         pipeline.config.water_wave_steepness = engine_tweaks.water_wave_steepness
@@ -898,9 +895,6 @@ def main() -> None:
         pipeline.config.water_roughness = engine_tweaks.water_roughness
         pipeline.config.water_color_shallow = engine_tweaks.water_color_shallow
         pipeline.config.water_color_deep = engine_tweaks.water_color_deep
-        if pipeline.water_pass is not None:
-            pipeline.water_pass.enabled = engine_tweaks.water_enabled
-
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.pom_enabled = engine_tweaks.pom_enabled
         pipeline.config.pom_height_scale = engine_tweaks.pom_height_scale

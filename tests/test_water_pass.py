@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 import moderngl
 
+from engine.core.ecs import EntityManager
 from engine.gfx.passes.water_pass import WaterPass, _generate_water_grid
 from engine.gfx.quality_presets import (
     RenderConfig,
@@ -55,7 +56,7 @@ def test_water_grid_generation():
 def test_water_pass_initialization(gl_context):
     """Validates WaterPass program compilation, FBO allocation, and VAO creation."""
     w, h = 320, 240
-    water_pass = WaterPass(gl_context, width=w, height=h, grid_size=16, world_size=32.0)
+    water_pass = WaterPass(gl_context, width=w, height=h, grid_size=16, world_size=1.0)
 
     assert water_pass.enabled is True
     assert water_pass.width == w
@@ -101,10 +102,14 @@ def test_water_pass_rendering_execution(gl_context):
     depth_tex.write(dummy_depth.tobytes())
 
     config = RenderConfig()
-    config.water_enabled = True
-    config.water_height = 0.0
     config.water_wave_amplitude = 0.2
     config.water_wave_speed = 1.0
+    ecs = EntityManager(max_entities=4)
+    ecs.create_entity(
+        shape="water",
+        position=(2.0, 0.5, -3.0),
+        dimensions=(20.0, 0.0, 12.0),
+    )
 
     # Clear target FBO
     hdr_fbo.use()
@@ -116,10 +121,34 @@ def test_water_pass_rendering_execution(gl_context):
         depth_texture=depth_tex,
         config=config,
         time_elapsed=1.5,
+        ecs=ecs,
     )
 
     gl_context.finish()
+    np.testing.assert_allclose(water_pass._model_array[[0, 5, 10, 12, 13, 14]], [20.0, 1.0, 12.0, 2.0, 0.5, -3.0])
 
+    water_pass.destroy()
+    hdr_fbo.release()
+    hdr_tex.release()
+    depth_tex.release()
+
+
+def test_water_pass_does_not_create_an_implicit_surface(gl_context):
+    water_pass = WaterPass(gl_context, width=32, height=32, grid_size=4)
+    hdr_tex = gl_context.texture((32, 32), 4, dtype="f2")
+    hdr_fbo = gl_context.framebuffer(color_attachments=[hdr_tex])
+    depth_tex = gl_context.texture((32, 32), 1, dtype="f4")
+    sentinel = np.full((32, 32, 4), 0.25, dtype=np.float16)
+    water_pass.opaque_copy_tex.write(sentinel.tobytes())
+
+    water_pass.render_water(
+        hdr_fbo=hdr_fbo,
+        depth_texture=depth_tex,
+        config=RenderConfig(),
+        ecs=EntityManager(max_entities=1),
+    )
+
+    assert water_pass.opaque_copy_tex.read() == sentinel.tobytes()
     water_pass.destroy()
     hdr_fbo.release()
     hdr_tex.release()
@@ -129,26 +158,22 @@ def test_water_pass_rendering_execution(gl_context):
 def test_water_quality_presets():
     """Verifies that all GraphicsQuality presets scale water parameters appropriately."""
     cfg_low = get_quality_preset(GraphicsQuality.LOW)
-    assert cfg_low.water_enabled is True
+    assert not hasattr(cfg_low, "water_enabled")
     assert cfg_low.water_refraction_enabled is True
 
     cfg_med = get_quality_preset(GraphicsQuality.MEDIUM)
-    assert cfg_med.water_enabled is True
     assert cfg_med.water_wave_amplitude == 0.10
     assert cfg_med.water_foam_enabled is False
 
     cfg_high = get_quality_preset(GraphicsQuality.HIGH)
-    assert cfg_high.water_enabled is True
     assert cfg_high.water_wave_amplitude == 0.15
     assert cfg_high.water_foam_enabled is True
 
     cfg_ultra = get_quality_preset(GraphicsQuality.ULTRA)
-    assert cfg_ultra.water_enabled is True
     assert cfg_ultra.water_wave_amplitude == 0.20
     assert cfg_ultra.water_foam_enabled is True
 
     cfg_cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-    assert cfg_cinematic.water_enabled is True
     assert cfg_cinematic.water_wave_amplitude == 0.25
     assert cfg_cinematic.water_clarity == 5.0
 
@@ -168,6 +193,24 @@ def test_pipeline_water_integration():
     assert pipeline.water_pass.opaque_copy_tex is not None
 
     ecs = EntityManager(max_entities=10)
+    for shape, x_position in (
+        ("cube", -4.0),
+        ("sphere", -2.0),
+        ("plane", 0.0),
+        ("capsule", 2.0),
+        ("cylinder", 4.0),
+        ("cone", 6.0),
+    ):
+        ecs.create_entity(shape=shape, position=(x_position, 0.0, 0.0))
+    ecs.create_entity(shape="water", position=(0.0, 0.5, 0.0), dimensions=(20.0, 0.0, 20.0))
+    assert [batch[0] for batch in ecs.explicit_mesh_draw_batches] == [
+        "cube",
+        "sphere",
+        "plane",
+        "capsule",
+        "cylinder",
+        "cone",
+    ]
     pipeline.render_frame(
         ecs=ecs,
         camera_pos=(0.0, 5.0, 10.0),
@@ -175,14 +218,13 @@ def test_pipeline_water_integration():
         time_elapsed=0.5,
         sun_dir=(0.2, -0.8, 0.5),
         sun_lux=4.0,
-        draw_batches=[],
         dt=0.016,
     )
+    assert pipeline.mdi.command_count > 0
 
-    # Disable water via custom RenderConfig and verify pipeline still renders cleanly
-    cfg_off = RenderConfig(water_enabled=False)
-    pipeline.apply_config(cfg_off)
-    assert pipeline.water_pass.enabled is False
+    # Water entities render independently of graphics preset configuration.
+    pipeline.apply_config(RenderConfig(water_wave_amplitude=0.1))
+    assert pipeline.water_pass.enabled is True
 
     pipeline.render_frame(
         ecs=ecs,
@@ -191,10 +233,8 @@ def test_pipeline_water_integration():
         time_elapsed=1.0,
         sun_dir=(0.2, -0.8, 0.5),
         sun_lux=4.0,
-        draw_batches=[],
         dt=0.016,
     )
 
     pipeline.destroy()
     render_ctx.destroy()
-

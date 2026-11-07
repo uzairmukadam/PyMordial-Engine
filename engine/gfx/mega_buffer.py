@@ -424,7 +424,7 @@ class MegaBuffer:
         height: float = 1.0,
         sectors: int = 24,
     ) -> None:
-        """Generates a Y-axis aligned unit cone primitive (base at y=0, apex at y=height)."""
+        """Generates a Y-axis aligned unit cone centered at the origin."""
         verts_list = []
         indices = []
 
@@ -433,7 +433,7 @@ class MegaBuffer:
         nr_side = height / slope
 
         apex_idx = 0
-        verts_list.extend([0.0, height, 0.0, 0.0, 1.0, 0.0, 0.5, 1.0, 1.0, 0.0, 0.0, 1.0])
+        verts_list.extend([0.0, height * 0.5, 0.0, 0.0, 1.0, 0.0, 0.5, 1.0, 1.0, 0.0, 0.0, 1.0])
         side_base_start = 1
         for j in range(sectors + 1):
             theta = j * 2.0 * math.pi / sectors
@@ -444,13 +444,13 @@ class MegaBuffer:
             nx = nr_side * cos_t
             nz = nr_side * sin_t
             u = j / sectors
-            verts_list.extend([x, 0.0, z, nx, ny_side, nz, u, 0.0, -sin_t, 0.0, cos_t, 1.0])
+            verts_list.extend([x, -height * 0.5, z, nx, ny_side, nz, u, 0.0, -sin_t, 0.0, cos_t, 1.0])
 
         for j in range(sectors):
             indices.extend([apex_idx, side_base_start + j + 1, side_base_start + j])
 
         bot_center_idx = len(verts_list) // 12
-        verts_list.extend([0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0])
+        verts_list.extend([0.0, -height * 0.5, 0.0, 0.0, -1.0, 0.0, 0.5, 0.5, 1.0, 0.0, 0.0, 1.0])
         bot_rim_start = bot_center_idx + 1
         for j in range(sectors + 1):
             theta = j * 2.0 * math.pi / sectors
@@ -458,7 +458,7 @@ class MegaBuffer:
             z = radius * math.sin(theta)
             u = 0.5 + 0.5 * math.cos(theta)
             v = 0.5 + 0.5 * math.sin(theta)
-            verts_list.extend([x, 0.0, z, 0.0, -1.0, 0.0, u, v, 1.0, 0.0, 0.0, 1.0])
+            verts_list.extend([x, -height * 0.5, z, 0.0, -1.0, 0.0, u, v, 1.0, 0.0, 0.0, 1.0])
 
         for j in range(sectors):
             indices.extend([bot_center_idx, bot_rim_start + j, bot_rim_start + j + 1])

@@ -22,6 +22,21 @@ from engine.core.materials import (
     MAT_FLAG_VEHICLE_WHEEL,
 )
 
+ENTITY_SHAPES = ("cube", "sphere", "plane", "capsule", "cylinder", "cone", "water")
+_SHAPE_TO_INDEX = {name: index for index, name in enumerate(ENTITY_SHAPES)}
+_SHAPE_HALF_EXTENTS = np.asarray(
+    (
+        (0.5, 0.5, 0.5),
+        (1.0, 1.0, 1.0),
+        (0.5, 0.0, 0.5),
+        (0.4, 0.9, 0.4),
+        (0.5, 1.0, 1.0),
+        (0.5, 0.5, 0.5),
+        (0.5, 0.0, 0.5),
+    ),
+    dtype=np.float32,
+)
+
 
 class TransformProxy:
     """Lightweight zero-allocation property proxy for entity transformation.
@@ -78,6 +93,33 @@ class TransformProxy:
         idx = self.dense_index
         self._mgr.scales[idx] = val
         self._mgr.recompute_matrix(idx)
+
+    @property
+    def dimensions(self) -> np.ndarray:
+        """Entity's local-space mesh dimensions after applying its scale."""
+        idx = self.dense_index
+        return self._mgr.local_half_extents[idx] * (2.0 * np.abs(self._mgr.scales[idx]))
+
+    @dimensions.setter
+    def dimensions(self, val: np.ndarray | tuple[float, float, float] | list[float]) -> None:
+        self._mgr.set_entity_dimensions(self._entity_id, val)
+
+    @property
+    def size(self) -> np.ndarray:
+        """Alias for dimensions."""
+        return self.dimensions
+
+    @size.setter
+    def size(self, val: np.ndarray | tuple[float, float, float] | list[float]) -> None:
+        self.dimensions = val
+
+    @property
+    def shape(self) -> str:
+        return ENTITY_SHAPES[int(self._mgr.shape_ids[self.dense_index])]
+
+    @shape.setter
+    def shape(self, val: str) -> None:
+        self._mgr.set_entity_shape(self._entity_id, val)
 
     @property
     def matrix(self) -> np.ndarray:
@@ -175,6 +217,10 @@ class EntityManager:
         "material_data",
         "scales",
         "local_half_extents",
+        "shape_ids",
+        "shape_explicit",
+        "_mesh_draw_batches",
+        "_explicit_mesh_draw_batches",
         "material_registry",
         "aabbs",
         "is_static",
@@ -218,6 +264,11 @@ class EntityManager:
         self.local_half_extents = np.full((max_entities, 3), 0.5, dtype=np.float32)
         assert self.local_half_extents.flags["C_CONTIGUOUS"], "LocalHalfExtents must be C-contiguous"
 
+        self.shape_ids = np.zeros(max_entities, dtype=np.uint8)
+        self.shape_explicit = np.zeros(max_entities, dtype=bool)
+        self._mesh_draw_batches: list[tuple[str, int, int, bool, bool]] = []
+        self._explicit_mesh_draw_batches: list[tuple[str, int, int, bool, bool]] = []
+
         # 6. World-Space AABBs: (N, 6) float32, C-contiguous [cx, cy, cz, ex, ey, ez]
         self.aabbs = np.zeros((max_entities, 6), dtype=np.float32)
         assert self.aabbs.flags["C_CONTIGUOUS"], "AABBs must be C-contiguous"
@@ -235,11 +286,23 @@ class EntityManager:
     def active_count(self) -> int:
         return self.pool.active_count
 
+    @property
+    def mesh_draw_batches(self) -> list[tuple[str, int, int, bool, bool]]:
+        """Cached contiguous primitive batches; water entities are rendered by WaterPass."""
+        return self._mesh_draw_batches
+
+    @property
+    def explicit_mesh_draw_batches(self) -> list[tuple[str, int, int, bool, bool]]:
+        """Cached built-in batches for entities whose shape was explicitly selected."""
+        return self._explicit_mesh_draw_batches
+
     def create_entity(
         self,
         position: tuple[float, float, float] | np.ndarray = (0.0, 0.0, 0.0),
         rotation: tuple[float, float, float, float] | np.ndarray = (0.0, 0.0, 0.0, 1.0),
         scale: tuple[float, float, float] | np.ndarray = (1.0, 1.0, 1.0),
+        dimensions: tuple[float, float, float] | np.ndarray | None = None,
+        shape: str | None = None,
         mesh_half_extents: tuple[float, float, float] | np.ndarray | None = None,
         color: tuple[float, float, float] | None = None,
         roughness: float | None = None,
@@ -253,9 +316,20 @@ class EntityManager:
         is_vehicle_chassis: bool = False,
         is_vehicle_wheel: bool = False,
     ) -> int:
-        """Allocates an entity and initializes its slots in contiguous memory tables."""
+        """Creates an entity with a built-in shape, transform, dimensions, and material."""
+        shape_name = "cube" if shape is None else shape
+        shape_index = _SHAPE_TO_INDEX.get(shape_name)
+        if shape_index is None:
+            raise ValueError(f"Unsupported entity shape {shape_name!r}; expected one of {ENTITY_SHAPES}.")
+        if dimensions is not None:
+            dimensions_array = np.asarray(dimensions, dtype=np.float32)
+            if dimensions_array.shape != (3,) or not np.all(np.isfinite(dimensions_array)) or np.any(dimensions_array < 0.0):
+                raise ValueError("Entity dimensions must be three finite non-negative values.")
+
         entity_id = self.pool.allocate()
         dense_idx = self.pool.get_dense_index(entity_id)
+        self.shape_ids[dense_idx] = shape_index
+        self.shape_explicit[dense_idx] = shape is not None
 
         # Static / dynamic classification
         self.is_static[dense_idx] = bool(is_static)
@@ -270,11 +344,14 @@ class EntityManager:
         self.rigid_body_state[1, dense_idx, 0:3] = position
         self.rigid_body_state[1, dense_idx, 3:7] = rotation
 
-        self.scales[dense_idx] = scale
+        self.local_half_extents[dense_idx] = _SHAPE_HALF_EXTENTS[shape_index]
         if mesh_half_extents is not None:
             self.local_half_extents[dense_idx] = mesh_half_extents
-        else:
-            self.local_half_extents[dense_idx].fill(0.5)
+        self.scales[dense_idx] = scale
+        if dimensions is not None:
+            base_dimensions = self.local_half_extents[dense_idx] * 2.0
+            scalable_axes = base_dimensions > 0.0
+            self.scales[dense_idx, scalable_axes] = dimensions_array[scalable_axes] / base_dimensions[scalable_axes]
 
         # Resolve material definition if material_id was provided
         mat_def = None
@@ -349,7 +426,109 @@ class EntityManager:
         )
 
         self.recompute_matrix(dense_idx)
+        self._append_entity_draw_batches(dense_idx)
         return entity_id
+
+    def set_entity_shape(self, entity_id: int, shape: str) -> None:
+        """Changes an active entity's built-in primitive shape and culling bounds."""
+        shape_index = _SHAPE_TO_INDEX.get(shape)
+        if shape_index is None:
+            raise ValueError(f"Unsupported entity shape {shape!r}; expected one of {ENTITY_SHAPES}.")
+        dense_idx = self.pool.get_dense_index(entity_id)
+        if dense_idx < 0:
+            raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
+        if int(self.shape_ids[dense_idx]) == shape_index:
+            if not self.shape_explicit[dense_idx]:
+                self.shape_explicit[dense_idx] = True
+                self._rebuild_mesh_draw_batches()
+            return
+        previous_dimensions = self.local_half_extents[dense_idx] * (2.0 * np.abs(self.scales[dense_idx]))
+        self.shape_ids[dense_idx] = shape_index
+        self.shape_explicit[dense_idx] = True
+        self.local_half_extents[dense_idx] = _SHAPE_HALF_EXTENTS[shape_index]
+        base_dimensions = self.local_half_extents[dense_idx] * 2.0
+        scalable_axes = base_dimensions > 0.0
+        self.scales[dense_idx, scalable_axes] = previous_dimensions[scalable_axes] / base_dimensions[scalable_axes]
+        self.recompute_matrix(dense_idx)
+        self._rebuild_mesh_draw_batches()
+
+    def set_entity_dimensions(
+        self,
+        entity_id: int,
+        dimensions: tuple[float, float, float] | np.ndarray | list[float],
+    ) -> None:
+        """Sets local mesh dimensions while preserving scale on degenerate mesh axes."""
+        dense_idx = self.pool.get_dense_index(entity_id)
+        if dense_idx < 0:
+            raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
+        values = np.asarray(dimensions, dtype=np.float32)
+        if values.shape != (3,) or not np.all(np.isfinite(values)) or np.any(values < 0.0):
+            raise ValueError("Entity dimensions must be three finite non-negative values.")
+        base_dimensions = self.local_half_extents[dense_idx] * 2.0
+        scalable_axes = base_dimensions > 0.0
+        self.scales[dense_idx, scalable_axes] = values[scalable_axes] / base_dimensions[scalable_axes]
+        self.recompute_matrix(dense_idx)
+
+    def _rebuild_mesh_draw_batches(self) -> None:
+        """Rebuilds cached primitive batches after entity creation, removal, or shape changes."""
+        batches = self._mesh_draw_batches
+        batches.clear()
+        active_count = self.pool.active_count
+        batch_start = -1
+        batch_shape = -1
+        for dense_idx in range(active_count + 1):
+            shape_index = int(self.shape_ids[dense_idx]) if dense_idx < active_count else -1
+            if shape_index == batch_shape:
+                continue
+            if batch_shape >= 0 and batch_shape != _SHAPE_TO_INDEX["water"]:
+                batches.append((ENTITY_SHAPES[batch_shape], dense_idx - batch_start, batch_start, False, True))
+            batch_shape = shape_index
+            batch_start = dense_idx
+
+        explicit_batches = self._explicit_mesh_draw_batches
+        explicit_batches.clear()
+        batch_shape = -1
+        batch_start = -1
+        batch_explicit = False
+        for dense_idx in range(active_count + 1):
+            shape_index = int(self.shape_ids[dense_idx]) if dense_idx < active_count else -1
+            is_explicit = bool(self.shape_explicit[dense_idx]) if dense_idx < active_count else False
+            if shape_index == batch_shape and is_explicit == batch_explicit:
+                continue
+            if batch_explicit and batch_shape >= 0 and batch_shape != _SHAPE_TO_INDEX["water"]:
+                explicit_batches.append(
+                    (ENTITY_SHAPES[batch_shape], dense_idx - batch_start, batch_start, False, True)
+                )
+            batch_shape = shape_index
+            batch_start = dense_idx
+            batch_explicit = is_explicit
+
+    def _append_entity_draw_batches(self, dense_idx: int) -> None:
+        """Adds a newly allocated entity to cached contiguous primitive batches in O(1)."""
+        shape_index = int(self.shape_ids[dense_idx])
+        shape_name = ENTITY_SHAPES[shape_index]
+        if shape_name == "water":
+            return
+
+        batches = self._mesh_draw_batches
+        if batches and batches[-1][0] == shape_name and batches[-1][1] + batches[-1][2] == dense_idx:
+            previous = batches[-1]
+            batches[-1] = (shape_name, previous[1] + 1, previous[2], False, True)
+        else:
+            batches.append((shape_name, 1, dense_idx, False, True))
+
+        if not self.shape_explicit[dense_idx]:
+            return
+        explicit_batches = self._explicit_mesh_draw_batches
+        if (
+            explicit_batches
+            and explicit_batches[-1][0] == shape_name
+            and explicit_batches[-1][1] + explicit_batches[-1][2] == dense_idx
+        ):
+            previous = explicit_batches[-1]
+            explicit_batches[-1] = (shape_name, previous[1] + 1, previous[2], False, True)
+        else:
+            explicit_batches.append((shape_name, 1, dense_idx, False, True))
 
     def set_entity_material(
         self,
@@ -482,6 +661,8 @@ class EntityManager:
             self.material_data[dense_idx] = self.material_data[last_dense_idx]
             self.scales[dense_idx] = self.scales[last_dense_idx]
             self.local_half_extents[dense_idx] = self.local_half_extents[last_dense_idx]
+            self.shape_ids[dense_idx] = self.shape_ids[last_dense_idx]
+            self.shape_explicit[dense_idx] = self.shape_explicit[last_dense_idx]
             self.aabbs[dense_idx] = self.aabbs[last_dense_idx]
             self.is_static[dense_idx] = self.is_static[last_dense_idx]
 
@@ -492,6 +673,8 @@ class EntityManager:
         self.material_data[last_dense_idx].fill(0.0)
         self.scales[last_dense_idx].fill(1.0)
         self.local_half_extents[last_dense_idx].fill(0.5)
+        self.shape_ids[last_dense_idx] = _SHAPE_TO_INDEX["cube"]
+        self.shape_explicit[last_dense_idx] = False
         self.aabbs[last_dense_idx].fill(0.0)
         self.is_static[last_dense_idx] = False
 
@@ -501,6 +684,7 @@ class EntityManager:
         elif last_dense_idx < self.static_count:
             self._static_dirty = True
 
+        self._rebuild_mesh_draw_batches()
         return True
 
     def get_transform_proxy(self, entity_id: int) -> TransformProxy:
@@ -645,6 +829,8 @@ class EntityManager:
             "material_data": self.material_data.copy(),
             "scales": self.scales.copy(),
             "local_half_extents": self.local_half_extents.copy(),
+            "shape_ids": self.shape_ids.copy(),
+            "shape_explicit": self.shape_explicit.copy(),
             "aabbs": self.aabbs.copy(),
             "is_static": self.is_static.copy(),
             "static_count": self.static_count,
@@ -664,9 +850,18 @@ class EntityManager:
         self.scales[:] = snapshot["scales"]
         if "local_half_extents" in snapshot:
             self.local_half_extents[:] = snapshot["local_half_extents"]
+        if "shape_ids" in snapshot:
+            self.shape_ids[:] = snapshot["shape_ids"]
+        else:
+            self.shape_ids.fill(_SHAPE_TO_INDEX["cube"])
+        if "shape_explicit" in snapshot:
+            self.shape_explicit[:] = snapshot["shape_explicit"]
+        else:
+            self.shape_explicit.fill(False)
         if "aabbs" in snapshot:
             self.aabbs[:] = snapshot["aabbs"]
         if "is_static" in snapshot:
             self.is_static[:] = snapshot["is_static"]
         self.static_count = snapshot.get("static_count", 0)
         self._static_dirty = snapshot.get("_static_dirty", True)
+        self._rebuild_mesh_draw_batches()

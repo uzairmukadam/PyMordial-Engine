@@ -13,6 +13,7 @@ from typing import Any
 import moderngl
 import numpy as np
 
+from engine.core.ecs import ENTITY_SHAPES, EntityManager
 from engine.gfx.render_graph import RenderPass
 
 from engine.gfx.shader_utils import get_shader_dir, load_shader
@@ -25,7 +26,7 @@ _load_shader = load_shader
 
 def _generate_water_grid(
     grid_size: int = 128,
-    world_size: float = 160.0,
+    world_size: float = 1.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generates a high-tessellation quad grid mesh in the XZ plane centered at (0,0)."""
     n_verts = (grid_size + 1) * (grid_size + 1)
@@ -74,7 +75,7 @@ class WaterPass(RenderPass):
         width: int,
         height: int,
         grid_size: int = 128,
-        world_size: float = 160.0,
+        world_size: float = 1.0,
     ) -> None:
         super().__init__(name="WaterPass", enabled=True)
         self.ctx = ctx
@@ -108,7 +109,6 @@ class WaterPass(RenderPass):
 
         # 4. Cache Uniform Locations
         self._u_model = self.prog.get("u_Model", None)
-        self._u_water_height = self.prog.get("u_WaterHeight", None)
         self._u_wave_amplitude = self.prog.get("u_WaveAmplitude", None)
         self._u_wave_speed = self.prog.get("u_WaveSpeed", None)
         self._u_wave_steepness = self.prog.get("u_WaveSteepness", None)
@@ -133,7 +133,8 @@ class WaterPass(RenderPass):
         if "u_DepthTexture" in self.prog:
             self.prog["u_DepthTexture"].value = 1
 
-        self._identity_model = np.eye(4, dtype=np.float32)
+        self._model_bytes = bytearray(64)
+        self._model_array = np.frombuffer(self._model_bytes, dtype=np.float32)
 
     def resize(self, width: int, height: int) -> None:
         """Resizes the intermediate opaque copy framebuffer."""
@@ -161,9 +162,19 @@ class WaterPass(RenderPass):
         depth_texture: moderngl.Texture,
         config: Any,
         time_elapsed: float = 0.0,
+        ecs: EntityManager | None = None,
     ) -> None:
-        """Renders the displaced water plane with screen-space refraction into hdr_fbo."""
-        if not self.enabled:
+        """Renders each ECS water surface with screen-space refraction into hdr_fbo."""
+        if not self.enabled or ecs is None:
+            return
+
+        water_shape = ENTITY_SHAPES.index("water")
+        has_water = False
+        for dense_idx in range(ecs.active_count):
+            if int(ecs.shape_ids[dense_idx]) == water_shape:
+                has_water = True
+                break
+        if not has_water:
             return
 
         # 1. Blit current opaque scene from hdr_fbo to opaque_copy_fbo
@@ -174,10 +185,6 @@ class WaterPass(RenderPass):
         depth_texture.use(location=1)
 
         # 3. Update Wave Simulation Uniforms
-        if self._u_model is not None:
-            self._u_model.write(self._identity_model.tobytes())
-        if self._u_water_height is not None:
-            self._u_water_height.value = float(getattr(config, "water_height", 0.0))
         if self._u_wave_amplitude is not None:
             self._u_wave_amplitude.value = float(getattr(config, "water_wave_amplitude", 0.15))
         if self._u_wave_speed is not None:
@@ -217,9 +224,15 @@ class WaterPass(RenderPass):
         if self._u_foam_enabled is not None:
             self._u_foam_enabled.value = 1 if getattr(config, "water_foam_enabled", True) else 0
 
-        # 5. Render water surface directly into hdr_fbo
+        # 5. Render each water entity directly into hdr_fbo using its ECS transform.
         hdr_fbo.use()
-        self.vao.render(mode=moderngl.TRIANGLES)
+        for dense_idx in range(ecs.active_count):
+            if int(ecs.shape_ids[dense_idx]) != water_shape:
+                continue
+            if self._u_model is not None:
+                np.copyto(self._model_array, ecs.world_transforms[dense_idx])
+                self._u_model.write(self._model_bytes)
+            self.vao.render(mode=moderngl.TRIANGLES)
 
     def execute(self, context: Any) -> None:
         """Executes water rendering pass via RenderGraphContext."""
@@ -238,6 +251,7 @@ class WaterPass(RenderPass):
                 depth_texture=depth_texture,
                 config=config,
                 time_elapsed=time_elapsed,
+                ecs=getattr(context, "ecs", None),
             )
 
     def destroy(self) -> None:

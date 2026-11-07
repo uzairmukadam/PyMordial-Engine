@@ -153,8 +153,6 @@ class EngineTweaks:
         "vignette_smoothness",
         "film_grain_enabled",
         "film_grain_intensity",
-        "water_enabled",
-        "water_height",
         "water_wave_amplitude",
         "water_wave_speed",
         "water_wave_steepness",
@@ -323,8 +321,6 @@ class EngineTweaks:
         self.film_grain_intensity = 0.03
 
         # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
-        self.water_enabled = False
-        self.water_height = 0.45
         self.water_wave_amplitude = 0.15
         self.water_wave_speed = 1.0
         self.water_wave_steepness = 0.8
@@ -582,8 +578,6 @@ class EngineTweaks:
             p_cfg.fog_debug_mode = int(self.fog_debug_mode)
 
             # 8. Dynamic Water Simulation
-            p_cfg.water_enabled = bool(self.water_enabled)
-            p_cfg.water_height = float(self.water_height)
             p_cfg.water_wave_amplitude = float(self.water_wave_amplitude)
             p_cfg.water_wave_speed = float(self.water_wave_speed)
             p_cfg.water_wave_steepness = float(self.water_wave_steepness)
@@ -593,9 +587,6 @@ class EngineTweaks:
             p_cfg.water_foam_threshold = float(self.water_foam_threshold)
             p_cfg.water_clarity = float(self.water_clarity)
             p_cfg.water_roughness = float(self.water_roughness)
-            if hasattr(pipeline, "water_pass") and pipeline.water_pass is not None:
-                pipeline.water_pass.enabled = self.water_enabled
-
             # 9. GPU Particles
             p_cfg.particles_enabled = bool(self.particles_enabled)
             p_cfg.particle_count = int(self.particle_count)
@@ -678,7 +669,7 @@ class EngineTweaks:
             "ssdm_enabled", "ssdm_scale",
             "volumetric_fog_enabled", "fog_resolution", "fog_point_lights", "fog_density",
             "fog_height_falloff", "fog_anisotropy", "fog_distance", "fog_ambient", "fog_debug_mode",
-            "water_enabled", "water_height", "water_wave_amplitude", "water_wave_speed",
+            "water_wave_amplitude", "water_wave_speed",
             "water_wave_steepness", "water_refraction_enabled", "water_refraction_strength",
             "water_foam_enabled", "water_foam_threshold", "water_foam_scale", "water_foam_intensity",
             "water_clarity", "water_roughness",
@@ -816,7 +807,6 @@ class EngineTweaks:
             "frustum_cull_enabled": bool(self.frustum_cull_enabled),
             "ssdm_enabled": bool(self.ssdm_enabled),
             "ssdm_scale": float(self.ssdm_scale),
-            "water_enabled": bool(self.water_enabled),
             "particles_enabled": bool(self.particles_enabled),
             "show_bounds": bool(self.show_bounds),
             "show_physics_colliders": bool(self.show_physics_colliders),
