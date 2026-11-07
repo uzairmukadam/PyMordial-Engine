@@ -69,12 +69,9 @@ uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug =
 // AAA Shadow Parametrization
 uniform int u_ShadowMode = 2;          // 0=Hard, 1=PCF, 2=PCSS (Default: PCSS)
 uniform float u_ShadowSoftness = 1.2;  // Penumbra scale & PCF radius
-uniform float u_ShadowBias = 0.0015;   // Base shadow depth bias
+uniform float u_ShadowBias = 0.0015;   // Base world-space shadow depth bias (meters)
 uniform float u_ShadowNormalBias = 0.0010; // Normal offset bias scale
 uniform vec2 u_ShadowOffset = vec2(0.0);   // Manual alignment offset (delta from calibrated base)
-
-// Calibrated base light-space alignment offset
-const vec2 CALIBRATED_SHADOW_OFFSET = vec2(-0.0004, 0.0011);
 
 // Phase 5 Toggles & Settings
 uniform int u_AOEnabled = 1;
@@ -195,7 +192,16 @@ float LinearizeDepth(float depth, vec2 uv) {
 
 // Bilinear Percentage-Closer Filter (PCF) over 4 discrete shadow texels
 // Anti-aliases hard shadow boundaries and provides pristine sub-texel smoothness without blur
-float SampleShadowBilinear(vec2 uv, float current_depth, float bias, vec2 uv_min, vec2 uv_max) {
+float SampleShadowBilinear(
+    vec2 uv,
+    vec2 local_uv,
+    vec2 atlas_offset,
+    vec2 depth_gradient,
+    float current_depth,
+    float bias,
+    vec2 uv_min,
+    vec2 uv_max
+) {
     vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
     vec2 texel_size = 1.0 / full_size;
     vec2 tex_coord = uv * full_size - 0.5;
@@ -207,10 +213,19 @@ float SampleShadowBilinear(vec2 uv, float current_depth, float bias, vec2 uv_min
     vec2 uv01 = clamp(uv00 + vec2(0.0, texel_size.y), uv_min, uv_max);
     vec2 uv11 = clamp(uv00 + texel_size, uv_min, uv_max);
 
-    float s00 = (current_depth - bias <= texture(u_ShadowAtlas, uv00).r) ? 1.0 : 0.0;
-    float s10 = (current_depth - bias <= texture(u_ShadowAtlas, uv10).r) ? 1.0 : 0.0;
-    float s01 = (current_depth - bias <= texture(u_ShadowAtlas, uv01).r) ? 1.0 : 0.0;
-    float s11 = (current_depth - bias <= texture(u_ShadowAtlas, uv11).r) ? 1.0 : 0.0;
+    vec2 local00 = (uv00 - atlas_offset) * 2.0;
+    vec2 local10 = (uv10 - atlas_offset) * 2.0;
+    vec2 local01 = (uv01 - atlas_offset) * 2.0;
+    vec2 local11 = (uv11 - atlas_offset) * 2.0;
+    float depth00 = current_depth + dot(depth_gradient, local00 - local_uv) - bias;
+    float depth10 = current_depth + dot(depth_gradient, local10 - local_uv) - bias;
+    float depth01 = current_depth + dot(depth_gradient, local01 - local_uv) - bias;
+    float depth11 = current_depth + dot(depth_gradient, local11 - local_uv) - bias;
+
+    float s00 = (depth00 <= texture(u_ShadowAtlas, uv00).r) ? 1.0 : 0.0;
+    float s10 = (depth10 <= texture(u_ShadowAtlas, uv10).r) ? 1.0 : 0.0;
+    float s01 = (depth01 <= texture(u_ShadowAtlas, uv01).r) ? 1.0 : 0.0;
+    float s11 = (depth11 <= texture(u_ShadowAtlas, uv11).r) ? 1.0 : 0.0;
 
     return mix(mix(s00, s10, f.x), mix(s01, s11, f.x), f.y);
 }
@@ -224,6 +239,8 @@ float SampleSingleCascade(
     float cos_theta,
     float slope,
     float softness,
+    vec3 world_dx,
+    vec3 world_dy,
     out bool in_bounds
 ) {
     float normal_offset = (u_ShadowNormalBias * slope) * (float(cascade) * 0.35 + 1.0);
@@ -233,7 +250,7 @@ float SampleSingleCascade(
     vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
     // Remap NDC XY [-1, 1] to UV [0, 1]; Z is already in [0, 1] under GL_ZERO_TO_ONE clip control
     proj_coords.xy = proj_coords.xy * 0.5 + 0.5;
-    proj_coords.xy += CALIBRATED_SHADOW_OFFSET + u_ShadowOffset;
+    proj_coords.xy += u_ShadowOffset;
 
     // Bounds check
     if (proj_coords.z < 0.0 || proj_coords.z > 1.0 ||
@@ -250,52 +267,86 @@ float SampleSingleCascade(
     vec2 uv_max = atlas_offset + vec2(0.4995);
 
     float current_depth = proj_coords.z;
-    float base_bias = max(u_ShadowBias, 0.0);
-    // Decima-Style Sloped Depth Bias: bias = clamp(base_bias * tan(acos(N·L)), min_bias, max_bias)
-    // where slope = tan(acos(N·L)) = sin(acos(N·L)) / cos(N·L)
-    float bias = clamp(base_bias * (1.0 + slope * 2.0), base_bias * 0.5, base_bias * 6.0);
+    // Convert world-space bias into this cascade's normalized depth units.
+    // A constant normalized bias grows with cascade depth range and causes
+    // distant receivers to detach from their shadows.
+    float inv_far = length(vec3(
+        u_LightViewProjection[cascade][0].z,
+        u_LightViewProjection[cascade][1].z,
+        u_LightViewProjection[cascade][2].z
+    ));
+    float inv_rad = length(vec3(
+        u_LightViewProjection[cascade][0].x,
+        u_LightViewProjection[cascade][1].x,
+        u_LightViewProjection[cascade][2].x
+    ));
+    vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
+    float world_texel_size = 4.0 / max(inv_rad * full_size.x, 1e-6);
+    vec3 light_dx = (u_LightViewProjection[cascade] * vec4(world_dx, 0.0)).xyz;
+    vec3 light_dy = (u_LightViewProjection[cascade] * vec4(world_dy, 0.0)).xyz;
+    vec2 uv_dx = light_dx.xy * 0.5;
+    vec2 uv_dy = light_dy.xy * 0.5;
+    float uv_det = uv_dx.x * uv_dy.y - uv_dx.y * uv_dy.x;
+    vec2 depth_gradient = vec2(0.0);
+    if (abs(uv_det) > 1e-10) {
+        depth_gradient.x = (light_dx.z * uv_dy.y - light_dy.z * uv_dx.y) / uv_det;
+        depth_gradient.y = (uv_dx.x * light_dy.z - uv_dy.x * light_dx.z) / uv_det;
+    }
+    float base_bias_world = max(u_ShadowBias, 0.0);
+    float bias_world = max(clamp(
+        base_bias_world * (1.0 + slope * 2.0),
+        base_bias_world * 0.5,
+        base_bias_world * 6.0
+    ), world_texel_size * min(slope, 3.5) * 0.05);
+    float bias = bias_world * inv_far;
 
     // MODE 0: ANTI-ALIASED HARD SHADOWS (4-Tap Bilinear PCF)
     if (u_ShadowMode == 0) {
-        return SampleShadowBilinear(uv, current_depth, bias, uv_min, uv_max);
+        return SampleShadowBilinear(
+            uv, proj_coords.xy, atlas_offset, depth_gradient,
+            current_depth, bias, uv_min, uv_max
+        );
     }
 
-    float cascade_scale = float(cascade) * 0.65 + 1.0;
+    vec2 cascade_texel_size = 2.0 / full_size;
 
     // MODE 1: UNIFORM PCF (Low-Discrepancy Vogel Disk with Bilinear Hardware Taps)
     // Zero-checkerboard noise: deterministic golden spiral provides smooth sub-texel gradients
     if (u_ShadowMode == 1) {
-        float filter_radius = (0.0009 * softness) / cascade_scale;
+        float filter_radius = cascade_texel_size.x * (1.5 * softness);
         int samples = clamp(u_PCF_Samples, 8, 32);
         float shadow = 0.0;
         for (int i = 0; i < samples; ++i) {
             vec2 offset = VogelDiskSample(i, samples, 0.0) * filter_radius;
             vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
-            shadow += SampleShadowBilinear(sample_uv, current_depth, bias, uv_min, uv_max);
+            shadow += SampleShadowBilinear(
+                sample_uv, proj_coords.xy, atlas_offset, depth_gradient,
+                current_depth, bias, uv_min, uv_max
+            );
         }
         return shadow / float(samples);
     }
 
     // MODE 2: AAA DIRECTIONAL PCSS (Physically-Based Contact-Hardening Soft Shadows)
-    vec2 full_size = vec2(textureSize(u_ShadowAtlas, 0));
-    vec2 texel_size = 1.0 / full_size;
-
     // Extract physical cascade metric scale from light projection matrix
-    float inv_rad = length(vec3(u_LightViewProjection[cascade][0].x, u_LightViewProjection[cascade][1].x, u_LightViewProjection[cascade][2].x));
-    float inv_far = length(vec3(u_LightViewProjection[cascade][0].z, u_LightViewProjection[cascade][1].z, u_LightViewProjection[cascade][2].z));
     float light_far = 1.0 / max(inv_far, 1e-6);
 
     // Step 1: Blocker Search (Deterministic Vogel Spiral with central anchor)
-    // Radius covers physical occluder search space (scaled by cascade)
-    float search_radius = clamp(texel_size.x * 12.0 * softness, texel_size.x * 4.0, 0.007) / cascade_scale;
+    // Keep the search footprint consistent in shadow-map texels at every cascade.
+    float search_radius = clamp(
+        cascade_texel_size.x * 6.0 * softness,
+        cascade_texel_size.x * 2.0,
+        0.007
+    );
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
     int blocker_samples = 16;
-    float blocker_bias = bias + slope * 0.0006;
+    float blocker_bias = bias + slope * 0.0006 * inv_far;
 
     // Central anchor sample: guarantees receivers under occluders never drop shadow
     float center_d = texture(u_ShadowAtlas, uv).r;
-    if (center_d < current_depth - blocker_bias) {
+    float center_reference = current_depth - blocker_bias;
+    if (center_d < center_reference) {
         blocker_depth_sum += center_d;
         blocker_count++;
     }
@@ -304,7 +355,11 @@ float SampleSingleCascade(
         vec2 offset = VogelDiskSample(i, blocker_samples, 0.0) * search_radius;
         vec2 sample_uv = clamp(uv + offset, uv_min, uv_max);
         float d = texture(u_ShadowAtlas, sample_uv).r;
-        if (d < current_depth - blocker_bias) {
+        vec2 sample_local_uv = (sample_uv - atlas_offset) * 2.0;
+        float sample_reference = current_depth
+            + dot(depth_gradient, sample_local_uv - proj_coords.xy)
+            - blocker_bias;
+        if (d < sample_reference) {
             blocker_depth_sum += d;
             blocker_count++;
         }
@@ -333,8 +388,8 @@ float SampleSingleCascade(
     // Contact-hardening filter radius:
     // Tight contact sharpness at ground contact (0.85 texels),
     // expanding gracefully into realistic wide cinematic penumbrae for elevated casters.
-    float min_filter_radius = texel_size.x * 0.85;
-    float max_filter_radius = (0.0085 * softness) / cascade_scale;
+    float min_filter_radius = cascade_texel_size.x * 0.85;
+    float max_filter_radius = cascade_texel_size.x * 16.0 * softness;
     float penumbra_factor = penumbra_uv / (max_filter_radius + 1e-5);
     float smooth_penumbra = smoothstep(0.0, 1.0, penumbra_factor) * (max_filter_radius - min_filter_radius);
     float filter_radius = min_filter_radius + smooth_penumbra;
@@ -343,7 +398,7 @@ float SampleSingleCascade(
     int filter_samples = clamp(u_PCF_Samples, 16, 32);
     float pcss_shadow = 0.0;
     float weight_sum = 0.0;
-    float pcss_bias = bias + (filter_radius / max_filter_radius) * slope * 0.0006;
+    float pcss_bias = bias + (filter_radius / max_filter_radius) * slope * 0.0006 * inv_far;
 
     for (int i = 0; i < filter_samples; ++i) {
         vec2 offset = VogelDiskSample(i, filter_samples, 0.0) * filter_radius;
@@ -354,14 +409,19 @@ float SampleSingleCascade(
         float r_sq = (float(i) + 0.5) / float(filter_samples);
         float w = 1.0 - r_sq * 0.85;
 
-        pcss_shadow += SampleShadowBilinear(sample_uv, current_depth, pcss_bias, uv_min, uv_max) * w;
+        pcss_shadow += SampleShadowBilinear(
+            sample_uv, proj_coords.xy, atlas_offset, depth_gradient,
+            current_depth, pcss_bias, uv_min, uv_max
+        ) * w;
         weight_sum += w;
     }
     return pcss_shadow / max(weight_sum, 1e-5);
 }
 
-// Cascaded Shadow Map Evaluation (CSM) supporting HARD, PCF, and PCSS with smooth split blending
+// Cascaded Shadow Map evaluation with overlapped, validity-aware split blending.
 float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
+    vec3 world_dx = dFdx(world_pos);
+    vec3 world_dy = dFdy(world_pos);
     float NdotL = dot(N, L);
     if (NdotL <= 0.0) {
         return 0.0;
@@ -384,31 +444,38 @@ float CalculateCSMShadow(vec3 world_pos, vec3 N, vec3 L, float view_depth) {
     float softness = clamp(u_ShadowSoftness, 0.1, 4.0);
 
     bool in_bounds = false;
-    float shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, softness, in_bounds);
-
-    // Seamless fallback to wider cascades if local cascade is out of bounds
-    while (!in_bounds && cascade < u_CascadeCount - 1) {
-        cascade++;
-        shadow = SampleSingleCascade(cascade, world_pos, N, L, cos_theta, slope, softness, in_bounds);
+    float shadow = SampleSingleCascade(
+        cascade, world_pos, N, L, cos_theta, slope, softness, world_dx, world_dy, in_bounds
+    );
+    float split_val = u_CascadeSplits[cascade];
+    float blend_range = max(split_val * 0.20, 0.1);
+    if (!in_bounds && cascade < u_CascadeCount - 1 &&
+        view_depth >= split_val - blend_range) {
+        bool next_in_bounds = false;
+        float next_shadow = SampleSingleCascade(
+            cascade + 1, world_pos, N, L, cos_theta, slope, softness, world_dx, world_dy, next_in_bounds
+        );
+        if (next_in_bounds) {
+            shadow = next_shadow;
+            in_bounds = true;
+        }
     }
     if (!in_bounds) {
         return 1.0;
     }
 
-    // Smooth cascade split transition blending to eliminate seams
-    if (in_bounds && cascade < u_CascadeCount - 1) {
-        float split_val = u_CascadeSplits[cascade];
-        float blend_range = split_val * 0.15;
-        float blend_start = split_val - blend_range;
-        if (view_depth > blend_start) {
-            float blend_t = clamp((view_depth - blend_start) / blend_range, 0.0, 1.0);
+    if (cascade < u_CascadeCount - 1) {
+        float blend_t = smoothstep(split_val - blend_range, split_val, view_depth);
+        if (blend_t > 0.0) {
             bool next_in_bounds = false;
-            float next_shadow = SampleSingleCascade(cascade + 1, world_pos, N, L, cos_theta, slope, softness, next_in_bounds);
+            float next_shadow = SampleSingleCascade(
+                cascade + 1, world_pos, N, L, cos_theta, slope, softness, world_dx, world_dy, next_in_bounds
+            );
             if (next_in_bounds) {
                 shadow = mix(shadow, next_shadow, blend_t);
             }
         }
-    } else if (cascade == u_CascadeCount - 1) {
+    } else {
         // Final cascade: smooth distance fade-out towards max shadow distance
         float fade_range = max_shadow_dist * 0.15;
         float fade_start = max_shadow_dist - fade_range;

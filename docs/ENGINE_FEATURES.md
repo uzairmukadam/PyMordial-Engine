@@ -43,8 +43,9 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 
 ### 2.3 Cascaded Shadow Maps (CSM) (`engine.gfx.shadow_csm.CascadedShadowMap`)
 - Up to 4 shadow cascades with logarithmic/linear split blending.
-- Percentage-Closer Filtering (PCF) with variable sample kernels (16-tap Poisson disc, 5x5, 7x7).
-- Shadow bounding spheres fitted tightly to camera frustum slices with texel snapping to prevent edge shimmer during camera translation.
+- Stable frustum-slice radii with overlapping receiver regions and texel-snapped light-space bounds reduce cascade shimmer and popping.
+- Scene AABBs upstream of each receiver slice extend cascade depth ranges so relevant off-camera casters remain visible.
+- Texel-aware slope bias, PCF/PCSS sampling, and depth-aware blending across cascade boundaries reduce distant acne and filtering seams.
 
 ### 2.4 Deferred G-Buffer MRT Layout (`engine.gfx.g_buffer.GBuffer`)
 - **RT0 (RGBA16F)**: Albedo RGB + Roughness A.

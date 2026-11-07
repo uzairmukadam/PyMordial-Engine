@@ -249,6 +249,7 @@ class RenderPipeline:
             atlas_size=self.config.shadow_resolution,
             cascade_count=self.config.csm_cascades,
             max_distance=self.config.shadow_distance,
+            split_lambda=getattr(self.config, "csm_split_lambda", 0.85),
         )
 
         # 5. Initialize SSBO 1 (Transforms) & SSBO 2 (Materials)
@@ -776,6 +777,7 @@ class RenderPipeline:
         if (
             self.csm.max_distance != self.config.shadow_distance
             or self.csm.cascade_count != self.config.csm_cascades
+            or self.csm.split_lambda != getattr(self.config, "csm_split_lambda", 0.85)
         ):
             self.csm.update_splits(
                 self.config.shadow_distance,
@@ -840,11 +842,16 @@ class RenderPipeline:
         self._sun_v[0] = float(active_sun_dir[0])
         self._sun_v[1] = float(active_sun_dir[1])
         self._sun_v[2] = float(active_sun_dir[2])
+        ecs.sync_dynamic_aabbs()
         csm_matrices = self.csm.compute_cascade_matrices(
             self._cam_pos,
             self._cam_fwd,
             self._sun_v,
             stabilize=getattr(self.config, "csm_stabilization", True),
+            fovy_deg=fovy_deg,
+            aspect=aspect,
+            aabbs=ecs.get_active_aabbs_view(),
+            active_count=active_count,
         )
 
         # 4. Upload to UBO 0
@@ -871,8 +878,6 @@ class RenderPipeline:
         # Prepare MDI batch commands (camera view, tessellated, and shadow passes)
         self.mdi.begin_frame()
         self.tess_mdi.begin_frame()
-        # Synchronize dynamic entity AABBs from current world transforms (compound vehicle parts, props, etc.)
-        ecs.sync_dynamic_aabbs()
         if draw_batches is None:
             draw_batches = ecs.mesh_draw_batches
 

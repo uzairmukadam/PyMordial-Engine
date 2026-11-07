@@ -39,14 +39,14 @@ class RenderConfig:
     shadow_resolution: int = 4096  # CSM Atlas size (1024, 2048, 4096)
     shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS"
     shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
-    shadow_bias: float = 0.0015    # Base depth bias
+    shadow_bias: float = 0.0015    # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
     shadow_offset_x: float = 0.0   # Light-space alignment offset X (delta from calibrated base)
     shadow_offset_y: float = 0.0   # Light-space alignment offset Y (delta from calibrated base)
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
     pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
-    csm_split_lambda: float = 0.60 # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_split_lambda: float = 0.85 # Practical Split Scheme (PSSM) log-linear blend factor
     csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
 
     # Depth Precision
