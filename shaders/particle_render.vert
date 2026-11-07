@@ -15,6 +15,9 @@ layout(std430, binding = 4) readonly buffer ParticleBuffer {
     Particle particles[];
 };
 
+uniform int u_ParticleOffset;
+uniform float u_ParticleSizeMultiplier;
+
 out vec2  v_UV;
 out vec4  v_Color;
 out float v_LifeFraction;
@@ -23,7 +26,7 @@ out float v_ViewDepth;
 flat out int v_Mode;
 
 void main() {
-    Particle p = particles[gl_InstanceID];
+    Particle p = particles[gl_InstanceID + u_ParticleOffset];
 
     // Cull inactive or dead particles
     if (p.pos_life.w <= 0.0) {
@@ -43,14 +46,18 @@ void main() {
         in_position.x * sinR + in_position.y * cosR
     );
 
-    float radius = p.params.x;
+    float lifeFraction = clamp(p.pos_life.w / max(p.vel_maxlife.w, 0.001), 0.0, 1.0);
+    float radius = p.params.x * u_ParticleSizeMultiplier;
+    if (int(p.params.w) == 3) {
+        radius *= mix(1.0, 2.4, 1.0 - lifeFraction);
+    }
     vec3 worldPos = p.pos_life.xyz + (camRight * rotPos.x + camUp * rotPos.y) * radius;
 
     vec4 viewPos = u_View * vec4(worldPos, 1.0);
 
     v_UV = in_position; // [-1, 1] for circular distance test
     v_Color = p.color_alpha;
-    v_LifeFraction = clamp(p.pos_life.w / max(p.vel_maxlife.w, 0.001), 0.0, 1.0);
+    v_LifeFraction = lifeFraction;
     v_WorldPos = worldPos;
     v_ViewDepth = -viewPos.z;
     v_Mode = int(p.params.w);

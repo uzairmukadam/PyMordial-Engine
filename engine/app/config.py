@@ -22,7 +22,7 @@ class ProjectConfig:
     fixed_hz: float = 60.0
     gravity: tuple[float, float, float] = (0.0, -9.81, 0.0)
     enable_debug: bool = True
-    particles_enabled: bool = False
+    particles_enabled: bool = False  # Enables the legacy camera-centered particle field.
     headless: bool = False
     max_frames: int | None = None
     asset_dir: Path | str | None = None

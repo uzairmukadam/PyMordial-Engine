@@ -32,7 +32,7 @@ def test_particle_pass_init_and_ssbo(render_ctx: RenderContext):
     """Verifies ParticleSystemPass allocation, SSBO size, and seeded data validity."""
     ctx = render_ctx.ctx
     count = 2048
-    pass_obj = ParticleSystemPass(ctx, max_particles=count)
+    pass_obj = ParticleSystemPass(ctx, max_particles=count, active_count=count, mode=ParticleMode.DUST_MOTES)
     assert pass_obj.max_particles == count
     assert pass_obj.active_particles == count
     assert pass_obj.mode == ParticleMode.DUST_MOTES
@@ -63,7 +63,7 @@ def test_particle_pass_init_and_ssbo(render_ctx: RenderContext):
 def test_particle_mode_switching_and_parameters(render_ctx: RenderContext):
     """Verifies mode transitions, active count clamping, and visual parameters."""
     ctx = render_ctx.ctx
-    pass_obj = ParticleSystemPass(ctx, max_particles=4096)
+    pass_obj = ParticleSystemPass(ctx, max_particles=4096, active_count=4096, mode=ParticleMode.DUST_MOTES)
 
     # Test mode switching
     pass_obj.set_mode(ParticleMode.EMBERS)
@@ -105,7 +105,7 @@ def test_particle_gpu_compute_simulation(render_ctx: RenderContext):
     """Dispatches GPU compute shader and verifies particle integration step."""
     ctx = render_ctx.ctx
     count = 1024
-    pass_obj = ParticleSystemPass(ctx, max_particles=count)
+    pass_obj = ParticleSystemPass(ctx, max_particles=count, active_count=count, mode=ParticleMode.DUST_MOTES)
 
     # Record initial data
     raw_before = pass_obj.ssbo.read()
@@ -161,7 +161,7 @@ def test_particle_rendering_instanced_quad(render_ctx: RenderContext):
         screen_size=(w, h),
     )
 
-    pass_obj = ParticleSystemPass(ctx, max_particles=512)
+    pass_obj = ParticleSystemPass(ctx, max_particles=512, active_count=512, mode=ParticleMode.DUST_MOTES)
 
     # Execute render for DUST_MOTES
     pass_obj.set_mode(ParticleMode.DUST_MOTES)
@@ -175,6 +175,9 @@ def test_particle_rendering_instanced_quad(render_ctx: RenderContext):
     pass_obj.set_mode(ParticleMode.FIREFLIES)
     pass_obj.render(hdr_fbo=fbo, depth_texture=depth_tex)
 
+    pass_obj.set_mode(ParticleMode.SMOKE)
+    pass_obj.render(hdr_fbo=fbo, depth_texture=depth_tex)
+
     # Clean up
     pass_obj.destroy()
     fbo.release()
@@ -183,22 +186,22 @@ def test_particle_rendering_instanced_quad(render_ctx: RenderContext):
 
 
 def test_quality_presets_particle_scaling():
-    """Validates that quality presets configure particle counts and toggles properly."""
+    """Particle presets no longer spawn an unowned scene-wide particle field."""
     low = get_quality_preset(GraphicsQuality.LOW)
     assert low.particles_enabled is False
     assert low.particle_mode == "OFF"
 
     med = get_quality_preset(GraphicsQuality.MEDIUM)
-    assert med.particles_enabled is True
-    assert med.particle_count == 8192
+    assert med.particles_enabled is False
+    assert med.particle_count == 0
 
     high = get_quality_preset(GraphicsQuality.HIGH)
-    assert high.particles_enabled is True
-    assert high.particle_count == 16384
+    assert high.particles_enabled is False
+    assert high.particle_count == 0
 
     ultra = get_quality_preset(GraphicsQuality.ULTRA)
-    assert ultra.particles_enabled is True
-    assert ultra.particle_count == 32768
+    assert ultra.particles_enabled is False
+    assert ultra.particle_count == 0
 
     cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
     assert cinematic.particles_enabled is False
@@ -206,27 +209,25 @@ def test_quality_presets_particle_scaling():
 
 
 def test_pipeline_particle_system_integration(render_ctx: RenderContext):
-    """Validates full RenderPipeline integration: allocation, preset scaling, and Pass 7.7 execution."""
+    """Validates that pipeline particles are opt-in and presets do not create ambient emitters."""
     cfg = get_quality_preset(GraphicsQuality.HIGH)
     pipeline = RenderPipeline(render_ctx, cfg)
 
     assert pipeline.particle_pass is not None
-    assert pipeline.particle_pass.active_particles == 16384
-    assert pipeline.particle_pass.mode == ParticleMode.DUST_MOTES
+    assert pipeline.particle_pass.active_particles == 0
+    assert pipeline.particle_pass.mode == ParticleMode.OFF
 
-    # Apply ULTRA preset -> should scale active particles to 32768
     ultra_cfg = get_quality_preset(GraphicsQuality.ULTRA)
     pipeline.apply_config(ultra_cfg)
-    assert pipeline.particle_pass.active_particles == 32768
+    assert pipeline.particle_pass.active_particles == 0
 
     # Apply LOW preset -> should disable particles (active particles = 0)
     low_cfg = get_quality_preset(GraphicsQuality.LOW)
     pipeline.apply_config(low_cfg)
     assert pipeline.particle_pass.active_particles == 0
 
-    # Re-enable on HIGH
     pipeline.apply_config(cfg)
-    assert pipeline.particle_pass.active_particles == 16384
+    assert pipeline.particle_pass.active_particles == 0
 
     # Run render_frame with empty ECS
     ecs = EntityManager(max_entities=10)
@@ -257,3 +258,50 @@ def test_pipeline_particle_system_integration(render_ctx: RenderContext):
     )
 
     pipeline.destroy()
+
+
+def test_entity_attached_fire_emitters_follow_and_release_capacity(render_ctx: RenderContext):
+    """Fire effects use bounded entity emitters and recycle their slots when removed."""
+    ecs = EntityManager(max_entities=8)
+    entity_id = ecs.create_entity(position=(10.0, 2.0, -4.0))
+    pass_obj = ParticleSystemPass(
+        render_ctx.ctx,
+        max_particles=1024,
+        active_count=0,
+        mode=ParticleMode.OFF,
+    )
+    pass_obj.entity_manager = ecs
+
+    embers, smoke = pass_obj.add_fire(entity_id, ember_count=16, smoke_count=24)
+    assert embers.mode == "EMBERS"
+    assert smoke.mode == "SMOKE"
+    assert embers.start == 0
+    assert smoke.start == embers.count
+    assert np.allclose(pass_obj._emitter_center(smoke, (0.0, 0.0, 0.0)), (10.0, 2.28, -4.0))
+
+    raw = np.frombuffer(pass_obj.ssbo.read(), dtype=PARTICLE_DTYPE)
+    ember_positions = raw[embers.start : embers.start + embers.count]["pos_size"][:, :3]
+    assert np.all(np.abs(ember_positions[:, 0] - 10.0) <= 0.16)
+    assert np.all(np.abs(ember_positions[:, 1] - 2.0) <= 0.14)
+
+    pass_obj.update(0.016)
+    assert not np.isnan(np.frombuffer(pass_obj.ssbo.read(), dtype=PARTICLE_DTYPE)["pos_size"]).any()
+
+    assert pass_obj.remove_emitter(embers)
+    assert pass_obj.remove_emitter(smoke)
+    replacement = pass_obj.add_emitter(entity_id, ParticleMode.FIREFLIES, count=512)
+    assert replacement.start == 0
+    ecs.get_transform_proxy(entity_id).rotation = (0.0, np.sqrt(0.5), 0.0, np.sqrt(0.5))
+    rotated = pass_obj.add_emitter(
+        entity_id,
+        ParticleMode.SMOKE,
+        count=4,
+        offset=(1.0, 0.0, 0.0),
+    )
+    assert np.allclose(pass_obj._emitter_center(rotated, (0.0, 0.0, 0.0)), (10.0, 2.0, -5.0))
+
+    ecs.destroy_entity(entity_id)
+    pass_obj.update(0.016)
+    assert pass_obj.emitters == []
+    assert pass_obj._free_ranges == [(0, 1024)]
+    pass_obj.destroy()

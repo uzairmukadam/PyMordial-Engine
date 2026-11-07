@@ -54,6 +54,16 @@ def build_scene(app) -> None:
                 restitution=0.15,
             )
 
+    firepit = app.ecs.create_entity(
+        shape="cylinder",
+        position=(11.0, 0.35, -7.0),
+        dimensions=(1.2, 0.7, 1.2),
+        color=(0.24, 0.18, 0.13),
+        roughness=0.9,
+    )
+    app.particles.add_fire(firepit, ember_count=96, smoke_count=160, offset=(0.0, 0.45, 0.0))
+    app.pipeline.add_point_light((11.0, 1.5, -7.0), radius=5.0, color=(1.0, 0.34, 0.08), intensity=4.0)
+
     app.add_module(CapsulePlayerControls(spawn=(0.0, 1.0, 8.0), camera_yaw=0.0))
 
 

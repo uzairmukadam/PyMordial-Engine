@@ -16,7 +16,7 @@ to select a preset explicitly.
 | Example | What to explore |
 | --- | --- |
 | `01_shapes_flycam.py` | Cube, sphere, plane, capsule, cylinder, cone, water, materials, and free flight |
-| `02_physics_player.py` | Fixed geometry, dynamic rigid bodies, and a controllable character capsule |
+| `02_physics_player.py` | Fixed geometry, dynamic rigid bodies, a controllable capsule, and an entity-attached ember/smoke fire |
 | `03_water_lighting_lab.py` | Five compact connected chambers, pools, a skylight, colored bounce, practical lights, and Radiance Cascades GI |
 | `04_data_driven_platformer.py` | The multi-section Sunken Observatory platformer, loaded from JSON and traversed with a capsule player; fall or press R to reset |
 | `05_menu_system.py` | Main menu, controls screen, level start, pause/resume, and return-to-menu flow |
@@ -25,6 +25,37 @@ to select a preset explicitly.
 `platformer_level.json` defines the platformer spawn, platforms, decorations,
 and lights. Edit the data to prototype layout changes without editing the
 loader.
+
+## Entity-attached particle effects
+
+Particle presets no longer fill the whole scene with camera-centered dust.
+Attach an effect to an entity through `app.particles`; emitters follow that
+entity's position and rotation and are removed automatically when it is
+destroyed:
+
+```python
+firepit = app.ecs.create_entity(shape="cylinder", position=(2.0, 0.5, 0.0))
+app.particles.add_fire(firepit, ember_count=96, smoke_count=160)
+```
+
+`add_fire` combines a short-lived ember flare with a rising, fading smoke
+plume. For a single effect, use `add_emitter(entity_id, mode, count=...)`
+with a `ParticleMode` from `engine.gfx.passes.particle_pass` (`EMBERS`, `SMOKE`,
+`FIREFLIES`, or `DUST_MOTES`). `offset`, `half_extents`, `size_multiplier`,
+`turbulence_strength`, `speed_scale`, and `color` tune each emitter. Emitters
+share the particle pass's fixed GPU capacity; removing one releases its slots.
+
+```python
+from engine.gfx.passes.particle_pass import ParticleMode
+
+app.particles.add_emitter(
+    firepit,
+    ParticleMode.SMOKE,
+    count=128,
+    offset=(0.0, 0.8, 0.0),
+    color=(0.45, 0.48, 0.52),
+)
+```
 
 ## Controls
 

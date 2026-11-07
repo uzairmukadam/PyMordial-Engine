@@ -107,7 +107,7 @@ class TestDebugSystem:
         # Switch preset to ULTRA
         tweaks.set_quality_preset(GraphicsQuality.ULTRA)
         assert tweaks.shadow_resolution == 4096
-        assert tweaks.particles_enabled is True
+        assert tweaks.particles_enabled is False
 
         # Still preserved
         assert tweaks.motion_blur_enabled is True

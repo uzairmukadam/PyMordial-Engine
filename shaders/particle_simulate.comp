@@ -17,10 +17,12 @@ uniform float u_DeltaTime;
 uniform vec3  u_EmitterCenter;
 uniform vec3  u_EmitterHalfSize;
 uniform int   u_ParticleCount;
-uniform int   u_Mode;                  // 0 = DUST_MOTES, 1 = EMBERS, 2 = FIREFLIES
+uniform int   u_ParticleOffset;
+uniform int   u_Mode;                  // 0 dust, 1 embers, 2 fireflies, 3 smoke
 uniform float u_TurbulenceStrength;    // 0.0 to 3.0+
 uniform float u_SpeedScale;            // velocity multiplier
 uniform vec3  u_Gravity;               // directional buoyancy / gravity
+uniform vec3  u_EmitterColor;
 uniform float u_Time;                  // total elapsed time
 
 // -----------------------------------------------------------------------------
@@ -109,10 +111,11 @@ vec3 curlNoise(vec3 p) {
 // Main Compute Simulation Kernel
 // -----------------------------------------------------------------------------
 void main() {
-    uint idx = gl_GlobalInvocationID.x;
-    if (idx >= uint(u_ParticleCount)) {
+    uint localIdx = gl_GlobalInvocationID.x;
+    if (localIdx >= uint(u_ParticleCount)) {
         return;
     }
+    uint idx = localIdx + uint(u_ParticleOffset);
 
     Particle p = particles[idx];
     uint seed = uint(idx) * 1973u + uint(u_Time * 120.0);
@@ -144,6 +147,18 @@ void main() {
             p.vel_maxlife.xyz = randomVec3(seed + 11u) * 0.3;
             p.color_alpha = vec4(0.5, 0.95, 0.25, 0.9);
             p.params.x = 0.04 + floatHash(seed + 15u) * 0.03;
+        } else if (u_Mode == 3) {
+            // Smoke: soft, buoyant plume that fades and recycles near the source.
+            p.pos_life.y = u_EmitterCenter.y - abs(rndBox.y) * u_EmitterHalfSize.y * 0.8;
+            p.vel_maxlife.w = 3.0 + floatHash(seed + 10u) * 3.0;
+            p.pos_life.w = p.vel_maxlife.w;
+            p.vel_maxlife.xyz = vec3(
+                (floatHash(seed + 11u) - 0.5) * 0.16,
+                0.18 + floatHash(seed + 12u) * 0.24,
+                (floatHash(seed + 13u) - 0.5) * 0.16
+            );
+            p.color_alpha = vec4(vec3(0.22 + floatHash(seed + 14u) * 0.2), 0.18 + floatHash(seed + 16u) * 0.14);
+            p.params.x = (0.055 + floatHash(seed + 15u) * 0.055);
         } else {
             // Dust Motes: Gentle air drift
             p.vel_maxlife.w = 8.0 + floatHash(seed + 10u) * 12.0; // 8 to 20s life
@@ -152,6 +167,7 @@ void main() {
             p.color_alpha = vec4(0.95, 0.93, 0.88, 0.55 + floatHash(seed + 14u) * 0.35);
             p.params.x = 0.015 + floatHash(seed + 15u) * 0.025; // 1.5cm - 4cm mote
         }
+        p.color_alpha.rgb *= u_EmitterColor;
 
         p.params.y = floatHash(seed + 20u) * 6.2831853; // initial rotation
         p.params.z = (floatHash(seed + 21u) - 0.5) * 1.5; // rotation speed
@@ -177,7 +193,7 @@ void main() {
     p.params.y += p.params.z * u_DeltaTime;
 
     // -------------------------------------------------------------------------
-    // Camera-Centric Boundary Wrapping (Seamless Infinite Field)
+    // Keep particles inside their source emitter's bounded simulation volume.
     // -------------------------------------------------------------------------
     vec3 minB = u_EmitterCenter - u_EmitterHalfSize;
     vec3 maxB = u_EmitterCenter + u_EmitterHalfSize;
@@ -187,15 +203,15 @@ void main() {
     else if (p.pos_life.x > maxB.x) p.pos_life.x -= sizeB.x;
 
     if (p.pos_life.y < minB.y) {
-        if (u_Mode == 1) {
+        if (u_Mode == 1 || u_Mode == 3) {
             // Embers wrap to bottom when falling
             p.pos_life.y = minB.y;
         } else {
             p.pos_life.y += sizeB.y;
         }
     } else if (p.pos_life.y > maxB.y) {
-        if (u_Mode == 1) {
-            // Embers dissipate at ceiling
+        if (u_Mode == 1 || u_Mode == 3) {
+            // Embers and smoke dissipate at the top and are respawned at the source.
             p.pos_life.w = 0.0;
         } else {
             p.pos_life.y -= sizeB.y;

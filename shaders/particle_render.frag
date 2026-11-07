@@ -57,6 +57,9 @@ void main() {
         // Fireflies: Bioluminescent pulsing glow
         float pulse = 0.8 + 0.6 * sin(u_CameraPos_Time.w * 3.5 + v_WorldPos.x * 6.0);
         litColor = v_Color.rgb * pulse * 2.5;
+    } else if (v_Mode == 3) {
+        // Smoke: diffuse, subdued scattering rather than an emissive glow.
+        litColor = v_Color.rgb * 0.7;
     } else {
         // Dust Motes: Henyey-Greenstein Mie forward scattering glint
         vec3 viewDir = normalize(v_WorldPos - u_CameraPos_Time.xyz);
