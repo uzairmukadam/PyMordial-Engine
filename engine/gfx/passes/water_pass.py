@@ -160,7 +160,6 @@ class WaterPass(RenderPass):
         self,
         hdr_fbo: moderngl.Framebuffer,
         depth_texture: moderngl.Texture,
-        config: Any,
         time_elapsed: float = 0.0,
         ecs: EntityManager | None = None,
     ) -> None:
@@ -184,51 +183,47 @@ class WaterPass(RenderPass):
         self.opaque_copy_tex.use(location=0)
         depth_texture.use(location=1)
 
-        # 3. Update Wave Simulation Uniforms
-        if self._u_wave_amplitude is not None:
-            self._u_wave_amplitude.value = float(getattr(config, "water_wave_amplitude", 0.15))
-        if self._u_wave_speed is not None:
-            self._u_wave_speed.value = float(getattr(config, "water_wave_speed", 1.0))
-        if self._u_wave_steepness is not None:
-            self._u_wave_steepness.value = float(getattr(config, "water_wave_steepness", 0.8))
         if self._u_time is not None:
             self._u_time.value = float(time_elapsed)
-
-        # 4. Update Optical & Aesthetic Uniforms
-        if self._u_water_color_shallow is not None:
-            col = getattr(config, "water_color_shallow", (0.05, 0.45, 0.55))
-            self._u_water_color_shallow.value = (float(col[0]), float(col[1]), float(col[2]))
-        if self._u_water_color_deep is not None:
-            col = getattr(config, "water_color_deep", (0.005, 0.04, 0.15))
-            self._u_water_color_deep.value = (float(col[0]), float(col[1]), float(col[2]))
-        if self._u_extinction_coeff is not None:
-            coeff = getattr(config, "water_extinction", (0.35, 0.12, 0.06))
-            self._u_extinction_coeff.value = (float(coeff[0]), float(coeff[1]), float(coeff[2]))
-        if self._u_refraction_strength is not None:
-            self._u_refraction_strength.value = float(getattr(config, "water_refraction_strength", 0.03))
-        if self._u_roughness is not None:
-            self._u_roughness.value = float(getattr(config, "water_roughness", 0.05))
-        if self._u_foam_color is not None:
-            fcol = getattr(config, "water_foam_color", (0.92, 0.96, 1.0))
-            self._u_foam_color.value = (float(fcol[0]), float(fcol[1]), float(fcol[2]))
-        if self._u_foam_threshold is not None:
-            self._u_foam_threshold.value = float(getattr(config, "water_foam_threshold", 0.40))
-        if self._u_foam_scale is not None:
-            self._u_foam_scale.value = float(getattr(config, "water_foam_scale", 6.0))
-        if self._u_foam_intensity is not None:
-            self._u_foam_intensity.value = float(getattr(config, "water_foam_intensity", 1.0))
-        if self._u_water_clarity is not None:
-            self._u_water_clarity.value = float(getattr(config, "water_clarity", 4.0))
-        if self._u_refraction_enabled is not None:
-            self._u_refraction_enabled.value = 1 if getattr(config, "water_refraction_enabled", True) else 0
-        if self._u_foam_enabled is not None:
-            self._u_foam_enabled.value = 1 if getattr(config, "water_foam_enabled", True) else 0
 
         # 5. Render each water entity directly into hdr_fbo using its ECS transform.
         hdr_fbo.use()
         for dense_idx in range(ecs.active_count):
             if int(ecs.shape_ids[dense_idx]) != water_shape:
                 continue
+            water = ecs.water_properties[dense_idx]
+            if water is None:
+                raise RuntimeError(f"Water entity at dense index {dense_idx} has no WaterProperties.")
+            if self._u_wave_amplitude is not None:
+                self._u_wave_amplitude.value = float(water.wave_amplitude)
+            if self._u_wave_speed is not None:
+                self._u_wave_speed.value = float(water.wave_speed)
+            if self._u_wave_steepness is not None:
+                self._u_wave_steepness.value = float(water.wave_steepness)
+            if self._u_water_color_shallow is not None:
+                self._u_water_color_shallow.value = water.color_shallow
+            if self._u_water_color_deep is not None:
+                self._u_water_color_deep.value = water.color_deep
+            if self._u_extinction_coeff is not None:
+                self._u_extinction_coeff.value = water.extinction
+            if self._u_refraction_strength is not None:
+                self._u_refraction_strength.value = float(water.refraction_strength)
+            if self._u_roughness is not None:
+                self._u_roughness.value = float(water.roughness)
+            if self._u_foam_color is not None:
+                self._u_foam_color.value = water.foam_color
+            if self._u_foam_threshold is not None:
+                self._u_foam_threshold.value = float(water.foam_threshold)
+            if self._u_foam_scale is not None:
+                self._u_foam_scale.value = float(water.foam_scale)
+            if self._u_foam_intensity is not None:
+                self._u_foam_intensity.value = float(water.foam_intensity)
+            if self._u_water_clarity is not None:
+                self._u_water_clarity.value = float(water.clarity)
+            if self._u_refraction_enabled is not None:
+                self._u_refraction_enabled.value = int(water.refraction_enabled)
+            if self._u_foam_enabled is not None:
+                self._u_foam_enabled.value = int(water.foam_enabled)
             if self._u_model is not None:
                 np.copyto(self._model_array, ecs.world_transforms[dense_idx])
                 self._u_model.write(self._model_bytes)
@@ -242,14 +237,12 @@ class WaterPass(RenderPass):
         hdr_fbo = resources.get("hdr_fbo")
         g_buffer = resources.get("g_buffer")
         depth_texture = g_buffer.depth_texture if g_buffer is not None else resources.get("depth_texture")
-        config = getattr(context, "config", None)
         time_elapsed = getattr(context, "time_elapsed", 0.0)
 
-        if hdr_fbo is not None and depth_texture is not None and config is not None:
+        if hdr_fbo is not None and depth_texture is not None:
             self.render_water(
                 hdr_fbo=hdr_fbo,
                 depth_texture=depth_texture,
-                config=config,
                 time_elapsed=time_elapsed,
                 ecs=getattr(context, "ecs", None),
             )

@@ -64,6 +64,8 @@ class TestDebugSystem:
         g1 = tweaks.cycle_gbuffer_debug()
         assert g1 != g0
         assert isinstance(g1, GBufferDebugMode)
+        assert GBufferDebugMode.SPOT_LIGHTS == 12
+        assert GBufferDebugMode.RADIANCE_CASCADES == 13
 
         # Shadow properties
         assert tweaks.shadow_resolution in (1024, 2048, 4096)
@@ -294,7 +296,15 @@ class TestDebugSystem:
         tweaks.aa_mode = "SMAA_1X"
         tweaks.tonemap_mode = "AgX"
         tweaks.exposure = 1.65
-
+        tweaks.rc_interval_c2 = 72.0
+        tweaks.rc_steps_c0 = 11
+        tweaks.rc_steps_c1 = 19
+        tweaks.ssr_max_distance = 55.0
+        tweaks.fxaa_subpixel = 0.55
+        tweaks.fxaa_edge_threshold = 0.08
+        tweaks.smaa_threshold = 0.06
+        tweaks.csm_split_lambda = 0.72
+        tweaks.pcf_samples = 48
         tweaks.apply_to_pipeline(pipeline)
 
         assert pipeline.config.chromatic_aberration_enabled is False
@@ -313,6 +323,17 @@ class TestDebugSystem:
         assert pipeline.config.aa_mode == "SMAA_1X"
         assert pipeline.config.tonemap_mode == "AgX"
         assert pipeline.config.exposure == 1.65
+        assert pipeline.config.rc_interval_c2 == 72.0
+        assert pipeline.config.rc_steps_c0 == 11
+        assert pipeline.config.rc_steps_c1 == 19
+        assert pipeline.config.ssr_max_distance == 55.0
+        assert pipeline.config.fxaa_subpixel == 0.55
+        assert pipeline.config.fxaa_edge_threshold == 0.08
+        assert pipeline.config.smaa_threshold == 0.06
+        assert pipeline.config.csm_split_lambda == 0.72
+        assert pipeline.config.pcf_samples == 48
+        assert not hasattr(pipeline.config, "water_wave_amplitude")
+        assert pipeline.atmosphere.config.sun_intensity == tweaks.sun_lux
         assert pipeline.post_process.config is pipeline.config
 
     def test_engine_tweaks_serialization(self, tmp_path):
@@ -328,6 +349,8 @@ class TestDebugSystem:
         tweaks.film_grain_intensity = 0.10
         tweaks.bloom_intensity = 0.09
         tweaks.aa_mode = "SMAA_2X"
+        tweaks.csm_split_lambda = 0.7
+        tweaks.ssr_max_distance = 45.0
 
         # Serialize to dict
         data = tweaks.to_dict()
@@ -337,6 +360,9 @@ class TestDebugSystem:
         assert data["tonemap_mode"] == "AgX"
         assert data["vignette_intensity"] == 0.95
         assert data["aa_mode"] == "SMAA_2X"
+        assert not any(key.startswith("water_") for key in data)
+        assert data["csm_split_lambda"] == 0.7
+        assert data["ssr_max_distance"] == 45.0
 
         # Persist to file
         cfg_file = tmp_path / "test_graphics.json"
@@ -354,3 +380,21 @@ class TestDebugSystem:
         assert restored.film_grain_intensity == 0.10
         assert restored.bloom_intensity == 0.09
         assert restored.aa_mode == "SMAA_2X"
+        assert restored.csm_split_lambda == 0.7
+        assert restored.ssr_max_distance == 45.0
+
+    def test_reset_to_defaults_resets_all_tweaks_and_preserves_listeners(self):
+        tweaks = EngineTweaks()
+        vsync_changes = []
+        quality_changes = []
+        tweaks.on_vsync_changed(vsync_changes.append)
+        tweaks.on_quality_changed(quality_changes.append)
+        tweaks.set_vsync(True)
+        tweaks.shadow_distance = 123.0
+        tweaks.reset_to_defaults()
+
+        assert tweaks.vsync_enabled is False
+        assert tweaks.shadow_distance == 500.0
+        assert tweaks.quality_preset == GraphicsQuality.CUSTOM
+        assert vsync_changes == [True, False]
+        assert quality_changes == [GraphicsQuality.CUSTOM]

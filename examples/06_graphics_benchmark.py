@@ -9,6 +9,7 @@ import pygame
 from _common import FlyCameraControls, add_box, create_app, create_parser
 from engine.app.module import ProjectModule
 from engine.camera import FreeFlyCamera
+from engine.input.codes import GamepadButton
 from engine.ui import UILabel, UIPanel, UIScreen
 
 
@@ -29,6 +30,14 @@ class BenchmarkOverlay(ProjectModule):
         self._gpu_mode = "HYBRID"
 
     def on_attach(self, app) -> None:
+        app.input_manager.bind_action(
+            "benchmark_next_gi",
+            gamepad_buttons=[GamepadButton.RIGHT_BUMPER],
+        )
+        app.input_manager.bind_action(
+            "benchmark_toggle_ssr",
+            gamepad_buttons=[GamepadButton.Y],
+        )
         screen = UIScreen(name="BenchmarkHUD", is_modal=False)
         panel = screen.add_child(UIPanel(x=20.0, y=20.0, w=510.0, h=144.0))
         panel.add_child(UILabel("PYMORDIAL GRAPHICS BENCHMARK", x=18.0, y=12.0, w=474.0, h=28.0, font_size=18))
@@ -41,6 +50,15 @@ class BenchmarkOverlay(ProjectModule):
         app.ui.set_screen(screen)
 
     def on_update(self, app, dt: float) -> None:
+        if app.input_manager.is_action_pressed("benchmark_next_gi"):
+            modes = ("OFF", "HYBRID", "RADIANCE_CASCADES")
+            self._gpu_mode = modes[(modes.index(self._gpu_mode) + 1) % len(modes)]
+            app.pipeline.config.gi_mode = self._gpu_mode
+            app.pipeline.apply_config(app.pipeline.config)
+        if app.input_manager.is_action_pressed("benchmark_toggle_ssr"):
+            app.pipeline.config.ssr_enabled = not app.pipeline.config.ssr_enabled
+            app.pipeline.apply_config(app.pipeline.config)
+
         if dt > 1e-6:
             fps = 1.0 / dt
             self._sample_count += 1
@@ -59,7 +77,7 @@ class BenchmarkOverlay(ProjectModule):
             )
         if self.mode_label is not None:
             self.mode_label.text = (
-                f"GI: {self._gpu_mode} | SSR: {'ON' if app.pipeline.config.ssr_enabled else 'OFF'} "
+                f"GI: {self._gpu_mode} [1-3 / RB] | SSR: {'ON' if app.pipeline.config.ssr_enabled else 'OFF'} [4 / Y] "
                 f"| Entities: {self.entity_count} | Frames: {app.engine_loop.total_frames}"
             )
 

@@ -9,6 +9,7 @@ from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
 from engine.app.project_app import ProjectApp
 from engine.camera import FollowCamera, FollowCameraConfig, FreeFlyCamera
+from engine.input.codes import GamepadButton
 from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
 
 
@@ -26,6 +27,21 @@ class FlyCameraControls(ProjectModule):
         self._captured = False
 
     def on_attach(self, app) -> None:
+        app.input_manager.bind_action(
+            "example_fly_up",
+            keys=[pygame.K_e],
+            gamepad_buttons=[GamepadButton.A],
+        )
+        app.input_manager.bind_action(
+            "example_fly_down",
+            keys=[pygame.K_q],
+            gamepad_buttons=[GamepadButton.B],
+        )
+        app.input_manager.bind_action(
+            "example_reset",
+            keys=[pygame.K_HOME],
+            gamepad_buttons=[GamepadButton.X],
+        )
         if self.enabled:
             self.capture(app)
 
@@ -79,11 +95,19 @@ class FlyCameraControls(ProjectModule):
             return
         if self._captured and not app.input_manager.is_mouse_grabbed:
             self._captured = False
-        keys = pygame.key.get_pressed()
-        forward = float(keys[pygame.K_w] or keys[pygame.K_UP]) - float(keys[pygame.K_s] or keys[pygame.K_DOWN])
-        right = float(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - float(keys[pygame.K_a] or keys[pygame.K_LEFT])
-        up = float(keys[pygame.K_e]) - float(keys[pygame.K_q])
-        boost = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
+        input_mgr = app.input_manager
+        forward = input_mgr.get_axis("move_forward")
+        right = input_mgr.get_axis("move_right")
+        up = float(input_mgr.is_action_down("example_fly_up")) - float(input_mgr.is_action_down("example_fly_down"))
+        look_yaw, look_pitch = input_mgr.get_vector2("look")
+        if look_yaw or look_pitch:
+            self.camera.handle_mouse_look(look_yaw * 600.0 * dt, look_pitch * 600.0 * dt)
+        if input_mgr.is_action_pressed("example_reset"):
+            self.camera.position[:] = self.start_position
+            self.camera.yaw_deg = self.start_yaw
+            self.camera.pitch_deg = self.start_pitch
+            self.camera._update_vectors()
+        boost = input_mgr.is_action_down("sprint")
         self.camera.move(dt, forward, right, up, boost)
 
 
@@ -109,6 +133,11 @@ class CapsulePlayerControls(ProjectModule):
         self.fall_reset_y = fall_reset_y
 
     def on_attach(self, app) -> None:
+        app.input_manager.bind_action(
+            "example_reset",
+            keys=[pygame.K_r],
+            gamepad_buttons=[GamepadButton.X],
+        )
         self.player_id = app.ecs.create_entity(
             shape="capsule",
             position=self.spawn,
@@ -189,10 +218,24 @@ class CapsulePlayerControls(ProjectModule):
         if self._reset_requested or fell_below_level:
             self.motor.set_position(self.spawn)
             self._reset_requested = False
-        keys = pygame.key.get_pressed()
-        forward = float(keys[pygame.K_w] or keys[pygame.K_UP]) - float(keys[pygame.K_s] or keys[pygame.K_DOWN])
-        right = float(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - float(keys[pygame.K_a] or keys[pygame.K_LEFT])
-        running = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
+        input_mgr = getattr(app, "input_manager", None)
+        if input_mgr is None:
+            keys = pygame.key.get_pressed()
+            forward = float(keys[pygame.K_w] or keys[pygame.K_UP]) - float(keys[pygame.K_s] or keys[pygame.K_DOWN])
+            right = float(keys[pygame.K_d] or keys[pygame.K_RIGHT]) - float(keys[pygame.K_a] or keys[pygame.K_LEFT])
+            running = bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT])
+            jump_requested = self._jump_requested
+            reset_pressed = False
+        else:
+            forward = input_mgr.get_axis("move_forward")
+            right = input_mgr.get_axis("move_right")
+            running = input_mgr.is_action_down("sprint")
+            jump_requested = self._jump_requested or input_mgr.is_action_pressed("jump")
+            reset_pressed = input_mgr.is_action_pressed("example_reset")
+        if reset_pressed:
+            self.motor.set_position(self.spawn)
+        if jump_requested:
+            self._jump_requested = True
         self.motor.update(
             dt,
             (forward, right),
@@ -206,6 +249,9 @@ class CapsulePlayerControls(ProjectModule):
         if self.motor is not None and self.camera is not None:
             if self._captured and not app.input_manager.is_mouse_grabbed:
                 self._captured = False
+            look_yaw, look_pitch = app.input_manager.get_vector2("look")
+            if look_yaw or look_pitch:
+                self.camera.handle_mouse_orbit(look_yaw * 600.0 * dt, look_pitch * 600.0 * dt)
             self.camera.update_follow(dt, self.motor.position, app.physics, self.player_id)
 
 

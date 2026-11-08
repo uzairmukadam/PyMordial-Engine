@@ -57,12 +57,40 @@ app.particles.add_emitter(
 )
 ```
 
+## Water entity properties
+
+Water simulation and optical settings belong to each water entity, not the
+global graphics quality preset:
+
+```python
+from engine.core import WaterProperties
+
+pool = app.ecs.create_entity(
+    shape="water",
+    position=(0.0, 0.25, 0.0),
+    dimensions=(12.0, 0.0, 8.0),
+    water=WaterProperties(
+        wave_amplitude=0.12,
+        color_shallow=(0.08, 0.42, 0.48),
+        foam_enabled=True,
+    ),
+)
+```
+
+Existing water entities can be tuned through
+`app.ecs.get_transform(pool).water`.
+
 ## Controls
 
 ### Flycam examples
 
 - **W / A / S / D** or **arrow keys**: Fly forward, left, back, and right
 - **Q / E**: Fly down / up
+- **Left stick**: Fly forward, back, and strafe
+- **Right stick**: Look around
+- **A / B**: Fly up / down
+- **X**: Restore the starting camera pose
+- **Left stick click / LB**: Move faster
 - **Mouse**: Look around (captured automatically when gameplay starts)
 - **Escape**: Release the mouse; click the window to capture again
 - **Shift**: Move faster
@@ -73,6 +101,11 @@ app.particles.add_emitter(
 ### Character examples
 
 - **W / A / S / D** or **arrow keys**: Walk
+- **Left stick**: Walk
+- **Right stick**: Orbit the third-person camera
+- **A**: Jump
+- **Left stick click / LB**: Sprint
+- **X**: Reset to the start
 - **Space**: Jump
 - **Shift**: Sprint
 - **Mouse**: Orbit the third-person camera (captured automatically)
@@ -84,9 +117,12 @@ app.particles.add_emitter(
 
 - In the menu sample, use the pointer to choose **Start exploring**, **Controls**,
   **Resume**, or **Main menu**. **Escape** pauses or returns to the title menu.
+- In the menu sample, use the **left stick** to move the virtual cursor, **A** to
+  activate a button, and **Start** to start, pause, or resume.
 - In the menu sample, the cursor is free in the menu and captured automatically
   when the level starts.
 - In the benchmark, **1 / 2 / 3** selects GI off / hybrid / Radiance Cascades;
-  **4** toggles SSR. Flycam controls remain active.
+  **4** toggles SSR. **RB** cycles GI modes and **Y** toggles SSR; flycam
+  controls remain active.
 
 No example consumes the engine-reserved F1, F2, or F3 keys.

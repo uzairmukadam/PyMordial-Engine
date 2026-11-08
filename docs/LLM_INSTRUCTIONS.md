@@ -121,7 +121,7 @@ Avoid common hallucinated imports:
 2. **Never Override Engine Debug Hotkeys**:
    - Game modules must **NEVER** capture, intercept, or return `consumed = True` on reserved engine hotkeys:
      * **`F1`**: System Performance Monitor, FPS, 1% lows, memory gauges.
-     * **`F2`**: Engine Graphics Tweaks, G-Buffer debug visualizer, tonemapping, wireframe.
+     * **`F2`**: Live graphics controls for GI/RC, shadows, water entity rendering, atmosphere, post-processing, and debug visualizers.
      * **`F3`**: Game Tweaks Developer Inspector.
    - Gameplay camera toggles, abilities, or menus must strictly use standard gameplay keys (`V`, `C`, `Tab`, `F10`) and never capture `F1`-`F3`.
 3. **Decoupled Debug Stripping**:
@@ -138,4 +138,3 @@ Avoid common hallucinated imports:
    - `RadianceCascadesPass` outputs to `u_RCTexture` bound at texture location **15** in `deferred_resolve.frag`. Do not reassign this binding slot.
 3. **EngineTweaks RC Parameters**:
    - Radiance Cascades tuning parameters (`rc_cascade_count`, `rc_rays_per_probe`, `rc_interval_length`, `rc_intensity`, `rc_temporal_blend`) are registered in `EngineTweaks.__slots__` and serialized. Any new RC parameters must follow this pattern.
-

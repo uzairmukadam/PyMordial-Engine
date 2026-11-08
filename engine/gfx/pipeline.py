@@ -1306,7 +1306,6 @@ class RenderPipeline:
             self.water_pass.render_water(
                 hdr_fbo=self.post_process.hdr_fbo,
                 depth_texture=self.g_buffer.depth_texture,
-                config=self.config,
                 time_elapsed=time_elapsed,
                 ecs=ecs,
             )

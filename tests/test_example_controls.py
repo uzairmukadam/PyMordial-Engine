@@ -12,6 +12,8 @@ from types import SimpleNamespace
 
 from examples._common import FlyCameraControls
 from engine.camera import FreeFlyCamera
+from engine.input import InputManager
+from engine.input.codes import GamepadButton
 from engine.ui import UIManager
 
 
@@ -20,6 +22,21 @@ def test_flycam_controls_look_speed_and_reset() -> None:
     controls = FlyCameraControls(camera)
     class InputManager:
         is_mouse_grabbed = False
+
+        def bind_action(self, *args, **kwargs) -> None:
+            pass
+
+        def get_axis(self, name: str) -> float:
+            return 0.0
+
+        def get_vector2(self, name: str) -> tuple[float, float]:
+            return (0.0, 0.0)
+
+        def is_action_down(self, name: str) -> bool:
+            return False
+
+        def is_action_pressed(self, name: str) -> bool:
+            return False
 
         def set_mouse_grab(self, grabbed: bool) -> None:
             self.is_mouse_grabbed = grabbed
@@ -52,6 +69,25 @@ def test_flycam_controls_look_speed_and_reset() -> None:
     assert not app.input_manager.is_mouse_grabbed
 
 
+def test_flycam_supports_gamepad_movement_look_and_vertical_flight() -> None:
+    camera = FreeFlyCamera(position=(0.0, 0.0, 0.0), yaw_deg=-90.0, pitch_deg=0.0)
+    controls = FlyCameraControls(camera)
+    input_mgr = InputManager()
+    app = SimpleNamespace(config=SimpleNamespace(headless=True), input_manager=input_mgr)
+    controls.on_attach(app)
+
+    input_mgr.process_event(pygame.event.Event(pygame.JOYAXISMOTION, axis=1, value=-32767))
+    input_mgr.process_event(pygame.event.Event(pygame.JOYAXISMOTION, axis=2, value=32767))
+    input_mgr.process_event(pygame.event.Event(pygame.JOYBUTTONDOWN, button=int(GamepadButton.A)))
+    input_mgr.update_axes()
+    start_yaw = camera.yaw_deg
+    controls.on_update(app, 1.0 / 60.0)
+
+    assert camera.position[1] > 0.0
+    assert camera.yaw_deg > start_yaw
+    assert camera.position[2] < 0.0
+
+
 def test_menu_example_buttons_open_and_start_level() -> None:
     examples_dir = Path(__file__).parent.parent / "examples"
     sys.path.insert(0, str(examples_dir))
@@ -72,6 +108,80 @@ def test_menu_example_buttons_open_and_start_level() -> None:
     finally:
         sys.path.remove(str(examples_dir))
         sys.modules.pop("05_menu_system", None)
+
+
+def test_menu_example_gamepad_moves_cursor_and_activates_button() -> None:
+    examples_dir = Path(__file__).parent.parent / "examples"
+    sys.path.insert(0, str(examples_dir))
+    menu_example = importlib.import_module("05_menu_system")
+
+    class PadInput:
+        def get_vector2(self, name: str) -> tuple[float, float]:
+            return (1.0, 0.0)
+
+        def is_gamepad_pressed(self, button) -> bool:
+            return button == GamepadButton.A
+
+    ui = UIManager(ctx=None)
+    ui.cursor_pos = [630.0, 360.0]
+    app = SimpleNamespace(
+        config=SimpleNamespace(width=1280, height=720),
+        ui=ui,
+        input_manager=PadInput(),
+        stop=lambda: None,
+    )
+    menu = menu_example.MenuLevel()
+    try:
+        ui.attach_app(app)
+        menu._show_main_menu(app)
+        ui.update(0.01)
+        assert ui.cursor_pos[0] > 630.0
+        assert ui.active_screen is None
+        assert ui.cursor_visible is False
+    finally:
+        sys.path.remove(str(examples_dir))
+        sys.modules.pop("05_menu_system", None)
+
+
+def test_capsule_player_reads_gamepad_axes_and_actions() -> None:
+    from examples._common import CapsulePlayerControls
+
+    class PadInput:
+        def get_axis(self, name: str) -> float:
+            return {"move_forward": 1.0, "move_right": -0.5}[name]
+
+        def is_action_down(self, name: str) -> bool:
+            return name == "sprint"
+
+        def is_action_pressed(self, name: str) -> bool:
+            return name in ("jump", "example_reset")
+
+    class Motor:
+        def __init__(self) -> None:
+            self.reset_position = None
+            self.update_args = None
+
+        def set_position(self, position) -> None:
+            self.reset_position = position
+
+        def update(self, *args, **kwargs) -> None:
+            self.update_args = (args, kwargs)
+
+    controls = CapsulePlayerControls(spawn=(1.0, 2.0, 3.0))
+    controls.player_id = 4
+    controls.motor = Motor()
+    controls.camera = SimpleNamespace(yaw_deg=15.0)
+    app = SimpleNamespace(
+        input_manager=PadInput(),
+        ecs=SimpleNamespace(pool=SimpleNamespace(get_dense_index=lambda entity_id: -1)),
+    )
+    controls.on_fixed_update(app, 1.0 / 60.0)
+
+    assert controls.motor.reset_position == (1.0, 2.0, 3.0)
+    args, kwargs = controls.motor.update_args
+    assert args[1] == (1.0, -0.5)
+    assert kwargs["is_running"] is True
+    assert kwargs["jump_requested"] is True
 
 
 def test_platformer_level_is_data_driven_and_detailed() -> None:

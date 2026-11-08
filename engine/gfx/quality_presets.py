@@ -193,24 +193,6 @@ class RenderConfig:
     film_grain_enabled: bool = True
     film_grain_intensity: float = 0.03
 
-    # Water rendering quality; surfaces are explicitly created ECS entities.
-    water_wave_amplitude: float = 0.15
-    water_wave_speed: float = 1.0
-    water_wave_steepness: float = 0.8
-    water_refraction_enabled: bool = True
-    water_refraction_strength: float = 0.03
-    water_foam_enabled: bool = True
-    water_foam_threshold: float = 0.40
-    water_foam_scale: float = 6.0
-    water_foam_intensity: float = 1.0
-    water_clarity: float = 4.0
-    water_roughness: float = 0.05
-    water_color_shallow: tuple[float, float, float] = (0.05, 0.45, 0.55)
-    water_color_deep: tuple[float, float, float] = (0.005, 0.04, 0.15)
-    water_extinction: tuple[float, float, float] = (0.35, 0.12, 0.06)
-    water_foam_color: tuple[float, float, float] = (0.92, 0.96, 1.0)
-
-
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
     GraphicsQuality.LOW: RenderConfig(
@@ -251,7 +233,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_intensity=0.20,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_refraction_enabled=True,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
@@ -293,9 +274,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_refraction_enabled=True,
-        water_wave_amplitude=0.10,
-        water_foam_enabled=False,
     ),
     GraphicsQuality.HIGH: RenderConfig(
         shadow_resolution=4096,
@@ -345,9 +323,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_refraction_enabled=True,
-        water_foam_enabled=True,
-        water_wave_amplitude=0.15,
     ),
     GraphicsQuality.ULTRA: RenderConfig(
         shadow_resolution=4096,
@@ -397,9 +372,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_refraction_enabled=True,
-        water_foam_enabled=True,
-        water_wave_amplitude=0.20,
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
         shadow_resolution=4096,
@@ -451,10 +423,6 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         vignette_enabled=True,
         film_grain_enabled=True,
         film_grain_intensity=0.03,
-        water_refraction_enabled=True,
-        water_foam_enabled=True,
-        water_wave_amplitude=0.25,
-        water_clarity=5.0,
     ),
 }
 

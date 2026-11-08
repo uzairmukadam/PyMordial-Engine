@@ -10,6 +10,7 @@ from pathlib import Path
 from enum import IntEnum
 from typing import Any, Callable
 from engine.gfx.quality_presets import GraphicsQuality, GIMode
+from engine.logging import log_error
 
 
 class GBufferDebugMode(IntEnum):
@@ -19,7 +20,7 @@ class GBufferDebugMode(IntEnum):
     ALBEDO = 1         # RT0: Base Color RGB
     NORMALS = 2        # RT1: World-space Normals (mapped to [0, 1])
     MATERIAL = 3       # RT2: Roughness, Metallic & Material parameters
-    DEPTH = 4          # RT3: Reversed-Z Depth linearized
+    DEPTH = 4          # RT3: Reversed-Z depth
     SHADOW_ATLAS = 5   # Cascaded Shadow Maps depth atlas
     SHADOW_MASK = 6    # Direct Cascaded Shadow Map occlusion mask
     AO = 7             # Ambient Occlusion (SSAO / HBAO / GTAO) mask
@@ -27,6 +28,8 @@ class GBufferDebugMode(IntEnum):
     LPV = 9            # Light Propagation Volumes 3D irradiance slice
     GI_TOTAL = 10      # Consolidated Total Indirect Diffuse
     HIZ = 11           # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
+    SPOT_LIGHTS = 12   # Accumulated dynamic spot-light contribution
+    RADIANCE_CASCADES = 13  # Radiance Cascades indirect diffuse
 
 
 class EngineTweaks:
@@ -52,8 +55,10 @@ class EngineTweaks:
         "shadow_offset_x",
         "shadow_offset_y",
         "shadow_distance",
+        "csm_split_lambda",
         "csm_cascades",
         "csm_stabilization",
+        "pcf_samples",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
@@ -77,6 +82,10 @@ class EngineTweaks:
         "ssr_steps",
         "ssr_thickness",
         "ssr_max_roughness",
+        "ssr_max_distance",
+        "fxaa_subpixel",
+        "fxaa_edge_threshold",
+        "smaa_threshold",
         "aa_mode",
         "taa_enabled",
         "taa_feedback",
@@ -85,10 +94,13 @@ class EngineTweaks:
         "point_lights_enabled",
         "spot_lights_enabled",
         "spot_shadows_enabled",
+        "spot_shadow_resolution",
         "spot_light_radius",
         "spot_cone_angle",
         "spot_shadow_bias",
         "pom_enabled",
+        "pom_min_samples",
+        "pom_max_samples",
         "pom_height_scale",
         "pom_self_shadow",
         "disp_near_radius",
@@ -145,6 +157,7 @@ class EngineTweaks:
         "lens_flare_streak_width",
         "lens_flare_ghost_intensity",
         "lens_flare_halo_intensity",
+        "lens_flare_tint",
         "chromatic_aberration_enabled",
         "chromatic_aberration_intensity",
         "vignette_enabled",
@@ -153,19 +166,6 @@ class EngineTweaks:
         "vignette_smoothness",
         "film_grain_enabled",
         "film_grain_intensity",
-        "water_wave_amplitude",
-        "water_wave_speed",
-        "water_wave_steepness",
-        "water_refraction_enabled",
-        "water_refraction_strength",
-        "water_foam_enabled",
-        "water_foam_threshold",
-        "water_foam_scale",
-        "water_foam_intensity",
-        "water_clarity",
-        "water_roughness",
-        "water_color_shallow",
-        "water_color_deep",
         "hiz_debug_mip",
         "_on_quality_changed",
         "_on_vsync_changed",
@@ -195,6 +195,8 @@ class EngineTweaks:
 
         # Phase 6: Micro-Geometry Displacement Controls
         self.pom_enabled = True
+        self.pom_min_samples = 8
+        self.pom_max_samples = 64
         self.pom_height_scale = 1.0
         self.pom_self_shadow = True
 
@@ -218,8 +220,10 @@ class EngineTweaks:
         self.shadow_offset_x = 0.0
         self.shadow_offset_y = 0.0
         self.shadow_distance = 500.0
+        self.csm_split_lambda = 0.85
         self.csm_cascades = 4
         self.csm_stabilization = True
+        self.pcf_samples = 24
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
@@ -245,6 +249,10 @@ class EngineTweaks:
         self.ssr_steps = 64
         self.ssr_thickness = 0.10
         self.ssr_max_roughness = 0.65
+        self.ssr_max_distance = 30.0
+        self.fxaa_subpixel = 0.75
+        self.fxaa_edge_threshold = 0.125
+        self.smaa_threshold = 0.08
         self.aa_mode = "OFF"
         self.taa_enabled = False
         self.taa_feedback = 0.95
@@ -253,6 +261,7 @@ class EngineTweaks:
         self.point_lights_enabled = True
         self.spot_lights_enabled = True
         self.spot_shadows_enabled = True
+        self.spot_shadow_resolution = 2048
         self.spot_light_radius = 35.0
         self.spot_cone_angle = 32.0
         self.spot_shadow_bias = 0.0015
@@ -310,6 +319,7 @@ class EngineTweaks:
         self.lens_flare_streak_width = 32.0
         self.lens_flare_ghost_intensity = 0.35
         self.lens_flare_halo_intensity = 0.25
+        self.lens_flare_tint = (0.25, 0.65, 1.0)
 
         self.chromatic_aberration_enabled = True
         self.chromatic_aberration_intensity = 0.005
@@ -319,21 +329,6 @@ class EngineTweaks:
         self.vignette_smoothness = 0.50
         self.film_grain_enabled = True
         self.film_grain_intensity = 0.03
-
-        # Phase 4: Dynamic Water & Screen-Space Refraction (Scene-specific)
-        self.water_wave_amplitude = 0.15
-        self.water_wave_speed = 1.0
-        self.water_wave_steepness = 0.8
-        self.water_refraction_enabled = True
-        self.water_refraction_strength = 0.03
-        self.water_foam_enabled = True
-        self.water_foam_threshold = 0.40
-        self.water_foam_scale = 6.0
-        self.water_foam_intensity = 1.0
-        self.water_clarity = 4.0
-        self.water_roughness = 0.05
-        self.water_color_shallow = (0.05, 0.45, 0.55)
-        self.water_color_deep = (0.005, 0.04, 0.15)
 
         # VSync disabled by default per user request
         self.vsync_enabled = False
@@ -389,6 +384,23 @@ class EngineTweaks:
         self.vsync_enabled = enabled
         for cb in self._on_vsync_changed:
             cb(enabled)
+
+    def reset_to_defaults(self) -> None:
+        """Restores every tweak while retaining registered change listeners."""
+        defaults = type(self)()
+        excluded = {
+            "_on_quality_changed",
+            "_on_vsync_changed",
+            "_version",
+            "_applied_version",
+        }
+        for name in self.__slots__:
+            if name not in excluded:
+                setattr(self, name, getattr(defaults, name))
+        for cb in self._on_quality_changed:
+            cb(self.quality_preset)
+        for cb in self._on_vsync_changed:
+            cb(self.vsync_enabled)
 
     def on_vsync_changed(self, listener: Callable[[bool], None]) -> None:
         """Registers a listener called whenever VSync is toggled."""
@@ -489,6 +501,7 @@ class EngineTweaks:
             p_cfg.lens_flare_streak_width = float(self.lens_flare_streak_width)
             p_cfg.lens_flare_ghost_intensity = float(self.lens_flare_ghost_intensity)
             p_cfg.lens_flare_halo_intensity = float(self.lens_flare_halo_intensity)
+            p_cfg.lens_flare_tint = tuple(float(c) for c in self.lens_flare_tint)
 
             # 3. Global Illumination & Ambient Occlusion
             p_cfg.gi_mode = self.gi_mode
@@ -516,14 +529,19 @@ class EngineTweaks:
             p_cfg.ssr_steps = int(self.ssr_steps)
             p_cfg.ssr_thickness = float(self.ssr_thickness)
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
+            p_cfg.ssr_max_distance = float(self.ssr_max_distance)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
             p_cfg.taa_enabled = (p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False)))
             p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
             p_cfg.taa_sharpness = float(getattr(self, "taa_sharpness", 0.35))
             p_cfg.taa_gamma = float(getattr(self, "taa_gamma", 1.25))
+            p_cfg.fxaa_subpixel = float(self.fxaa_subpixel)
+            p_cfg.fxaa_edge_threshold = float(self.fxaa_edge_threshold)
+            p_cfg.smaa_threshold = float(self.smaa_threshold)
             p_cfg.clustered_lights_enabled = bool(self.point_lights_enabled)
             p_cfg.spot_lights_enabled = bool(self.spot_lights_enabled)
             p_cfg.spot_shadows_enabled = bool(self.spot_shadows_enabled)
+            p_cfg.spot_shadow_resolution = int(self.spot_shadow_resolution)
             p_cfg.spot_light_radius = float(self.spot_light_radius)
             p_cfg.spot_cone_angle = float(self.spot_cone_angle)
             p_cfg.spot_shadow_bias = float(self.spot_shadow_bias)
@@ -534,8 +552,10 @@ class EngineTweaks:
             p_cfg.shadow_bias = float(self.shadow_bias)
             p_cfg.shadow_normal_bias = float(self.shadow_normal_bias)
             p_cfg.shadow_distance = float(self.shadow_distance)
+            p_cfg.csm_split_lambda = float(self.csm_split_lambda)
             p_cfg.csm_cascades = int(self.csm_cascades)
             p_cfg.shadow_resolution = int(self.shadow_resolution)
+            p_cfg.pcf_samples = int(self.pcf_samples)
             p_cfg.csm_stabilization = bool(self.csm_stabilization)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
@@ -544,8 +564,13 @@ class EngineTweaks:
                 if (
                     self.shadow_distance != pipeline.csm.max_distance
                     or self.csm_cascades != pipeline.csm.cascade_count
+                    or self.csm_split_lambda != pipeline.csm.split_lambda
                 ):
-                    pipeline.csm.update_splits(self.shadow_distance, self.csm_cascades)
+                    pipeline.csm.update_splits(
+                        self.shadow_distance,
+                        self.csm_cascades,
+                        self.csm_split_lambda,
+                    )
 
             if hasattr(pipeline, "spot_shadow_map") and pipeline.spot_shadow_map is not None:
                 spot_res = getattr(p_cfg, "spot_shadow_resolution", 2048)
@@ -554,6 +579,8 @@ class EngineTweaks:
 
             # 6. Micro-Geometry (POM, SSDM, Tessellation)
             p_cfg.pom_enabled = bool(self.pom_enabled)
+            p_cfg.pom_min_samples = int(self.pom_min_samples)
+            p_cfg.pom_max_samples = int(self.pom_max_samples)
             p_cfg.pom_height_scale = float(self.pom_height_scale)
             p_cfg.pom_self_shadow = bool(self.pom_self_shadow)
             p_cfg.disp_near_radius = float(self.disp_near_radius)
@@ -577,16 +604,6 @@ class EngineTweaks:
             p_cfg.fog_ambient = float(self.fog_ambient)
             p_cfg.fog_debug_mode = int(self.fog_debug_mode)
 
-            # 8. Dynamic Water Simulation
-            p_cfg.water_wave_amplitude = float(self.water_wave_amplitude)
-            p_cfg.water_wave_speed = float(self.water_wave_speed)
-            p_cfg.water_wave_steepness = float(self.water_wave_steepness)
-            p_cfg.water_refraction_enabled = bool(self.water_refraction_enabled)
-            p_cfg.water_refraction_strength = float(self.water_refraction_strength)
-            p_cfg.water_foam_enabled = bool(self.water_foam_enabled)
-            p_cfg.water_foam_threshold = float(self.water_foam_threshold)
-            p_cfg.water_clarity = float(self.water_clarity)
-            p_cfg.water_roughness = float(self.water_roughness)
             # 9. GPU Particles
             p_cfg.particles_enabled = bool(self.particles_enabled)
             p_cfg.particle_count = int(self.particle_count)
@@ -626,6 +643,7 @@ class EngineTweaks:
                 atmo.config.mie_beta = float(self.mie_coeff * 1e-6)
                 atmo.config.turbidity = float(self.turbidity)
                 atmo.config.star_intensity = float(self.star_intensity)
+                atmo.config.sun_intensity = float(self.sun_lux)
 
         self._applied_version = self._version
 
@@ -654,25 +672,25 @@ class EngineTweaks:
             "motion_blur_enabled", "motion_blur_samples", "motion_blur_intensity", "motion_blur_max_radius",
             "lens_flare_enabled", "lens_flare_threshold", "lens_flare_streak_intensity",
             "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
+            "lens_flare_tint",
             "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
             "ssgi_intensity", "lpv_intensity",
             "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
             "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
             "ao_mode", "ao_intensity", "ao_radius",
             "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
+            "ssr_max_distance", "fxaa_subpixel", "fxaa_edge_threshold", "smaa_threshold",
+            "spot_shadow_resolution",
             "aa_mode", "taa_enabled", "taa_feedback", "taa_sharpness", "taa_gamma",
             "shadow_mode", "shadow_softness", "shadow_bias", "shadow_normal_bias",
-            "shadow_distance", "csm_cascades", "shadow_resolution", "csm_stabilization",
-            "pom_enabled", "pom_height_scale", "pom_self_shadow",
+            "shadow_distance", "csm_split_lambda", "csm_cascades", "shadow_resolution",
+            "pcf_samples", "csm_stabilization",
+            "pom_enabled", "pom_min_samples", "pom_max_samples", "pom_height_scale", "pom_self_shadow",
             "disp_near_radius", "disp_mid_radius", "tess_enabled", "tess_max_level",
             "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled",
             "ssdm_enabled", "ssdm_scale",
             "volumetric_fog_enabled", "fog_resolution", "fog_point_lights", "fog_density",
             "fog_height_falloff", "fog_anisotropy", "fog_distance", "fog_ambient", "fog_debug_mode",
-            "water_wave_amplitude", "water_wave_speed",
-            "water_wave_steepness", "water_refraction_enabled", "water_refraction_strength",
-            "water_foam_enabled", "water_foam_threshold", "water_foam_scale", "water_foam_intensity",
-            "water_clarity", "water_roughness",
             "particles_enabled", "particle_count", "particle_mode", "particle_size", "particle_turbulence",
         ):
             if preserve_creative_optics and prop in self.CREATIVE_OPTICS_PROPERTIES:
@@ -681,6 +699,10 @@ class EngineTweaks:
                 setattr(self, prop, getattr(cfg, prop))
         if hasattr(cfg, "clustered_lights_enabled"):
             self.point_lights_enabled = bool(cfg.clustered_lights_enabled)
+        if hasattr(cfg, "spot_lights_enabled"):
+            self.spot_lights_enabled = bool(cfg.spot_lights_enabled)
+        if hasattr(cfg, "spot_shadows_enabled"):
+            self.spot_shadows_enabled = bool(cfg.spot_shadows_enabled)
         if hasattr(cfg, "wireframe"):
             self.show_wireframe = bool(cfg.wireframe)
         if hasattr(cfg, "debug_gbuffer"):
@@ -737,6 +759,7 @@ class EngineTweaks:
             "lens_flare_streak_width": float(self.lens_flare_streak_width),
             "lens_flare_ghost_intensity": float(self.lens_flare_ghost_intensity),
             "lens_flare_halo_intensity": float(self.lens_flare_halo_intensity),
+            "lens_flare_tint": [float(c) for c in self.lens_flare_tint],
             "gi_mode": str(self.gi_mode),
             "ssgi_steps": int(self.ssgi_steps),
             "ssgi_rays": int(self.ssgi_rays),
@@ -760,10 +783,15 @@ class EngineTweaks:
             "ssr_steps": int(self.ssr_steps),
             "ssr_thickness": float(self.ssr_thickness),
             "ssr_max_roughness": float(self.ssr_max_roughness),
+            "ssr_max_distance": float(self.ssr_max_distance),
+            "fxaa_subpixel": float(self.fxaa_subpixel),
+            "fxaa_edge_threshold": float(self.fxaa_edge_threshold),
+            "smaa_threshold": float(self.smaa_threshold),
             "aa_mode": str(getattr(self, "aa_mode", "OFF")),
             "point_lights_enabled": bool(self.point_lights_enabled),
             "spot_lights_enabled": bool(self.spot_lights_enabled),
             "spot_shadows_enabled": bool(self.spot_shadows_enabled),
+            "spot_shadow_resolution": int(self.spot_shadow_resolution),
             "spot_light_radius": float(self.spot_light_radius),
             "spot_cone_angle": float(self.spot_cone_angle),
             "spot_shadow_bias": float(self.spot_shadow_bias),
@@ -772,9 +800,11 @@ class EngineTweaks:
             "shadow_bias": float(self.shadow_bias),
             "shadow_normal_bias": float(self.shadow_normal_bias),
             "shadow_distance": float(self.shadow_distance),
+            "csm_split_lambda": float(self.csm_split_lambda),
             "csm_cascades": int(self.csm_cascades),
             "csm_stabilization": bool(self.csm_stabilization),
             "shadow_resolution": int(self.shadow_resolution),
+            "pcf_samples": int(self.pcf_samples),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
             "fog_resolution": str(self.fog_resolution),
             "fog_point_lights": bool(self.fog_point_lights),
@@ -796,6 +826,8 @@ class EngineTweaks:
             "star_intensity": float(self.star_intensity),
             "uncapped_fps": bool(self.uncapped_fps),
             "pom_enabled": bool(self.pom_enabled),
+            "pom_min_samples": int(self.pom_min_samples),
+            "pom_max_samples": int(self.pom_max_samples),
             "pom_height_scale": float(self.pom_height_scale),
             "pom_self_shadow": bool(self.pom_self_shadow),
             "disp_near_radius": float(self.disp_near_radius),
@@ -850,7 +882,8 @@ class EngineTweaks:
             with open(p, "w", encoding="utf-8") as f:
                 json.dump(self.to_dict(), f, indent=2)
             return True
-        except Exception:
+        except (OSError, TypeError, ValueError) as exc:
+            log_error("DebugMenu", f"Failed to save graphics configuration to {filepath}: {exc}")
             return False
 
     def load_from_file(self, filepath: str | Path) -> bool:

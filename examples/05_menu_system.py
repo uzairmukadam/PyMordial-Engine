@@ -72,7 +72,7 @@ class MenuLevel(ProjectModule):
             self._screen(
                 "Controls",
                 "CONTROLS",
-                "WASD move, Q/E fly. Mouse looks, Shift boosts, Escape pauses.",
+                "WASD / left stick move, Q/E or A/B fly. Right stick / mouse look, Shift / LB boost. Start pauses.",
                 (("Back to menu", lambda: self._show_main_menu(app)),),
             )
         )
@@ -107,6 +107,17 @@ class MenuLevel(ProjectModule):
                 self._show_main_menu(app)
             return True
         return False
+
+    def on_update(self, app, dt: float) -> None:
+        if not app.input_manager.is_action_pressed("pause"):
+            return
+        screen = app.ui.active_screen
+        if self.fly_controls is not None and self.fly_controls.enabled:
+            self._show_pause(app)
+        elif screen is not None and screen.name == "PauseMenu":
+            self._start_level(app)
+        elif screen is not None and screen.name == "MainMenu":
+            self._start_level(app)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -16,6 +16,7 @@ import pytest
 import moderngl
 
 from engine.core.ecs import EntityManager
+from engine.core import WaterProperties
 from engine.gfx.passes.water_pass import WaterPass, _generate_water_grid
 from engine.gfx.quality_presets import (
     RenderConfig,
@@ -101,14 +102,12 @@ def test_water_pass_rendering_execution(gl_context):
     dummy_depth = np.full((h, w), 0.5, dtype=np.float32)
     depth_tex.write(dummy_depth.tobytes())
 
-    config = RenderConfig()
-    config.water_wave_amplitude = 0.2
-    config.water_wave_speed = 1.0
     ecs = EntityManager(max_entities=4)
     ecs.create_entity(
         shape="water",
         position=(2.0, 0.5, -3.0),
         dimensions=(20.0, 0.0, 12.0),
+        water=WaterProperties(wave_amplitude=0.2),
     )
 
     # Clear target FBO
@@ -119,13 +118,13 @@ def test_water_pass_rendering_execution(gl_context):
     water_pass.render_water(
         hdr_fbo=hdr_fbo,
         depth_texture=depth_tex,
-        config=config,
         time_elapsed=1.5,
         ecs=ecs,
     )
 
     gl_context.finish()
     np.testing.assert_allclose(water_pass._model_array[[0, 5, 10, 12, 13, 14]], [20.0, 1.0, 12.0, 2.0, 0.5, -3.0])
+    assert water_pass._u_wave_amplitude.value == pytest.approx(0.2)
 
     water_pass.destroy()
     hdr_fbo.release()
@@ -144,7 +143,6 @@ def test_water_pass_does_not_create_an_implicit_surface(gl_context):
     water_pass.render_water(
         hdr_fbo=hdr_fbo,
         depth_texture=depth_tex,
-        config=RenderConfig(),
         ecs=EntityManager(max_entities=1),
     )
 
@@ -155,27 +153,25 @@ def test_water_pass_does_not_create_an_implicit_surface(gl_context):
     depth_tex.release()
 
 
-def test_water_quality_presets():
-    """Verifies that all GraphicsQuality presets scale water parameters appropriately."""
-    cfg_low = get_quality_preset(GraphicsQuality.LOW)
-    assert not hasattr(cfg_low, "water_enabled")
-    assert cfg_low.water_refraction_enabled is True
+def test_water_properties_are_per_entity():
+    """Water rendering parameters are independent of shared quality presets."""
+    ecs = EntityManager(max_entities=3)
+    shallow = ecs.create_entity(
+        shape="water",
+        water=WaterProperties(wave_amplitude=0.1, color_shallow=(0.2, 0.5, 0.7)),
+    )
+    deep = ecs.create_entity(
+        shape="water",
+        water=WaterProperties(wave_amplitude=0.4, foam_enabled=False),
+    )
 
-    cfg_med = get_quality_preset(GraphicsQuality.MEDIUM)
-    assert cfg_med.water_wave_amplitude == 0.10
-    assert cfg_med.water_foam_enabled is False
-
-    cfg_high = get_quality_preset(GraphicsQuality.HIGH)
-    assert cfg_high.water_wave_amplitude == 0.15
-    assert cfg_high.water_foam_enabled is True
-
-    cfg_ultra = get_quality_preset(GraphicsQuality.ULTRA)
-    assert cfg_ultra.water_wave_amplitude == 0.20
-    assert cfg_ultra.water_foam_enabled is True
-
-    cfg_cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-    assert cfg_cinematic.water_wave_amplitude == 0.25
-    assert cfg_cinematic.water_clarity == 5.0
+    shallow_props = ecs.get_transform(shallow).water
+    deep_props = ecs.get_transform(deep).water
+    assert shallow_props.wave_amplitude == 0.1
+    assert shallow_props.color_shallow == (0.2, 0.5, 0.7)
+    assert deep_props.wave_amplitude == 0.4
+    assert deep_props.foam_enabled is False
+    assert not hasattr(get_quality_preset(GraphicsQuality.HIGH), "water_wave_amplitude")
 
 
 def test_pipeline_water_integration():
@@ -222,8 +218,8 @@ def test_pipeline_water_integration():
     )
     assert pipeline.mdi.command_count > 0
 
-    # Water entities render independently of graphics preset configuration.
-    pipeline.apply_config(RenderConfig(water_wave_amplitude=0.1))
+    # Water entities render independently of graphics quality configuration.
+    pipeline.apply_config(RenderConfig())
     assert pipeline.water_pass.enabled is True
 
     pipeline.render_frame(

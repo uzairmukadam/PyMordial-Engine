@@ -6,6 +6,7 @@ import math
 
 from _common import FlyCameraControls, add_box, create_app, create_parser
 from engine.camera import FreeFlyCamera
+from engine.core import WaterProperties
 
 
 ROOM_WIDTH = 8.5
@@ -82,6 +83,11 @@ def _room(
             shape="water",
             position=(0.45 if index % 2 else -0.45, 0.025, center_z + 0.15),
             dimensions=(5.2, 0.0, 4.6),
+            water=WaterProperties(
+                color_shallow=(0.08, 0.42, 0.48) if index % 2 else (0.12, 0.34, 0.48),
+                wave_amplitude=0.10 + index % 3 * 0.05,
+                foam_enabled=index % 2 == 0,
+            ),
         )
         for x in (-3.1, 3.1):
             add_box(app, (x, 0.42, center_z + 0.15), (1.3, 0.45, 4.8), (0.47, 0.42, 0.32), 0.68)

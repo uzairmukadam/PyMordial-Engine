@@ -205,7 +205,7 @@ Output artifact location defaults to `dist/<project_name>/`.
 
 PyMordial provides a built-in 3-tier glassmorphic Dear ImGui developer overlay:
 * **F1**: System Monitor (Real-time CPU/GPU frame times, FPS history, 1% low metrics, memory allocator gauges).
-* **F2**: Engine Graphics Tweaks (Direct G-Buffer visualization, tonemapping operators, wireframe overlay, shadow cascade inspection).
+* **F2**: Live engine graphics controls for GI/RC, shadows, water entity rendering, atmosphere, post-processing, and debug visualizers.
 * **F3**: Game Tweaks (Dynamic developer action and property inspector).
 
 ### Developer Rule: Never Override Debug Keys

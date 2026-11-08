@@ -27,6 +27,7 @@ if str(ROOT_DIR) not in sys.path:
 # ruff: noqa: E402
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop
+from engine.core.water import WaterProperties
 from engine.input import (
     InputManager,
     Key,
@@ -247,11 +248,19 @@ def main() -> None:
         roughness=0.85,
         metallic=0.02,
     )
+    water_properties = WaterProperties()
+    if args.water_waves is not None:
+        water_properties.wave_amplitude = float(args.water_waves)
+    if args.water_speed is not None:
+        water_properties.wave_speed = float(args.water_speed)
+    if args.water_clarity is not None:
+        water_properties.clarity = float(args.water_clarity)
     water_id = ecs.create_entity(
         shape="water",
         position=(0.0, float(args.water_height), 0.0),
         dimensions=(plane_size, 0.0, plane_size),
         is_static=True,
+        water=water_properties,
     )
     physics.create_body(plane_id, body_type="fixed", position=(0.0, -0.5, 0.0))
     physics.attach_box_collider(plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5, friction=0.80, restitution=0.05)
@@ -358,13 +367,6 @@ def main() -> None:
     engine_tweaks.chromatic_aberration_enabled = args.chromatic_aberration
     engine_tweaks.vignette_enabled = args.vignette
     engine_tweaks.film_grain_enabled = args.film_grain
-    if args.water_waves is not None:
-        engine_tweaks.water_wave_amplitude = float(args.water_waves)
-    if args.water_speed is not None:
-        engine_tweaks.water_wave_speed = float(args.water_speed)
-    if args.water_clarity is not None:
-        engine_tweaks.water_clarity = float(args.water_clarity)
-
     game_tweaks = GameTweaks()
     toast = DebugToast()
 
@@ -440,9 +442,6 @@ def main() -> None:
         engine_tweaks.chromatic_aberration_intensity = getattr(cfg, "chromatic_aberration_intensity", 0.005)
         engine_tweaks.vignette_enabled = getattr(cfg, "vignette_enabled", True)
         engine_tweaks.film_grain_enabled = getattr(cfg, "film_grain_enabled", True)
-        engine_tweaks.water_wave_amplitude = getattr(cfg, "water_wave_amplitude", 0.15)
-        engine_tweaks.water_refraction_enabled = getattr(cfg, "water_refraction_enabled", True)
-        engine_tweaks.water_foam_enabled = getattr(cfg, "water_foam_enabled", True)
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
@@ -466,7 +465,7 @@ def main() -> None:
     game_tweaks.add_watch("Optics", "Motion Blur", lambda: f"{engine_tweaks.motion_blur_intensity:.1f}x" if engine_tweaks.motion_blur_enabled else "OFF")
     game_tweaks.add_watch("Optics", "Lens Flare", lambda: "ON" if engine_tweaks.lens_flare_enabled else "OFF")
     game_tweaks.add_watch("Water", "Height", lambda: f"{float(ecs.get_transform_proxy(water_id).position[1]):.2f}m")
-    game_tweaks.add_watch("Water", "Wave Amp", lambda: f"{engine_tweaks.water_wave_amplitude:.2f}m")
+    game_tweaks.add_watch("Water", "Wave Amp", lambda: f"{ecs.get_transform_proxy(water_id).water.wave_amplitude:.2f}m")
 
     # Physics & Interactive Props Game Tweaks
     game_tweaks.add_action("Physics & Props", "Spawn Crate (Ahead)", lambda: (
@@ -881,20 +880,6 @@ def main() -> None:
         pipeline.config.film_grain_enabled = engine_tweaks.film_grain_enabled
         pipeline.config.film_grain_intensity = engine_tweaks.film_grain_intensity
 
-        # Dynamic Water & Screen-Space Refraction (Phase 4)
-        pipeline.config.water_wave_amplitude = engine_tweaks.water_wave_amplitude
-        pipeline.config.water_wave_speed = engine_tweaks.water_wave_speed
-        pipeline.config.water_wave_steepness = engine_tweaks.water_wave_steepness
-        pipeline.config.water_refraction_enabled = engine_tweaks.water_refraction_enabled
-        pipeline.config.water_refraction_strength = engine_tweaks.water_refraction_strength
-        pipeline.config.water_foam_enabled = engine_tweaks.water_foam_enabled
-        pipeline.config.water_foam_threshold = engine_tweaks.water_foam_threshold
-        pipeline.config.water_foam_scale = engine_tweaks.water_foam_scale
-        pipeline.config.water_foam_intensity = engine_tweaks.water_foam_intensity
-        pipeline.config.water_clarity = engine_tweaks.water_clarity
-        pipeline.config.water_roughness = engine_tweaks.water_roughness
-        pipeline.config.water_color_shallow = engine_tweaks.water_color_shallow
-        pipeline.config.water_color_deep = engine_tweaks.water_color_deep
         # Micro-Geometry (POM, SSDM, Hardware Tessellation)
         pipeline.config.pom_enabled = engine_tweaks.pom_enabled
         pipeline.config.pom_height_scale = engine_tweaks.pom_height_scale

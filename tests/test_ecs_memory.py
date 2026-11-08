@@ -1,6 +1,7 @@
 """Unit tests for flat contiguous memory tables and EntityPool."""
 
 import numpy as np
+from engine.core import WaterProperties
 
 from engine.core.ecs import EntityManager
 from engine.core.entity_pool import EntityPool
@@ -101,6 +102,7 @@ class TestEntityManagerMemory:
             shape="water",
             position=(3.0, 4.0, 5.0),
             dimensions=(20.0, 0.0, 12.0),
+            water=WaterProperties(wave_amplitude=0.35),
         )
 
         assert ecs.mesh_draw_batches == [
@@ -111,6 +113,7 @@ class TestEntityManagerMemory:
         np.testing.assert_allclose(ecs.get_transform(cube).dimensions, (2.0, 1.0, 3.0))
         np.testing.assert_allclose(ecs.get_transform(sphere).size, (2.0, 2.0, 2.0))
         np.testing.assert_allclose(ecs.get_transform(water).dimensions, (20.0, 0.0, 12.0))
+        assert ecs.get_transform(water).water.wave_amplitude == 0.35
 
         ecs.get_transform(cube).shape = "cone"
         assert ecs.mesh_draw_batches[0][0] == "cone"
@@ -119,6 +122,12 @@ class TestEntityManagerMemory:
         assert ecs.destroy_entity(sphere)
         assert ecs.mesh_draw_batches == [("cone", 1, 0, False, True)]
         np.testing.assert_allclose(ecs.get_transform(water).position, (3.0, 4.0, 5.0))
+        assert ecs.get_transform(water).water.wave_amplitude == 0.35
+
+        snapshot = ecs.snapshot_memory()
+        ecs.get_transform(water).water.wave_amplitude = 0.8
+        ecs.restore_snapshot(snapshot)
+        assert ecs.get_transform(water).water.wave_amplitude == 0.35
 
     def test_invalid_shape_does_not_allocate_entity(self, ecs: EntityManager):
         try:

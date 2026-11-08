@@ -13,6 +13,7 @@ from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
 from engine.ui.renderer import UIRenderer
 from engine.ui.theme import UITheme
 from engine.ui.elements import UIElement
+from engine.input.codes import GamepadButton
 
 if TYPE_CHECKING:
     from engine.app.project_app import ProjectApp
@@ -277,13 +278,17 @@ class UIManager:
 
             # Gamepad Left Analog Stick virtual cursor movement
             if self.cursor_visible and self._app is not None and hasattr(self._app, "input_manager"):
-                pad_move = self._app.input_manager.get_vector2("move")
+                input_mgr = self._app.input_manager
+                pad_move = input_mgr.get_vector2("move")
                 if abs(pad_move[0]) > 0.08 or abs(pad_move[1]) > 0.08:
                     speed = 950.0  # Pixels per second
                     self.cursor_pos[0] = max(0.0, min(self.reference_width, self.cursor_pos[0] + pad_move[0] * speed * dt))
                     self.cursor_pos[1] = max(0.0, min(self.reference_height, self.cursor_pos[1] - pad_move[1] * speed * dt))
                     self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
                     top.on_mouse_move(self.cursor_pos[0], self.cursor_pos[1])
+                if input_mgr.is_gamepad_pressed(GamepadButton.A):
+                    top.on_mouse_down(self.cursor_pos[0], self.cursor_pos[1], 1)
+                    top.on_mouse_up(self.cursor_pos[0], self.cursor_pos[1], 1)
 
     def render(self) -> None:
         """Renders active UI screens and in-engine captured cursor on top of the ModernGL backbuffer."""

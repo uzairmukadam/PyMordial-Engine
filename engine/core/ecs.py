@@ -5,6 +5,7 @@ physics state, and material parameters, mirroring directly into OpenGL SSBOs.
 """
 
 from __future__ import annotations
+from dataclasses import replace
 from typing import Any
 import numpy as np
 
@@ -21,6 +22,7 @@ from engine.core.materials import (
     MAT_FLAG_VEHICLE_CHASSIS,
     MAT_FLAG_VEHICLE_WHEEL,
 )
+from engine.core.water import WaterProperties
 
 ENTITY_SHAPES = ("cube", "sphere", "plane", "capsule", "cylinder", "cone", "water")
 _SHAPE_TO_INDEX = {name: index for index, name in enumerate(ENTITY_SHAPES)}
@@ -205,6 +207,18 @@ class TransformProxy:
             ao=ao,
         )
 
+    @property
+    def water(self) -> WaterProperties:
+        """Per-entity water rendering properties; only valid for water shapes."""
+        properties = self._mgr.water_properties[self.dense_index]
+        if properties is None:
+            raise TypeError(f"Entity {self._entity_id} is not a water surface.")
+        return properties
+
+    @water.setter
+    def water(self, properties: WaterProperties) -> None:
+        self._mgr.set_entity_water_properties(self._entity_id, properties)
+
 
 class EntityManager:
     """Manages flat memory tables and entities for the engine."""
@@ -219,6 +233,7 @@ class EntityManager:
         "local_half_extents",
         "shape_ids",
         "shape_explicit",
+        "water_properties",
         "_mesh_draw_batches",
         "_explicit_mesh_draw_batches",
         "material_registry",
@@ -266,6 +281,7 @@ class EntityManager:
 
         self.shape_ids = np.zeros(max_entities, dtype=np.uint8)
         self.shape_explicit = np.zeros(max_entities, dtype=bool)
+        self.water_properties: list[WaterProperties | None] = [None] * max_entities
         self._mesh_draw_batches: list[tuple[str, int, int, bool, bool]] = []
         self._explicit_mesh_draw_batches: list[tuple[str, int, int, bool, bool]] = []
 
@@ -315,12 +331,15 @@ class EntityManager:
         is_static: bool = False,
         is_vehicle_chassis: bool = False,
         is_vehicle_wheel: bool = False,
+        water: WaterProperties | None = None,
     ) -> int:
         """Creates an entity with a built-in shape, transform, dimensions, and material."""
         shape_name = "cube" if shape is None else shape
         shape_index = _SHAPE_TO_INDEX.get(shape_name)
         if shape_index is None:
             raise ValueError(f"Unsupported entity shape {shape_name!r}; expected one of {ENTITY_SHAPES}.")
+        if water is not None and (shape_name != "water" or not isinstance(water, WaterProperties)):
+            raise ValueError("water must be a WaterProperties instance and requires shape='water'.")
         if dimensions is not None:
             dimensions_array = np.asarray(dimensions, dtype=np.float32)
             if dimensions_array.shape != (3,) or not np.all(np.isfinite(dimensions_array)) or np.any(dimensions_array < 0.0):
@@ -330,6 +349,9 @@ class EntityManager:
         dense_idx = self.pool.get_dense_index(entity_id)
         self.shape_ids[dense_idx] = shape_index
         self.shape_explicit[dense_idx] = shape is not None
+        self.water_properties[dense_idx] = (
+            (WaterProperties() if water is None else water) if shape_name == "water" else None
+        )
 
         # Static / dynamic classification
         self.is_static[dense_idx] = bool(is_static)
@@ -444,6 +466,7 @@ class EntityManager:
             return
         previous_dimensions = self.local_half_extents[dense_idx] * (2.0 * np.abs(self.scales[dense_idx]))
         self.shape_ids[dense_idx] = shape_index
+        self.water_properties[dense_idx] = WaterProperties() if shape == "water" else None
         self.shape_explicit[dense_idx] = True
         self.local_half_extents[dense_idx] = _SHAPE_HALF_EXTENTS[shape_index]
         base_dimensions = self.local_half_extents[dense_idx] * 2.0
@@ -451,6 +474,17 @@ class EntityManager:
         self.scales[dense_idx, scalable_axes] = previous_dimensions[scalable_axes] / base_dimensions[scalable_axes]
         self.recompute_matrix(dense_idx)
         self._rebuild_mesh_draw_batches()
+
+    def set_entity_water_properties(self, entity_id: int, properties: WaterProperties) -> None:
+        """Replaces the water rendering properties on an active water entity."""
+        dense_idx = self.pool.get_dense_index(entity_id)
+        if dense_idx < 0:
+            raise KeyError(f"Invalid or inactive entity ID: {entity_id}")
+        if int(self.shape_ids[dense_idx]) != _SHAPE_TO_INDEX["water"]:
+            raise TypeError(f"Entity {entity_id} is not a water surface.")
+        if not isinstance(properties, WaterProperties):
+            raise TypeError("Water properties must be a WaterProperties instance.")
+        self.water_properties[dense_idx] = properties
 
     def set_entity_dimensions(
         self,
@@ -663,6 +697,7 @@ class EntityManager:
             self.local_half_extents[dense_idx] = self.local_half_extents[last_dense_idx]
             self.shape_ids[dense_idx] = self.shape_ids[last_dense_idx]
             self.shape_explicit[dense_idx] = self.shape_explicit[last_dense_idx]
+            self.water_properties[dense_idx] = self.water_properties[last_dense_idx]
             self.aabbs[dense_idx] = self.aabbs[last_dense_idx]
             self.is_static[dense_idx] = self.is_static[last_dense_idx]
 
@@ -675,6 +710,7 @@ class EntityManager:
         self.local_half_extents[last_dense_idx].fill(0.5)
         self.shape_ids[last_dense_idx] = _SHAPE_TO_INDEX["cube"]
         self.shape_explicit[last_dense_idx] = False
+        self.water_properties[last_dense_idx] = None
         self.aabbs[last_dense_idx].fill(0.0)
         self.is_static[last_dense_idx] = False
 
@@ -831,6 +867,10 @@ class EntityManager:
             "local_half_extents": self.local_half_extents.copy(),
             "shape_ids": self.shape_ids.copy(),
             "shape_explicit": self.shape_explicit.copy(),
+            "water_properties": [
+                None if properties is None else replace(properties)
+                for properties in self.water_properties
+            ],
             "aabbs": self.aabbs.copy(),
             "is_static": self.is_static.copy(),
             "static_count": self.static_count,
@@ -858,6 +898,14 @@ class EntityManager:
             self.shape_explicit[:] = snapshot["shape_explicit"]
         else:
             self.shape_explicit.fill(False)
+        if "water_properties" in snapshot:
+            self.water_properties[:] = snapshot["water_properties"]
+        else:
+            self.water_properties[:] = [None] * self.max_entities
+            water_shape = _SHAPE_TO_INDEX["water"]
+            for dense_idx in range(self.pool.active_count):
+                if int(self.shape_ids[dense_idx]) == water_shape:
+                    self.water_properties[dense_idx] = WaterProperties()
         if "aabbs" in snapshot:
             self.aabbs[:] = snapshot["aabbs"]
         if "is_static" in snapshot:

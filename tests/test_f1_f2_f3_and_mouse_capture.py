@@ -141,7 +141,9 @@ class TestDebugMenuAndMouseCapture:
 
         # Open all debug panels
         menu.cycle_f1()  # F1 open
+        assert not menu.blocks_game_input
         menu.toggle_graphics()  # F2 open
+        assert menu.blocks_game_input
         menu.toggle_game_tweaks()  # F3 open
         assert menu.visible is True
 
@@ -398,5 +400,4 @@ class TestDebugMenuAndMouseCapture:
         )
         assert menu_path.config_filepath == path_obj
         menu_path.destroy()
-
 

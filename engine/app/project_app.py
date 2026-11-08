@@ -131,6 +131,12 @@ class ProjectApp:
 
                 self.system_monitor = SystemMonitor()
                 self.engine_tweaks = EngineTweaks()
+                self.engine_tweaks.vsync_enabled = self.config.vsync
+                self.engine_tweaks.on_vsync_changed(
+                    lambda enabled: self.render_ctx.window.set_vsync(
+                        VSyncMode.ON if enabled else VSyncMode.OFF
+                    )
+                )
                 self.game_tweaks = GameTweaks()
                 self.debug_toast = DebugToast()
                 self.debug_menu = DebugMenu(
@@ -391,7 +397,7 @@ class ProjectApp:
                     c_state is not None
                     and c_state.grab_mouse
                     and not self.config.headless
-                    and (self.debug_menu is None or not self.debug_menu.visible)
+                    and (self.debug_menu is None or not self.debug_menu.blocks_game_input)
                 ):
                     if not pygame.event.get_grab():
                         try:
@@ -413,9 +419,6 @@ class ProjectApp:
                         if ev.type == pygame.KEYDOWN:
                             if ev.key == pygame.K_F1:
                                 style = self.debug_menu.cycle_f1()
-                                if style == 2 and self.input_manager.is_mouse_grabbed:
-                                    self.input_manager.set_mouse_grab(False)
-                                    self.input_manager._was_mouse_grabbed = False
                                 if self.debug_toast:
                                     msg = "Debug: Performance HUD [F1]" if style == 1 else ("Debug: Profiler [F1]" if style == 2 else "Debug HUD Closed")
                                     self.debug_toast.show(msg, duration=2.0, color=(56, 189, 248))
@@ -440,7 +443,7 @@ class ProjectApp:
                                 continue
 
                         # Forward events to ImGui if debug menu is currently open and visible
-                        if self.debug_menu.visible and self.debug_menu.process_event(ev):
+                        if self.debug_menu.blocks_game_input and self.debug_menu.process_event(ev):
                             continue
 
                     # UI subsystem handles events first

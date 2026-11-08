@@ -84,6 +84,7 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
   app.ecs.get_transform(water_id).position = (4.0, 0.75, -2.0)
   ```
 - Water has no global enable toggle: each water entity in the scene is rendered. Graphics presets configure shared optical quality only; they do not create or remove surfaces.
+- Wave, refraction, foam, clarity, roughness, and water colors are authored per surface with `WaterProperties` from `engine.core`. Pass `water=WaterProperties(...)` to `create_entity(shape="water", ...)`, or edit the result through `app.ecs.get_transform(water_id).water`.
 
 ### 2.8 Anti-Aliasing & Post-Processing
 - **Temporal Anti-Aliasing (TAA)**: Subpixel Halton jittering with neighborhood color clamping to prevent ghosting.

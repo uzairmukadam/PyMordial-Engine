@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from _common import FlyCameraControls, add_box, create_app, create_parser
 from engine.camera import FreeFlyCamera
+from engine.core import WaterProperties
 
 
 def build_scene(app) -> None:
@@ -30,6 +31,7 @@ def build_scene(app) -> None:
         shape="water",
         position=(0.0, 0.02, 5.0),
         dimensions=(6.0, 0.0, 3.0),
+        water=WaterProperties(wave_amplitude=0.08, foam_enabled=False),
     )
 
     for index in range(5):
