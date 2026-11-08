@@ -515,6 +515,11 @@ class DebugMenu:
                         et.mark_custom()
 
                 if et.gi_mode == "RADIANCE_CASCADES":
+                    rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
+                    if rc_ray_count_changed:
+                        et.rc_ray_count = rc_ray_count
+                        et.mark_custom()
+
                     rc_in_changed, rc_in_val = imgui.slider_float("RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f")
                     if rc_in_changed:
                         et.rc_intensity = rc_in_val

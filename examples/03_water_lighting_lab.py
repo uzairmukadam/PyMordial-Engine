@@ -74,7 +74,7 @@ def _room(
 
     # Colored inset wall panels make the indirect-light response easy to see.
     panel_z = center_z - 1.7
-    add_box(app, (-half_w + WALL + 0.04, 1.65, panel_z), (0.1, 2.1, 2.7), name_color, 0.74)
+    add_box(app, (half_w - WALL - 0.04, 1.65, panel_z), (0.1, 2.1, 2.7), name_color, 0.74)
     for x in (-3.05, 3.05):
         add_box(app, (x, 1.25, center_z + 0.4), (0.24, 2.5, 0.24), (0.54, 0.48, 0.36), 0.6)
 
@@ -109,11 +109,20 @@ def build_scene(app) -> None:
     # Each doorway lines up with the next, creating a readable five-room tour.
     room_specs = (
         (0.0, (0.08, 0.47, 0.43), False, True),
-        (-ROOM_LENGTH, (0.76, 0.56, 0.24), True, False),
-        (-ROOM_LENGTH * 2.0, (0.72, 0.18, 0.08), False, False),
+        (-ROOM_LENGTH, (0.72, 0.18, 0.08), True, False),
+        (-ROOM_LENGTH * 2.0, (0.76, 0.56, 0.24), False, False),
         (-ROOM_LENGTH * 3.0, (0.08, 0.25, 0.78), False, True),
         (-ROOM_LENGTH * 4.0, (0.56, 0.22, 0.78), False, True),
     )
+
+    # room_specs = (
+    #         (0.0, (0.08, 0.47, 0.43), False, True),
+    #         (-ROOM_LENGTH, (0.76, 0.56, 0.24), True, False),
+    #         (-ROOM_LENGTH * 2.0, (0.72, 0.18, 0.08), False, False),
+    #         (-ROOM_LENGTH * 3.0, (0.08, 0.25, 0.78), False, True),
+    #         (-ROOM_LENGTH * 4.0, (0.56, 0.22, 0.78), False, True),
+    # )
+
     for index, (center_z, color, skylight, water) in enumerate(room_specs):
         _room(app, index, center_z, color, skylight=skylight, water=water)
 

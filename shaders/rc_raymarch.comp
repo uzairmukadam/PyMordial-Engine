@@ -28,6 +28,7 @@ uniform vec2 u_TargetResolution;
 uniform float u_RC_IntervalC0;
 uniform float u_RC_IntervalC1;
 uniform float u_RC_IntervalC2;
+uniform int u_RC_RayCount;
 uniform int u_RC_StepsC0;
 uniform int u_RC_StepsC1;
 uniform float u_RC_Thickness;
@@ -35,8 +36,6 @@ uniform float u_RC_Intensity;
 
 const float PI = 3.14159265359;
 const float GOLDEN_RATIO = 1.61803398875;
-const int RAY_COUNT = 32;
-
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
     vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
@@ -51,9 +50,9 @@ vec3 ViewPosition(vec2 uv, float depth) {
     return p.xyz / max(abs(p.w), 1e-6);
 }
 
-vec3 CosineHemisphereRay(int index, vec3 n, float rotation) {
+vec3 CosineHemisphereRay(int index, int rayCount, vec3 n, float rotation) {
     float phi = 2.0 * PI * fract(float(index) * GOLDEN_RATIO + rotation);
-    float cosTheta = sqrt((float(index) + 0.5) / float(RAY_COUNT));
+    float cosTheta = sqrt((float(index) + 0.5) / float(rayCount));
     float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
     vec3 h = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
     vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
@@ -111,9 +110,10 @@ void main() {
     int nearSteps = clamp(u_RC_StepsC0, 2, 12);
     int midSteps = clamp(u_RC_StepsC1, 2, 16);
     int farSteps = 6;
+    int rayCount = clamp(u_RC_RayCount, 4, 32);
 
-    for (int ray = 0; ray < RAY_COUNT; ++ray) {
-        vec3 direction = CosineHemisphereRay(ray, normalView, noise);
+    for (int ray = 0; ray < rayCount; ++ray) {
+        vec3 direction = CosineHemisphereRay(ray, rayCount, normalView, noise);
         float hitDistance = 0.0;
         vec2 hitUV = vec2(0.0);
         bool hit = false;
@@ -187,12 +187,12 @@ void main() {
         }
     }
 
-    vec3 irradiance = incomingRadiance * (u_RC_Intensity / float(RAY_COUNT));
+    vec3 irradiance = incomingRadiance * (u_RC_Intensity / float(rayCount));
     float irradianceLuminance = dot(irradiance, vec3(0.2126, 0.7152, 0.0722));
     irradiance *= min(1.0, 2.0 / max(irradianceLuminance, 1e-5));
     irradiance = min(irradiance, vec3(2.0));
     if (any(isnan(irradiance)) || any(isinf(irradiance))) {
         irradiance = vec3(0.0);
     }
-    imageStore(u_OutputRadiance, pixel, vec4(irradiance, hitWeight / float(RAY_COUNT)));
+    imageStore(u_OutputRadiance, pixel, vec4(irradiance, hitWeight / float(rayCount)));
 }

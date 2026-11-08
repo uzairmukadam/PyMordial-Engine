@@ -69,6 +69,7 @@ class EngineTweaks:
         "ssgi_ray_distance",
         "ssgi_intensity",
         "lpv_intensity",
+        "rc_ray_count",
         "rc_intensity",
         "rc_interval_c0",
         "rc_interval_c1",
@@ -238,6 +239,7 @@ class EngineTweaks:
         self.ssgi_ray_distance = 3.0
         self.ssgi_intensity = 1.5
         self.lpv_intensity = 1.0
+        self.rc_ray_count = 16
         self.rc_intensity = 1.0
         self.rc_interval_c0 = 0.40
         self.rc_interval_c1 = 2.50
@@ -513,6 +515,7 @@ class EngineTweaks:
             p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
             p_cfg.ssgi_intensity = float(self.ssgi_intensity)
             p_cfg.lpv_intensity = float(self.lpv_intensity)
+            p_cfg.rc_ray_count = int(self.rc_ray_count)
             p_cfg.rc_intensity = float(self.rc_intensity)
             p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
             p_cfg.rc_interval_c1 = float(self.rc_interval_c1)
@@ -678,7 +681,7 @@ class EngineTweaks:
             "lens_flare_tint",
             "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
             "ssgi_intensity", "lpv_intensity",
-            "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
+            "rc_ray_count", "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
             "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
             "ao_mode", "ao_intensity", "ao_radius",
             "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
@@ -770,6 +773,7 @@ class EngineTweaks:
             "ssgi_ray_distance": float(self.ssgi_ray_distance),
             "ssgi_intensity": float(self.ssgi_intensity),
             "lpv_intensity": float(self.lpv_intensity),
+            "rc_ray_count": int(self.rc_ray_count),
             "rc_intensity": float(self.rc_intensity),
             "rc_interval_c0": float(self.rc_interval_c0),
             "rc_interval_c1": float(self.rc_interval_c1),

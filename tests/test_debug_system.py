@@ -296,6 +296,7 @@ class TestDebugSystem:
         tweaks.aa_mode = "SMAA_1X"
         tweaks.tonemap_mode = "AgX"
         tweaks.exposure = 1.65
+        tweaks.rc_ray_count = 20
         tweaks.rc_interval_c2 = 72.0
         tweaks.rc_steps_c0 = 11
         tweaks.rc_steps_c1 = 19
@@ -323,6 +324,7 @@ class TestDebugSystem:
         assert pipeline.config.aa_mode == "SMAA_1X"
         assert pipeline.config.tonemap_mode == "AgX"
         assert pipeline.config.exposure == 1.65
+        assert pipeline.config.rc_ray_count == 20
         assert pipeline.config.rc_interval_c2 == 72.0
         assert pipeline.config.rc_steps_c0 == 11
         assert pipeline.config.rc_steps_c1 == 19

@@ -63,12 +63,12 @@ void main() {
     vec3 spatialRadiance = vec3(0.0);
     float spatialWeight = 0.0;
     float depthSigma = max(0.08, abs(centerPosition.z) * 0.012);
-    const float kernel[9] = float[](1.0, 8.0, 28.0, 56.0, 70.0, 56.0, 28.0, 8.0, 1.0);
+    const float kernel[5] = float[](1.0, 4.0, 6.0, 4.0, 1.0);
 
     vec3 neighborhoodMin = vec3(1e20);
     vec3 neighborhoodMax = vec3(0.0);
-    for (int y = -4; y <= 4; ++y) {
-        for (int x = -4; x <= 4; ++x) {
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
             vec2 sampleUV = uv + vec2(x, y) * texel;
             if (any(lessThan(sampleUV, vec2(0.0))) || any(greaterThan(sampleUV, vec2(1.0)))) {
                 continue;
@@ -82,7 +82,7 @@ void main() {
             vec3 sampleNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, sampleUV).rg));
             float planeDistance = abs(dot(centerNormal, samplePosition - centerPosition));
             float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), 24.0);
-            float spatialKernel = kernel[x + 4] * kernel[y + 4];
+            float spatialKernel = kernel[x + 2] * kernel[y + 2];
             float weight = spatialKernel * exp(-planeDistance / depthSigma) * normalWeight;
             vec3 sampleRadiance = texture(u_RawRadiance, sampleUV).rgb;
             spatialRadiance += sampleRadiance * weight;

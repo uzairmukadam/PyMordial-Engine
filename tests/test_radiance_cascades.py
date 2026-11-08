@@ -12,7 +12,7 @@ import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import GIMode
+from engine.gfx.quality_presets import GIMode, GraphicsQuality, get_quality_preset
 from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
 from engine.gfx.pipeline import RenderPipeline
 
@@ -48,6 +48,7 @@ class TestRadianceCascadesPass:
     def test_pass_execution_in_pipeline(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         pipeline.config.gi_mode = GIMode.RADIANCE_CASCADES.value
+        pipeline.config.rc_ray_count = 12
 
         ecs = EntityManager(max_entities=10)
         # Create floor box
@@ -73,6 +74,7 @@ class TestRadianceCascadesPass:
         )
 
         # Verify filtered RC texture has data
+        assert pipeline.rc_pass._u_rm_ray_count.value == 12
         rc_tex = pipeline.rc_pass._current_history
         data = rc_tex.read()
         assert len(data) == 160 * 120 * 4 * 2  # RGBA16F (2 bytes per component)
@@ -134,6 +136,13 @@ class TestRadianceCascadesPass:
         assert np.any(final_arr > 0)
 
         pipeline.destroy()
+
+    def test_quality_presets_scale_rc_ray_count(self):
+        assert get_quality_preset(GraphicsQuality.LOW).rc_ray_count == 8
+        assert get_quality_preset(GraphicsQuality.MEDIUM).rc_ray_count == 12
+        assert get_quality_preset(GraphicsQuality.HIGH).rc_ray_count == 16
+        assert get_quality_preset(GraphicsQuality.ULTRA).rc_ray_count == 24
+        assert get_quality_preset(GraphicsQuality.CINEMATIC).rc_ray_count == 32
 
     def test_mutual_exclusivity(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)

@@ -33,6 +33,7 @@ class RadianceCascadesPass(RenderPass):
         "_u_rm_interval_c0",
         "_u_rm_interval_c1",
         "_u_rm_interval_c2",
+        "_u_rm_ray_count",
         "_u_rm_steps_c0",
         "_u_rm_steps_c1",
         "_u_rm_thickness",
@@ -85,6 +86,7 @@ class RadianceCascadesPass(RenderPass):
         self._u_rm_interval_c0 = self.raymarch_prog.get("u_RC_IntervalC0", None)
         self._u_rm_interval_c1 = self.raymarch_prog.get("u_RC_IntervalC1", None)
         self._u_rm_interval_c2 = self.raymarch_prog.get("u_RC_IntervalC2", None)
+        self._u_rm_ray_count = self.raymarch_prog.get("u_RC_RayCount", None)
         self._u_rm_steps_c0 = self.raymarch_prog.get("u_RC_StepsC0", None)
         self._u_rm_steps_c1 = self.raymarch_prog.get("u_RC_StepsC1", None)
         self._u_rm_thickness = self.raymarch_prog.get("u_RC_Thickness", None)
@@ -156,6 +158,8 @@ class RadianceCascadesPass(RenderPass):
             self._u_rm_interval_c1.value = float(getattr(context.config, "rc_interval_c1", 2.50))
         if self._u_rm_interval_c2 is not None:
             self._u_rm_interval_c2.value = float(getattr(context.config, "rc_interval_c2", 40.0))
+        if self._u_rm_ray_count is not None:
+            self._u_rm_ray_count.value = max(4, min(32, int(getattr(context.config, "rc_ray_count", 16))))
         if self._u_rm_steps_c0 is not None:
             self._u_rm_steps_c0.value = int(getattr(context.config, "rc_steps_c0", 8))
         if self._u_rm_steps_c1 is not None:
