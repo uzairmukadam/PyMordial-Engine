@@ -143,7 +143,7 @@ void main() {
         }
 
         // Only blur if there is noticeable subpixel motion
-        if (motionLen > 0.75) {
+        if (motionLen > 0.35) {
             int samples = clamp(u_MotionBlurSamples, 4, 32);
             vec3 mbAccum = vec3(0.0);
             float mbWeight = 0.0;

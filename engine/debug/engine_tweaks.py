@@ -298,7 +298,7 @@ class EngineTweaks:
 
         # Phase 3: Cinematic Camera Optics & Lens Effects
         self.bloom_enabled = True
-        self.bloom_intensity = 0.045
+        self.bloom_intensity = 0.12
 
         self.dof_enabled = False
         self.dof_focus_distance = 5.0
@@ -310,8 +310,8 @@ class EngineTweaks:
 
         self.motion_blur_enabled = True
         self.motion_blur_samples = 12
-        self.motion_blur_intensity = 1.0
-        self.motion_blur_max_radius = 32.0
+        self.motion_blur_intensity = 1.5
+        self.motion_blur_max_radius = 48.0
 
         self.lens_flare_enabled = True
         self.lens_flare_threshold = 1.8

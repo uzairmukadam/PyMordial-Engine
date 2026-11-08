@@ -113,7 +113,7 @@ class RenderConfig:
     bloom_enabled: bool = True
     bloom_iterations: int = 5      # Dual-filter pyramid mip passes (3 to 6)
     bloom_threshold: float = 1.0
-    bloom_intensity: float = 0.045
+    bloom_intensity: float = 0.12
     tonemap_mode: str = "ACES"     # "ACES", "AgX", "Reinhard"
     exposure: float = 1.0
 
@@ -171,8 +171,8 @@ class RenderConfig:
     # Velocity Motion Blur
     motion_blur_enabled: bool = False
     motion_blur_samples: int = 12        # Directional blur taps (4 to 32)
-    motion_blur_intensity: float = 1.0   # Shutter angle / blur strength scale
-    motion_blur_max_radius: float = 32.0 # Max blur vector in pixels
+    motion_blur_intensity: float = 1.5   # Shutter angle / blur strength scale
+    motion_blur_max_radius: float = 48.0 # Max blur vector in pixels
 
     # Anamorphic Lens Flare & Ghost Reflections
     lens_flare_enabled: bool = True
@@ -252,6 +252,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=4,
+        bloom_intensity=0.07,
         volumetric_fog_enabled=True,
         fog_resolution="LOW",
         fog_point_lights=False,
@@ -297,6 +298,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=5,
+        bloom_intensity=0.10,
         volumetric_fog_enabled=True,
         fog_resolution="HIGH",
         fog_point_lights=True,
@@ -346,6 +348,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
+        bloom_intensity=0.12,
         volumetric_fog_enabled=True,
         fog_resolution="ULTRA",
         fog_point_lights=True,
@@ -395,7 +398,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         clustered_lights_enabled=True,
         bloom_enabled=True,
         bloom_iterations=6,
-        bloom_intensity=0.06,
+        bloom_intensity=0.14,
         volumetric_fog_enabled=True,
         fog_resolution="CINEMATIC",
         fog_point_lights=True,

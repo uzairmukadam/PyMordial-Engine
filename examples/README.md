@@ -11,7 +11,7 @@ For CI or a quick smoke test, add `--headless --frames 30`. Headless runs
 default to the low graphics preset. Use `--quality low|medium|high|ultra|cinematic`
 to select a preset explicitly.
 
-## The six samples
+## The examples
 
 | Example | What to explore |
 | --- | --- |
@@ -21,10 +21,14 @@ to select a preset explicitly.
 | `04_data_driven_platformer.py` | The multi-section Sunken Observatory platformer, loaded from JSON and traversed with a capsule player; fall or press R to reset |
 | `05_menu_system.py` | Main menu, controls screen, level start, pause/resume, and return-to-menu flow |
 | `06_graphics_benchmark.py` | Reproducible scene with configurable entity count, camera flight, FPS/frame-time sampling, and live GI/SSR controls |
+| `07_the_last_aqueduct.py` | A high-detail cliffside ruin demo with a rising jump route, ancient aqueduct, lantern-lit temple, flooded ravine, and per-surface water |
 
-`platformer_level.json` defines the platformer spawn, platforms, decorations,
-and lights. Edit the data to prototype layout changes without editing the
-loader.
+Run the demo with `python examples/07_the_last_aqueduct.py`. Its
+`last_aqueduct_level.json` data defines the collidable traversal route, rotated
+ramps, aqueduct bridges, angular ravine cliffs, one continuous river, lights,
+spawn, and fall-reset height. Decorative props no longer add non-colliding
+slabs over the walkable platforms. The Sunken Observatory remains available
+in example 04.
 
 ## Entity-attached particle effects
 

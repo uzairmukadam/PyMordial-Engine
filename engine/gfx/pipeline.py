@@ -41,6 +41,7 @@ from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
+from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.water_pass import WaterPass
 from engine.gfx.passes.hiz_pass import HiZPass
@@ -88,6 +89,7 @@ class RenderPipeline:
         "fxaa_pass",
         "smaa_pass",
         "volumetric_fog_pass",
+        "bloom_pass",
         "_prev_vp_mat",
         "post_process",
         "resources",
@@ -510,7 +512,10 @@ class RenderPipeline:
         # 8.6. Cinematic Camera Optics & Lens Effects (Phase 3)
         self.camera_optics_pass = CameraOpticsPass(self.ctx, w, h)
 
-        # 8.7. Dynamic Water Simulation & Screen-Space Refraction (Phase 4)
+        # 8.7. HDR Bloom Pyramid
+        self.bloom_pass = BloomPass(self.ctx, w, h)
+
+        # 8.8. Dynamic Water Simulation & Screen-Space Refraction (Phase 4)
         self.water_pass = WaterPass(self.ctx, w, h)
 
         # 9. Post-Processing & Tonemapping Pipeline
@@ -668,6 +673,7 @@ class RenderPipeline:
         self.smaa_pass.resize(width, height)
         self.volumetric_fog_pass.resize(width, height)
         self.camera_optics_pass.resize(width, height)
+        self.bloom_pass.resize(width, height)
         self.water_pass.resize(width, height)
         self.post_process.resize(width, height)
 
@@ -1355,6 +1361,14 @@ class RenderPipeline:
             self.taa_pass.execute(ctx)
             self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.taa_pass._write_fbo)
 
+        bloom_tex = None
+        if self.config.bloom_enabled:
+            bloom_tex = self.bloom_pass.render(
+                self.post_process.hdr_fbo.color_attachments[0],
+                threshold=self.config.bloom_threshold,
+                iterations=self.config.bloom_iterations,
+            )
+
         # ---- PASS 8: Post-Process & Mutually Exclusive Anti-Aliasing ----
         self.ctx.disable(moderngl.DEPTH_TEST)
         aa_mode = getattr(self.config, "aa_mode", "OFF")
@@ -1362,6 +1376,7 @@ class RenderPipeline:
         self.post_process.render(
             target_fbo=self.post_process.final_fbo,
             flare_texture=flare_tex,
+            bloom_texture=bloom_tex,
             time_elapsed=time_elapsed,
         )
         ctx.resources["ldr_color"] = self.post_process.final_texture
@@ -1415,6 +1430,7 @@ class RenderPipeline:
             self.particle_pass.destroy()
         if self.camera_optics_pass is not None:
             self.camera_optics_pass.destroy()
+        self.bloom_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()

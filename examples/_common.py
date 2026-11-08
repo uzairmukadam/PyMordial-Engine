@@ -299,10 +299,12 @@ def add_box(
     *,
     physics: bool = False,
     fixed: bool = True,
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
 ) -> int:
     entity = app.ecs.create_entity(
         shape="cube",
         position=position,
+        rotation=rotation,
         dimensions=dimensions,
         color=color,
         roughness=roughness,
@@ -312,6 +314,6 @@ def add_box(
     if physics:
         half_x, half_y, half_z = (component * 0.5 for component in dimensions)
         body_type = "fixed" if fixed else "dynamic"
-        app.physics.create_body(entity, body_type=body_type, position=position)
+        app.physics.create_body(entity, body_type=body_type, position=position, rotation=rotation)
         app.physics.attach_box_collider(entity, half_x, half_y, half_z, friction=0.75)
     return entity

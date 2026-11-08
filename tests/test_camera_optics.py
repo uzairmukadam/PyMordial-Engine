@@ -20,6 +20,7 @@ from engine.gfx.frame_context import FrameContext
 from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset, RenderConfig
 from engine.gfx.pipeline import RenderPipeline
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
+from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.post_process import PostProcessPipeline
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -168,6 +169,78 @@ def test_post_process_cinematic_lens_imperfections(render_ctx: RenderContext):
 
     flare_tex.release()
     post.destroy()
+
+
+def test_hdr_bloom_extracts_and_spreads_highlights(render_ctx: RenderContext):
+    ctx = render_ctx.ctx
+    width = height = 128
+    scene = ctx.texture((width, height), 4, dtype="f2")
+    scene_pixels = np.zeros((height, width, 4), dtype=np.float16)
+    scene_pixels[..., 3] = 1.0
+    scene_pixels[height // 2, width // 2, :3] = 12.0
+    scene.write(scene_pixels.tobytes())
+
+    bloom = BloomPass(ctx, width, height)
+    quad_vert = (ROOT_DIR / "shaders" / "fullscreen_quad.vert").read_text(encoding="utf-8")
+    post_frag = (ROOT_DIR / "shaders" / "post_process.frag").read_text(encoding="utf-8")
+    config = RenderConfig(
+        bloom_enabled=True,
+        bloom_intensity=0.2,
+        lens_flare_enabled=False,
+        chromatic_aberration_enabled=False,
+        vignette_enabled=False,
+        film_grain_enabled=False,
+    )
+    post = PostProcessPipeline(ctx, width, height, config, post_frag, quad_vert)
+    try:
+        bloom_texture = bloom.render(scene, threshold=1.0, iterations=5)
+        bloom_pixels = np.frombuffer(bloom_texture.read(), dtype=np.float16).reshape(64, 64, 4)
+        assert float(np.max(bloom_pixels[..., :3])) > 0.01
+        assert int(np.count_nonzero(bloom_pixels[..., :3] > 1e-3)) > 1
+
+        post.hdr_texture.write(scene.read())
+        post.render()
+        without_bloom = np.frombuffer(post.final_texture.read(), dtype=np.uint8).copy()
+        post.render(bloom_texture=bloom_texture)
+        with_bloom = np.frombuffer(post.final_texture.read(), dtype=np.uint8)
+        assert np.any(with_bloom > without_bloom)
+    finally:
+        post.destroy()
+        bloom.destroy()
+        scene.release()
+
+
+def test_film_grain_changes_tonemapped_pixels(render_ctx: RenderContext):
+    ctx = render_ctx.ctx
+    width = height = 64
+    quad_vert = (ROOT_DIR / "shaders" / "fullscreen_quad.vert").read_text(encoding="utf-8")
+    post_frag = (ROOT_DIR / "shaders" / "post_process.frag").read_text(encoding="utf-8")
+    config = RenderConfig(
+        bloom_enabled=False,
+        lens_flare_enabled=False,
+        chromatic_aberration_enabled=False,
+        vignette_enabled=False,
+        film_grain_enabled=True,
+        film_grain_intensity=0.08,
+    )
+    post = PostProcessPipeline(ctx, width, height, config, post_frag, quad_vert)
+    scene = np.full((height, width, 4), (0.4, 0.4, 0.4, 1.0), dtype=np.float16)
+    post.hdr_texture.write(scene.tobytes())
+
+    try:
+        post.render(time_elapsed=1.0)
+        first = np.frombuffer(post.final_texture.read(), dtype=np.uint8).reshape(height, width, 4)[..., :3]
+        post.render(time_elapsed=2.0)
+        second = np.frombuffer(post.final_texture.read(), dtype=np.uint8).reshape(height, width, 4)[..., :3]
+        assert float(first.std()) > 1.0
+        assert not np.array_equal(first, second)
+        grain = first[..., 0].astype(np.float32)
+        horizontal_correlation = np.corrcoef(grain[:, :-1].ravel(), grain[:, 1:].ravel())[0, 1]
+        vertical_correlation = np.corrcoef(grain[:-1, :].ravel(), grain[1:, :].ravel())[0, 1]
+        assert abs(horizontal_correlation) < 0.2
+        assert abs(vertical_correlation) < 0.2
+    finally:
+        post.destroy()
 
 
 def test_quality_presets_camera_optics_scaling():

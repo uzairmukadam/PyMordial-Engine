@@ -340,7 +340,7 @@ float SampleSingleCascade(
     );
     float blocker_depth_sum = 0.0;
     int blocker_count = 0;
-    int blocker_samples = 16;
+    int blocker_samples = 24;
     float blocker_bias = bias + slope * 0.0006 * inv_far;
 
     // Central anchor sample: guarantees receivers under occluders never drop shadow
@@ -389,13 +389,13 @@ float SampleSingleCascade(
     // Tight contact sharpness at ground contact (0.85 texels),
     // expanding gracefully into realistic wide cinematic penumbrae for elevated casters.
     float min_filter_radius = cascade_texel_size.x * 0.85;
-    float max_filter_radius = cascade_texel_size.x * 16.0 * softness;
+    float max_filter_radius = cascade_texel_size.x * 20.0 * softness;
     float penumbra_factor = penumbra_uv / (max_filter_radius + 1e-5);
     float smooth_penumbra = smoothstep(0.0, 1.0, penumbra_factor) * (max_filter_radius - min_filter_radius);
     float filter_radius = min_filter_radius + smooth_penumbra;
 
     // Step 3: Anti-Aliased Filter with Gaussian Radial Falloff (Smooth Penumbra, Zero Banding)
-    int filter_samples = clamp(u_PCF_Samples, 16, 32);
+    int filter_samples = clamp(u_PCF_Samples * 2, 32, 64);
     float pcss_shadow = 0.0;
     float weight_sum = 0.0;
     float pcss_bias = bias + (filter_radius / max_filter_radius) * slope * 0.0006 * inv_far;

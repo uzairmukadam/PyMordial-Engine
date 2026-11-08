@@ -3,7 +3,12 @@
 character motor physics, slope climbing limits, autostep, and collision-aware camera.
 """
 
+import json
+import math
+from pathlib import Path
+
 from engine.core.ecs import EntityManager
+from engine.core.math_utils import quat_from_euler
 from engine.physics.rapier_world import PhysicsManager
 from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
 from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
@@ -13,6 +18,36 @@ from engine.gfx.quality_presets import get_quality_preset, GraphicsQuality
 
 
 class TestCharacterController:
+    def test_aqueduct_platforms_bridges_and_ramps_support_the_player(self):
+        level_path = Path(__file__).parent.parent / "examples" / "last_aqueduct_level.json"
+        level = json.loads(level_path.read_text(encoding="utf-8"))
+
+        for group in ("platforms", "bridges", "ramps"):
+            for surface in level[group]:
+                ecs = EntityManager(max_entities=8)
+                physics = PhysicsManager()
+                position = tuple(surface["position"])
+                dimensions = tuple(surface["size"])
+                rotation = quat_from_euler(
+                    *(math.radians(float(angle)) for angle in surface.get("rotation_deg", (0.0, 0.0, 0.0)))
+                )
+                surface_id = ecs.create_entity(position=position, rotation=rotation, dimensions=dimensions)
+                physics.create_body(
+                    surface_id,
+                    body_type="fixed",
+                    position=position,
+                    rotation=tuple(float(component) for component in rotation),
+                )
+                physics.attach_box_collider(surface_id, *(dimension * 0.5 for dimension in dimensions))
+
+                spawn = (position[0], position[1] + 3.0, position[2])
+                character_id = ecs.create_entity(position=spawn)
+                motor = CharacterMotor(character_id, physics, ecs, initial_position=spawn)
+                for _ in range(90):
+                    motor.update(dt=1.0 / 60.0, move_input=(0.0, 0.0))
+
+                assert motor.state.is_grounded, f"Player fell through {group} surface at {position}"
+
     def test_kcc_creation_and_grounding(self):
         ecs = EntityManager(max_entities=100)
         physics = PhysicsManager(gravity_x=0.0, gravity_y=-9.81, gravity_z=0.0)
@@ -264,5 +299,4 @@ class TestCharacterController:
         assert abs(ecs.rigid_body_state[1, dense_idx, 0] - 10.0) < 1e-4
         assert abs(ecs.rigid_body_state[1, dense_idx, 1] - 5.0) < 1e-4
         assert abs(ecs.rigid_body_state[1, dense_idx, 2] - (-15.0)) < 1e-4
-
 

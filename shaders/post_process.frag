@@ -46,10 +46,18 @@ vec3 TonemapReinhard(vec3 x) {
     return x / (x + vec3(1.0));
 }
 
-// High-speed pseudo-random hash for animated 35mm film grain
-float hashGrain(vec2 p, float t) {
-    vec2 p2 = p * 1000.0 + mod(t * 123.456, 100.0);
-    return fract(sin(dot(p2, vec2(12.9898, 78.233))) * 43758.5453);
+uint hashGrain(uint value) {
+    value = value * 747796405u + 2891336453u;
+    uint word = ((value >> ((value >> 28u) + 4u)) ^ value) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float grainRandom(uvec2 pixel, uint frame, uint stream) {
+    uint seed = pixel.x * 0x9E3779B9u
+        ^ pixel.y * 0x85EBCA6Bu
+        ^ frame * 0xC2B2AE35u
+        ^ stream * 0x27D4EB2Fu;
+    return float(hashGrain(seed) & 0x00FFFFFFu) * (1.0 / 16777216.0);
 }
 
 void main() {
@@ -102,11 +110,18 @@ void main() {
 
     // 6. Luminance-Masked Animated Filmic Grain (Silver Halide Emulation)
     if (u_FilmGrainEnabled == 1 && u_FilmGrainIntensity > 0.001) {
-        float grain = hashGrain(v_UV, u_Time);
+        uvec2 pixel = uvec2(gl_FragCoord.xy);
+        uint frame = uint(floor(max(u_Time, 0.0) * 24.0));
+        float grain = (
+            grainRandom(pixel, frame, 0u)
+            + grainRandom(pixel, frame, 1u)
+            + grainRandom(pixel, frame, 2u)
+            + grainRandom(pixel, frame, 3u)
+        ) * 0.5 - 1.0;
         float lum = dot(ldr, vec3(0.2126, 0.7152, 0.0722));
         // Mask grain: pronounced in midtones/shadows, soft in highlights
         float grainMask = 1.0 - smoothstep(0.75, 1.0, lum);
-        ldr += (grain - 0.5) * (u_FilmGrainIntensity * 0.05) * grainMask;
+        ldr += (grain - 0.5) * u_FilmGrainIntensity * grainMask;
         ldr = max(vec3(0.0), ldr);
     }
 

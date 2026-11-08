@@ -353,11 +353,10 @@ class MegaBuffer:
         half_width: float = 0.5,
         sectors: int = 32,
     ) -> None:
-        """Generates an X-axis aligned unit cylinder primitive (radius 1.0, width 1.0).
+        """Generates a Y-axis aligned unit cylinder primitive (radius 1.0, height 1.0).
 
-        Designed specifically for vehicle wheels and dynamic physics cylinders:
-        - Sidewalls at x = -half_width and x = +half_width with flat disc caps.
-        - Outer cylindrical barrel with radial tread normals in Y-Z plane.
+        The base cylinder is generated along X, then rotated to the Y axis to
+        match the engine's default vertical cylinder and physics conventions.
         """
         verts_list = []
         indices = []
@@ -416,6 +415,11 @@ class MegaBuffer:
             indices.extend([right_center_idx, right_rim_start + j, right_rim_start + j + 1])
 
         verts = np.array(verts_list, dtype=np.float32).reshape(-1, 12)
+        for start in (0, 3, 8):
+            x = verts[:, start].copy()
+            y = verts[:, start + 1].copy()
+            verts[:, start] = -y
+            verts[:, start + 1] = x
         self._add_mesh("cylinder", verts, np.array(indices, dtype=np.uint32))
 
     def _add_cone_primitive(

@@ -9,11 +9,13 @@ import pygame
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 from examples._common import FlyCameraControls
 from engine.camera import FreeFlyCamera
 from engine.input import InputManager
 from engine.input.codes import GamepadButton
+from engine.gfx.mega_buffer import MegaBuffer
 from engine.ui import UIManager
 
 
@@ -192,6 +194,88 @@ def test_platformer_level_is_data_driven_and_detailed() -> None:
     assert len(level["lights"]) >= 2
     assert level["spawn"]
     assert level["fall_reset_y"] < level["spawn"][1]
+
+
+def test_last_aqueduct_demo_has_detailed_traversal_and_art_direction() -> None:
+    level_path = Path(__file__).parent.parent / "examples" / "last_aqueduct_level.json"
+    level = json.loads(level_path.read_text(encoding="utf-8"))
+
+    assert level["name"] == "The Last Aqueduct"
+    assert len(level["platforms"]) >= 10
+    assert len(level["bridges"]) >= 3
+    assert len(level["ramps"]) >= 2
+    assert len(level["props"]) >= 50
+    assert len(level["water"]) == 1
+    assert len(level["lights"]) >= 6
+    assert level["fall_reset_y"] < level["spawn"][1]
+    assert level["platforms"][-1]["position"][1] > level["platforms"][0]["position"][1]
+    assert {prop["shape"] for prop in level["props"]} >= {"cube", "cylinder", "cone", "sphere"}
+    assert all(len(platform["position"]) == len(platform["size"]) == 3 for platform in level["platforms"])
+    assert all(max(prop["size"]) <= 3.0 for prop in level["props"] if prop["shape"] == "sphere")
+    assert all(
+        prop["position"][1] - prop["size"][1] * 0.5 >= 0.0
+        for prop in level["props"]
+        if prop["shape"] == "cone"
+    )
+    assert all(ramp["rotation_deg"][0] > 0.0 for ramp in level["ramps"])
+
+
+def test_last_aqueduct_solids_have_physics_colliders() -> None:
+    examples_dir = Path(__file__).parent.parent / "examples"
+    sys.path.insert(0, str(examples_dir))
+    aqueduct = importlib.import_module("07_the_last_aqueduct")
+
+    level_path = Path(__file__).parent.parent / "examples" / "last_aqueduct_level.json"
+    level = json.loads(level_path.read_text(encoding="utf-8"))
+    create_entity = Mock(side_effect=range(1, 1000))
+    pipeline = SimpleNamespace(
+        config=SimpleNamespace(),
+        atmosphere=SimpleNamespace(config=SimpleNamespace()),
+        lights_pass=SimpleNamespace(clear=Mock()),
+        apply_config=Mock(),
+        add_point_light=Mock(),
+    )
+    physics = SimpleNamespace(create_body=Mock(), attach_box_collider=Mock())
+    app = SimpleNamespace(
+        pipeline=pipeline,
+        physics=physics,
+        ecs=SimpleNamespace(create_entity=create_entity),
+        add_module=Mock(),
+    )
+
+    try:
+        aqueduct.build_level(app, level_path)
+
+        solid_props = sum(prop.get("solid", prop["shape"] in {"cube", "cylinder"}) for prop in level["props"])
+        expected_solids = len(level["platforms"]) + len(level["bridges"]) + len(level["ramps"]) + solid_props
+        assert physics.create_body.call_count == expected_solids
+        assert physics.attach_box_collider.call_count == expected_solids
+    finally:
+        sys.path.remove(str(examples_dir))
+        sys.modules.pop("07_the_last_aqueduct", None)
+
+
+def test_builtin_cylinder_mesh_is_y_aligned() -> None:
+    mesh = object.__new__(MegaBuffer)
+    mesh.ctx = None
+    mesh.vbo = None
+    mesh.ibo = None
+    mesh.allocations = {}
+    mesh.vertex_data = []
+    mesh.index_data = []
+    mesh.total_vertices = 0
+    mesh.total_indices = 0
+    mesh.on_bake_callbacks = []
+
+    mesh._add_cylinder_primitive(sectors=8)
+
+    positions = mesh.vertex_data[-1]["position"]
+    assert np.isclose(positions[:, 0].min(), -1.0)
+    assert np.isclose(positions[:, 0].max(), 1.0)
+    assert np.isclose(positions[:, 1].min(), -0.5)
+    assert np.isclose(positions[:, 1].max(), 0.5)
+    assert np.isclose(positions[:, 2].min(), -1.0)
+    assert np.isclose(positions[:, 2].max(), 1.0)
 
 
 def test_capsule_player_resets_after_falling_below_level(monkeypatch) -> None:

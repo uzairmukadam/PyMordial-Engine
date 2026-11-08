@@ -134,6 +134,7 @@ class PostProcessPipeline:
         self,
         target_fbo: moderngl.Framebuffer | None = None,
         flare_texture: moderngl.Texture | None = None,
+        bloom_texture: moderngl.Texture | None = None,
         time_elapsed: float = 0.0,
     ) -> None:
         """Executes tonemapping and blits to target_fbo (or screen)."""
@@ -146,8 +147,11 @@ class PostProcessPipeline:
         # Bind resolved HDR texture
         self.hdr_texture.use(location=0)
 
-        # Fallback for bloom texture (binding 1)
-        self._dummy_black_tex.use(location=1)
+        bloom_on = self.config.bloom_enabled and bloom_texture is not None
+        if bloom_on:
+            bloom_texture.use(location=1)
+        else:
+            self._dummy_black_tex.use(location=1)
 
         # Bind anamorphic lens flare texture (binding 2)
         flare_on = getattr(self.config, "lens_flare_enabled", True) and (flare_texture is not None)
@@ -160,7 +164,7 @@ class PostProcessPipeline:
         if self._u_exposure is not None:
             self._u_exposure.value = self.config.exposure
         if self._u_bloom_enabled is not None:
-            self._u_bloom_enabled.value = 1 if self.config.bloom_enabled else 0
+            self._u_bloom_enabled.value = 1 if bloom_on else 0
         if self._u_bloom_intensity is not None:
             self._u_bloom_intensity.value = self.config.bloom_intensity
 
