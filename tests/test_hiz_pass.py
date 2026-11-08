@@ -122,3 +122,11 @@ class TestHiZPass:
         # Verify output texture exists and pipeline rendered
         assert pipeline.output_texture_id > 0
         assert pipeline.hiz_pass.hiz_texture is not None
+
+    def test_cull_indirect_shader_compilation(self, render_ctx: RenderContext):
+        """Verify GPU-driven occlusion culling compute shader (cull_indirect.comp) compiles."""
+        from engine.gfx.shader_utils import load_shader
+        src = load_shader("cull_indirect.comp")
+        prog = render_ctx.ctx.compute_shader(src)
+        assert prog is not None
+        prog.release()
