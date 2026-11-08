@@ -1031,6 +1031,11 @@ class DebugMenu:
                     et.frustum_cull_enabled = fc_v
                     et.mark_custom()
 
+                hiz_c, hiz_v = imgui.checkbox("GPU Hi-Z Occlusion Culling", getattr(et, "hiz_cull_enabled", False))
+                if hiz_c:
+                    et.hiz_cull_enabled = hiz_v
+                    et.mark_custom()
+
                 pipe = getattr(self.app, "pipeline", None) if self.app is not None else None
                 if pipe is not None:
                     vis_ent = getattr(pipe, "stats_visible_entities", 0)

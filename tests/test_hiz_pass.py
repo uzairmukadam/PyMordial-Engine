@@ -130,3 +130,37 @@ class TestHiZPass:
         prog = render_ctx.ctx.compute_shader(src)
         assert prog is not None
         prog.release()
+
+    def test_hiz_gpu_culling_execution(self, render_ctx: RenderContext):
+        """Validates that HiZPass.cull_aabbs_gpu executes and filters occluded geometry."""
+        pass_instance = HiZPass(render_ctx.ctx, width=320, height=240, reverse_z=True)
+
+        aabbs = np.zeros((3, 6), dtype=np.float32)
+        # Entity 0: Centered at (0, 0, 0), size 1.0 (inside near frustum)
+        aabbs[0, 0:3] = [0.0, 0.0, 0.0]
+        aabbs[0, 3:6] = [0.5, 0.5, 0.5]
+
+        # Entity 1: Way behind camera at (0, 0, 100)
+        aabbs[1, 0:3] = [0.0, 0.0, 100.0]
+        aabbs[1, 3:6] = [0.5, 0.5, 0.5]
+
+        # Entity 2: Off to the far right outside frustum at (100, 0, 0)
+        aabbs[2, 0:3] = [100.0, 0.0, 0.0]
+        aabbs[2, 3:6] = [0.5, 0.5, 0.5]
+
+        vp = np.eye(4, dtype=np.float32)
+        mask = pass_instance.cull_aabbs_gpu(
+            aabbs=aabbs,
+            active_count=3,
+            vp_matrix=vp,
+            screen_size=(320, 240),
+        )
+
+        assert len(mask) == 3
+        # Entity 0 should be visible
+        assert mask[0] == True
+        # Entity 1 and 2 outside frustum
+        assert mask[1] == False
+        assert mask[2] == False
+
+        pass_instance.destroy()

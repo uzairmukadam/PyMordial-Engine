@@ -110,6 +110,7 @@ class EngineTweaks:
         "tess_med_level",
         "tess_displacement_scale",
         "frustum_cull_enabled",
+        "hiz_cull_enabled",
         "ssdm_enabled",
         "ssdm_scale",
         "vsync_enabled",
@@ -207,6 +208,7 @@ class EngineTweaks:
         self.tess_med_level = 8.0
         self.tess_displacement_scale = 1.0
         self.frustum_cull_enabled = True
+        self.hiz_cull_enabled = False
 
         self.ssdm_enabled = True
         self.ssdm_scale = 1.0
@@ -590,6 +592,7 @@ class EngineTweaks:
             p_cfg.tess_med_level = float(self.tess_med_level)
             p_cfg.tess_displacement_scale = float(self.tess_displacement_scale)
             p_cfg.frustum_cull_enabled = bool(self.frustum_cull_enabled)
+            p_cfg.hiz_cull_enabled = bool(self.hiz_cull_enabled)
             p_cfg.ssdm_enabled = bool(self.ssdm_enabled)
             p_cfg.ssdm_scale = float(self.ssdm_scale)
 
@@ -687,7 +690,7 @@ class EngineTweaks:
             "pcf_samples", "csm_stabilization",
             "pom_enabled", "pom_min_samples", "pom_max_samples", "pom_height_scale", "pom_self_shadow",
             "disp_near_radius", "disp_mid_radius", "tess_enabled", "tess_max_level",
-            "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled",
+            "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled", "hiz_cull_enabled",
             "ssdm_enabled", "ssdm_scale",
             "volumetric_fog_enabled", "fog_resolution", "fog_point_lights", "fog_density",
             "fog_height_falloff", "fog_anisotropy", "fog_distance", "fog_ambient", "fog_debug_mode",
@@ -837,6 +840,7 @@ class EngineTweaks:
             "tess_med_level": float(self.tess_med_level),
             "tess_displacement_scale": float(self.tess_displacement_scale),
             "frustum_cull_enabled": bool(self.frustum_cull_enabled),
+            "hiz_cull_enabled": bool(self.hiz_cull_enabled),
             "ssdm_enabled": bool(self.ssdm_enabled),
             "ssdm_scale": float(self.ssdm_scale),
             "particles_enabled": bool(self.particles_enabled),

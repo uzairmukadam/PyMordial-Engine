@@ -49,8 +49,9 @@ class RenderConfig:
     csm_split_lambda: float = 0.85 # Practical Split Scheme (PSSM) log-linear blend factor
     csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
 
-    # Depth Precision
+    # Depth Precision & GPU Culling
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
+    hiz_cull_enabled: bool = False # GPU-Driven Hi-Z Occlusion Culling
 
     # Ambient Occlusion (GTAO / HBAO / SSAO)
     ao_mode: str = "GTAO"          # "OFF", "SSAO", "HBAO", "GTAO"

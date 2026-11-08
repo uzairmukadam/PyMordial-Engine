@@ -8,6 +8,7 @@ raymarching (SSR, SSGI), contact shadows, and GPU occlusion culling.
 from __future__ import annotations
 import math
 import moderngl
+import numpy as np
 
 from engine.gfx.render_graph import RenderPass, RenderGraphContext
 
@@ -37,6 +38,16 @@ class HiZPass(RenderPass):
         "_u_down_src_tex",
         "_u_down_src_level",
         "_u_down_reverse_z",
+        "cull_prog",
+        "_u_cull_vp",
+        "_u_cull_screen",
+        "_u_cull_count",
+        "_u_cull_mips",
+        "_u_cull_reverse_z",
+        "ssbo_aabb",
+        "ssbo_visibility",
+        "_aabb_scratch",
+        "_max_cull_entities",
     )
 
     def __init__(
@@ -45,15 +56,18 @@ class HiZPass(RenderPass):
         width: int,
         height: int,
         reverse_z: bool = True,
+        max_entities: int = 100_000,
     ) -> None:
         super().__init__(name="HiZPass", enabled=True)
         self.ctx = ctx
         self.width = width
         self.height = height
         self.reverse_z = reverse_z
+        self._max_cull_entities = max_entities
 
         self.copy_prog = self.ctx.compute_shader(_load_shader("hiz_copy.comp"))
         self.downsample_prog = self.ctx.compute_shader(_load_shader("hiz_downsample.comp"))
+        self.cull_prog = self.ctx.compute_shader(_load_shader("cull_indirect.comp"))
 
         self._u_copy_depth = self.copy_prog.get("u_DepthTexture", None)
         if self._u_copy_depth is not None:
@@ -67,6 +81,21 @@ class HiZPass(RenderPass):
         self._u_down_reverse_z = self.downsample_prog.get("u_ReverseZ", None)
         if self._u_down_reverse_z is not None:
             self._u_down_reverse_z.value = 1 if self.reverse_z else 0
+
+        # Uniforms for GPU occlusion culling
+        self._u_cull_vp = self.cull_prog.get("u_ViewProjection", None)
+        self._u_cull_screen = self.cull_prog.get("u_ScreenSize", None)
+        self._u_cull_count = self.cull_prog.get("u_EntityCount", None)
+        self._u_cull_mips = self.cull_prog.get("u_HiZMipCount", None)
+        self._u_cull_reverse_z = self.cull_prog.get("u_ReverseZ", None)
+        if self._u_cull_reverse_z is not None:
+            self._u_cull_reverse_z.value = 1 if self.reverse_z else 0
+
+        # Pre-allocated GPU storage buffers for AABBs and Visibility mask
+        # AABB: 2 * vec4 (32 bytes) per entity. Visibility: uint (4 bytes) per entity.
+        self.ssbo_aabb = self.ctx.buffer(reserve=max_entities * 32)
+        self.ssbo_visibility = self.ctx.buffer(reserve=max_entities * 4)
+        self._aabb_scratch = np.zeros((max_entities, 2, 4), dtype=np.float32)
 
         self._allocate_pyramid()
 
@@ -134,6 +163,68 @@ class HiZPass(RenderPass):
         ctx.resources["hiz_texture"] = self.hiz_texture
         ctx.resources["hiz_mip_count"] = self.num_mips
 
+    def cull_aabbs_gpu(
+        self,
+        aabbs: np.ndarray,
+        active_count: int,
+        vp_matrix: np.ndarray,
+        screen_size: tuple[float, float],
+    ) -> np.ndarray:
+        """Executes GPU-driven Hi-Z occlusion culling and returns a visibility mask uint8/bool array.
+
+        Args:
+            aabbs: Contiguous (active_count, 6) float32 slice: [cx, cy, cz, hx, hy, hz].
+            active_count: Total active entities.
+            vp_matrix: 16-element column-major float32 array.
+            screen_size: (width, height) in pixels.
+
+        Returns:
+            Boolean ndarray of shape (active_count,) where True indicates visible geometry.
+        """
+        if active_count <= 0:
+            return np.ones(0, dtype=bool)
+
+        count = min(active_count, self._max_cull_entities)
+
+        # Pack into (count, 2, 4) std430 layout without runtime reallocation
+        self._aabb_scratch[:count, 0, 0:3] = aabbs[:count, 0:3] # center
+        self._aabb_scratch[:count, 0, 3] = aabbs[:count, 3]     # extent.x
+        self._aabb_scratch[:count, 1, 0:2] = aabbs[:count, 4:6] # extent.y, extent.z
+        self._aabb_scratch[:count, 1, 2:4] = 0.0                # padding/flags
+
+        # Upload to SSBO 5
+        self.ssbo_aabb.write(self._aabb_scratch[:count].tobytes(), offset=0)
+        self.ssbo_aabb.bind_to_storage_buffer(5)
+        self.ssbo_visibility.bind_to_storage_buffer(6)
+
+        # Bind Hi-Z pyramid sampler
+        self.hiz_texture.use(location=0)
+
+        # Set Uniforms
+        if self._u_cull_vp is not None:
+            self._u_cull_vp.write(vp_matrix.tobytes())
+        if self._u_cull_screen is not None:
+            self._u_cull_screen.value = (float(screen_size[0]), float(screen_size[1]))
+        if self._u_cull_count is not None:
+            self._u_cull_count.value = count
+        if self._u_cull_mips is not None:
+            self._u_cull_mips.value = self.num_mips
+        if self._u_cull_reverse_z is not None:
+            self._u_cull_reverse_z.value = 1 if self.reverse_z else 0
+
+        # Run compute shader: 64 threads per workgroup
+        group_x = (count + 63) // 64
+        self.cull_prog.run(group_x=group_x, group_y=1, group_z=1)
+
+        # Read back visibility bitmask
+        raw_mask = self.ssbo_visibility.read(count * 4)
+        vis_uint32 = np.frombuffer(raw_mask, dtype=np.uint32)
+        return vis_uint32 != 0
+
     def destroy(self) -> None:
         if hasattr(self, "hiz_texture") and self.hiz_texture is not None:
             self.hiz_texture.release()
+        if hasattr(self, "ssbo_aabb") and self.ssbo_aabb is not None:
+            self.ssbo_aabb.release()
+        if hasattr(self, "ssbo_visibility") and self.ssbo_visibility is not None:
+            self.ssbo_visibility.release()

@@ -916,11 +916,23 @@ class RenderPipeline:
                     casc_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
 
 
-        # Phase 3: Frustum Culling for Camera MDI Draw Calls
+        # Phase 3: Culling for Camera MDI Draw Calls (Vectorized CPU Frustum + GPU Hi-Z Occlusion)
         frustum_cull_active = getattr(self.config, "frustum_cull_enabled", True)
-        if frustum_cull_active and draw_batches:
-            self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
-            visible_mask = self.culler.cull_aabbs(ecs.get_active_aabbs_view(), active_count)
+        hiz_cull_active = getattr(self.config, "hiz_cull_enabled", False)
+
+        if (frustum_cull_active or hiz_cull_active) and draw_batches:
+            active_aabbs = ecs.get_active_aabbs_view()
+            if hiz_cull_active and hasattr(self, "hiz_pass") and self.hiz_pass is not None:
+                visible_mask = self.hiz_pass.cull_aabbs_gpu(
+                    aabbs=active_aabbs,
+                    active_count=active_count,
+                    vp_matrix=self._vp_mat,
+                    screen_size=(w, h),
+                )
+            else:
+                self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
+                visible_mask = self.culler.cull_aabbs(active_aabbs, active_count)
+
             batches_to_render = self.culler.filter_draw_batches(draw_batches, visible_mask)
             self.stats_visible_entities = self.culler.stats_visible_entities
             self.stats_culled_entities = self.culler.stats_culled_entities
