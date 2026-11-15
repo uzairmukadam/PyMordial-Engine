@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager
+from engine.debug.monitor import SystemMonitor
 from engine.gfx import (
     GraphicsQuality,
     RenderConfig,
@@ -43,6 +44,19 @@ class TestRenderPipelineHeadless:
         assert render_ctx.ctx is not None
         # Verify depth func configured for Reversed-Z (GL_GREATER)
         assert render_ctx.depth_func_name == ">"
+
+    def test_gpu_timer_queries_return_without_waiting(self, render_ctx: RenderContext):
+        monitor = SystemMonitor()
+        try:
+            for _ in range(8):
+                if monitor.begin_gpu_frame():
+                    render_ctx.ctx.clear()
+                    monitor.end_gpu_frame()
+            if monitor.gpu_timing_supported:
+                assert monitor.gpu_frame_time_ms is not None
+                assert monitor.gpu_frame_time_ms >= 0.0
+        finally:
+            monitor.destroy()
 
     def test_pipeline_render_frame_and_fbo_output(self, render_ctx: RenderContext):
         ecs = EntityManager(max_entities=100)

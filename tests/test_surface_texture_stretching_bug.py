@@ -180,6 +180,7 @@ def test_gbuffer_shader_no_horizontal_banding():
     code = shader_path.read_text(encoding="utf-8")
 
     assert "micro_grain" not in code, "Unbandlimited procedural micro_grain causes severe horizontal Moiré banding"
-    assert "dFdx(v_UV)" in code, "Mesh texture sampling must use geometric v_UV derivatives to eliminate POM step banding"
-    assert "dFdy(v_UV)" in code
-
+    assert "dFdx(geometric_uv)" in code, "Mesh texture sampling must use geometric UV derivatives to eliminate POM step banding"
+    assert "dFdy(geometric_uv)" in code
+    assert "v_UV * v_UVScale" in code, "Brick and concrete UVs must scale with their world-space dimensions"
+    assert "if (sun_dir_ts.z <= 0.0) return 1.0;" in code, "Back-facing POM shadow rays must not black out surfaces"

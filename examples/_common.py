@@ -299,6 +299,7 @@ def add_box(
     *,
     physics: bool = False,
     fixed: bool = True,
+    material_id: str | None = None,
     rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
 ) -> int:
     entity = app.ecs.create_entity(
@@ -309,6 +310,7 @@ def add_box(
         color=color,
         roughness=roughness,
         metallic=metallic,
+        material_id=material_id,
         is_static=fixed,
     )
     if physics:

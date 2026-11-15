@@ -12,7 +12,8 @@ from engine.core import WaterProperties
 from engine.core.math_utils import quat_from_euler
 
 
-LEVEL_PATH = Path(__file__).with_name("last_aqueduct_level.json")
+#LEVEL_PATH = Path(__file__).with_name("last_aqueduct_level.json")
+LEVEL_PATH = Path(__file__).with_name("quick_fort.json")
 
 
 def build_level(app, level_path: Path = LEVEL_PATH) -> dict[str, Any]:

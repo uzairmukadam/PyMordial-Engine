@@ -10,6 +10,7 @@ layout (location = 4) out float out_SurfaceID;       // RT4: Entity ID (+1; zero
 in vec3 v_WorldPos;
 in vec3 v_Normal;
 in vec2 v_UV;
+in vec2 v_UVScale;
 in vec3 v_ModelPos;
 in vec3 v_ModelNormal;
 in vec4 v_CurrClip;
@@ -71,6 +72,8 @@ uniform float u_CarChromeLayer = 3.0;
 uniform float u_CarTaillightLayer = 6.0;
 uniform float u_CarIndicatorLayer = 4.0;
 uniform float u_CarInteriorLayer = 5.0;
+uniform float u_BrickWallLayer = 0.0;
+uniform float u_ConcreteFloorLayer = 0.0;
 
 // Displacement modes (matches DisplacementMode enum in texture_atlas.py)
 const uint DISP_MODE_NONE = 0u;
@@ -148,7 +151,7 @@ vec2 ParallaxOcclusionMap(vec2 uv, vec3 view_dir_ts, float layer_idx, float heig
 
 // POM Self-Shadowing: secondary raymarch upward toward sun in tangent space
 float POMSelfShadow(vec2 uv, float surface_height, vec3 sun_dir_ts, float layer_idx, float height_scale) {
-    if (sun_dir_ts.z <= 0.0) return 0.0; // Facing away from sun
+    if (sun_dir_ts.z <= 0.0) return 1.0;
 
     // At top peak ceiling, no microgeometry can occlude the sun from above
     float total_h = 1.0 - surface_height;
@@ -199,8 +202,11 @@ void main() {
     uint disp_mode = (mat_flags >> 1u) & 3u; // 0=None, 1=POM, 2=SSDM, 3=Tessellation
 
     vec3 N = normalize(v_Normal);
-    vec2 final_uv = v_UV;
-    vec2 sample_uv = v_UV;
+    bool world_scaled_material = tex_layer > 0.0 &&
+        (abs(tex_layer - u_BrickWallLayer) < 0.25 || abs(tex_layer - u_ConcreteFloorLayer) < 0.25);
+    vec2 geometric_uv = world_scaled_material ? v_UV * v_UVScale : v_UV;
+    vec2 final_uv = geometric_uv;
+    vec2 sample_uv = geometric_uv;
     float pom_shadow = 1.0;
 
     // Strict Mutual Exclusivity & Camera Radius Culling: POM runs ONLY when disp_mode == DISP_MODE_POM (1) and within u_DispMidRadius
@@ -228,7 +234,7 @@ void main() {
             float dist_factor = clamp((u_DispMidRadius - cam_dist) / max(u_DispMidRadius - u_DispNearRadius, 0.001), 0.0, 1.0);
             int target_samples = int(mix(float(u_POMMinSamples), float(u_POMMaxSamples), dist_factor));
 
-            final_uv = ParallaxOcclusionMap(v_UV, view_ts, layer_idx, effective_scale, target_samples, pom_height);
+            final_uv = ParallaxOcclusionMap(geometric_uv, view_ts, layer_idx, effective_scale, target_samples, pom_height);
 
             // Sun self-shadowing with smooth distance attenuation (eliminates boundary popping)
             if (u_POMSelfShadow == 1 && cam_dist <= u_DispNearRadius) {
@@ -294,8 +300,8 @@ void main() {
 
         // Use geometric UV derivatives for mesh textures to prevent POM height-step derivative spikes,
         // while using model-space derivatives for procedural vehicle chassis/wheel triplanar projections.
-        vec2 d_uv_dx = (is_chassis_entity || is_wheel_entity) ? dFdx(sample_uv) : dFdx(v_UV);
-        vec2 d_uv_dy = (is_chassis_entity || is_wheel_entity) ? dFdy(sample_uv) : dFdy(v_UV);
+        vec2 d_uv_dx = (is_chassis_entity || is_wheel_entity) ? dFdx(sample_uv) : dFdx(geometric_uv);
+        vec2 d_uv_dy = (is_chassis_entity || is_wheel_entity) ? dFdy(sample_uv) : dFdy(geometric_uv);
 
         // Sample PBR texture arrays at sample_uv with smooth derivatives to prevent mipmap banding at grazing angles
         vec4 diffuse_sample = textureGrad(u_DiffuseArray, vec3(sample_uv, layer_idx), d_uv_dx, d_uv_dy);

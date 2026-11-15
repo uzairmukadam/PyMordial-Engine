@@ -23,9 +23,8 @@ class GBufferDebugMode(IntEnum):
     DEPTH = 4          # RT3: Reversed-Z depth
     SHADOW_ATLAS = 5   # Cascaded Shadow Maps depth atlas
     SHADOW_MASK = 6    # Direct Cascaded Shadow Map occlusion mask
-    AO = 7             # Ambient Occlusion (SSAO / HBAO / GTAO) mask
+    AO = 7             # Ambient Occlusion (SSAO / GTAO) mask
     SSGI = 8           # Screen-Space Global Illumination indirect diffuse
-    LPV = 9            # Light Propagation Volumes 3D irradiance slice
     GI_TOTAL = 10      # Consolidated Total Indirect Diffuse
     HIZ = 11           # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
     SPOT_LIGHTS = 12   # Accumulated dynamic spot-light contribution
@@ -68,7 +67,6 @@ class EngineTweaks:
         "ssgi_thickness",
         "ssgi_ray_distance",
         "ssgi_intensity",
-        "lpv_intensity",
         "rc_ray_count",
         "rc_intensity",
         "rc_interval_c0",
@@ -127,13 +125,44 @@ class EngineTweaks:
         "fog_debug_mode",
         "time_of_day",
         "day_speed",
+        "azimuth_deg",
+        "latitude_deg",
         "atmo_preset",
+        "sky_mode",
         "rayleigh_r",
         "rayleigh_g",
         "rayleigh_b",
         "mie_coeff",
+        "mie_asymmetry",
         "turbidity",
         "star_intensity",
+        "star_density",
+        "cloud_enabled",
+        "cloud_coverage",
+        "cloud_opacity",
+        "cloud_altitude",
+        "cloud_scale",
+        "cloud_layer_separation",
+        "cloud_secondary_opacity",
+        "cloud_wind_x",
+        "cloud_wind_z",
+        "space_zenith",
+        "nebula_color",
+        "nebula_intensity",
+        "sun_color",
+        "moon_color",
+        "moon_intensity",
+        "ground_color",
+        "night_zenith",
+        "night_horizon",
+        "sun_disc_size",
+        "moon_disc_size",
+        "planet_radius",
+        "atmosphere_radius",
+        "h_r",
+        "h_m",
+        "ozone_center",
+        "ozone_width",
         "particles_enabled",
         "particle_count",
         "particle_mode",
@@ -232,13 +261,12 @@ class EngineTweaks:
         self.ao_mode = "GTAO"
         self.ao_intensity = 1.2
         self.ao_radius = 0.35
-        self.gi_mode = GIMode.HYBRID.value
+        self.gi_mode = GIMode.SSGI.value
         self.ssgi_steps = 16
         self.ssgi_rays = 8
         self.ssgi_thickness = 0.35
         self.ssgi_ray_distance = 3.0
         self.ssgi_intensity = 1.5
-        self.lpv_intensity = 1.0
         self.rc_ray_count = 16
         self.rc_intensity = 1.0
         self.rc_interval_c0 = 0.40
@@ -284,13 +312,44 @@ class EngineTweaks:
         # Physical Atmosphere & Day-Night Cycle
         self.time_of_day = 12.0
         self.day_speed = 0.0          # 0.0 = manual / paused
+        self.azimuth_deg = 45.0
+        self.latitude_deg = 35.0
         self.atmo_preset = "EARTH_DAY"
         self.rayleigh_r = 5.802       # m^-1 * 1e6
         self.rayleigh_g = 13.558
         self.rayleigh_b = 33.100
         self.mie_coeff = 3.996        # m^-1 * 1e6
+        self.mie_asymmetry = 0.80
         self.turbidity = 1.0
         self.star_intensity = 1.0
+        self.star_density = 1.0
+        self.sky_mode = "ATMOSPHERE"
+        self.cloud_enabled = True
+        self.cloud_coverage = 0.46
+        self.cloud_opacity = 0.88
+        self.cloud_altitude = 1800.0
+        self.cloud_scale = 18000.0
+        self.cloud_layer_separation = 6500.0
+        self.cloud_secondary_opacity = 0.22
+        self.cloud_wind_x = 8.0
+        self.cloud_wind_z = 2.0
+        self.space_zenith = (0.0015, 0.0020, 0.0060)
+        self.nebula_color = (0.16, 0.055, 0.28)
+        self.nebula_intensity = 0.35
+        self.sun_color = (1.0, 0.98, 0.92)
+        self.moon_color = (0.70, 0.82, 1.0)
+        self.moon_intensity = 0.40
+        self.ground_color = (0.15, 0.15, 0.15)
+        self.night_zenith = (0.012, 0.025, 0.050)
+        self.night_horizon = (0.035, 0.055, 0.090)
+        self.sun_disc_size = 0.00465
+        self.moon_disc_size = 0.00450
+        self.planet_radius = 6360000.0
+        self.atmosphere_radius = 6460000.0
+        self.h_r = 8000.0
+        self.h_m = 1200.0
+        self.ozone_center = 25000.0
+        self.ozone_width = 15000.0
 
         # Phase 2: Volumetric Particles & Dust Motes (Scene-specific)
         self.particles_enabled = False
@@ -346,8 +405,46 @@ class EngineTweaks:
         preset = ATMOSPHERE_PRESETS.get(preset_name.upper())
         if preset is not None:
             self.atmo_preset = preset_name.upper()
-            if "time_of_day" in preset:
-                self.time_of_day = float(preset["time_of_day"])
+            for name in (
+                "sky_mode",
+                "time_of_day",
+                "day_speed",
+                "azimuth_deg",
+                "latitude_deg",
+                "sun_intensity",
+                "mie_asymmetry",
+                "star_intensity",
+                "star_density",
+                "cloud_enabled",
+                "cloud_coverage",
+                "cloud_opacity",
+                "cloud_altitude",
+                "cloud_scale",
+                "cloud_layer_separation",
+                "cloud_secondary_opacity",
+                "space_zenith",
+                "nebula_color",
+                "nebula_intensity",
+                "sun_color",
+                "moon_color",
+                "moon_intensity",
+                "ground_color",
+                "night_zenith",
+                "night_horizon",
+                "sun_disc_size",
+                "moon_disc_size",
+                "planet_radius",
+                "atmosphere_radius",
+                "h_r",
+                "h_m",
+                "ozone_center",
+                "ozone_width",
+            ):
+                if name in preset:
+                    value = preset[name]
+                    setattr(self, "sun_lux" if name == "sun_intensity" else name, value)
+            if "cloud_wind" in preset:
+                self.cloud_wind_x, self.cloud_wind_z = preset["cloud_wind"]
             if "rayleigh_beta" in preset:
                 rb = preset["rayleigh_beta"]
                 self.rayleigh_r = float(rb[0] * 1e6)
@@ -357,8 +454,6 @@ class EngineTweaks:
                 self.mie_coeff = float(preset["mie_beta"] * 1e6)
             if "turbidity" in preset:
                 self.turbidity = float(preset["turbidity"])
-            if "star_intensity" in preset:
-                self.star_intensity = float(preset["star_intensity"])
 
     def set_quality_preset(self, preset: GraphicsQuality, preserve_creative_optics: bool = True) -> None:
         """Updates the graphics preset and triggers registered reconfigure listeners.
@@ -514,7 +609,6 @@ class EngineTweaks:
             p_cfg.ssgi_thickness = float(self.ssgi_thickness)
             p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
             p_cfg.ssgi_intensity = float(self.ssgi_intensity)
-            p_cfg.lpv_intensity = float(self.lpv_intensity)
             p_cfg.rc_ray_count = int(self.rc_ray_count)
             p_cfg.rc_intensity = float(self.rc_intensity)
             p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
@@ -637,19 +731,50 @@ class EngineTweaks:
             atmo = pipeline.atmosphere
             if hasattr(atmo, "config") and atmo.config is not None:
                 atmo.config.day_speed = float(self.day_speed)
+                atmo.config.azimuth_deg = float(self.azimuth_deg)
+                atmo.config.latitude_deg = float(self.latitude_deg)
                 if self.day_speed > 0.0:
                     self.time_of_day = float(atmo.config.time_of_day)
                 else:
                     atmo.config.time_of_day = float(self.time_of_day)
+                atmo.config.preset_name = str(self.atmo_preset)
                 atmo.config.rayleigh_beta = (
                     float(self.rayleigh_r * 1e-6),
                     float(self.rayleigh_g * 1e-6),
                     float(self.rayleigh_b * 1e-6),
                 )
                 atmo.config.mie_beta = float(self.mie_coeff * 1e-6)
+                atmo.config.mie_asymmetry = float(self.mie_asymmetry)
                 atmo.config.turbidity = float(self.turbidity)
                 atmo.config.star_intensity = float(self.star_intensity)
+                atmo.config.star_density = float(self.star_density)
                 atmo.config.sun_intensity = float(self.sun_lux)
+                atmo.config.sky_mode = str(self.sky_mode)
+                atmo.config.cloud_enabled = bool(self.cloud_enabled)
+                atmo.config.cloud_coverage = float(self.cloud_coverage)
+                atmo.config.cloud_opacity = float(self.cloud_opacity)
+                atmo.config.cloud_altitude = float(self.cloud_altitude)
+                atmo.config.cloud_scale = float(self.cloud_scale)
+                atmo.config.cloud_layer_separation = float(self.cloud_layer_separation)
+                atmo.config.cloud_secondary_opacity = float(self.cloud_secondary_opacity)
+                atmo.config.cloud_wind = (float(self.cloud_wind_x), float(self.cloud_wind_z))
+                atmo.config.space_zenith = tuple(self.space_zenith)
+                atmo.config.nebula_color = tuple(self.nebula_color)
+                atmo.config.nebula_intensity = float(self.nebula_intensity)
+                atmo.config.sun_color = tuple(self.sun_color)
+                atmo.config.moon_color = tuple(self.moon_color)
+                atmo.config.moon_intensity = float(self.moon_intensity)
+                atmo.config.ground_color = tuple(self.ground_color)
+                atmo.config.night_zenith = tuple(self.night_zenith)
+                atmo.config.night_horizon = tuple(self.night_horizon)
+                atmo.config.sun_disc_size = float(self.sun_disc_size)
+                atmo.config.moon_disc_size = float(self.moon_disc_size)
+                atmo.config.planet_radius = float(self.planet_radius)
+                atmo.config.atmosphere_radius = float(self.atmosphere_radius)
+                atmo.config.h_r = float(self.h_r)
+                atmo.config.h_m = float(self.h_m)
+                atmo.config.ozone_center = float(self.ozone_center)
+                atmo.config.ozone_width = float(self.ozone_width)
 
         self._applied_version = self._version
 
@@ -680,7 +805,7 @@ class EngineTweaks:
             "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
             "lens_flare_tint",
             "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
-            "ssgi_intensity", "lpv_intensity",
+            "ssgi_intensity",
             "rc_ray_count", "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
             "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
             "ao_mode", "ao_intensity", "ao_radius",
@@ -726,8 +851,51 @@ class EngineTweaks:
         if hasattr(pipeline, "atmosphere") and pipeline.atmosphere is not None:
             atmo = pipeline.atmosphere
             if hasattr(atmo, "config") and atmo.config is not None:
-                self.time_of_day = float(getattr(atmo.config, "time_of_day", 12.0))
-                self.day_speed = float(getattr(atmo.config, "day_speed", 0.0))
+                config = atmo.config
+                self.time_of_day = float(getattr(config, "time_of_day", 12.0))
+                self.day_speed = float(getattr(config, "day_speed", 0.0))
+                self.azimuth_deg = float(getattr(config, "azimuth_deg", 45.0))
+                self.latitude_deg = float(getattr(config, "latitude_deg", 35.0))
+                self.atmo_preset = str(getattr(config, "preset_name", "CUSTOM"))
+                self.sky_mode = str(getattr(config, "sky_mode", "ATMOSPHERE"))
+                beta = getattr(config, "rayleigh_beta", (5.802e-6, 13.558e-6, 33.100e-6))
+                self.rayleigh_r, self.rayleigh_g, self.rayleigh_b = (float(v * 1e6) for v in beta)
+                self.mie_coeff = float(getattr(config, "mie_beta", 3.996e-6) * 1e6)
+                self.mie_asymmetry = float(getattr(config, "mie_asymmetry", 0.80))
+                self.turbidity = float(getattr(config, "turbidity", 1.0))
+                self.sun_lux = float(getattr(config, "sun_intensity", 4.0))
+                for name in (
+                    "star_intensity",
+                    "star_density",
+                    "cloud_enabled",
+                    "cloud_coverage",
+                    "cloud_opacity",
+                    "cloud_altitude",
+                    "cloud_scale",
+                    "cloud_layer_separation",
+                    "cloud_secondary_opacity",
+                    "nebula_intensity",
+                    "sun_color",
+                    "moon_color",
+                    "moon_intensity",
+                    "ground_color",
+                    "night_zenith",
+                    "night_horizon",
+                    "space_zenith",
+                    "nebula_color",
+                    "sun_disc_size",
+                    "moon_disc_size",
+                    "planet_radius",
+                    "atmosphere_radius",
+                    "h_r",
+                    "h_m",
+                    "ozone_center",
+                    "ozone_width",
+                ):
+                    if hasattr(config, name):
+                        setattr(self, name, getattr(config, name))
+                cloud_wind = getattr(config, "cloud_wind", (8.0, 2.0))
+                self.cloud_wind_x, self.cloud_wind_z = (float(v) for v in cloud_wind)
         super().__setattr__("_applied_version", self._version)
 
     def to_dict(self) -> dict[str, Any]:
@@ -772,7 +940,6 @@ class EngineTweaks:
             "ssgi_thickness": float(self.ssgi_thickness),
             "ssgi_ray_distance": float(self.ssgi_ray_distance),
             "ssgi_intensity": float(self.ssgi_intensity),
-            "lpv_intensity": float(self.lpv_intensity),
             "rc_ray_count": int(self.rc_ray_count),
             "rc_intensity": float(self.rc_intensity),
             "rc_interval_c0": float(self.rc_interval_c0),
@@ -824,13 +991,44 @@ class EngineTweaks:
             "sun_lux": float(self.sun_lux),
             "time_of_day": float(self.time_of_day),
             "day_speed": float(self.day_speed),
+            "azimuth_deg": float(self.azimuth_deg),
+            "latitude_deg": float(self.latitude_deg),
             "atmo_preset": str(self.atmo_preset),
             "rayleigh_r": float(self.rayleigh_r),
             "rayleigh_g": float(self.rayleigh_g),
             "rayleigh_b": float(self.rayleigh_b),
             "mie_coeff": float(self.mie_coeff),
+            "mie_asymmetry": float(self.mie_asymmetry),
             "turbidity": float(self.turbidity),
             "star_intensity": float(self.star_intensity),
+            "star_density": float(self.star_density),
+            "sky_mode": str(self.sky_mode),
+            "cloud_enabled": bool(self.cloud_enabled),
+            "cloud_coverage": float(self.cloud_coverage),
+            "cloud_opacity": float(self.cloud_opacity),
+            "cloud_altitude": float(self.cloud_altitude),
+            "cloud_scale": float(self.cloud_scale),
+            "cloud_layer_separation": float(self.cloud_layer_separation),
+            "cloud_secondary_opacity": float(self.cloud_secondary_opacity),
+            "cloud_wind_x": float(self.cloud_wind_x),
+            "cloud_wind_z": float(self.cloud_wind_z),
+            "space_zenith": self.space_zenith,
+            "nebula_color": self.nebula_color,
+            "nebula_intensity": float(self.nebula_intensity),
+            "sun_color": self.sun_color,
+            "moon_color": self.moon_color,
+            "moon_intensity": float(self.moon_intensity),
+            "ground_color": self.ground_color,
+            "night_zenith": self.night_zenith,
+            "night_horizon": self.night_horizon,
+            "sun_disc_size": float(self.sun_disc_size),
+            "moon_disc_size": float(self.moon_disc_size),
+            "planet_radius": float(self.planet_radius),
+            "atmosphere_radius": float(self.atmosphere_radius),
+            "h_r": float(self.h_r),
+            "h_m": float(self.h_m),
+            "ozone_center": float(self.ozone_center),
+            "ozone_width": float(self.ozone_width),
             "uncapped_fps": bool(self.uncapped_fps),
             "pom_enabled": bool(self.pom_enabled),
             "pom_min_samples": int(self.pom_min_samples),
@@ -879,6 +1077,8 @@ class EngineTweaks:
                     setattr(self, key, float(val))
                 elif isinstance(current, str):
                     setattr(self, key, str(val))
+                elif isinstance(current, tuple):
+                    setattr(self, key, tuple(val))
                 else:
                     setattr(self, key, val)
 

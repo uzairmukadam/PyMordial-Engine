@@ -2,6 +2,27 @@
 
 This document defines strict architectural, memory, and coding constraints for AI coding agents (Antigravity, Gemini, Copilot, etc.) working on PyMordial Engine and PyMordial game projects.
 
+> **Read first**: [ARCHITECTURE.md](./ARCHITECTURE.md) for the mental model, and [TESTING.md](./TESTING.md) for how to verify your work. This document is the rulebook; those are the maps.
+
+---
+
+## Rule 0: Documentation Placement
+
+The `docs/` tree has exactly three categories. Put every document in the right one.
+
+| Directory | Contains | Test |
+|---|---|---|
+| `docs/guides/` | How to **build a game** with the engine | "Would a game developer read this to ship something?" |
+| `docs/reference/` | How the engine **works today** | "Does this describe current code behaviour?" |
+| `docs/roadmap/` | What is **not built yet** | "Is this about the future?" |
+
+1. **Never put a roadmap document in `guides/` or `reference/`.** Future intent must never be mistaken for current behaviour.
+2. **Every roadmap document opens with a status banner** (`DONE`, `IN PROGRESS`, `PROPOSAL`, `DESIGN`, `ANALYSIS`, `STRATEGY`) immediately after the title.
+3. **`docs/roadmap/MASTER_FUTURE_PLAN.md` is the single source of truth for status.** If another document disagrees, the master plan wins — fix the other document.
+4. **When you change code, update the matching reference doc in the same change.** A stale reference doc is a bug.
+5. **Link new documents from [`docs/README.md`](../README.md) or [`docs/roadmap/README.md`](../roadmap/README.md).** No orphans.
+6. **Use relative links** (`./sibling.md`, `../guides/other.md`) so the tree stays portable.
+
 ---
 
 ## Rule 1: Engine Purity & Directory Boundaries
@@ -83,7 +104,7 @@ Python's garbage collector pauses cause severe frame drops and stutter. Adhere s
 
 Avoid common hallucinated imports:
 - **Application & Host**: `from engine.app.project_app import ProjectApp` and `from engine.app.config import ProjectConfig`.
-- **Quality Presets & GI Modes**: `from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, GIMode, get_quality_preset` (NOT `engine.config`). `GIMode` enum values: `OFF`, `SSGI`, `LPV`, `HYBRID`, `RADIANCE_CASCADES`.
+- **Quality Presets & GI Modes**: `from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, GIMode, get_quality_preset` (NOT `engine.config`). `GIMode` enum values: `OFF`, `IBL`, `SSGI`, `RADIANCE_CASCADES`.
 - **Radiance Cascades Pass**: `from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass`.
 - **Render Context & Window**: `from engine.gfx.context import RenderContext` and `from engine.window.window import WindowMode, VSyncMode`.
 - **Material Flags & Displacement**: `from engine.gfx.texture_atlas import DisplacementMode, encode_mat_flags, decode_material_folder`.
@@ -120,7 +141,7 @@ Avoid common hallucinated imports:
    - The engine is intentionally kept light to provide only core foundational systems without imposing game-specific assumptions.
 2. **Never Override Engine Debug Hotkeys**:
    - Game modules must **NEVER** capture, intercept, or return `consumed = True` on reserved engine hotkeys:
-     * **`F1`**: System Performance Monitor, FPS, 1% lows, memory gauges.
+     * **`F1`**: System Performance Monitor with frame-time percentiles and hitches, CPU stage timing, asynchronous GPU render timing, scene/draw statistics, and partial GPU resource estimates.
      * **`F2`**: Live graphics controls for GI/RC, shadows, water entity rendering, atmosphere, post-processing, and debug visualizers.
      * **`F3`**: Game Tweaks Developer Inspector.
    - Gameplay camera toggles, abilities, or menus must strictly use standard gameplay keys (`V`, `C`, `Tab`, `F10`) and never capture `F1`-`F3`.
@@ -132,8 +153,8 @@ Avoid common hallucinated imports:
 ## Rule 10: Global Illumination Pipeline Architecture
 
 1. **GI Modes are Mutually Exclusive**:
-   - The engine supports five GI modes via `RenderConfig.gi_mode` (string values from `GIMode` enum): `OFF`, `SSGI`, `LPV`, `HYBRID` (SSGI + LPV), and `RADIANCE_CASCADES` (SSRC + FFPC).
-   - `RADIANCE_CASCADES` and the classic `SSGI`/`LPV`/`HYBRID` paths are **mutually exclusive** in the render pipeline (Pass 5). Only one GI path executes per frame.
+   - The engine supports four GI modes via `RenderConfig.gi_mode` (string values from `GIMode` enum): `OFF`, `IBL`, `SSGI`, and `RADIANCE_CASCADES` (SSRC + FFPC).
+   - `RADIANCE_CASCADES` and the classic `SSGI` path are **mutually exclusive** in the render pipeline (Pass 5). Only one GI path executes per frame.
 2. **Radiance Cascades Texture Binding**:
    - `RadianceCascadesPass` outputs to `u_RCTexture` bound at texture location **15** in `deferred_resolve.frag`. Do not reassign this binding slot.
 3. **EngineTweaks RC Parameters**:

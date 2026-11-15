@@ -31,11 +31,12 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - **Unified MegaBuffer (`engine.gfx.mega_buffer.MegaBuffer`)**: Single giant vertex and index buffer storing all static and dynamic project geometry.
 - **Zero Draw-Call Overhead**: Entire scenes are dispatched in a single GPU call via `glMultiDrawElementsIndirect`.
 - **Custom 32-Byte Vertex Layout (`engine.assets.mesh_format.VERTEX_DTYPE`)**:
-  - Position: `float32[3]` (12 bytes)
-  - UV0: `float32[2]` (8 bytes)
-  - Normal: `int16[4]` normalized (8 bytes)
-  - Tangent: `int8[4]` normalized with bitangent sign (4 bytes)
-  - Cache-aligned to 32 bytes for peak GPU memory fetch coalescing.
+  - Position: `float32[3]` (12 bytes, offset 0)
+  - Normal: `float16[4]` (8 bytes, offset 12) — `W` carries the bitangent sign
+  - UV0: `float16[2]` (4 bytes, offset 20)
+  - Tangent: `float16[4]` (8 bytes, offset 24) — `W` carries handedness
+  - Cache-aligned to 32 bytes (two vertices per 64-byte L1 cache line) for peak GPU memory fetch coalescing.
+  - The layout is asserted at import time (`VERTEX_DTYPE.itemsize == 32`), so any change that breaks the stride fails fast rather than silently corrupting geometry.
 
 ### 2.2 Reversed-Z Floating Point Depth
 - Depth range: `1.0` (near plane) to `0.0` (far plane / infinity).
@@ -48,11 +49,11 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - Texel-aware slope bias, PCF/PCSS sampling, and depth-aware blending across cascade boundaries reduce distant acne and filtering seams.
 
 ### 2.4 Deferred G-Buffer MRT Layout (`engine.gfx.g_buffer.GBuffer`)
-- **RT0 (RGBA16F)**: Albedo RGB + Roughness A.
-- **RT1 (RGBA16F)**: World Normal RG + Metallic B + Ambient Occlusion A.
-- **RT2 (RG16F)**: Screen-space motion vectors.
-- **RT3 (RGBA16F)**: Mesh UV + Material Layer ID + Displacement Mode.
-- **RT4 (R32F)**: Stable entity surface ID for temporal and GI rejection.
+- **RT0 (RGBA16F)**: Albedo RGB + Roughness A (HDR emissive capable).
+- **RT1 (RGBA16F)**: Octahedral Normal RG + Metallic B + Ambient Occlusion A.
+- **RT2 (RG16F)**: Screen-space velocity / motion vectors.
+- **RT3 (RGBA16F)**: Mesh UV (RG) + Texture Layer Index (B) + Displacement Mode (A).
+- **RT4 (R32F)**: Stable entity surface ID for temporal and GI self-hit rejection.
 - **Depth (DEPTH32F)**: High-precision Reversed-Z depth buffer.
 
 ### 2.5 Material Atlas & Parallax Occlusion Mapping (POM)
@@ -62,13 +63,12 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 ### 2.6 Global Illumination & Lighting Passes
 - **Ground Truth Ambient Occlusion (GTAO)**: High-performance horizon-based occlusion with spatial bilateral blur filter.
 - **Screen-Space Global Illumination (SSGI)**: Real-time indirect diffuse bounce from on-screen surfaces.
-- **Light Propagation Volumes (LPV)**: 3D spatial grid for low-frequency multi-bounce indirect lighting.
-- **Radiance Cascades (SSRC + FFPC)**: Half-resolution cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI/LPV path.
-- **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `SSGI`, `LPV`, `HYBRID` (SSGI + LPV), and `RADIANCE_CASCADES` (SSRC + FFPC).
+- **Radiance Cascades (SSRC + FFPC)**: Half-resolution cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges; temporal confidence is reduced for fast screen-space motion and history depth is checked in the previous camera view to limit ghosting. History is invalidated when RC is disabled. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI path.
+- **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `IBL`, `SSGI`, and `RADIANCE_CASCADES` (SSRC + FFPC).
 - **Clustered Forward+ Local Lights (`engine.gfx.passes.clustered_lights.ClusteredLightingPass`)**: Computes 3D screen frustum grid clusters to evaluate hundreds of dynamic point and spot lights simultaneously.
 - **Screen-Space Reflections (SSR)**: Full-resolution high/ultra/cinematic view-space reflection tracing with tight depth intersection and subpixel refinement. Rough surfaces use depth/normal-aware reflection reconstruction, and missing screen-space hits fade into prefiltered HDR IBL. SSR remains limited to camera-visible geometry.
 - **Image-Based Lighting (IBL)**: Split-sum GGX specular lighting with a runtime sun-driven linear HDR sky, solid-angle-aware roughness prefiltering across the full mip chain, cosine-convolved diffuse irradiance, and a BRDF integration LUT.
-- **Atmosphere & Sky (`engine.gfx.atmosphere.AtmosphereSystem`)**: Physically-based Rayleigh and Mie atmospheric scattering with dynamic sun and moon positions.
+- **Atmosphere & Sky (`engine.gfx.atmosphere.AtmosphereSystem`)**: Configurable Hillaire Rayleigh/Mie/ozone scattering, planetary dimensions and scale heights, day/night lighting, sun and moon discs, procedural clouds, and a separate star-and-nebula space mode. Built-in presets cover Earth day/sunset/night, two alien atmospheres, and outer space; `AtmosphereConfig` can be customized directly per project.
 - **Volumetric Fog**: Light-shaft raymarching through anisotropic participating media.
 
 ### 2.7 Entity Shapes & Water Surfaces

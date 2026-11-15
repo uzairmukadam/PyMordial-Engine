@@ -1,7 +1,7 @@
 """Ambient Occlusion Pass with Bilateral Filter for PyMordial Engine.
 
-Supports SSAO (Hemisphere sampling), HBAO (Horizon-Based Ambient Occlusion), and GTAO
-(Ground-Truth Ambient Occlusion) with an edge-preserving metric view-depth bilateral filter.
+Supports SSAO (Hemisphere sampling) and GTAO (Ground-Truth Ambient Occlusion)
+with an edge-preserving metric view-depth bilateral filter.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ SHADER_DIR = get_shader_dir()
 
 
 class AmbientOcclusionPass(RenderPass):
-    """Computes SSAO, HBAO, or GTAO and applies bilateral edge-preserving blur."""
+    """Computes SSAO or GTAO and applies bilateral edge-preserving blur."""
 
     def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
         super().__init__(name="AmbientOcclusionPass", enabled=True)

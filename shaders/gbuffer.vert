@@ -1,4 +1,5 @@
 #version 450 core
+#extension GL_ARB_shader_draw_parameters : enable
 
 // Per-vertex geometry from Mega-VBO
 layout (location = 0) in vec3 in_position;
@@ -41,6 +42,7 @@ layout (std430, binding = 2) readonly buffer MaterialBuffer {
 out vec3 v_WorldPos;
 out vec3 v_Normal;
 out vec2 v_UV;
+out vec2 v_UVScale;
 out vec3 v_ModelPos;
 out vec3 v_ModelNormal;
 out vec4 v_CurrClip;
@@ -56,7 +58,11 @@ uniform uint u_BaseInstance; // Set per draw batch or via indirect command
 uniform mat4 u_PrevViewProjection;
 
 void main() {
+#ifdef GL_ARB_shader_draw_parameters
+    uint entity_idx = uint(gl_BaseInstanceARB) + uint(gl_InstanceID);
+#else
     uint entity_idx = u_BaseInstance + uint(gl_InstanceID);
+#endif
     v_EntityID = entity_idx;
 
     mat4 model = u_WorldTransforms[entity_idx];
@@ -68,6 +74,12 @@ void main() {
     v_ModelNormal = in_normal;
     v_Normal = normalize(normal_matrix * in_normal);
     v_UV = in_uv;
+    vec3 local_tangent = normalize(in_tangent.xyz);
+    vec3 local_bitangent = cross(in_normal, local_tangent) * in_tangent.w;
+    v_UVScale = vec2(
+        length(mat3(model) * local_tangent),
+        length(mat3(model) * local_bitangent)
+    );
 
     v_CurrClip = u_ViewProjection * world_pos;
     v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * world_pos) : v_CurrClip;

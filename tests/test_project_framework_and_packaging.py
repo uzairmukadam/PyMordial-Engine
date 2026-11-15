@@ -6,6 +6,12 @@ import numpy as np
 from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
 from engine.app.project_app import ProjectApp
+from engine.app.project_validator import (
+    ProjectValidationError,
+    resolve_project_path,
+    validate_project_config,
+    validate_project_directory,
+)
 from engine.world.default_world import DefaultWorldBuilder, make_tiled_plane_pm_mesh
 from engine.tools.packager import PackagingConfig, ProjectPackager
 
@@ -145,4 +151,67 @@ def test_packager_commands_pyinstaller_and_nuitka(tmp_path: Path):
     assert "--windows-disable-console" in cmd_str_nk
     assert "--include-package=moderngl" in cmd_str_nk
     assert "--include-package=pymordial_rapier" in cmd_str_nk
+
+
+def test_validate_project_config_accepts_defaults():
+    """Default ProjectConfig must pass validation without errors."""
+    report = validate_project_config(ProjectConfig())
+    assert report.is_valid is True
+    assert report.errors == []
+
+
+def test_validate_project_config_rejects_bad_values():
+    """Invalid resolution, tick rate, and quality preset are reported as errors."""
+    cfg = ProjectConfig(width=0, height=-1, fixed_hz=0.0, quality_preset="nonsense")
+    report = validate_project_config(cfg)
+
+    assert report.is_valid is False
+    joined = " ".join(report.errors)
+    assert "resolution" in joined.lower()
+    assert "fixed tick rate" in joined.lower()
+    assert "quality preset" in joined.lower()
+
+    try:
+        report.raise_for_errors()
+    except ProjectValidationError as exc:
+        assert "resolution" in str(exc).lower()
+    else:
+        raise AssertionError("raise_for_errors() should raise on invalid config")
+
+
+def test_validate_project_directory_detects_missing_entry_point(tmp_path: Path):
+    """A project directory without main.py fails validation with an actionable error."""
+    report = validate_project_directory(tmp_path)
+
+    assert report.is_valid is False
+    assert any("entry point" in e.lower() for e in report.errors)
+
+
+def test_validate_project_directory_accepts_minimal_project(tmp_path: Path):
+    """A minimal project with main.py validates, warning about optional directories."""
+    (tmp_path / "main.py").write_text("def main() -> None:\n    pass\n", encoding="utf-8")
+
+    report = validate_project_directory(tmp_path)
+
+    assert report.is_valid is True
+    assert report.errors == []
+    assert any("config.py" in w for w in report.warnings)
+
+
+def test_validate_project_directory_reports_syntax_error(tmp_path: Path):
+    """A syntactically broken main.py is caught before any GPU context is allocated."""
+    (tmp_path / "main.py").write_text("def main(:\n", encoding="utf-8")
+
+    report = validate_project_directory(tmp_path)
+
+    assert report.is_valid is False
+    assert any("syntax error" in e.lower() for e in report.errors)
+
+
+def test_resolve_project_path_handles_absolute_and_relative(tmp_path: Path):
+    """Absolute paths resolve directly; unknown names resolve to a non-existent candidate."""
+    assert resolve_project_path(tmp_path) == tmp_path.resolve()
+
+    missing = resolve_project_path("definitely_not_a_real_project")
+    assert not missing.exists()
 

@@ -18,6 +18,10 @@ def test_atmosphere_config_defaults() -> None:
     assert config.turbidity == 1.0
     assert config.sun_intensity == 4.0
     assert config.moon_intensity == 0.40
+    assert config.sun_disc_size == pytest.approx(0.00465)
+    assert config.moon_disc_size == pytest.approx(0.00450)
+    assert config.cloud_enabled is True
+    assert config.sky_mode == "ATMOSPHERE"
 
 
 def test_atmosphere_presets_structure() -> None:
@@ -27,6 +31,7 @@ def test_atmosphere_presets_structure() -> None:
         "EARTH_NIGHT",
         "ALIEN_CYAN_PURPLE",
         "ALIEN_CRIMSON_MARS",
+        "SPACE",
     ]
     for p in expected_presets:
         assert p in ATMOSPHERE_PRESETS
@@ -95,3 +100,14 @@ def test_engine_tweaks_preset_integration() -> None:
     assert tweaks.turbidity == 4.5
     assert tweaks.rayleigh_r == pytest.approx(4.0, rel=1e-3)
     assert tweaks.rayleigh_b == pytest.approx(26.0, rel=1e-3)
+
+    tweaks.apply_atmo_preset("SPACE")
+    assert tweaks.sky_mode == "SPACE"
+    assert tweaks.cloud_enabled is False
+    assert tweaks.star_density == pytest.approx(1.6)
+
+    restored = EngineTweaks()
+    restored.from_dict(tweaks.to_dict())
+    assert restored.sky_mode == "SPACE"
+    assert restored.space_zenith == pytest.approx(tweaks.space_zenith)
+    assert restored.nebula_color == pytest.approx(tweaks.nebula_color)

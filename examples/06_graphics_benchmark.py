@@ -27,7 +27,7 @@ class BenchmarkOverlay(ProjectModule):
         self._fps_max = 0.0
         self._sample_count = 0
         self._display_elapsed = 0.0
-        self._gpu_mode = "HYBRID"
+        self._gpu_mode = "SSGI"
 
     def on_attach(self, app) -> None:
         app.input_manager.bind_action(
@@ -45,13 +45,13 @@ class BenchmarkOverlay(ProjectModule):
             UILabel("FPS: waiting for samples", x=18.0, y=52.0, w=474.0, h=26.0, font_size=16)
         )
         self.mode_label = panel.add_child(
-            UILabel("GI: HYBRID | SSR: ON", x=18.0, y=86.0, w=474.0, h=26.0, font_size=15)
+            UILabel("GI: SSGI | SSR: ON", x=18.0, y=86.0, w=474.0, h=26.0, font_size=15)
         )
         app.ui.set_screen(screen)
 
     def on_update(self, app, dt: float) -> None:
         if app.input_manager.is_action_pressed("benchmark_next_gi"):
-            modes = ("OFF", "HYBRID", "RADIANCE_CASCADES")
+            modes = ("OFF", "SSGI", "RADIANCE_CASCADES")
             self._gpu_mode = modes[(modes.index(self._gpu_mode) + 1) % len(modes)]
             app.pipeline.config.gi_mode = self._gpu_mode
             app.pipeline.apply_config(app.pipeline.config)
@@ -85,7 +85,7 @@ class BenchmarkOverlay(ProjectModule):
         if event.type != pygame.KEYDOWN:
             return False
         if event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
-            modes = {pygame.K_1: "OFF", pygame.K_2: "HYBRID", pygame.K_3: "RADIANCE_CASCADES"}
+            modes = {pygame.K_1: "OFF", pygame.K_2: "SSGI", pygame.K_3: "RADIANCE_CASCADES"}
             self._gpu_mode = modes[event.key]
             config = app.pipeline.config
             config.gi_mode = self._gpu_mode
@@ -100,7 +100,7 @@ class BenchmarkOverlay(ProjectModule):
 
 
 def build_scene(app, entity_count: int) -> None:
-    app.pipeline.config.gi_mode = "HYBRID"
+    app.pipeline.config.gi_mode = "SSGI"
     app.pipeline.config.ao_mode = "GTAO"
     app.pipeline.config.ssr_enabled = True
     app.pipeline.config.ssr_resolution_scale = 1.0

@@ -40,6 +40,24 @@ class TestDebugSystem:
         assert "fps" in summary
         assert "frame_time_ms" in summary
 
+    def test_system_monitor_rolling_frame_metrics(self):
+        monitor = SystemMonitor(history_size=4, target_fps=60.0)
+        for frame_time in (10.0, 20.0, 60.0, 30.0, 40.0):
+            monitor.record_frame_time(frame_time)
+
+        assert monitor.fps == 25.0
+        assert monitor.frame_history_view().tolist() == [20.0, 60.0, 30.0, 40.0]
+        assert monitor.max_frame_time_ms == 60.0
+        assert monitor.stutter_count == 1
+        assert monitor.over_budget_percent == 100.0
+        assert monitor.one_percent_low_fps <= monitor.avg_fps
+
+        monitor.record_stage("render", 2500.0)
+        monitor.record_stage("render", 5000.0)
+        assert monitor.stage_times_us["render"] == 5000.0
+        assert monitor.stage_max_us["render"] == 5000.0
+        assert monitor.stage_averages_us["render"] > 2500.0
+
     def test_tier2_engine_graphics_tweaks(self):
         """Validates runtime graphics presets, tonemappers, and G-Buffer modes."""
         tweaks = EngineTweaks()
@@ -301,6 +319,10 @@ class TestDebugSystem:
         tweaks.rc_steps_c0 = 11
         tweaks.rc_steps_c1 = 19
         tweaks.ssr_max_distance = 55.0
+        tweaks.sky_mode = "SPACE"
+        tweaks.cloud_enabled = False
+        tweaks.cloud_coverage = 0.72
+        tweaks.nebula_intensity = 0.85
         tweaks.fxaa_subpixel = 0.55
         tweaks.fxaa_edge_threshold = 0.08
         tweaks.smaa_threshold = 0.06
@@ -336,6 +358,10 @@ class TestDebugSystem:
         assert pipeline.config.pcf_samples == 48
         assert not hasattr(pipeline.config, "water_wave_amplitude")
         assert pipeline.atmosphere.config.sun_intensity == tweaks.sun_lux
+        assert pipeline.atmosphere.config.sky_mode == "SPACE"
+        assert pipeline.atmosphere.config.cloud_enabled is False
+        assert pipeline.atmosphere.config.cloud_coverage == 0.72
+        assert pipeline.atmosphere.config.nebula_intensity == 0.85
         assert pipeline.post_process.config is pipeline.config
 
     def test_engine_tweaks_serialization(self, tmp_path):

@@ -5,7 +5,7 @@ import numpy as np
 
 from engine.core.ecs import EntityManager
 from engine.gfx.material_registry import MaterialRegistry
-from engine.gfx.texture_atlas import DisplacementMode, decode_mat_flags
+from engine.gfx.texture_atlas import DEFAULT_MATERIAL_DEPTHS, DisplacementMode, decode_mat_flags
 
 
 def test_material_registry_builtins():
@@ -31,6 +31,8 @@ def test_material_registry_builtins():
     assert brick is not None
     assert brick.friction == 0.80
     assert brick.disp_depth == 0.035
+    assert DEFAULT_MATERIAL_DEPTHS["brick_wall"] == pytest.approx(0.035)
+    assert DEFAULT_MATERIAL_DEPTHS["concrete_floor"] == pytest.approx(0.005)
 
     # Metal Guardrail
     metal = registry.get("metal_guardrail")

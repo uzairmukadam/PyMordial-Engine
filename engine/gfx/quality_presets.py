@@ -1,7 +1,7 @@
 """AAA-Style Graphics Quality Presets and Tunable Render Settings for PyMordial Engine."""
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 
 
@@ -16,9 +16,8 @@ class GraphicsQuality(str, Enum):
 
 class GIMode(str, Enum):
     OFF = "OFF"
+    IBL = "IBL"
     SSGI = "SSGI"
-    LPV = "LPV"
-    HYBRID = "HYBRID"
     RADIANCE_CASCADES = "RADIANCE_CASCADES"
 
 
@@ -52,20 +51,22 @@ class RenderConfig:
     # Depth Precision & GPU Culling
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
     hiz_cull_enabled: bool = False # GPU-Driven Hi-Z Occlusion Culling
+    frustum_cull_enabled: bool = True  # CPU vectorized frustum culling of draw batches
+    hiz_debug_mip: int = 0         # Hi-Z debug visualization mip level (0 = off)
+    max_entities: int = 100_000    # GPU entity capacity for SSBOs and culling scratch
 
-    # Ambient Occlusion (GTAO / HBAO / SSAO)
-    ao_mode: str = "GTAO"          # "OFF", "SSAO", "HBAO", "GTAO"
+    # Ambient Occlusion (GTAO / SSAO)
+    ao_mode: str = "GTAO"          # "OFF", "SSAO", "GTAO"
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
 
-    # Global Illumination (SSGI & LPV vs Radiance Cascades)
-    gi_mode: str = "HYBRID"        # "OFF", "SSGI", "LPV", "HYBRID", "RADIANCE_CASCADES"
+    # Global Illumination (SSGI vs Radiance Cascades)
+    gi_mode: str = "RADIANCE_CASCADES"  # "OFF", "IBL", "SSGI", "RADIANCE_CASCADES"
     ssgi_steps: int = 16
     ssgi_rays: int = 8
     ssgi_ray_distance: float = 3.0
     ssgi_thickness: float = 0.35
     ssgi_intensity: float = 1.5
-    lpv_intensity: float = 1.0
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
     rc_cascades: int = 3
@@ -438,8 +439,8 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
 
 
 def get_quality_preset(quality: GraphicsQuality | str) -> RenderConfig:
-    """Returns a copy of the requested render quality preset."""
+    """Returns an independent copy of the requested render quality preset."""
     if isinstance(quality, str):
         quality = GraphicsQuality(quality.lower())
     cfg = QUALITY_PRESETS.get(quality, QUALITY_PRESETS[GraphicsQuality.HIGH])
-    return RenderConfig(**cfg.__dict__)
+    return replace(cfg)

@@ -32,6 +32,7 @@ class EngineLoop:
         "elapsed_time",
         "fps",
         "frame_time_ms",
+        "game_dt",
         "on_fixed_update",
         "on_update",
         "on_render",
@@ -61,6 +62,7 @@ class EngineLoop:
         self.elapsed_time = 0.0
         self.fps = 0.0
         self.frame_time_ms = 0.0
+        self.game_dt = 0.0
 
         # Optional user hooks
         self.on_fixed_update: Optional[Callable[[float], None]] = None
@@ -82,6 +84,7 @@ class EngineLoop:
         real_dt, game_dt = self.time_system.tick(frame_time)
         self.accumulator += game_dt
         self.elapsed_time = self.time_system.game_time
+        self.game_dt = game_dt
         self.total_frames = self.time_system.frame_count
 
         sub_ticks = 0

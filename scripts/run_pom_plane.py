@@ -143,7 +143,7 @@ def main() -> None:
         "--debug-gbuffer",
         type=str,
         default="",
-        choices=["", "disabled", "albedo", "normals", "material", "depth", "shadow_atlas", "shadow_mask", "ao", "ssgi", "lpv", "gi_total", "hiz"],
+        choices=["", "disabled", "albedo", "normals", "material", "depth", "shadow_atlas", "shadow_mask", "ao", "ssgi", "gi_total", "hiz"],
         help="Initial G-Buffer debug inspection view",
     )
     parser.add_argument("--hiz-mip", type=int, default=0, help="Hi-Z mip level to visualize (0 to 10)")
@@ -407,11 +407,6 @@ def main() -> None:
         engine_tweaks.shadow_bias = cfg.shadow_bias
         engine_tweaks.shadow_distance = cfg.shadow_distance
         engine_tweaks.csm_cascades = cfg.csm_cascades
-        engine_tweaks.sscs_enabled = cfg.sscs_enabled
-        engine_tweaks.sscs_steps = cfg.sscs_steps
-        engine_tweaks.sscs_thickness = cfg.sscs_thickness
-        engine_tweaks.sscs_ray_distance = cfg.sscs_ray_distance
-        engine_tweaks.sscs_max_distance = cfg.sscs_max_distance
         engine_tweaks.ao_mode = cfg.ao_mode
         engine_tweaks.gi_mode = cfg.gi_mode
         engine_tweaks.ibl_enabled = cfg.ibl_enabled
@@ -801,11 +796,6 @@ def main() -> None:
         pipeline.config.shadow_normal_bias = engine_tweaks.shadow_normal_bias
         pipeline.config.shadow_offset_x = engine_tweaks.shadow_offset_x
         pipeline.config.shadow_offset_y = engine_tweaks.shadow_offset_y
-        pipeline.config.sscs_enabled = engine_tweaks.sscs_enabled
-        pipeline.config.sscs_steps = engine_tweaks.sscs_steps
-        pipeline.config.sscs_thickness = engine_tweaks.sscs_thickness
-        pipeline.config.sscs_ray_distance = engine_tweaks.sscs_ray_distance
-        pipeline.config.sscs_max_distance = engine_tweaks.sscs_max_distance
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)
@@ -821,7 +811,6 @@ def main() -> None:
         pipeline.config.ssgi_thickness = engine_tweaks.ssgi_thickness
         pipeline.config.ssgi_ray_distance = engine_tweaks.ssgi_ray_distance
         pipeline.config.ssgi_intensity = engine_tweaks.ssgi_intensity
-        pipeline.config.lpv_intensity = engine_tweaks.lpv_intensity
         pipeline.config.ibl_enabled = engine_tweaks.ibl_enabled
         pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
         pipeline.config.ssr_steps = engine_tweaks.ssr_steps

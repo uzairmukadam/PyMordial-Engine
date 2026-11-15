@@ -224,4 +224,4 @@ app.run()
 ## 4. Examples in the Repository
  
 Runnable examples for UI, physics, modules, and other engine features are
-listed in [examples/README.md](../examples/README.md).
+listed in [examples/README.md](../../examples/README.md).

@@ -731,6 +731,10 @@ class EntityManager:
 
     get_transform = get_transform_proxy
 
+    def is_alive(self, entity_id: int) -> bool:
+        """Returns True if the entity is active and has not been destroyed."""
+        return self.pool.is_valid(entity_id)
+
     def set_position(self, entity_id: int, pos: tuple[float, float, float] | np.ndarray) -> None:
         """Sets world position for an entity and updates its transform matrix."""
         idx = self.pool.get_dense_index(entity_id)

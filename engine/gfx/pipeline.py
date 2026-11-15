@@ -1,7 +1,7 @@
 """Unified Master Render Graph Coordinator for PyMordial Engine.
 
 Coordinates the full ModernGL 4.5 MDI geometry pass, Reversed-Z depth, Cascaded Shadow Maps,
-Image-Based Lighting (IBL), GTAO, SSGI, LPV, Clustered Local Lighting, SSR, TAA, and Tone-Mapping.
+Image-Based Lighting (IBL), GTAO, SSGI, Clustered Local Lighting, SSR, TAA, and Tone-Mapping.
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from engine.gfx.render_graph import RenderGraphContext
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.ao_pass import AmbientOcclusionPass
 from engine.gfx.passes.ssgi_pass import SSGIPass
-from engine.gfx.passes.lpv_pass import LPVPass
 from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
 from engine.gfx.passes.ssr_pass import SSRPass
@@ -39,6 +38,7 @@ from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.material_registry import MaterialRegistry
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
+from engine.gfx.passes.sky_cloud_pass import SkyCloudPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.bloom_pass import BloomPass
@@ -81,7 +81,6 @@ class RenderPipeline:
         "ibl_pass",
         "ao_pass",
         "ssgi_pass",
-        "lpv_pass",
         "rc_pass",
         "lights_pass",
         "ssr_pass",
@@ -91,6 +90,7 @@ class RenderPipeline:
         "volumetric_fog_pass",
         "bloom_pass",
         "_prev_vp_mat",
+        "_prev_view_mat",
         "post_process",
         "resources",
         "debug",
@@ -156,8 +156,6 @@ class RenderPipeline:
         "_u_spot_vp",
         "_u_spot_depth_vp",
         "_spot_matrices_bytes",
-        "_u_lpv_min",
-        "_u_lpv_size",
         "_u_gbuffer_pom_enabled",
         "_u_gbuffer_pom_min_samples",
         "_u_gbuffer_pom_max_samples",
@@ -174,6 +172,10 @@ class RenderPipeline:
         "_u_gbuffer_car_taillight_layer",
         "_u_gbuffer_car_indicator_layer",
         "_u_gbuffer_car_interior_layer",
+        "_u_gbuffer_brick_wall_layer",
+        "_u_gbuffer_concrete_floor_layer",
+        "_u_gbuffer_tess_brick_wall_layer",
+        "_u_gbuffer_tess_concrete_floor_layer",
         "_u_tess_enabled",
         "_u_tess_frustum_cull",
         "_u_tess_near_radius",
@@ -191,6 +193,7 @@ class RenderPipeline:
         "_u_csm_tess_disp_scale",
         "atmosphere",
         "sky_atmosphere_pass",
+        "sky_cloud_pass",
         "_u_rayleigh_beta",
         "_u_mie_beta",
         "_u_mie_g",
@@ -198,9 +201,14 @@ class RenderPipeline:
         "_u_atmo_ground_col",
         "_u_night_zenith",
         "_u_night_horizon",
+        "_u_sky_mode",
+        "_u_space_zenith",
+        "_u_nebula_color",
+        "_u_nebula_intensity",
         "_u_sun_disc_size",
         "_u_moon_disc_size",
         "_u_moon_color",
+        "_u_moon_intensity",
         "_u_star_intensity",
         "_u_star_density",
         "_u_atmo_turbidity",
@@ -255,7 +263,7 @@ class RenderPipeline:
         )
 
         # 5. Initialize SSBO 1 (Transforms) & SSBO 2 (Materials)
-        max_entities = 100_000
+        max_entities = int(getattr(self.config, "max_entities", 100_000))
         self.ssbo_transforms = self.ctx.buffer(reserve=max_entities * 16 * 4)
         self.ssbo_transforms.bind_to_storage_buffer(binding=1)
 
@@ -266,7 +274,6 @@ class RenderPipeline:
         self.ibl_pass = IBLPass(self.ctx)
         self.ao_pass = AmbientOcclusionPass(self.ctx, w, h)
         self.ssgi_pass = SSGIPass(self.ctx, w, h)
-        self.lpv_pass = LPVPass(self.ctx)
         self.rc_pass = RadianceCascadesPass(self.ctx, w, h)
         self.lights_pass = ClusteredLightingPass(
             self.ctx,
@@ -288,9 +295,10 @@ class RenderPipeline:
         self.smaa_pass = SMAAPass(self.ctx, w, h)
         self.volumetric_fog_pass = VolumetricFogPass(self.ctx, w, h)
         self._prev_vp_mat = np.identity(4, dtype=np.float32).flatten()
+        self._prev_view_mat = np.identity(4, dtype=np.float32).flatten()
 
         # Phase 3: Frustum Culling & MDI Batch Filter
-        self.culler = FrustumCuller(max_entities=getattr(self.config, "max_entities", 100_000))
+        self.culler = FrustumCuller(max_entities=max_entities)
         self.stats_visible_entities = 0
         self.stats_culled_entities = 0
         self.stats_visible_commands = 0
@@ -399,7 +407,6 @@ class RenderPipeline:
             "u_BRDFLUT": 6,
             "u_EnvironmentMap": 7,
             "u_SSRTexture": 8,
-            "u_LPVVolume": 9,
             "u_SkyViewLUT": 10,
             "u_TransmittanceLUT": 11,
             "u_SpotShadowAtlas": 12,
@@ -436,8 +443,6 @@ class RenderPipeline:
         self._u_ibl_enabled = self.resolve_prog.get("u_IBLEnabled", None)
         self._u_ssr_enabled = self.resolve_prog.get("u_SSREnabled", None)
         self._u_point_light_count = self.resolve_prog.get("u_PointLightCount", None)
-        self._u_lpv_min = self.resolve_prog.get("u_LPV_Min", None)
-        self._u_lpv_size = self.resolve_prog.get("u_LPV_Size", None)
         self._u_spot_light_count = self.resolve_prog.get("u_SpotLightCount", None)
         self._u_spot_shadow_enabled = self.resolve_prog.get("u_SpotShadowEnabled", None)
         self._u_spot_vp = self.resolve_prog.get("u_SpotLightViewProjection", None)
@@ -461,6 +466,10 @@ class RenderPipeline:
         self._u_gbuffer_car_taillight_layer = self.gbuffer_prog.get("u_CarTaillightLayer", None)
         self._u_gbuffer_car_indicator_layer = self.gbuffer_prog.get("u_CarIndicatorLayer", None)
         self._u_gbuffer_car_interior_layer = self.gbuffer_prog.get("u_CarInteriorLayer", None)
+        self._u_gbuffer_brick_wall_layer = self.gbuffer_prog.get("u_BrickWallLayer", None)
+        self._u_gbuffer_concrete_floor_layer = self.gbuffer_prog.get("u_ConcreteFloorLayer", None)
+        self._u_gbuffer_tess_brick_wall_layer = self.gbuffer_tess_prog.get("u_BrickWallLayer", None)
+        self._u_gbuffer_tess_concrete_floor_layer = self.gbuffer_tess_prog.get("u_ConcreteFloorLayer", None)
 
         self._u_tess_enabled = self.gbuffer_tess_prog.get("u_TessEnabled", None)
         self._u_tess_frustum_cull = self.gbuffer_tess_prog.get("u_FrustumCullEnabled", None)
@@ -482,6 +491,7 @@ class RenderPipeline:
         # 8. Physical Atmosphere & Day-Night Simulation (Sébastien Hillaire Eurographics 2020)
         self.atmosphere = AtmosphereSystem()
         self.sky_atmosphere_pass = SkyAtmospherePass(self.ctx)
+        self.sky_cloud_pass = SkyCloudPass(self.ctx)
         self._u_rayleigh_beta = self.resolve_prog.get("u_RayleighBeta", None)
         self._u_mie_beta = self.resolve_prog.get("u_MieBeta", None)
         self._u_mie_g = self.resolve_prog.get("u_MieG", None)
@@ -489,9 +499,14 @@ class RenderPipeline:
         self._u_atmo_ground_col = self.resolve_prog.get("u_AtmosphereGroundColor", None)
         self._u_night_zenith = self.resolve_prog.get("u_NightZenithColor", None)
         self._u_night_horizon = self.resolve_prog.get("u_NightHorizonColor", None)
+        self._u_sky_mode = self.resolve_prog.get("u_SkyMode", None)
+        self._u_space_zenith = self.resolve_prog.get("u_SpaceZenithColor", None)
+        self._u_nebula_color = self.resolve_prog.get("u_NebulaColor", None)
+        self._u_nebula_intensity = self.resolve_prog.get("u_NebulaIntensity", None)
         self._u_sun_disc_size = self.resolve_prog.get("u_SunDiscSize", None)
         self._u_moon_disc_size = self.resolve_prog.get("u_MoonDiscSize", None)
         self._u_moon_color = self.resolve_prog.get("u_MoonColor", None)
+        self._u_moon_intensity = self.resolve_prog.get("u_MoonIntensity", None)
         self._u_star_intensity = self.resolve_prog.get("u_StarIntensity", None)
         self._u_star_density = self.resolve_prog.get("u_StarDensity", None)
         self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
@@ -884,6 +899,7 @@ class RenderPipeline:
         # Prepare MDI batch commands (camera view, tessellated, and shadow passes)
         self.mdi.begin_frame()
         self.tess_mdi.begin_frame()
+        self.shadow_mdi.begin_frame()
         if draw_batches is None:
             draw_batches = ecs.mesh_draw_batches
 
@@ -914,6 +930,18 @@ class RenderPipeline:
                         else mesh_item
                     )
                     casc_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+
+            # Spot shadow maps are rendered once per spot light, so they reuse a single
+            # command list holding every shadow caster (no per-light frustum culling).
+            if getattr(self.config, "spot_shadows_enabled", True):
+                for item in caster_batches:
+                    mesh_item, count, base_inst = item[0], item[1], item[2]
+                    alloc = (
+                        self.mega_buffer.allocations[mesh_item]
+                        if isinstance(mesh_item, str)
+                        else mesh_item
+                    )
+                    self.shadow_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
 
 
         # Phase 3: Culling for Camera MDI Draw Calls (Vectorized CPU Frustum + GPU Hi-Z Occlusion)
@@ -1072,6 +1100,14 @@ class RenderPipeline:
             self._u_gbuffer_car_indicator_layer.value = float(self.texture_atlas.name_to_layer.get("car_indicator_amber", 4))
         if self._u_gbuffer_car_interior_layer is not None:
             self._u_gbuffer_car_interior_layer.value = float(self.texture_atlas.name_to_layer.get("car_interior", 5))
+        if self._u_gbuffer_brick_wall_layer is not None:
+            self._u_gbuffer_brick_wall_layer.value = float(self.texture_atlas.name_to_layer.get("brick_wall", 0))
+        if self._u_gbuffer_concrete_floor_layer is not None:
+            self._u_gbuffer_concrete_floor_layer.value = float(self.texture_atlas.name_to_layer.get("concrete_floor", 0))
+        if self._u_gbuffer_tess_brick_wall_layer is not None:
+            self._u_gbuffer_tess_brick_wall_layer.value = float(self.texture_atlas.name_to_layer.get("brick_wall", 0))
+        if self._u_gbuffer_tess_concrete_floor_layer is not None:
+            self._u_gbuffer_tess_concrete_floor_layer.value = float(self.texture_atlas.name_to_layer.get("concrete_floor", 0))
         self.texture_atlas.upload_depths(self.gbuffer_prog)
 
         is_wireframe = getattr(self.config, "wireframe", False)
@@ -1133,14 +1169,17 @@ class RenderPipeline:
 
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
-        # ---- PASS 5: Global Illumination (Mutually Exclusive: Classic SSGI+LPV vs Radiance Cascades) ----
+        # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs Radiance Cascades) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         ctx.resources["sky_view_lut"] = self.sky_atmosphere_pass.sky_view_lut
         if self.config.gi_mode == "RADIANCE_CASCADES":
+            ctx.resources["prev_view"] = self._prev_view_mat
             self.rc_pass.execute(ctx)
-        else:
+        elif self.config.gi_mode == "SSGI":
+            self.rc_pass.invalidate_history()
             self.ssgi_pass.execute(ctx)
-            self.lpv_pass.execute(ctx)
+        else:
+            self.rc_pass.invalidate_history()
 
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)
@@ -1151,8 +1190,8 @@ class RenderPipeline:
             atmo_config=self.atmosphere.config,
             camera_pos=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
             sun_dir=true_sun_dir,
-            sun_color=self.atmosphere.config.sun_color,
-            sun_intensity=sun_lux,
+            sun_color=active_sun_col,
+            sun_intensity=self.atmosphere.config.sun_intensity,
         )
 
         # ---- PASS 7: Consolidated Deferred Resolve ----
@@ -1177,9 +1216,6 @@ class RenderPipeline:
 
         ssr_tex = ctx.resources.get("ssr_texture", self.ssr_pass.black_fallback)
         ssr_tex.use(location=8)
-
-        lpv_vol = ctx.resources.get("lpv_volume", self.lpv_pass.black_fallback)
-        lpv_vol.use(location=9)
 
         self.sky_atmosphere_pass.sky_view_lut.use(location=10)
         self.sky_atmosphere_pass.transmittance_lut.use(location=11)
@@ -1221,10 +1257,6 @@ class RenderPipeline:
         gi_enum_val = 0
         if self.config.gi_mode == "SSGI":
             gi_enum_val = 1
-        elif self.config.gi_mode == "LPV":
-            gi_enum_val = 2
-        elif self.config.gi_mode == "HYBRID":
-            gi_enum_val = 3
         elif self.config.gi_mode == "RADIANCE_CASCADES":
             gi_enum_val = 4
         if self._u_gi_enabled is not None:
@@ -1245,11 +1277,6 @@ class RenderPipeline:
                 self._spot_matrices_bytes[i * 64 : (i + 1) * 64] = mat.tobytes()
             self._u_spot_vp.write(self._spot_matrices_bytes)
 
-        if self._u_lpv_min is not None and "lpv_min" in ctx.resources:
-            self._u_lpv_min.value = ctx.resources["lpv_min"]
-        if self._u_lpv_size is not None and "lpv_size" in ctx.resources:
-            self._u_lpv_size.value = ctx.resources["lpv_size"]
-
         # Upload Parameterized Physical Atmosphere Uniforms (Cached to avoid redundant OpenGL driver calls)
         atmo = self.atmosphere.config
         atmo_key = (
@@ -1258,6 +1285,12 @@ class RenderPipeline:
             atmo.mie_asymmetry,
             atmo.ozone_beta,
             atmo.turbidity,
+            atmo.planet_radius,
+            atmo.atmosphere_radius,
+            atmo.h_r,
+            atmo.h_m,
+            atmo.ozone_center,
+            atmo.ozone_width,
             atmo.sun_disc_size,
             atmo.moon_disc_size,
             atmo.moon_color,
@@ -1266,6 +1299,11 @@ class RenderPipeline:
             atmo.ground_color,
             atmo.night_zenith,
             atmo.night_horizon,
+            atmo.sky_mode,
+            atmo.space_zenith,
+            atmo.nebula_color,
+            atmo.nebula_intensity,
+            atmo.moon_intensity,
         )
         if atmo_key != self._prev_atmo_key:
             self._prev_atmo_key = atmo_key
@@ -1285,12 +1323,22 @@ class RenderPipeline:
                 self._u_night_zenith.value = atmo.night_zenith
             if self._u_night_horizon is not None:
                 self._u_night_horizon.value = atmo.night_horizon
+            if self._u_sky_mode is not None:
+                self._u_sky_mode.value = 1 if atmo.sky_mode.upper() == "SPACE" else 0
+            if self._u_space_zenith is not None:
+                self._u_space_zenith.value = atmo.space_zenith
+            if self._u_nebula_color is not None:
+                self._u_nebula_color.value = atmo.nebula_color
+            if self._u_nebula_intensity is not None:
+                self._u_nebula_intensity.value = atmo.nebula_intensity
             if self._u_sun_disc_size is not None:
                 self._u_sun_disc_size.value = atmo.sun_disc_size
             if self._u_moon_disc_size is not None:
                 self._u_moon_disc_size.value = atmo.moon_disc_size
             if self._u_moon_color is not None:
                 self._u_moon_color.value = atmo.moon_color
+            if self._u_moon_intensity is not None:
+                self._u_moon_intensity.value = atmo.moon_intensity
             if self._u_star_intensity is not None:
                 self._u_star_intensity.value = atmo.star_intensity
             if self._u_star_density is not None:
@@ -1305,6 +1353,20 @@ class RenderPipeline:
                 self._u_atmo_sun_dir.value = self._atmo_sun_tuple
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
+
+        self.sky_cloud_pass.render(
+            hdr_fbo=self.post_process.hdr_fbo,
+            depth_texture=self.g_buffer.depth_texture,
+            inverse_projection=self._inv_proj,
+            inverse_view=self._inv_view,
+            camera_position=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
+            sun_direction=true_sun_dir,
+            sun_color=active_sun_col,
+            moon_color=self.atmosphere.config.moon_color,
+            moon_intensity=self.atmosphere.config.moon_intensity,
+            time_elapsed=time_elapsed,
+            cloud_config=self.atmosphere.config,
+        )
 
         # ---- PASS 7.5: Immediate-Mode 3D Debug Wireframes ----
         active_debug = debug_draw if debug_draw is not None else self.debug
@@ -1408,6 +1470,7 @@ class RenderPipeline:
 
         # Store current unjittered ViewProjection for next frame's motion vectors (zero-allocation)
         np.copyto(self._prev_vp_mat, self._unjittered_vp_mat)
+        np.copyto(self._prev_view_mat, self._view_mat)
 
         # Clear dynamic point lights for the next frame
         self.lights_pass.clear()
@@ -1419,6 +1482,8 @@ class RenderPipeline:
 
     def destroy(self) -> None:
         unsubscribe_event(WindowResizeEvent, self._on_window_resize)
+        self.sky_cloud_pass.destroy()
+        self.sky_atmosphere_pass.destroy()
         self.debug.destroy()
         self.resources.close()
         self.frame_context.destroy()
@@ -1430,7 +1495,6 @@ class RenderPipeline:
         self.ibl_pass.destroy()
         self.ao_pass.destroy()
         self.ssgi_pass.destroy()
-        self.lpv_pass.destroy()
         self.rc_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()

@@ -5,12 +5,14 @@ layout (vertices = 3) out;
 in vec3 tc_Position[];
 in vec3 tc_Normal[];
 in vec2 tc_UV[];
+in vec2 tc_UVScale[];
 in vec4 tc_Tangent[];
 in flat uint tc_EntityID[];
 
 out vec3 te_Position[];
 out vec3 te_Normal[];
 out vec2 te_UV[];
+out vec2 te_UVScale[];
 out vec4 te_Tangent[];
 out flat uint te_EntityID[];
 
@@ -129,6 +131,7 @@ void main() {
     te_Position[gl_InvocationID] = tc_Position[gl_InvocationID];
     te_Normal[gl_InvocationID] = tc_Normal[gl_InvocationID];
     te_UV[gl_InvocationID] = tc_UV[gl_InvocationID];
+    te_UVScale[gl_InvocationID] = tc_UVScale[gl_InvocationID];
     te_Tangent[gl_InvocationID] = tc_Tangent[gl_InvocationID];
     te_EntityID[gl_InvocationID] = tc_EntityID[gl_InvocationID];
 

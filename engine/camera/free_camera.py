@@ -36,9 +36,14 @@ class FreeFlyCamera(VirtualCamera):
         self._update_vectors()
 
     def handle_mouse_look(self, rel_x: float, rel_y: float) -> None:
-        """Rotates camera direction based on relative mouse motion."""
-        self.yaw_deg += rel_x * self.look_sensitivity
-        self.pitch_deg = max(-89.0, min(89.0, self.pitch_deg - rel_y * self.look_sensitivity))
+        """Rotates camera direction based on relative mouse motion.
+
+        Matches ``FollowCamera.handle_mouse_orbit``: callers invert the raw
+        device delta by passing ``-rel_x, -rel_y`` when a non-inverted feel is
+        wanted (see ``examples/_common.py``).
+        """
+        self.yaw_deg -= rel_x * self.look_sensitivity
+        self.pitch_deg = max(-89.0, min(89.0, self.pitch_deg + rel_y * self.look_sensitivity))
         self._update_vectors()
 
     def _update_vectors(self) -> None:

@@ -3,7 +3,7 @@
 Verifies:
 1. RadianceCascadesPass lifecycle, compute shader compilation, texture allocation, and resize.
 2. Execution of SSRC interval raymarching with FFPC far-field probe integration.
-3. Strict mutual exclusivity between Classic GI (LPV+SSGI) and Radiance Cascades (SSRC+FFPC).
+3. Strict mutual exclusivity between SSGI and Radiance Cascades (SSRC+FFPC).
 4. Full render pipeline frame pass with G-Buffer debug mode 13 (Radiance Cascades visualization).
 """
 
@@ -161,15 +161,15 @@ class TestRadianceCascadesPass:
         # Verify Radiance Cascades ran
         assert pipeline.rc_pass._first_frame is False
 
-        # 2. In HYBRID mode (Classic LPV + SSGI):
-        pipeline.config.gi_mode = GIMode.HYBRID.value
+        # 2. In SSGI mode:
+        pipeline.config.gi_mode = GIMode.SSGI.value
         pipeline.render_frame(
             ecs=ecs,
             camera_pos=(0.0, 2.0, 4.0),
             camera_target=(0.0, 0.0, 0.0),
             time_elapsed=0.2,
         )
-        assert pipeline._u_gi_enabled.value == 3
+        assert pipeline._u_gi_enabled.value == 1
 
         # 3. In OFF mode:
         pipeline.config.gi_mode = GIMode.OFF.value
@@ -180,5 +180,6 @@ class TestRadianceCascadesPass:
             time_elapsed=0.3,
         )
         assert pipeline._u_gi_enabled.value == 0
+        assert pipeline.rc_pass._first_frame is True
 
         pipeline.destroy()

@@ -28,6 +28,7 @@ dependencies = [
     "zstandard>=0.23.0",
     "imgui-bundle>=1.92.0",
     "pyopengl>=3.1.0",
+    "pillow>=10.0.0",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,7 @@ dev = [
 [project.scripts]
 pymordial-cooker = "engine.assets.cooker:main"
 pymordial-packager = "engine.tools.packager:main"
+pymordial-project = "engine.tools.project:main"
 
 [tool.setuptools.packages.find]
 include = ["engine*"]
@@ -52,7 +54,7 @@ include = ["engine*"]
 "engine.shaders" = ["*.*", "**/*.*", "*.vert", "*.frag", "*.comp", "*.tesc", "*.tese", "*.glsl", "common/*.glsl"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "projects/shotgun_beat_the_speed/tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 
 [tool.ruff]

@@ -41,6 +41,7 @@ class RadianceCascadesPass(RenderPass):
         "_u_merge_target_res",
         "_u_merge_temporal_blend",
         "_u_merge_history_valid",
+        "_u_merge_prev_view",
         "_first_frame",
         "_target_res_tuple",
     )
@@ -95,6 +96,7 @@ class RadianceCascadesPass(RenderPass):
         self._u_merge_target_res = self.merge_prog.get("u_TargetResolution", None)
         self._u_merge_temporal_blend = self.merge_prog.get("u_TemporalBlend", None)
         self._u_merge_history_valid = self.merge_prog.get("u_HistoryValid", None)
+        self._u_merge_prev_view = self.merge_prog.get("u_PrevView", None)
 
         self._first_frame = True
 
@@ -131,15 +133,20 @@ class RadianceCascadesPass(RenderPass):
         self._current_history = self.tex_b
         self._first_frame = True
 
+    def invalidate_history(self) -> None:
+        self._first_frame = True
+
     def execute(self, context: RenderGraphContext) -> None:
-        gi_mode = getattr(context.config, "gi_mode", "HYBRID")
+        gi_mode = getattr(context.config, "gi_mode", "RADIANCE_CASCADES")
         if gi_mode != "RADIANCE_CASCADES":
             context.resources["rc_texture"] = self.black_fallback
+            self.invalidate_history()
             return
 
         g_buffer = context.resources.get("g_buffer", None)
         if g_buffer is None:
             context.resources["rc_texture"] = self.black_fallback
+            self.invalidate_history()
             return
 
         # 1. Dispatch Stage 1: SSRC + FFPC Interval Raymarching
@@ -195,6 +202,11 @@ class RadianceCascadesPass(RenderPass):
             self._u_merge_temporal_blend.value = blend_val
         if self._u_merge_history_valid is not None:
             self._u_merge_history_valid.value = int(history_valid)
+        if self._u_merge_prev_view is not None:
+            previous_view = context.resources.get("prev_view")
+            if previous_view is None:
+                raise RuntimeError("Radiance Cascades requires the previous frame view matrix.")
+            self._u_merge_prev_view.write(previous_view.tobytes())
 
         self.merge_prog.run(group_x=gx, group_y=gy, group_z=1)
 

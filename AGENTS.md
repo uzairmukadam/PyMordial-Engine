@@ -27,8 +27,12 @@ This repository contains **PyMordial Engine**, a high-performance 3D engine in P
    - Never hardcode physical window pixel positions into widget layouts. The engine `UIManager` and `UIRenderer` scale and letterbox proportionally with 100% pixel-accurate hit-testing across any resolution ($720\text{p}, 900\text{p}, 1080\text{p}, 1440\text{p}, 4\text{K}$).
 
 For the complete technical specification and rules, see:
-- [docs/LLM_INSTRUCTIONS.md](docs/LLM_INSTRUCTIONS.md)
-- [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)
-- [docs/ENGINE_FEATURES.md](docs/ENGINE_FEATURES.md)
-- [docs/UI_AND_STATE_MANAGEMENT.md](docs/UI_AND_STATE_MANAGEMENT.md)
+- [docs/README.md](docs/README.md) — Documentation hub and navigation
+- [docs/reference/LLM_INSTRUCTIONS.md](docs/reference/LLM_INSTRUCTIONS.md) — Hard rules for AI agents
+- [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) — Layer boundaries, frame flow, pass order, invariants
+- [docs/reference/ENGINE_FEATURES.md](docs/reference/ENGINE_FEATURES.md) — Subsystem capability spec
+- [docs/reference/TESTING.md](docs/reference/TESTING.md) — Test layout and conventions
+- [docs/guides/DEVELOPER_GUIDE.md](docs/guides/DEVELOPER_GUIDE.md) — Building projects, modules, and worlds
+- [docs/guides/UI_AND_STATE_MANAGEMENT.md](docs/guides/UI_AND_STATE_MANAGEMENT.md) — Native UI and state machine
+- [docs/roadmap/](docs/roadmap/) — Future plans (not descriptions of current behaviour)
 

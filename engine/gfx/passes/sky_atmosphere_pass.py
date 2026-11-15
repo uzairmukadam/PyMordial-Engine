@@ -132,6 +132,14 @@ class SkyAtmospherePass(RenderPass):
         if u_h_m is not None:
             u_h_m.value = float(getattr(atmo_config, "h_m", 1200.0))
 
+        u_ho_center = prog.get("u_HO_Center", None)
+        if u_ho_center is not None:
+            u_ho_center.value = float(getattr(atmo_config, "ozone_center", 25000.0))
+
+        u_ho_width = prog.get("u_HO_Width", None)
+        if u_ho_width is not None:
+            u_ho_width.value = float(getattr(atmo_config, "ozone_width", 15000.0))
+
         u_rb = prog.get("u_RayleighBeta", None)
         if u_rb is not None:
             rb = atmo_config.rayleigh_beta
@@ -220,8 +228,16 @@ class SkyAtmospherePass(RenderPass):
         curr_sig = (
             tuple(atmo_config.rayleigh_beta),
             atmo_config.mie_beta,
+            getattr(atmo_config, "mie_asymmetry", 0.80),
             atmo_config.turbidity,
             getattr(atmo_config, "ground_color", (0.15, 0.15, 0.15)),
+            tuple(getattr(atmo_config, "ozone_beta", (0.650e-6, 1.881e-6, 0.085e-6))),
+            getattr(atmo_config, "planet_radius", 6360000.0),
+            getattr(atmo_config, "atmosphere_radius", 6460000.0),
+            getattr(atmo_config, "h_r", 8000.0),
+            getattr(atmo_config, "h_m", 1200.0),
+            getattr(atmo_config, "ozone_center", 25000.0),
+            getattr(atmo_config, "ozone_width", 15000.0),
         )
         if curr_sig != self._prev_params.get("sig", None):
             self._prev_params["sig"] = curr_sig

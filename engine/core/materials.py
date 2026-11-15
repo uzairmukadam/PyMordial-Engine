@@ -61,6 +61,8 @@ def decode_mat_flags(flag_val: float | int) -> tuple[bool, DisplacementMode]:
 
 DEFAULT_MATERIAL_DEPTHS: dict[str, float] = {
     "identity": 0.0,
+    "brick_wall": 0.035,
+    "concrete_floor": 0.005,
     "clay_roof_tiles_02": 0.040,      # Terracotta roof tiles (4.0 cm physical depth)
     "metal_grate_rusty": 0.015,       # Metal floor grate (1.5 cm physical depth)
     "castle_brick_02_red": 0.035,     # Exterior masonry brick (3.5 cm depth)

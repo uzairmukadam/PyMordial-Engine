@@ -3,7 +3,7 @@
 Comprehensive, unified interactive showcase testing all engine subsystems in a single playground scene:
 - Phase 1: High-Performance C-RAM, SIMD Rapier3D physics, sub-frame NLERP, instant PIE snapshot/restore
 - Phase 2: ModernGL 4.5 Core Profile 3D Deferred PBR, Cook-Torrance GGX, Reversed-Z 32F depth,
-           4-Cascade CSM + SSCS contact shadows, ACES/AgX/Reinhard tonemapping, runtime quality presets,
+           4-Cascade CSM, ACES/AgX/Reinhard tonemapping, runtime quality presets,
            and G-Buffer debug visualizer
 - Phase 3: Kinematic Character Controller (KCC) with omnidirectional movement, sprint, jump,
            auto-stepping (<= 0.30m), slope sliding (> 45 deg), collision-aware 3rd-person follow camera,
@@ -284,9 +284,9 @@ def main() -> None:
     parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
     parser.add_argument("--shadow-distance", type=float, default=500.0, help="Maximum shadow draw distance in meters (default: 500.0)")
     parser.add_argument("--shadow-cascades", type=int, default=4, choices=[1, 2, 3, 4], help="Number of CSM cascades (default: 4)")
-    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 9=LPV, 10=GI_Total)")
-    parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "hbao", "gtao"], help="AO mode override (off, ssao, hbao, gtao)")
-    parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ssgi", "lpv", "hybrid"], help="GI mode override (off, ssgi, lpv, hybrid)")
+    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RadianceCascades)")
+    parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "gtao"], help="AO mode override (off, ssao, gtao)")
+    parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ibl", "ssgi", "radiance_cascades"], help="GI mode override (off, ibl, ssgi, radiance_cascades)")
     parser.add_argument("--aa-mode", type=str, default="", choices=["", "off", "fxaa", "smaa_1x", "smaa_2x", "smaa_4x", "taa"], help="AA mode override (off, fxaa, smaa_1x, smaa_2x, smaa_4x, taa)")
     parser.add_argument(
         "--all-effects",
@@ -382,7 +382,11 @@ def main() -> None:
     engine_tweaks.shadow_resolution = args.shadow_res
     engine_tweaks.shadow_distance = args.shadow_distance
     engine_tweaks.csm_cascades = args.shadow_cascades
-    engine_tweaks.gbuffer_debug = GBufferDebugMode(args.gbuffer_debug)
+    try:
+        engine_tweaks.gbuffer_debug = GBufferDebugMode(args.gbuffer_debug)
+    except ValueError:
+        valid = ", ".join(f"{int(m)}={m.name}" for m in GBufferDebugMode)
+        parser.error(f"invalid --gbuffer-debug value {args.gbuffer_debug}; expected one of: {valid}")
     if args.wireframe:
         engine_tweaks.show_wireframe = True
     # Default to False (disabled) unless explicitly requested via --show-physics-colliders
@@ -441,11 +445,6 @@ def main() -> None:
         engine_tweaks.shadow_bias = cfg.shadow_bias
         engine_tweaks.shadow_distance = cfg.shadow_distance
         engine_tweaks.csm_cascades = cfg.csm_cascades
-        engine_tweaks.sscs_enabled = cfg.sscs_enabled
-        engine_tweaks.sscs_steps = cfg.sscs_steps
-        engine_tweaks.sscs_thickness = cfg.sscs_thickness
-        engine_tweaks.sscs_ray_distance = cfg.sscs_ray_distance
-        engine_tweaks.sscs_max_distance = cfg.sscs_max_distance
         engine_tweaks.ao_mode = cfg.ao_mode
         engine_tweaks.gi_mode = cfg.gi_mode
         engine_tweaks.ibl_enabled = cfg.ibl_enabled
@@ -1329,11 +1328,6 @@ def main() -> None:
         pipeline.config.shadow_normal_bias = engine_tweaks.shadow_normal_bias
         pipeline.config.shadow_offset_x = engine_tweaks.shadow_offset_x
         pipeline.config.shadow_offset_y = engine_tweaks.shadow_offset_y
-        pipeline.config.sscs_enabled = engine_tweaks.sscs_enabled
-        pipeline.config.sscs_steps = engine_tweaks.sscs_steps
-        pipeline.config.sscs_thickness = engine_tweaks.sscs_thickness
-        pipeline.config.sscs_ray_distance = engine_tweaks.sscs_ray_distance
-        pipeline.config.sscs_max_distance = engine_tweaks.sscs_max_distance
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)
@@ -1348,7 +1342,6 @@ def main() -> None:
         pipeline.config.ssgi_thickness = engine_tweaks.ssgi_thickness
         pipeline.config.ssgi_ray_distance = engine_tweaks.ssgi_ray_distance
         pipeline.config.ssgi_intensity = engine_tweaks.ssgi_intensity
-        pipeline.config.lpv_intensity = engine_tweaks.lpv_intensity
         pipeline.config.ibl_enabled = engine_tweaks.ibl_enabled
         pipeline.config.ssr_enabled = engine_tweaks.ssr_enabled
         pipeline.config.ssr_steps = engine_tweaks.ssr_steps
@@ -1599,7 +1592,7 @@ def main() -> None:
         print(" Scene:               PyMordial Architecture & Material Testbed (PAMT)")
         print(f" Resolution:          {render_ctx.width}x{render_ctx.height}")
         print(f" Quality Preset:      {engine_tweaks.quality_preset.value.upper()}")
-        print(f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | SSCS: {'ON' if engine_tweaks.sscs_enabled else 'OFF'}")
+        print(f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | Cascades: {engine_tweaks.csm_cascades}")
         print(f" Ambient Occlusion:   {engine_tweaks.ao_mode}")
         print(f" Global Illumination: {engine_tweaks.gi_mode}")
         print(f" Anti-Aliasing:       {engine_tweaks.aa_mode}")

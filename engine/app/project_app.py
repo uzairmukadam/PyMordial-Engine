@@ -6,11 +6,13 @@ Rapier3D physics, Audio, ECS, Input, Cameras, and self-contained ProjectModules.
 
 from __future__ import annotations
 import sys
+import time
 from typing import TYPE_CHECKING, TypeVar, Any
 import pygame
 
 from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
+from engine.app.project_validator import validate_project_config
 from engine.audio import AudioEngine, get_audio_engine
 from engine.camera.camera_manager import CameraManager
 from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
@@ -63,10 +65,13 @@ class ProjectApp:
 
     def __init__(self, config: ProjectConfig | None = None) -> None:
         self.config = config if config is not None else ProjectConfig()
+        validate_project_config(self.config).raise_for_errors()
 
         # 1. Window & ModernGL Render Context
         preset_enum = GraphicsQuality(self.config.quality_preset.lower())
         quality_cfg = get_quality_preset(preset_enum)
+        # Size GPU-side entity storage to the project's declared capacity.
+        quality_cfg.max_entities = int(getattr(self.config, "max_entities", 50_000))
         if hasattr(self.config, "particles_enabled") and not self.config.particles_enabled:
             quality_cfg.particles_enabled = False
             quality_cfg.particle_mode = "OFF"
@@ -237,9 +242,13 @@ class ProjectApp:
 
     def _bind_loop_callbacks(self) -> None:
         def on_fixed_step(dt: float) -> None:
+            monitor = self.system_monitor
+            stage_start = time.perf_counter_ns() if monitor is not None else 0
             c_state = self.state_manager.current_state
             if c_state is not None:
                 if not c_state.allow_fixed_update:
+                    if monitor is not None:
+                        monitor.record_stage("Game Fixed Update", (time.perf_counter_ns() - stage_start) / 1000.0)
                     return
                 c_state.on_fixed_update(self, dt)
 
@@ -247,20 +256,33 @@ class ProjectApp:
             for m in self._modules:
                 if m.enabled:
                     m.on_fixed_update(self, dt)
+            if monitor is not None:
+                monitor.record_stage("Game Fixed Update", (time.perf_counter_ns() - stage_start) / 1000.0)
 
             # 2. Step native Rapier physics simulation
+            stage_start = time.perf_counter_ns() if monitor is not None else 0
             self.physics.step_simulation(dt)
+            if monitor is not None:
+                monitor.record_stage("Physics Step", (time.perf_counter_ns() - stage_start) / 1000.0)
 
             # 3. Synchronize physics state to contiguous ECS memory
+            stage_start = time.perf_counter_ns() if monitor is not None else 0
             self.physics.sync_to_ecs(self.ecs)
+            if monitor is not None:
+                monitor.record_stage("Physics/ECS Sync", (time.perf_counter_ns() - stage_start) / 1000.0)
 
         def on_variable_step(dt: float, alpha: float) -> None:
+            monitor = self.system_monitor
+            variable_start = time.perf_counter_ns() if monitor is not None else 0
             c_state = self.state_manager.current_state
             if c_state is not None:
                 c_state.on_update(self, dt)
                 if not c_state.allow_variable_update:
                     if self.ui is not None:
                         self.ui.update(dt)
+                    if monitor is not None:
+                        monitor.record_stage("Game Variable Update", (time.perf_counter_ns() - variable_start) / 1000.0)
+                        monitor.update(dt)
                     return
 
             # Update active modules on variable render frame
@@ -268,21 +290,26 @@ class ProjectApp:
                 if m.enabled:
                     m.on_update(self, dt)
 
+            camera_start = time.perf_counter_ns() if monitor is not None else 0
             self.camera_manager.update(dt)
+            if monitor is not None:
+                monitor.record_stage("Camera Update", (time.perf_counter_ns() - camera_start) / 1000.0)
 
             # Synchronize 3D audio listener with active camera
+            audio_ui_start = time.perf_counter_ns() if monitor is not None else 0
             cam = self.camera_manager.active_camera
             if cam is not None and self.audio is not None:
                 self.audio.update(dt, cam.position, cam.forward)
 
             if self.ui is not None:
                 self.ui.update(dt)
-
-            if self.system_monitor is not None:
-                self.system_monitor.update(dt)
-                self.system_monitor.record_fps(1.0 / max(1e-4, dt))
+            if monitor is not None:
+                monitor.record_stage("Audio/UI Update", (time.perf_counter_ns() - audio_ui_start) / 1000.0)
+                monitor.record_stage("Game Variable Update", (time.perf_counter_ns() - variable_start) / 1000.0)
+                monitor.update(dt)
 
         def on_render_step(alpha: float) -> None:
+            monitor = self.system_monitor
             c_state = self.state_manager.current_state
             if c_state is not None and not c_state.allow_render:
                 return
@@ -299,8 +326,10 @@ class ProjectApp:
                 fovy_deg = 60.0
 
             # 2. Gather draw batches (reusing pre-allocated list to prevent per-frame allocations)
-            self._active_draw_batches.clear()
-            self._active_draw_batches.extend(self._static_draw_batches)
+            gather_start = time.perf_counter_ns() if monitor is not None else 0
+            # Slice assignment reuses the existing list capacity instead of
+            # clear()+extend(), which would release and reallocate the backing array.
+            self._active_draw_batches[:] = self._static_draw_batches
             for m in self._modules:
                 if m.enabled and hasattr(m, "get_draw_batches"):
                     extra_batches = m.get_draw_batches(self)
@@ -313,6 +342,8 @@ class ProjectApp:
             elif self.ecs.active_count > 0:
                 # Fallback: draw ECS entities with their selected built-in primitive shapes.
                 self._active_draw_batches.extend(self.ecs.mesh_draw_batches)
+            if monitor is not None:
+                monitor.record_stage("Draw Batch Gather", (time.perf_counter_ns() - gather_start) / 1000.0)
 
             # 3. Synchronize live graphical tweaks to render pipeline
             if self.engine_tweaks is not None:
@@ -323,18 +354,37 @@ class ProjectApp:
             sun_lux = getattr(self.pipeline.config, "sun_intensity", 4.0)
 
             # 5. Submit frame to deferred render pipeline
-            self.pipeline.render_frame(
-                ecs=self.ecs,
-                camera_pos=cam_pos,
-                camera_target=cam_target,
-                time_elapsed=self.engine_loop.elapsed_time,
-                sun_dir=sun_dir,
-                sun_lux=sun_lux,
-                fovy_deg=fovy_deg,
-                draw_batches=self._active_draw_batches,
-                debug_draw=self.pipeline.debug,
-                dt=1.0 / 60.0,
-            )
+            point_lights = len(self.pipeline.lights_pass.lights)
+            spot_lights = len(self.pipeline.lights_pass.spot_lights)
+            if monitor is not None:
+                stage_start = time.perf_counter_ns()
+                monitor.begin_gpu_frame()
+            try:
+                self.pipeline.render_frame(
+                    ecs=self.ecs,
+                    camera_pos=cam_pos,
+                    camera_target=cam_target,
+                    time_elapsed=self.engine_loop.elapsed_time,
+                    sun_dir=sun_dir,
+                    sun_lux=sun_lux,
+                    fovy_deg=fovy_deg,
+                    draw_batches=self._active_draw_batches,
+                    debug_draw=self.pipeline.debug,
+                    dt=self.engine_loop.game_dt,
+                )
+            finally:
+                if monitor is not None:
+                    monitor.end_gpu_frame()
+                    monitor.record_stage("Render Pipeline CPU", (time.perf_counter_ns() - stage_start) / 1000.0)
+            if monitor is not None:
+                monitor.update_runtime_stats(
+                    self.ecs,
+                    self.pipeline,
+                    point_lights=point_lights,
+                    spot_lights=spot_lights,
+                    draw_batches=len(self._active_draw_batches),
+                    quality=self.engine_tweaks.quality_preset.value if self.engine_tweaks is not None else self.config.quality_preset,
+                )
 
         def on_ui_step() -> None:
             if hasattr(self.pipeline, "post_process") and self.pipeline.post_process and self.pipeline.post_process.final_fbo:
@@ -514,6 +564,9 @@ class ProjectApp:
                 self.audio.stop_all()
             except Exception:
                 pass
+
+        if self.system_monitor is not None:
+            self.system_monitor.destroy()
 
         if hasattr(self, "pipeline") and self.pipeline is not None:
             try:

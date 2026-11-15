@@ -10,7 +10,6 @@ Provides independent, non-intrusive debug panels:
 from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
-import numpy as np
 import pygame
 import moderngl
 from imgui_bundle import imgui
@@ -302,18 +301,23 @@ class DebugMenu:
         # Core indicators: 1% Low FPS & Active Entities
         imgui.text_disabled(f"1% Low: {self.monitor.one_percent_low_fps:4.1f} FPS")
 
-        active_ent = self.game_tweaks.get_value("Entities", "Active Count")
-        if active_ent is not None:
-            imgui.same_line()
-            imgui.text_disabled(f"|  Entities: {active_ent}")
+        stats = self.monitor.runtime_stats
+        active_ent = stats["active_entities"]
+        imgui.same_line()
+        imgui.text_disabled(f"|  Visible: {stats['visible_entities']}/{active_ent}")
+        gpu_ms = self.monitor.gpu_frame_time_ms
+        imgui.text_disabled(
+            f"CPU Render: {self.monitor.stage_times_us.get('Render Pipeline CPU', 0.0) / 1000.0:.2f} ms"
+            + (f"  |  GPU Render: {gpu_ms:.2f} ms" if gpu_ms is not None else "  |  GPU timing pending")
+        )
 
         imgui.separator()
         imgui.text_disabled("[F1] Cycle performance overlay  |  [F2] Engine controls")
         imgui.end()
 
     def _render_f1_expanded_profiler(self) -> None:
-        """Renders full performance profiler window with frame time graph and CPU stage latencies."""
-        imgui.set_next_window_size(imgui.ImVec2(480.0, 440.0), imgui.Cond_.first_use_ever.value)
+        """Renders performance, scene, renderer, and resource diagnostics."""
+        imgui.set_next_window_size(imgui.ImVec2(620.0, 720.0), imgui.Cond_.first_use_ever.value)
         imgui.set_next_window_pos(imgui.ImVec2(20.0, 20.0), imgui.Cond_.first_use_ever.value)
         flags = imgui.WindowFlags_.no_inputs.value | imgui.WindowFlags_.no_focus_on_appearing.value
         expanded, p_open = imgui.begin("Performance & Resource Monitor [F1]", p_open=True, flags=flags)
@@ -332,31 +336,47 @@ class DebugMenu:
             imgui.same_line()
             imgui.text_colored(fps_col, f"{fps:5.1f}")
             imgui.same_line()
-            imgui.text(f"   Avg: {m.avg_fps:5.1f}  |  1% Low: {m.one_percent_low_fps:5.1f}")
+            imgui.text(f"Avg: {m.avg_fps:5.1f}  |  1%: {m.one_percent_low_fps:5.1f}  |  0.1%: {m.point_one_percent_low_fps:5.1f}")
 
-            imgui.text(f"Frame Time: {m.avg_frame_time_ms:5.2f} ms  (Min: {m.min_frame_time_ms:0.1f}, Max: {m.max_frame_time_ms:0.1f})")
+            gpu_ms = m.gpu_frame_time_ms
+            gpu_text = f"{gpu_ms:.2f} ms" if gpu_ms is not None else (
+                "unavailable" if m.gpu_timing_supported is False else "warming up"
+            )
+            imgui.text(
+                f"Frame: {m.avg_frame_time_ms:.2f} ms avg  |  P95: {m.p95_frame_time_ms:.2f}  "
+                f"P99: {m.p99_frame_time_ms:.2f}  |  Budget: {m.frame_budget_ms:.2f} ms"
+            )
+            imgui.text(
+                f"Over budget: {m.over_budget_percent:.1f}%  |  Hitches >= 50 ms: {m.stutter_count} "
+                f"|  Min/Max: {m.min_frame_time_ms:.2f}/{m.max_frame_time_ms:.2f} ms"
+            )
+            imgui.text(
+                f"CPU render submission: {m.stage_times_us.get('Render Pipeline CPU', 0.0) / 1000.0:.2f} ms"
+                f"  |  GPU render (async): {gpu_text}"
+            )
 
             imgui.separator()
             imgui.text("Frame Time History (ms)")
-            ft_history = np.array(m.frame_times_ms, dtype=np.float32)
+            ft_history = m.frame_history_view()
             if len(ft_history) > 0:
-                overlay_str = f"{m.avg_frame_time_ms:.2f} ms (Target: 16.6ms)"
+                overlay_str = f"{m.avg_frame_time_ms:.2f} ms avg | {m.frame_budget_ms:.2f} ms budget"
                 imgui.plot_lines(
                     "##FT_Plot",
                     ft_history,
                     values_offset=0,
                     overlay_text=overlay_str,
                     scale_min=0.0,
-                    scale_max=33.3,
-                    graph_size=imgui.ImVec2(440.0, 75.0),
+                    scale_max=max(33.3, min(100.0, m.max_frame_time_ms)),
+                    graph_size=imgui.ImVec2(580.0, 75.0),
                 )
 
             imgui.separator()
-            imgui.text("CPU Stage Latencies (Microseconds)")
-            if imgui.begin_table("Subsystems", 3, imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value):
+            imgui.text("CPU Stage Timings (last / smoothed average / lifetime peak)")
+            if imgui.begin_table("Subsystems", 4, imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value):
                 imgui.table_setup_column("Stage")
-                imgui.table_setup_column("Latency (us)")
-                imgui.table_setup_column("Latency (ms)")
+                imgui.table_setup_column("Last ms")
+                imgui.table_setup_column("Average ms")
+                imgui.table_setup_column("Peak ms")
                 imgui.table_headers_row()
 
                 for stage, us in m.stage_averages_us.items():
@@ -364,7 +384,8 @@ class DebugMenu:
                     imgui.table_next_column()
                     imgui.text(stage)
                     imgui.table_next_column()
-                    imgui.text(f"{us:6.1f} us")
+                    last_ms = m.stage_times_us.get(stage, 0.0) / 1000.0
+                    imgui.text(f"{last_ms:.2f}")
                     imgui.table_next_column()
                     ms_val = us / 1000.0
                     col = (
@@ -372,13 +393,40 @@ class DebugMenu:
                         if ms_val <= 4.0
                         else (imgui.ImVec4(0.98, 0.80, 0.18, 1.0) if ms_val <= 8.0 else imgui.ImVec4(0.94, 0.27, 0.27, 1.0))
                     )
-                    imgui.text_colored(col, f"{ms_val:0.2f} ms")
+                    imgui.text_colored(col, f"{ms_val:.2f}")
+                    imgui.table_next_column()
+                    imgui.text(f"{m.stage_max_us.get(stage, 0.0) / 1000.0:.2f}")
                 imgui.end_table()
 
             imgui.separator()
-            active_ent = self.game_tweaks.get_value("Entities", "Active Count")
-            if active_ent is not None:
-                imgui.text(f"Active Entities: {active_ent}")
+            stats = m.runtime_stats
+            imgui.text(
+                f"Scene: {stats['active_entities']:,}/{stats['entity_capacity']:,} entities  |  "
+                f"Visible: {stats['visible_entities']:,}  |  Culled: {stats['culled_entities']:,}"
+            )
+            imgui.text(
+                f"Draw batches: {stats['draw_batches']:,}  |  Commands: {stats['draw_commands']:,}  |  "
+                f"Triangles submitted (estimate): {stats['triangles']:,}"
+            )
+            imgui.text(
+                f"Lights: {stats['point_lights']} point / {stats['spot_lights']} spot  |  "
+                f"Meshes: {stats['mesh_vertices']:,} verts / {stats['mesh_indices']:,} indices "
+                f"({stats['mesh_mib']:.1f} MiB)"
+            )
+            imgui.text(
+                f"View: {stats['render_width']}x{stats['render_height']}  |  "
+                f"Materials: {stats['material_layers']}/{stats['material_capacity']} layers @ "
+                f"{stats['material_resolution']}px ({stats['material_mib']:.0f} MiB allocated est.)"
+            )
+            imgui.text(
+                f"Tracked GPU allocation estimate: {stats['tracked_gpu_mib']:.0f} MiB "
+                "(partial; excludes driver and untracked pass resources)"
+            )
+            imgui.text(
+                f"Graphics: {stats['quality']}  |  GI: {stats['gi_mode']}  |  "
+                f"Shadows: {stats['shadow_resolution']}px, {stats['shadow_cascades']} cascades"
+            )
+            imgui.text_disabled("GPU time is asynchronous and may lag several frames. Peaks are lifetime maxima.")
 
             imgui.text_disabled("[F1] Cycle overlay  |  F2: Engine controls  |  F3: Game tweaks")
         imgui.end()
@@ -473,8 +521,8 @@ class DebugMenu:
 
             if imgui.collapsing_header("Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value):
 
-                # GI Mode (OFF, SSGI, LPV, HYBRID, RADIANCE_CASCADES)
-                gi_modes = ["OFF", "SSGI", "LPV", "HYBRID", "RADIANCE_CASCADES"]
+                # GI Mode (OFF, IBL, SSGI, RADIANCE_CASCADES)
+                gi_modes = ["OFF", "IBL", "SSGI", "RADIANCE_CASCADES"]
                 curr_gi_idx = gi_modes.index(et.gi_mode) if et.gi_mode in gi_modes else 3
                 gi_changed, new_gi_idx = imgui.combo("GI Mode", curr_gi_idx, gi_modes)
                 if gi_changed and new_gi_idx != curr_gi_idx:
@@ -482,7 +530,7 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"GI Mode: {et.gi_mode}", duration=2.0)
 
-                if et.gi_mode in ("SSGI", "HYBRID"):
+                if et.gi_mode == "SSGI":
                     ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 32)
                     if ssgi_st_changed:
                         et.ssgi_steps = ssgi_st_val
@@ -506,12 +554,6 @@ class DebugMenu:
                     ssgi_in_changed, ssgi_in_val = imgui.slider_float("SSGI Intensity", et.ssgi_intensity, 0.1, 3.0, "%.2f")
                     if ssgi_in_changed:
                         et.ssgi_intensity = ssgi_in_val
-                        et.mark_custom()
-
-                if et.gi_mode in ("LPV", "HYBRID"):
-                    lpv_in_changed, lpv_in_val = imgui.slider_float("LPV Intensity", et.lpv_intensity, 0.1, 3.0, "%.2f")
-                    if lpv_in_changed:
-                        et.lpv_intensity = lpv_in_val
                         et.mark_custom()
 
                 if et.gi_mode == "RADIANCE_CASCADES":
@@ -560,8 +602,8 @@ class DebugMenu:
                         et.rc_temporal_blend = rc_blend_val
                         et.mark_custom()
 
-                # AO Mode (OFF, SSAO, HBAO, GTAO)
-                ao_modes = ["OFF", "SSAO", "HBAO", "GTAO"]
+                # AO Mode (OFF, SSAO, GTAO)
+                ao_modes = ["OFF", "SSAO", "GTAO"]
                 curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 3
                 ao_changed, new_ao_idx = imgui.combo("AO Mode", curr_ao_idx, ao_modes)
                 if ao_changed and new_ao_idx != curr_ao_idx:
@@ -694,10 +736,10 @@ class DebugMenu:
             if imgui.collapsing_header("Environment: Atmosphere & Sun"):
 
                 # Atmosphere Presets
-                atmo_presets = ["EARTH_DAY", "EARTH_SUNSET", "EARTH_NIGHT", "ALIEN_CYAN_PURPLE", "ALIEN_CRIMSON_MARS", "CUSTOM"]
-                preset_labels = ["Earth Day (Noon)", "Earth Sunset / Golden Hour", "Earth Night / Starlight", "Alien: Cyan & Purple", "Alien: Crimson Mars", "Custom"]
+                atmo_presets = ["EARTH_DAY", "EARTH_SUNSET", "EARTH_NIGHT", "ALIEN_CYAN_PURPLE", "ALIEN_CRIMSON_MARS", "SPACE", "CUSTOM"]
+                preset_labels = ["Earth Day (Noon)", "Earth Sunset / Golden Hour", "Earth Night / Starlight", "Alien: Cyan & Purple", "Alien: Crimson Mars", "Outer Space", "Custom"]
                 cur_p_name = getattr(et, "atmo_preset", "EARTH_DAY").upper()
-                cur_p_idx = atmo_presets.index(cur_p_name) if cur_p_name in atmo_presets else 5
+                cur_p_idx = atmo_presets.index(cur_p_name) if cur_p_name in atmo_presets else 6
                 ap_c, ap_idx = imgui.combo("Atmosphere Preset", cur_p_idx, preset_labels)
                 if ap_c and ap_idx != cur_p_idx:
                     chosen_p = atmo_presets[ap_idx]
@@ -706,6 +748,15 @@ class DebugMenu:
                     else:
                         et.atmo_preset = "CUSTOM"
                     self.toast.show(f"Atmosphere: {preset_labels[ap_idx]}", duration=2.0)
+
+                sky_modes = ["ATMOSPHERE", "SPACE"]
+                sky_labels = ["Planetary Atmosphere", "Outer Space"]
+                sky_mode = getattr(et, "sky_mode", "ATMOSPHERE").upper()
+                sky_mode_idx = sky_modes.index(sky_mode) if sky_mode in sky_modes else 0
+                sky_mode_changed, sky_mode_new_idx = imgui.combo("Sky Model", sky_mode_idx, sky_labels)
+                if sky_mode_changed:
+                    et.sky_mode = sky_modes[sky_mode_new_idx]
+                    et.atmo_preset = "CUSTOM"
 
                 # Time of Day (24h clock)
                 tod_hours = int(et.time_of_day) % 24
@@ -722,6 +773,7 @@ class DebugMenu:
                 if tod_c:
                     et.day_speed = 0.0
                     et.time_of_day = min(tod_v, 23.999)
+                    et.atmo_preset = "CUSTOM"
 
                 sun_intensity_changed, sun_intensity = imgui.slider_float("Sun Intensity", et.sun_lux, 0.0, 20.0, "%.2f")
                 if sun_intensity_changed:
@@ -733,14 +785,26 @@ class DebugMenu:
                 ds_c, ds_v = imgui.slider_float(f"Cycle Speed ({speed_labels})", et.day_speed, 0.0, 10.0, "%.1fx")
                 if ds_c:
                     et.day_speed = ds_v
+                    et.atmo_preset = "CUSTOM"
 
                 # Quick pause / play button
                 if et.day_speed == 0.0:
                     if imgui.button("Play Day-Night Cycle (1.0x)"):
                         et.day_speed = 1.0
+                        et.atmo_preset = "CUSTOM"
                 else:
                     if imgui.button("Pause Cycle"):
                         et.day_speed = 0.0
+                        et.atmo_preset = "CUSTOM"
+
+                azimuth_c, azimuth_v = imgui.slider_float("Sun Orbit Azimuth", et.azimuth_deg, -180.0, 180.0, "%.1f deg")
+                if azimuth_c:
+                    et.azimuth_deg = azimuth_v
+                    et.atmo_preset = "CUSTOM"
+                latitude_c, latitude_v = imgui.slider_float("Planet Latitude", et.latitude_deg, -90.0, 90.0, "%.1f deg")
+                if latitude_c:
+                    et.latitude_deg = latitude_v
+                    et.atmo_preset = "CUSTOM"
 
                 # Collapsible Alien & Physical Scattering Tuning
                 if imgui.tree_node("Atmospheric Scattering & Sky Colors"):
@@ -765,15 +829,117 @@ class DebugMenu:
                         et.mie_coeff = mie_v
                         et.atmo_preset = "CUSTOM"
 
+                    asymmetry_c, asymmetry_v = imgui.slider_float("Mie Forward Scattering", et.mie_asymmetry, 0.0, 0.95, "%.2f")
+                    if asymmetry_c:
+                        et.mie_asymmetry = asymmetry_v
+                        et.atmo_preset = "CUSTOM"
+
                     turb_c, turb_v = imgui.slider_float("Atmospheric Turbidity (Haze)", et.turbidity, 1.0, 10.0, "%.2f")
                     if turb_c:
                         et.turbidity = turb_v
+                        et.atmo_preset = "CUSTOM"
+
+                    sun_color_c, sun_color_v = imgui.color_edit3("Sun Color", et.sun_color)
+                    if sun_color_c:
+                        et.sun_color = tuple(sun_color_v)
+                        et.atmo_preset = "CUSTOM"
+                    moon_color_c, moon_color_v = imgui.color_edit3("Moon Color", et.moon_color)
+                    if moon_color_c:
+                        et.moon_color = tuple(moon_color_v)
                         et.atmo_preset = "CUSTOM"
 
                     star_c, star_v = imgui.slider_float("Starfield Brightness", et.star_intensity, 0.0, 5.0, "%.2f")
                     if star_c:
                         et.star_intensity = star_v
                         et.atmo_preset = "CUSTOM"
+
+                    density_c, density_v = imgui.slider_float("Star Density", et.star_density, 0.1, 4.0, "%.2f")
+                    if density_c:
+                        et.star_density = density_v
+                        et.atmo_preset = "CUSTOM"
+
+                    planet_radius_c, planet_radius_v = imgui.slider_float(
+                        "Planet Radius (km)", et.planet_radius / 1000.0, 100.0, 10000.0, "%.0f km"
+                    )
+                    if planet_radius_c:
+                        et.planet_radius = planet_radius_v * 1000.0
+                        if et.atmosphere_radius <= et.planet_radius:
+                            et.atmosphere_radius = et.planet_radius + 100000.0
+                        et.atmo_preset = "CUSTOM"
+                    atmo_height_c, atmo_height_v = imgui.slider_float(
+                        "Atmosphere Thickness (km)", (et.atmosphere_radius - et.planet_radius) / 1000.0, 1.0, 250.0, "%.1f km"
+                    )
+                    if atmo_height_c:
+                        et.atmosphere_radius = et.planet_radius + atmo_height_v * 1000.0
+                        et.atmo_preset = "CUSTOM"
+                    rayleigh_height_c, rayleigh_height_v = imgui.slider_float(
+                        "Rayleigh Scale Height (km)", et.h_r / 1000.0, 1.0, 50.0, "%.1f km"
+                    )
+                    if rayleigh_height_c:
+                        et.h_r = rayleigh_height_v * 1000.0
+                        et.atmo_preset = "CUSTOM"
+                    mie_height_c, mie_height_v = imgui.slider_float(
+                        "Mie Scale Height (km)", et.h_m / 1000.0, 0.1, 25.0, "%.1f km"
+                    )
+                    if mie_height_c:
+                        et.h_m = mie_height_v * 1000.0
+                        et.atmo_preset = "CUSTOM"
+
+                    if et.sky_mode == "SPACE":
+                        nebula_c, nebula_v = imgui.slider_float("Nebula Intensity", et.nebula_intensity, 0.0, 2.0, "%.2f")
+                        if nebula_c:
+                            et.nebula_intensity = nebula_v
+                            et.atmo_preset = "CUSTOM"
+                        space_c, space_v = imgui.color_edit3("Space Background", et.space_zenith)
+                        if space_c:
+                            et.space_zenith = tuple(space_v)
+                            et.atmo_preset = "CUSTOM"
+                        nebula_color_c, nebula_color_v = imgui.color_edit3("Nebula Color", et.nebula_color)
+                        if nebula_color_c:
+                            et.nebula_color = tuple(nebula_color_v)
+                            et.atmo_preset = "CUSTOM"
+                    else:
+                        clouds_c, clouds_v = imgui.checkbox("Procedural Cloud Deck", et.cloud_enabled)
+                        if clouds_c:
+                            et.cloud_enabled = clouds_v
+                            et.atmo_preset = "CUSTOM"
+                        if et.cloud_enabled:
+                            coverage_c, coverage_v = imgui.slider_float("Cloud Coverage", et.cloud_coverage, 0.0, 1.0, "%.2f")
+                            if coverage_c:
+                                et.cloud_coverage = coverage_v
+                                et.atmo_preset = "CUSTOM"
+                            opacity_c, opacity_v = imgui.slider_float("Cloud Opacity", et.cloud_opacity, 0.0, 1.0, "%.2f")
+                            if opacity_c:
+                                et.cloud_opacity = opacity_v
+                                et.atmo_preset = "CUSTOM"
+                            altitude_c, altitude_v = imgui.slider_float("Cloud Deck Altitude (m)", et.cloud_altitude, 250.0, 12000.0, "%.0f")
+                            if altitude_c:
+                                et.cloud_altitude = altitude_v
+                                et.atmo_preset = "CUSTOM"
+                            scale_c, scale_v = imgui.slider_float("Cloud Size (m)", et.cloud_scale, 5000.0, 80000.0, "%.0f")
+                            if scale_c:
+                                et.cloud_scale = scale_v
+                                et.atmo_preset = "CUSTOM"
+                            layer_c, layer_v = imgui.slider_float(
+                                "Upper Cloud Layer Separation (m)", et.cloud_layer_separation, 1000.0, 20000.0, "%.0f"
+                            )
+                            if layer_c:
+                                et.cloud_layer_separation = layer_v
+                                et.atmo_preset = "CUSTOM"
+                            upper_opacity_c, upper_opacity_v = imgui.slider_float(
+                                "Upper Cloud Layer Opacity", et.cloud_secondary_opacity, 0.0, 0.6, "%.2f"
+                            )
+                            if upper_opacity_c:
+                                et.cloud_secondary_opacity = upper_opacity_v
+                                et.atmo_preset = "CUSTOM"
+                            wind_x_c, wind_x_v = imgui.slider_float("Cloud Wind X (m/s)", et.cloud_wind_x, -100.0, 100.0, "%.1f")
+                            if wind_x_c:
+                                et.cloud_wind_x = wind_x_v
+                                et.atmo_preset = "CUSTOM"
+                            wind_z_c, wind_z_v = imgui.slider_float("Cloud Wind Z (m/s)", et.cloud_wind_z, -100.0, 100.0, "%.1f")
+                            if wind_z_c:
+                                et.cloud_wind_z = wind_z_v
+                                et.atmo_preset = "CUSTOM"
 
                     imgui.tree_pop()
 

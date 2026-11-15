@@ -1,6 +1,8 @@
 # PyMordial Engine: Master Upgrade Roadmap & Beta Transition Blueprint
 *(Inspired by Guerrilla Games' Decima Engine — Tailored for Python 3.11+, ModernGL / OpenGL 4.5 Core Profile, and Rapier3D)*
 
+> **Status: STRATEGY — superseded in part.** This is the original beta-transition blueprint and the rationale behind the pruning decisions. For current status and scheduling, use [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md), which is the authoritative tracker. Sections describing HBAO/LPV/SSCS removal are historical context: that pruning is complete.
+
 ---
 
 ## 1. Executive Summary & Strategic Objectives
@@ -97,7 +99,7 @@ Rather than stripping low-fidelity features, PyMordial maintains **mathematicall
 * **Alpha State**: Frustum culling is currently performed on CPU in Python via vectorized NumPy operations (`engine.gfx.culling.FrustumCuller`), followed by a Python loop filtering contiguous MDI draw batches.
 * **Decima Architectural Approach**: Decima completely eliminates CPU-side draw culling. A compute shader takes the previous frame's Hi-Z depth pyramid, projects object bounding boxes to screen space, selects the corresponding depth mip level, and occludes hidden geometry before drawing.
 * **PyMordial Technical Implementation**:
-  - Utilize PyMordial's existing [`hiz_pass.py`](file:///d:/Projects/PyMordial-Engine/engine/gfx/passes/hiz_pass.py) and [`hiz_downsample.comp`](file:///d:/Projects/PyMordial-Engine/shaders/hiz_downsample.comp).
+  - Utilize PyMordial's existing [`hiz_pass.py`](../../engine/gfx/passes/hiz_pass.py) and [`hiz_downsample.comp`](../../shaders/hiz_downsample.comp).
   - Add compute shader `cull_indirect.comp`:
     1. Read bounding box from `AABB` SSBO.
     2. Frustum test against camera planes.
@@ -126,7 +128,7 @@ Rather than stripping low-fidelity features, PyMordial maintains **mathematicall
 #### 3.2.4 Ambient Occlusion (AO) Consolidation
 * **What to Keep**:
   - **High/Ultra**: **GTAO (Ground Truth Ambient Occlusion)** with 2-direction horizon integration and spatial bilateral blur.
-  - **Steam Deck / Low-End**: **SSAO (Screen-Space Ambient Occlusion)** via [`ssao.frag`](file:///d:/Projects/PyMordial-Engine/shaders/ssao.frag) using an 8-sample Poisson disc or half-resolution GTAO.
+  - **Steam Deck / Low-End**: **SSAO (Screen-Space Ambient Occlusion)** via [`ssao.frag`](../../shaders/ssao.frag) using an 8-sample Poisson disc or half-resolution GTAO.
 * **What to Remove**:
   - **Remove HBAO (`hbao.frag`)**: HBAO sits in an awkward middle ground—it is heavier than SSAO, less accurate than GTAO, and requires an extra compile target.
   - **Purge Screen-Space Contact Shadows (SSCS)**: GTAO with small radius provides superior sub-centimeter contact darkening without the raymarching artifacts, false self-shadowing, or camera-edge popping inherent to SSCS.

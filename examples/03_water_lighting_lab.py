@@ -26,6 +26,7 @@ def _end_wall(app, center_z: float, color: tuple[float, float, float], *, is_lin
             (half_side, ROOM_HEIGHT, WALL),
             color,
             0.78,
+            material_id="brick_wall",
         )
     add_box(
         app,
@@ -33,6 +34,7 @@ def _end_wall(app, center_z: float, color: tuple[float, float, float], *, is_lin
         (DOOR_WIDTH, 1.1, WALL),
         color,
         0.78,
+        material_id="brick_wall",
     )
     trim = (0.78, 0.57, 0.25) if is_lintel else (0.34, 0.39, 0.4)
     for x in (-DOOR_WIDTH * 0.5 - 0.09, DOOR_WIDTH * 0.5 + 0.09):
@@ -53,9 +55,30 @@ def _room(
     front_z = center_z + half_l
     back_z = center_z - half_l
 
-    add_box(app, (0.0, -0.22, center_z), (ROOM_WIDTH, 0.44, ROOM_LENGTH), (0.23, 0.24, 0.23), 0.82)
-    add_box(app, (-half_w, ROOM_HEIGHT * 0.5, center_z), (WALL, ROOM_HEIGHT, ROOM_LENGTH), (0.33, 0.31, 0.27), 0.76)
-    add_box(app, (half_w, ROOM_HEIGHT * 0.5, center_z), (WALL, ROOM_HEIGHT, ROOM_LENGTH), (0.29, 0.3, 0.29), 0.74)
+    add_box(
+        app,
+        (0.0, -0.22, center_z),
+        (ROOM_WIDTH, 0.44, ROOM_LENGTH),
+        (1.0, 1.0, 1.0),
+        0.82,
+        material_id="concrete_floor",
+    )
+    add_box(
+        app,
+        (-half_w, ROOM_HEIGHT * 0.5, center_z),
+        (WALL, ROOM_HEIGHT, ROOM_LENGTH),
+        (1.0, 1.0, 1.0),
+        0.76,
+        material_id="brick_wall",
+    )
+    add_box(
+        app,
+        (half_w, ROOM_HEIGHT * 0.5, center_z),
+        (WALL, ROOM_HEIGHT, ROOM_LENGTH),
+        (1.0, 1.0, 1.0),
+        0.74,
+        material_id="brick_wall",
+    )
     _end_wall(app, front_z, (0.32, 0.31, 0.27), is_lintel=index == 0)
     _end_wall(app, back_z, (0.32, 0.31, 0.27), is_lintel=index == 4)
 
@@ -64,13 +87,34 @@ def _room(
         panel_w = (ROOM_WIDTH - opening) * 0.5
         for sign in (-1.0, 1.0):
             x = sign * (opening * 0.5 + panel_w * 0.5)
-            add_box(app, (x, ROOM_HEIGHT + WALL * 0.5, center_z), (panel_w, WALL, ROOM_LENGTH), (0.17, 0.2, 0.22), 0.8)
+            add_box(
+                app,
+                (x, ROOM_HEIGHT + WALL * 0.5, center_z),
+                (panel_w, WALL, ROOM_LENGTH),
+                (1.0, 1.0, 1.0),
+                0.8,
+                material_id="concrete_floor",
+            )
         end_depth = (ROOM_LENGTH - opening) * 0.5
         for sign in (-1.0, 1.0):
             z = center_z + sign * (opening * 0.5 + end_depth * 0.5)
-            add_box(app, (0.0, ROOM_HEIGHT + WALL * 0.5, z), (opening, WALL, end_depth), (0.17, 0.2, 0.22), 0.8)
+            add_box(
+                app,
+                (0.0, ROOM_HEIGHT + WALL * 0.5, z),
+                (opening, WALL, end_depth),
+                (1.0, 1.0, 1.0),
+                0.8,
+                material_id="concrete_floor",
+            )
     else:
-        add_box(app, (0.0, ROOM_HEIGHT + WALL * 0.5, center_z), (ROOM_WIDTH, WALL, ROOM_LENGTH), (0.17, 0.2, 0.22), 0.82)
+        add_box(
+            app,
+            (0.0, ROOM_HEIGHT + WALL * 0.5, center_z),
+            (ROOM_WIDTH, WALL, ROOM_LENGTH),
+            (1.0, 1.0, 1.0),
+            0.82,
+            material_id="concrete_floor",
+        )
 
     # Colored inset wall panels make the indirect-light response easy to see.
     panel_z = center_z - 1.7
@@ -94,6 +138,8 @@ def _room(
 
 
 def build_scene(app) -> None:
+    app.pipeline.load_materials("assets/materials", resolution=2048)
+
     config = app.pipeline.config
     config.gi_mode = "RADIANCE_CASCADES"
     config.ao_mode = "GTAO"
@@ -101,6 +147,7 @@ def build_scene(app) -> None:
     config.ssr_resolution_scale = 1.0
     config.bloom_enabled = True
     config.volumetric_fog_enabled = False
+    config.pom_enabled = True
     config.sun_intensity = 5.0
     config.ambient_factor = 0.025
     app.pipeline.apply_config(config)

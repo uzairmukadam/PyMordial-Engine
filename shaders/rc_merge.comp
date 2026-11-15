@@ -28,6 +28,7 @@ layout(std140, binding = 0) uniform FrameData {
 uniform vec2 u_TargetResolution;
 uniform float u_TemporalBlend;
 uniform int u_HistoryValid;
+uniform mat4 u_PrevView;
 
 vec3 ViewPosition(vec2 uv, float depth) {
     vec4 p = u_InvProjection * vec4(uv * 2.0 - 1.0, depth, 1.0);
@@ -100,13 +101,24 @@ void main() {
         all(greaterThanEqual(previousUV, vec2(0.0))) &&
         all(lessThanEqual(previousUV, vec2(1.0)))) {
         vec4 history = texture(u_HistoryRadiance, previousUV);
-        float historyDepthError = abs(history.a - abs(centerPosition.z));
-        float historyDepthTolerance = max(0.10, abs(centerPosition.z) * 0.05);
+        vec4 worldPosition = u_InvView * vec4(centerPosition, 1.0);
+        vec4 previousViewPosition = u_PrevView * worldPosition;
+        float expectedPreviousDepth = abs(previousViewPosition.z);
+        float historyDepthError = abs(history.a - expectedPreviousDepth);
+        float historyDepthTolerance = max(0.10, expectedPreviousDepth * 0.015);
         vec3 previous = history.rgb;
-        vec3 historyClampMargin = max((neighborhoodMax - neighborhoodMin) * 0.75, vec3(0.05));
+        vec3 historyClampMargin = max((neighborhoodMax - neighborhoodMin) * 0.5, vec3(0.05));
         previous = clamp(previous, neighborhoodMin - historyClampMargin, neighborhoodMax + historyClampMargin);
+        float depthConfidence = 1.0 - smoothstep(
+            historyDepthTolerance,
+            historyDepthTolerance * 2.0,
+            historyDepthError
+        );
+        float motionPixels = length(motion * u_TargetResolution);
+        float motionConfidence = 1.0 - smoothstep(0.25, 3.5, motionPixels);
         temporalWeight = clamp(u_TemporalBlend, 0.0, 0.98)
-                       * (1.0 - smoothstep(historyDepthTolerance, historyDepthTolerance * 2.0, historyDepthError));
+                       * depthConfidence
+                       * motionConfidence;
         current = mix(current, previous, temporalWeight);
     }
 

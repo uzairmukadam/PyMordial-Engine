@@ -93,8 +93,8 @@ class SSGIPass(RenderPass):
         self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
-        gi_mode = getattr(context.config, "gi_mode", "HYBRID")
-        if gi_mode not in ("SSGI", "HYBRID"):
+        gi_mode = getattr(context.config, "gi_mode", "SSGI")
+        if gi_mode != "SSGI":
             context.resources["ssgi_texture"] = self.black_fallback
             return
 

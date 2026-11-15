@@ -1,4 +1,5 @@
 #version 450 core
+#extension GL_ARB_shader_draw_parameters : enable
 
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec3 in_normal;
@@ -16,7 +17,11 @@ out flat uint tc_EntityID;
 uniform uint u_BaseInstance;
 
 void main() {
+#ifdef GL_ARB_shader_draw_parameters
+    uint entity_idx = uint(gl_BaseInstanceARB) + uint(gl_InstanceID);
+#else
     uint entity_idx = u_BaseInstance + uint(gl_InstanceID);
+#endif
     tc_EntityID = entity_idx;
 
     mat4 model = u_WorldTransforms[entity_idx];

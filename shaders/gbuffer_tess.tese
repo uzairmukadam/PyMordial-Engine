@@ -5,6 +5,7 @@ layout (triangles, fractional_odd_spacing, ccw) in;
 in vec3 te_Position[];
 in vec3 te_Normal[];
 in vec2 te_UV[];
+in vec2 te_UVScale[];
 in vec4 te_Tangent[];
 in flat uint te_EntityID[];
 
@@ -12,6 +13,7 @@ in flat uint te_EntityID[];
 out vec3 v_WorldPos;
 out vec3 v_Normal;
 out vec2 v_UV;
+out vec2 v_UVScale;
 out vec3 v_ModelPos;
 out vec3 v_ModelNormal;
 out vec4 v_CurrClip;
@@ -69,6 +71,9 @@ void main() {
     vec2 uv0 = te_UV[0];
     vec2 uv1 = te_UV[1];
     vec2 uv2 = te_UV[2];
+    vec2 uv_scale0 = te_UVScale[0];
+    vec2 uv_scale1 = te_UVScale[1];
+    vec2 uv_scale2 = te_UVScale[2];
 
     vec4 t0 = te_Tangent[0];
     vec4 t1 = te_Tangent[1];
@@ -113,6 +118,7 @@ void main() {
     v_ModelNormal = norm;
     v_Normal = norm;
     v_UV = uv;
+    v_UVScale = tc.x * uv_scale0 + tc.y * uv_scale1 + tc.z * uv_scale2;
 
     v_CurrClip = u_ViewProjection * vec4(pos, 1.0);
     v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * vec4(pos, 1.0)) : v_CurrClip;

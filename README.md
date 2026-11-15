@@ -35,8 +35,8 @@ Designed to bridge the gap between high-level Python productivity and AAA-grade 
 - **Cascaded Shadow Maps (CSM)**: Up to 4 shadow cascades with logarithmic/linear split blending, sub-texel stabilization, and 16-tap Poisson disc PCF filtering.
 - **Ground Truth Ambient Occlusion (GTAO) & SSAO**: Horizon-based ambient occlusion with bilateral cross-bilateral blur for contact shadows and depth shading.
 - **Screen-Space Reflections (SSR)**: Traces glossy and rough reflections across G-Buffer surfaces with edge fading, roughness blur, and multi-object line-of-sight support for complex scene geometry and water planes.
-- **Screen-Space Global Illumination (SSGI) & Light Propagation Volumes (LPV)**: Dynamic indirect diffuse bounces and low-frequency volumetric light grids.
-- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination with interval raymarching and bilateral/temporal resolve. Runtime-switchable via `GIMode` enum (`OFF`, `SSGI`, `LPV`, `HYBRID`, `RADIANCE_CASCADES`).
+- **Screen-Space Global Illumination (SSGI)**: Dynamic indirect diffuse bounces gathered from the G-Buffer.
+- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination with interval raymarching and bilateral/temporal resolve. Runtime-switchable via `GIMode` enum (`OFF`, `IBL`, `SSGI`, `RADIANCE_CASCADES`).
 - **Clustered Forward+ Local Lighting**: 3D screen frustum cluster binning evaluating hundreds of dynamic point and spot lights simultaneously.
 - **Physical Sky & Atmosphere**: Precomputed Rayleigh and Mie atmospheric scattering with ozone absorption and real-time sun/moon solar cycles.
 - **Volumetric Fog & Light Shafts**: 3D Froxel grid integration through anisotropic participating media.
@@ -297,10 +297,20 @@ python -m pytest tests/test_examples.py
 
 ## Documentation Links
 
-- [docs/DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) — Comprehensive developer workflows, architectural guides, and world building.
-- [docs/ENGINE_FEATURES.md](docs/ENGINE_FEATURES.md) — Full technical specifications for all rendering, physics, and ECS subsystems.
-- [docs/UI_AND_STATE_MANAGEMENT.md](docs/UI_AND_STATE_MANAGEMENT.md) — ModernGL 2D UI widgets, canvas scaler, and `GameStateManager` guide.
-- [docs/LLM_INSTRUCTIONS.md](docs/LLM_INSTRUCTIONS.md) — Strict architectural, zero-allocation, and pair programming rules for AI agents.
+Start at the [documentation hub](docs/README.md) — it routes you by what you are trying to do.
+
+**Building a game**
+- [docs/guides/DEVELOPER_GUIDE.md](docs/guides/DEVELOPER_GUIDE.md) — Projects, modules, worlds, and packaging.
+- [docs/guides/UI_AND_STATE_MANAGEMENT.md](docs/guides/UI_AND_STATE_MANAGEMENT.md) — ModernGL 2D UI widgets, canvas scaler, and `GameStateManager`.
+
+**Working on the engine**
+- [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) — Layer boundaries, per-frame data flow, render pass order, and invariants.
+- [docs/reference/ENGINE_FEATURES.md](docs/reference/ENGINE_FEATURES.md) — Full technical specifications for all rendering, physics, and ECS subsystems.
+- [docs/reference/TESTING.md](docs/reference/TESTING.md) — Test layout, headless GL testing, and conventions.
+- [docs/reference/LLM_INSTRUCTIONS.md](docs/reference/LLM_INSTRUCTIONS.md) — Strict architectural, zero-allocation, and pair programming rules for AI agents.
+
+**Future plans**
+- [docs/roadmap/](docs/roadmap/) — Horizon tracker, modular architecture, world streaming, and platform proposals. Nothing here describes current behaviour unless its status banner says so.
 
 ---
 

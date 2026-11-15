@@ -5,10 +5,26 @@ import numpy as np
 import moderngl
 
 from engine.gfx.mega_buffer import MeshAllocation
+from engine.logging.logger import log_warn
+
+# Extensions required for the true single-dispatch hardware path.
+# - GL_ARB_multi_draw_indirect: glMultiDrawElementsIndirect
+# - GL_ARB_shader_draw_parameters: gl_BaseInstanceARB in the vertex shader
+_REQUIRED_EXTENSIONS = ("GL_ARB_multi_draw_indirect", "GL_ARB_shader_draw_parameters")
 
 
 class MultiDrawIndirect:
-    """Batches and executes GPU Multi-Draw Indirect commands."""
+    """Batches and executes GPU Multi-Draw Indirect commands.
+
+    Command packing contract
+    ------------------------
+    ``MegaBuffer`` pre-offsets every mesh's indices into the shared global IBO
+    (``global_indices = indices + base_vertex``). The indirect ``baseVertex``
+    field is therefore always written as ``0``; adding ``alloc.base_vertex``
+    again would double-apply the offset and drop the first ``base_vertex``
+    vertices of every mesh. Per-instance entity lookup is carried by
+    ``baseInstance`` (``gl_BaseInstanceARB``), not by ``baseVertex``.
+    """
 
     # struct DrawElementsIndirectCommand { uint32 count; uint32 instanceCount; uint32 firstIndex; int32 baseVertex; uint32 baseInstance; };
     # 5 uint32 elements = 20 bytes per command
@@ -21,6 +37,7 @@ class MultiDrawIndirect:
             ("base_instance", np.uint32),
         ]
     )
+    COMMAND_BYTES = 20
 
     __slots__ = (
         "ctx",
@@ -28,6 +45,8 @@ class MultiDrawIndirect:
         "command_buffer",
         "gpu_indirect_buffer",
         "command_count",
+        "hardware_mdi",
+        "dropped_commands",
     )
 
     def __init__(self, ctx: moderngl.Context, max_commands: int = 10_000) -> None:
@@ -35,9 +54,21 @@ class MultiDrawIndirect:
         self.max_commands = max_commands
         self.command_buffer = np.zeros(max_commands, dtype=self.COMMAND_DTYPE)
         self.command_count = 0
+        self.dropped_commands = 0
+
+        # Resolve the hardware capability once; the driver extension set is immutable.
+        extensions = getattr(ctx, "extensions", None) or ()
+        self.hardware_mdi = all(ext in extensions for ext in _REQUIRED_EXTENSIONS)
+        if not self.hardware_mdi:
+            missing = [ext for ext in _REQUIRED_EXTENSIONS if ext not in extensions]
+            log_warn(
+                "gfx.mdi",
+                f"Hardware multi-draw indirect unavailable (missing {', '.join(missing)}); "
+                "falling back to per-command draws.",
+            )
 
         # GPU indirect buffer
-        byte_size = max_commands * 20
+        byte_size = max_commands * self.COMMAND_BYTES
         self.gpu_indirect_buffer = self.ctx.buffer(reserve=byte_size)
 
     def begin_frame(self) -> None:
@@ -52,20 +83,22 @@ class MultiDrawIndirect:
     ) -> None:
         """Records an indirect draw command into contiguous memory."""
         if self.command_count >= self.max_commands:
+            self.dropped_commands += 1
             return
 
         cmd = self.command_buffer[self.command_count]
         cmd["count"] = alloc.index_count
         cmd["instance_count"] = instance_count
         cmd["first_index"] = alloc.first_index
-        cmd["base_vertex"] = alloc.base_vertex
+        # Indices are already offset into global IBO space by MegaBuffer.
+        cmd["base_vertex"] = 0
         cmd["base_instance"] = base_instance
         self.command_count += 1
 
     def submit(
         self,
         vao: moderngl.VertexArray,
-        program: moderngl.Program,
+        program: moderngl.Program | None = None,
         mode: int | None = None,
     ) -> None:
         """Uploads commands and submits via hardware Multi-Draw Indirect."""
@@ -73,7 +106,21 @@ class MultiDrawIndirect:
             return
 
         render_mode = mode if mode is not None else vao.mode
-        base_inst_uniform = program.get("u_BaseInstance", None)
+
+        if self.hardware_mdi:
+            # Fast path: true hardware multi-draw indirect (single GPU dispatch)
+            raw_bytes = self.command_buffer[: self.command_count].tobytes()
+            self.gpu_indirect_buffer.write(raw_bytes)
+            vao.render_indirect(
+                self.gpu_indirect_buffer,
+                mode=render_mode,
+                count=self.command_count,
+                first=0,
+            )
+            return
+
+        # Fallback path: one draw call per command, carrying baseInstance via uniform.
+        base_inst_uniform = program.get("u_BaseInstance", None) if program is not None else None
         for i in range(self.command_count):
             cmd = self.command_buffer[i]
             if base_inst_uniform is not None:

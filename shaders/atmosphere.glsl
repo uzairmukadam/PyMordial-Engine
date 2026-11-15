@@ -15,15 +15,66 @@ layout (binding = 11) uniform sampler2D u_TransmittanceLUT;
 // Parameterized Atmospheric Visual Options
 uniform vec3 u_NightZenithColor = vec3(0.012, 0.025, 0.050);  // Night zenith tint
 uniform vec3 u_NightHorizonColor = vec3(0.035, 0.055, 0.090); // Night horizon tint
+uniform int u_SkyMode = 0;                                     // 0: atmosphere, 1: space
+uniform vec3 u_SpaceZenithColor = vec3(0.0015, 0.0020, 0.0060);
+uniform vec3 u_NebulaColor = vec3(0.16, 0.055, 0.28);
+uniform float u_NebulaIntensity = 0.35;
 uniform vec3 u_AtmosphereSunDir = vec3(0.35, -0.85, 0.40);    // True astronomical sun vector
-uniform float u_SunDiscSize = 0.045;                           // Solar disc angular radius (radians)
-uniform float u_MoonDiscSize = 0.040;                          // Lunar disc angular radius (radians)
+uniform float u_SunDiscSize = 0.00465;                          // Solar disc angular radius (radians)
+uniform float u_MoonDiscSize = 0.00450;                         // Lunar disc angular radius (radians)
 uniform vec3 u_MoonColor = vec3(0.70, 0.82, 1.0);
+uniform float u_MoonIntensity = 0.40;
 uniform float u_StarIntensity = 1.0;
 uniform float u_StarDensity = 1.0;
 
+vec3 EvaluateSpaceSky(vec3 d, vec3 sunDir, vec3 sunColor, float sunLux, float time) {
+    float phi = atan(d.z, d.x);
+    float theta = asin(clamp(d.y, -1.0, 1.0));
+    float band = exp(-pow((theta - 0.22 * sin(phi * 1.7 + 0.4)) / 0.28, 2.0));
+    float nebulaNoise = 0.5
+        + 0.25 * sin(phi * 5.0 + theta * 8.0)
+        + 0.15 * sin(phi * 11.0 - theta * 13.0)
+        + 0.10 * sin(phi * 19.0 + theta * 17.0);
+    float nebula = smoothstep(0.28, 0.78, nebulaNoise) * band;
+    vec3 space = u_SpaceZenithColor + u_NebulaColor * nebula * u_NebulaIntensity;
+
+    vec2 starCoord = vec2(phi, theta) * (180.0 * u_StarDensity);
+    vec2 cell = floor(starCoord);
+    vec2 f = fract(starCoord);
+    vec2 hash = fract(sin(vec2(
+        dot(cell, vec2(127.1, 311.7)),
+        dot(cell, vec2(269.5, 183.3))
+    )) * 43758.5453);
+    if (hash.x > 0.91 && u_StarIntensity > 0.0) {
+        vec2 starPos = 0.25 + 0.50 * hash;
+        float dist = length(f - starPos);
+        float point = exp(-dist * dist * 140.0);
+        float twinkle = 0.94 + 0.06 * sin(time * 2.1 + hash.y * 62.83);
+        float magnitude = (hash.x - 0.91) / 0.09;
+        vec3 tint = mix(vec3(0.78, 0.86, 1.0), vec3(1.0, 0.78, 0.54), hash.y);
+        space += tint * point * twinkle * (1.5 + 7.0 * magnitude) * u_StarIntensity;
+    }
+
+    vec3 L = normalize(-sunDir);
+    float sunAngle = acos(clamp(dot(d, L), -1.0, 1.0));
+    if (sunAngle < u_SunDiscSize) {
+        float edge = 1.0 - smoothstep(0.85, 1.0, sunAngle / max(u_SunDiscSize, 1e-5));
+        space += sunColor * sunLux * 35.0 * edge;
+    }
+
+    float moonAngle = acos(clamp(dot(d, sunDir), -1.0, 1.0));
+    if (moonAngle < u_MoonDiscSize) {
+        float edge = 1.0 - smoothstep(0.85, 1.0, moonAngle / max(u_MoonDiscSize, 1e-5));
+        space += u_MoonColor * u_MoonIntensity * 12.0 * edge;
+    }
+    return space;
+}
+
 vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, float time, vec3 cameraPos) {
     vec3 d = normalize(rayDir);
+    if (u_SkyMode == 1) {
+        return EvaluateSpaceSky(d, sunDir, sunColor, sunLux, time);
+    }
     vec3 L = normalize(-sunDir); // direction pointing toward the sun
     float sunElevation = -sunDir.y;
 
@@ -69,7 +120,7 @@ vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, f
             float normDist = sunAng / u_SunDiscSize;
             float limb = 1.0 - 0.35 * pow(normDist, 1.5);
             vec3 disc = (sunRadiance * 35.0) * limb * T_sun;
-            float disc_edge = smoothstep(1.0, 0.85, normDist);
+            float disc_edge = 1.0 - smoothstep(0.85, 1.0, normDist);
             skyRadiance += disc * disc_edge;
         }
 
@@ -87,7 +138,7 @@ vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, f
     float moonAng = acos(clamp(moonCosTheta, -1.0, 1.0));
     if (moonAng < u_MoonDiscSize && d.y > 0.0) {
         float mNorm = moonAng / u_MoonDiscSize;
-        nightSky += u_MoonColor * 12.0 * smoothstep(1.0, 0.85, mNorm);
+        nightSky += u_MoonColor * u_MoonIntensity * 12.0 * (1.0 - smoothstep(0.85, 1.0, mNorm));
     }
     nightSky += u_MoonColor * pow(max(moonCosTheta, 0.0), 64.0) * 0.80;
 

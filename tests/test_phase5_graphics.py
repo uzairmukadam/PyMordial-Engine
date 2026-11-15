@@ -1,6 +1,6 @@
 """Comprehensive Unit and Integration Tests for Phase 5 High-End Graphics.
 
-Covers RenderGraph architecture, IBL split-sum BRDF LUT, GTAO, SSGI, LPV 3D volume,
+Covers RenderGraph architecture, IBL split-sum BRDF LUT, GTAO, SSGI,
 Clustered local lights (SSBO 3), SSR, and TAA subpixel jittering.
 """
 
@@ -126,7 +126,7 @@ class TestGTAOAndBilateralBlur:
         pipeline.destroy()
 
 
-class TestSSGIAndLPVGlobalIllumination:
+class TestSSGIGlobalIllumination:
     def test_ssgi_pass_execution(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
 
@@ -154,27 +154,7 @@ class TestSSGIAndLPVGlobalIllumination:
 
         pipeline.destroy()
 
-    def test_lpv_3d_volume_compute_dispatch(self, render_ctx: RenderContext):
-        pipeline = RenderPipeline(render_ctx)
-        assert pipeline.lpv_pass.grid_res == 32
-
-        ecs = EntityManager(max_entities=10)
-        ecs.create_entity(position=(0.0, 0.0, 0.0))
-
-        pipeline.config.gi_mode = GIMode.LPV.value
-        pipeline.render_frame(
-            ecs=ecs,
-            camera_pos=(0.0, 2.0, 5.0),
-            camera_target=(0.0, 0.0, 0.0),
-            time_elapsed=0.1,
-        )
-
-        assert pipeline.lpv_pass.volume_min is not None
-        assert pipeline.lpv_pass.volume_size is not None
-
-        pipeline.destroy()
-
-    def test_gi_with_dynamic_lights(self, render_ctx: RenderContext):
+    def test_ssgi_with_dynamic_lights(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(
@@ -188,7 +168,7 @@ class TestSSGIAndLPVGlobalIllumination:
         pipeline.clear_point_lights()
         pipeline.add_point_light((0.5, 1.0, 1.0), radius=5.0, color=(0.2, 0.6, 1.0), intensity=4.0)
 
-        pipeline.config.gi_mode = GIMode.HYBRID.value
+        pipeline.config.gi_mode = GIMode.SSGI.value
         pipeline.render_frame(
             ecs=ecs,
             camera_pos=(0.0, 2.0, 5.0),
@@ -196,14 +176,12 @@ class TestSSGIAndLPVGlobalIllumination:
             time_elapsed=0.1,
         )
 
-        # Verify SSGI texture has data and LPV volume is active
+        # Verify SSGI texture has data
         ssgi_data = pipeline.ssgi_pass.raw_ssgi_tex.read()
         assert len(ssgi_data) == 160 * 120 * 4 * 2
-        lpv_data = pipeline.lpv_pass._current_src.read()
-        assert len(lpv_data) == 32 * 32 * 32 * 4 * 2
 
-        # Verify debug buffer modes 8, 9, 10 render without error
-        for debug_mode in (8, 9, 10):
+        # Verify debug buffer modes 8, 10 render without error
+        for debug_mode in (8, 10):
             pipeline.config.debug_gbuffer = debug_mode
             pipeline.render_frame(
                 ecs=ecs,
@@ -361,7 +339,7 @@ class TestQualityPresetsAndGIMode:
         assert cinematic.aa_mode == "TAA"
 
 
-class TestShadowsAndSSCS:
+class TestShadows:
     def test_shadow_modes_and_parameters_in_presets(self):
         low = get_quality_preset(GraphicsQuality.LOW)
         assert low.shadow_mode == "PCF"
@@ -428,7 +406,6 @@ class TestShadowsAndSSCS:
 
         for mode in ("HARD", "PCF", "PCSS"):
             pipeline.config.shadow_mode = mode
-            pipeline.config.sscs_enabled = True
             pipeline.config.shadow_softness = 1.5
             pipeline.config.shadow_bias = 0.002
             pipeline.render_frame(
