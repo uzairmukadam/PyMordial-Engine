@@ -81,10 +81,23 @@ class SkyCloudPass:
             self._restore_target(previous_fbo, previous_viewport)
 
     def _restore_target(self, framebuffer: Any, viewport: tuple[int, int, int, int]) -> None:
+        # A headless standalone context can expose a default framebuffer that is
+        # not bindable, and a framebuffer captured before a context switch can be
+        # stale. Neither should abort construction, so fall back to the screen and
+        # finally to leaving the current binding untouched.
         if framebuffer is not None:
-            framebuffer.use()
-        elif getattr(self.ctx, "screen", None) is not None:
-            self.ctx.screen.use()
+            try:
+                framebuffer.use()
+                self.ctx.viewport = viewport
+                return
+            except Exception:
+                pass
+        screen = getattr(self.ctx, "screen", None)
+        if screen is not None:
+            try:
+                screen.use()
+            except Exception:
+                pass
         self.ctx.viewport = viewport
 
     def render(

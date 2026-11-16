@@ -1,6 +1,6 @@
 # PyMordial Engine: Modular Architecture Implementation Plan
 
-> **Status: PROPOSAL — not started.** This is the staged execution plan for [MODULAR_ENGINE_ARCHITECTURE.md](./MODULAR_ENGINE_ARCHITECTURE.md). No phase below is complete. Horizon 2 in [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) is the authoritative schedule.
+> **Status: PARTIALLY IMPLEMENTED — Phases 2 and 3 delivered.** This is the staged execution plan for [MODULAR_ENGINE_ARCHITECTURE.md](./MODULAR_ENGINE_ARCHITECTURE.md). Horizon 2 completed the module host (metadata, registry, resolver, rollback), the renderer extension graph, and the atmosphere extraction. Phases 4–7 remain. Horizon 3+ in [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) is the authoritative schedule.
 
 ## 1. Goal
 

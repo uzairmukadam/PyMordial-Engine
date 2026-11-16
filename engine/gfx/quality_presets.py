@@ -40,6 +40,10 @@ class RenderConfig:
     shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
     shadow_bias: float = 0.0015    # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
+    # Slope-scaled bias clamp: bias = clamp(base * (1 + slope * scale), base * min, base * max)
+    shadow_bias_slope_scale: float = 2.0
+    shadow_bias_min_scale: float = 0.5
+    shadow_bias_max_scale: float = 6.0
     shadow_offset_x: float = 0.0   # Light-space alignment offset X (delta from calibrated base)
     shadow_offset_y: float = 0.0   # Light-space alignment offset Y (delta from calibrated base)
     csm_cascades: int = 4          # Number of shadow cascades (1 to 4)

@@ -28,4 +28,8 @@ class ProjectConfig:
     asset_dir: Path | str | None = None
     screenshot: Path | str | None = None
     max_entities: int = 50_000
+    # Engine module selection. Modules are enabled by default so the turnkey
+    # path keeps working; a project can disable or configure them declaratively.
+    atmosphere_enabled: bool = True
+    atmosphere_settings: dict[str, object] = field(default_factory=dict)
     custom_settings: dict[str, object] = field(default_factory=dict)

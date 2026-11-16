@@ -29,11 +29,17 @@ The `docs/` tree has exactly three categories. Put every document in the right o
 
 1. **Strict Core vs. Game Separation**:
    - **`engine/`**: Core engine systems only (Rendering, Physics, ECS, Audio, VFS, UI, Tools, App Host). **NEVER** write game-specific gameplay logic, character states, quest scripts, or weapons inside `engine/`.
+   - **`engine/modules/<module_name>/`**: Official reusable engine capabilities (e.g. `engine/modules/atmosphere/`). Each declares a `MODULE_MANIFEST` and is enabled/configured/disabled from `ProjectConfig`, never by editing `pipeline.py`.
    - **`projects/<project_name>/`**: Self-contained game projects (e.g. `projects/my_game/`).
    - **`projects/<project_name>/modules/<module_name>/`**: Modular, reusable gameplay packages implementing `ProjectModule`.
    - **`examples/`**: Minimal, self-contained standalone reference demonstrations.
 2. **Decoupled Module Contracts**:
-   - When writing a feature intended to be reused across projects, ensure it implements the `ProjectModule` protocol (`on_attach`, `on_fixed_update`, `on_update`, `on_render`, `on_event`, `on_detach`) and does not import directly from another sibling module unless guarded with `has_module` checks.
+   - When writing a feature intended to be reused across projects, ensure it implements the `ProjectModule` protocol (`on_attach`, `on_fixed_update`, `on_update`, `on_ui`, `on_event`, `on_detach`) and does not import directly from another sibling module unless guarded with `has_module` checks.
+   - Declare module metadata with `MODULE_MANIFEST = build_manifest(...)` (`engine.app.module_manifest`). Validation is side-effect free and runs before any GPU/physics context is allocated.
+   - Load module graphs through `ModuleRegistry` + `ProjectApp.load_modules()` so dependency order and rollback are enforced. Do not hand-append modules that declare dependencies.
+   - Render features must go through `RenderFeature` / `RenderServices` and `RenderPipeline.register_feature()`. Never reach into `RenderPipeline` internals or claim a reserved texture unit.
+   - The renderer consumes the `EnvironmentProvider` contract (`engine.gfx.environment`). Do not read `pipeline.atmosphere.config` from new code; use the provider surface.
+   - See [guides/MODULES.md](../guides/MODULES.md) for the full contract reference.
 
 ---
 
@@ -71,6 +77,8 @@ Python's garbage collector pauses cause severe frame drops and stutter. Adhere s
   - Configuration files, cameras, and inspector UI display angles in degrees.
 - **Camera Look**:
   - `FollowCamera.handle_mouse_orbit(rel_x, rel_y)` applies camera yaw and pitch. Passing `-rel_x, -rel_y` inverts horizontal and vertical mouse look.
+  - `FreeFlyCamera.handle_mouse_look(rel_x, rel_y)` uses the same sign convention: `yaw -= rel_x * sensitivity`, `pitch += rel_y * sensitivity`.
+  - **Default (non-inverted) feel**: callers pass the negated device delta, i.e. `handle_mouse_look(-rel_x, -rel_y)`. `examples/_common.py::FlyCameraControls` does this, so a rightward/downward mouse move turns the view right/down. This is the current default; do not flip the signs inside the camera classes.
 
 ---
 

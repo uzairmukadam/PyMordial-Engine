@@ -142,15 +142,18 @@ def test_pipeline_integration_with_hillaire_sky(render_ctx: RenderContext):
     """Verifies that RenderPipeline correctly initializes and executes with Hillaire sky pass."""
     pipeline = RenderPipeline(render_ctx)
     try:
-        assert hasattr(pipeline, "sky_atmosphere_pass")
-        assert pipeline.sky_atmosphere_pass is not None
-        assert pipeline.sky_cloud_pass.noise_texture is not None
+        # The sky capability is provided by the atmosphere engine module and
+        # exposed through the pipeline's environment provider.
+        assert pipeline.environment is not None
+        assert pipeline.environment.enabled is True
+        assert pipeline.environment.sky_pass is not None
+        assert pipeline.environment.cloud_pass.noise_texture is not None
 
         # Check that resolve program has the LUT samplers bound
         assert "u_SkyViewLUT" in pipeline.resolve_prog
         assert "u_TransmittanceLUT" in pipeline.resolve_prog
 
-        pipeline.atmosphere.apply_preset("SPACE")
+        pipeline.environment.apply_preset("SPACE")
         ecs = EntityManager(max_entities=8)
         ecs.create_entity(position=(1000.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
         pipeline.render_frame(

@@ -49,8 +49,10 @@ def test_flycam_controls_look_speed_and_reset() -> None:
     controls.on_attach(app)
     assert app.input_manager.is_mouse_grabbed
     controls.on_event(app, pygame.event.Event(pygame.MOUSEMOTION, rel=(100, 25), pos=(100, 25)))
-    assert camera.yaw_deg < -90.0
-    assert camera.pitch_deg > 0.0
+    # Convention: FlyCameraControls inverts the raw device delta before calling
+    # handle_mouse_look, so a rightward/downward mouse move turns the view right/down.
+    assert camera.yaw_deg > -90.0
+    assert camera.pitch_deg < 0.0
 
     controls.on_event(app, pygame.event.Event(pygame.MOUSEWHEEL, y=1))
     assert camera.move_speed > start_speed
@@ -86,7 +88,9 @@ def test_flycam_supports_gamepad_movement_look_and_vertical_flight() -> None:
     controls.on_update(app, 1.0 / 60.0)
 
     assert camera.position[1] > 0.0
-    assert camera.yaw_deg > start_yaw
+    # Right-stick X is positive here, and handle_mouse_look subtracts the delta,
+    # so the yaw decreases (view turns right).
+    assert camera.yaw_deg < start_yaw
     assert camera.position[2] < 0.0
 
 

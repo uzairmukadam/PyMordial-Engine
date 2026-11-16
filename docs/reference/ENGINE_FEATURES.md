@@ -131,10 +131,70 @@ Powered by Rapier (via `rapier2d` / `rapier-rs` C bindings):
 ## 6. Modular Project Architecture (`engine.app`)
 
 PyMordial enforces a clean decoupling between the core engine and games:
-- **`ProjectConfig`**: Strongly-typed project specification (title, resolution, physics frequency, quality preset, headless flag).
+- **`ProjectConfig`**: Strongly-typed project specification (title, resolution, physics frequency, quality preset, headless flag, engine-module selection).
 - **`ProjectApp`**: The lightweight application host managing window lifecycle, subsystem initialization, and main game loop.
 - **`ProjectModule`**: Lifecycle plugin protocol (`on_attach`, `on_fixed_update`, `on_update`, `on_ui`, `on_event`, `on_detach`).
 - **`BaseWorldBuilder` / `DefaultWorldBuilder`**: Extensible world generation contracts allowing projects to define procedural terrains, city grids, or use default tiled POM planes.
+
+### 6.1 Module metadata (`engine.app.module_manifest`)
+
+Modules declare identity and dependencies with a typed `ModuleManifest` exposed as a
+`MODULE_MANIFEST` class attribute (or a `get_module_manifest()` callable):
+
+```python
+from engine.app.module_manifest import ModuleRole, build_manifest
+
+class MyModule(ProjectModule):
+    MODULE_MANIFEST = build_manifest(
+        "my_game.combat",
+        version="1.0.0",
+        role=ModuleRole.GAMEPLAY,
+        entry="projects.my_game.modules.combat:CombatModule",
+        dependencies=["my_game.core"],
+        capabilities=("gameplay.combat",),
+    )
+```
+
+`validate_manifest()` is side-effect free — it never imports or executes module code — and
+checks id format, semver, API major compatibility, role, entry shape, and dependency
+declarations. Modules without metadata remain supported as legacy gameplay modules.
+
+### 6.2 Module host (`engine.app.module_registry`)
+
+`ModuleRegistry` resolves a deterministic dependency order (Kahn topological sort, id
+tie-break) and reports missing dependencies, duplicate ids, and cycles with the cycle path.
+`ModuleHost` attaches in dependency order, detaches in reverse, and **rolls back** every
+already-attached module plus all host-owned event subscriptions if any module fails:
+
+```python
+registry = ModuleRegistry()
+registry.register_instance(SpinnerModule())
+app.load_modules(registry)   # raises ModuleAttachError after a clean rollback
+```
+
+### 6.3 Render extension graph (`engine.gfx.render_graph`, `render_feature`, `render_services`)
+
+`RenderPass` declares `inputs`, `outputs`, `after`, `before`, and `capabilities`.
+`RenderGraph.validate()` rejects unknown ordering references, duplicate outputs, missing
+inputs, and cycles before any GPU work runs. `RenderPipeline` describes its own 19 built-in
+stages as a validated graph and hosts module features through `register_feature()`.
+`RenderServices` is the only renderer surface a feature may touch; it exposes capability
+queries and texture-unit reservations, with the core deferred-resolve units marked reserved.
+
+### 6.4 Engine modules (`engine.modules`)
+
+Official reusable capabilities. `pymordial.atmosphere` is the first extraction and is
+enabled by default. Projects configure or disable it declaratively:
+
+```python
+ProjectConfig(
+    atmosphere_enabled=False,                        # flat-sky fallback
+    atmosphere_settings={"preset": "EARTH_SUNSET"},  # or configure
+)
+```
+
+The pipeline consumes the `EnvironmentProvider` contract (`engine.gfx.environment`) and
+never imports a specific atmosphere implementation at module scope.
 
 ---
 

@@ -1,6 +1,6 @@
 # PyMordial Engine: Incremental Migration Prompts
 
-> **Status: PROPOSAL — execution companion.** These prompts drive the unimplemented phases in [MODULAR_ENGINE_IMPLEMENTATION_PLAN.md](./MODULAR_ENGINE_IMPLEMENTATION_PLAN.md). Do not run them until the corresponding Horizon 2 task is scheduled.
+> **Status: PARTIALLY EXECUTED — Horizon 2 prompts (P2.1–P2.5, P3.1–P3.4) are complete.** These prompts drive the remaining phases in [MODULAR_ENGINE_IMPLEMENTATION_PLAN.md](./MODULAR_ENGINE_IMPLEMENTATION_PLAN.md). Do not run them until the corresponding Horizon 3+ task is scheduled.
 
 ## How to use this guide
 

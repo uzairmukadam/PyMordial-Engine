@@ -138,7 +138,7 @@ Step 1 is the contract that makes malformed projects fail with a readable messag
 | 4 | Local lights | HDR | Clustered forward+ evaluation |
 | 5 | **GI (exclusive)** | HDR | `SSGI` **or** `RADIANCE_CASCADES` — never both |
 | 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
-| 6.5 | Sky & Atmosphere | HDR | Hillaire scattering |
+| 6.5 | Sky & Atmosphere | HDR | Hillaire scattering — provided by the `pymordial.atmosphere` engine module via `EnvironmentProvider` |
 | 7 | Deferred resolve | HDR | Combines all lighting into final radiance |
 | 7.5 | Debug wireframes | HDR | Immediate-mode gizmos |
 | 7.6 | Volumetric fog | HDR | Froxel raymarch |
@@ -153,6 +153,11 @@ Step 1 is the contract that makes malformed projects fail with a readable messag
 - Pass 5 runs exactly one GI path. `gi_mode` selects it; there is no "both".
 - Pass 8 runs exactly one anti-aliasing path. TAA (7.9) and FXAA/SMAA (8) are mutually exclusive.
 - `u_RCTexture` is bound at texture unit **15** in `deferred_resolve.frag`. Do not reassign it.
+- Pass 6.5 is owned by the environment provider. `RenderPipeline` calls `env.render_sky()` /
+  `env.render_clouds()` and never reads atmosphere config directly. Disabling
+  `ProjectConfig.atmosphere_enabled` swaps in `FlatEnvironment`, which still binds valid LUTs.
+- The built-in stage order is mirrored in `RenderPipeline._build_render_graph()` and validated
+  at construction. Module render features anchor to those stage names via `after`/`before`.
 
 ---
 

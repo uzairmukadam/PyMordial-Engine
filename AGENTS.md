@@ -6,7 +6,8 @@ This repository contains **PyMordial Engine**, a high-performance 3D engine in P
 
 1. **Engine vs. Game Project Separation**:
    - `engine/`: Core engine systems only (Graphics, Physics, ECS, Audio, VFS, Tools, App host). Do NOT write game-specific features or scripts here.
-   - `projects/<project_name>/`: Self-contained game projects (e.g. `projects/shotgun_beat_the_speed/`).
+   - `engine/modules/<module_name>/`: Official reusable engine capabilities (e.g. `engine/modules/atmosphere/`). Each declares a `MODULE_MANIFEST` and is toggled from `ProjectConfig`, never by editing `pipeline.py`.
+   - `projects/<project_name>/`: Self-contained game projects (e.g. `projects/reference_game/`).
    - `projects/<project_name>/modules/<module_name>/`: Portable, reusable gameplay modules implementing `ProjectModule`.
 2. **Zero-Allocation Inner Loop**:
    - Never allocate lists, dicts, sets, or NumPy arrays inside `on_fixed_update`, `on_update`, or `on_render`.
@@ -33,6 +34,7 @@ For the complete technical specification and rules, see:
 - [docs/reference/ENGINE_FEATURES.md](docs/reference/ENGINE_FEATURES.md) — Subsystem capability spec
 - [docs/reference/TESTING.md](docs/reference/TESTING.md) — Test layout and conventions
 - [docs/guides/DEVELOPER_GUIDE.md](docs/guides/DEVELOPER_GUIDE.md) — Building projects, modules, and worlds
+- [docs/guides/MODULES.md](docs/guides/MODULES.md) — Module metadata, host, render features, engine modules
 - [docs/guides/UI_AND_STATE_MANAGEMENT.md](docs/guides/UI_AND_STATE_MANAGEMENT.md) — Native UI and state machine
 - [docs/roadmap/](docs/roadmap/) — Future plans (not descriptions of current behaviour)
 

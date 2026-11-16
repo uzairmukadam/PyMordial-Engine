@@ -1,6 +1,6 @@
 # PyMordial Engine: Modular Architecture Proposal
 
-> **Status: PROPOSAL — partially implemented.** The `ProjectModule` contract, `ProjectApp` host, and `BaseWorldBuilder` exist today. Module manifests, dependency resolution, render-graph extension points, and module extraction are **not** implemented. See [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) Horizon 2 for the scheduled work.
+> **Status: PARTIALLY IMPLEMENTED — Horizon 2 delivered.** The `ProjectModule` contract, `ProjectApp` host, and `BaseWorldBuilder` exist. Horizon 2 added module manifests, deterministic dependency resolution with rollback, render-graph extension points, and the first engine module extraction (`pymordial.atmosphere`). Still outstanding: project manifests, asset-aware build selection, and the remaining feature extractions. See [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) for the schedule.
 
 ## 1. Purpose
 

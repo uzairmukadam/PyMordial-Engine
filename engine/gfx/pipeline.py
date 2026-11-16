@@ -23,7 +23,9 @@ from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.spot_shadows import SpotLightShadowMap
 from engine.gfx.culling import FrustumCuller
 from engine.gfx.post_process import PostProcessPipeline
-from engine.gfx.render_graph import RenderGraphContext
+from engine.gfx.render_graph import RenderGraphContext, RenderGraph, RenderPass
+from engine.gfx.render_feature import RenderFeature, RenderFeatureRegistry
+from engine.gfx.render_services import RenderServices
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.ao_pass import AmbientOcclusionPass
 from engine.gfx.passes.ssgi_pass import SSGIPass
@@ -37,15 +39,13 @@ from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.texture_atlas import TextureArrayAtlas
 from engine.gfx.material_registry import MaterialRegistry
 from engine.gfx.passes.ssdm_pass import SSDMPass
-from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
-from engine.gfx.passes.sky_cloud_pass import SkyCloudPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.water_pass import WaterPass
 from engine.gfx.passes.hiz_pass import HiZPass
-from engine.gfx.atmosphere import AtmosphereSystem
+from engine.gfx.environment import create_default_environment
 from engine.assets.resource_cache import ResourceCache
 from engine.debug.debug_draw import DebugDraw
 from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
@@ -62,6 +62,18 @@ SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_shader = load_shader
 
+
+
+class _BuiltinPass(RenderPass):
+    """Declarative placeholder describing a built-in pipeline stage.
+
+    Built-in stages are executed by ``RenderPipeline.render_frame`` in explicit
+    order; these instances exist so the render graph can validate ordering and
+    resource contracts, and so module features can anchor to them by name.
+    """
+
+    def execute(self, context: RenderGraphContext) -> None:
+        pass
 
 
 class RenderPipeline:
@@ -115,6 +127,9 @@ class RenderPipeline:
         "stats_culled_entities",
         "stats_visible_commands",
         "stats_culled_commands",
+        "stats_shadow_commands",
+        "stats_shadow_commands_unculled",
+        "_caster_batches_scratch",
         "tess_mdi",
         "gbuffer_tess_prog",
         "gbuffer_tess_vao",
@@ -134,13 +149,15 @@ class RenderPipeline:
         "_zero_jitter",
         "_mie_beta_tuple",
         "_prev_mie_beta",
-        "_atmo_sun_tuple",
         "_csm_cascade_idx_uniform",
         "_u_pcf_samples",
         "_u_shadow_mode",
         "_u_shadow_softness",
         "_u_shadow_bias",
         "_u_shadow_normal_bias",
+        "_u_shadow_bias_slope",
+        "_u_shadow_bias_min",
+        "_u_shadow_bias_max",
         "_u_shadow_offset",
         "_u_cascade_count",
         "_u_gbuffer_debug",
@@ -192,8 +209,7 @@ class RenderPipeline:
         "_u_csm_tess_med_level",
         "_u_csm_tess_disp_scale",
         "atmosphere",
-        "sky_atmosphere_pass",
-        "sky_cloud_pass",
+        "environment",
         "_u_rayleigh_beta",
         "_u_mie_beta",
         "_u_mie_g",
@@ -213,12 +229,14 @@ class RenderPipeline:
         "_u_star_density",
         "_u_atmo_turbidity",
         "_u_atmo_sun_dir",
-        "_prev_atmo_key",
         "particle_pass",
         "camera_optics_pass",
         "water_pass",
         "_prev_time",
         "_graph_context",
+        "render_graph",
+        "render_features",
+        "_render_services",
     )
 
     def __init__(
@@ -303,6 +321,10 @@ class RenderPipeline:
         self.stats_culled_entities = 0
         self.stats_visible_commands = 0
         self.stats_culled_commands = 0
+        self.stats_shadow_commands = 0
+        self.stats_shadow_commands_unculled = 0
+        # Reused every frame so shadow caster filtering allocates nothing.
+        self._caster_batches_scratch: list[tuple] = []
 
         # Pre-allocated scratch buffers for zero-allocation frame rendering
         self._view_mat = np.zeros(16, dtype=np.float32)
@@ -319,7 +341,6 @@ class RenderPipeline:
         self._zero_jitter = (0.0, 0.0)
         self._mie_beta_tuple = (0.0, 0.0, 0.0)
         self._prev_mie_beta = -1.0
-        self._atmo_sun_tuple = (0.0, 0.0, 0.0)
 
         # 7. Compile Core Programs
         quad_vert = _load_shader("fullscreen_quad.vert")
@@ -432,6 +453,9 @@ class RenderPipeline:
         self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
         self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
         self._u_shadow_normal_bias = self.resolve_prog.get("u_ShadowNormalBias", None)
+        self._u_shadow_bias_slope = self.resolve_prog.get("u_ShadowBiasSlopeScale", None)
+        self._u_shadow_bias_min = self.resolve_prog.get("u_ShadowBiasMinScale", None)
+        self._u_shadow_bias_max = self.resolve_prog.get("u_ShadowBiasMaxScale", None)
         self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
@@ -488,10 +512,12 @@ class RenderPipeline:
         self._u_csm_tess_med_level = self.csm_tess_prog.get("u_TessMedLevel", None)
         self._u_csm_tess_disp_scale = self.csm_tess_prog.get("u_TessDisplacementScale", None)
 
-        # 8. Physical Atmosphere & Day-Night Simulation (Sébastien Hillaire Eurographics 2020)
-        self.atmosphere = AtmosphereSystem()
-        self.sky_atmosphere_pass = SkyAtmospherePass(self.ctx)
-        self.sky_cloud_pass = SkyCloudPass(self.ctx)
+        # 8. Environment Provider (sky, atmosphere, clouds)
+        # The pipeline consumes the EnvironmentProvider contract and never owns a
+        # specific atmosphere implementation. The default provider is resolved
+        # lazily so a disabled module is never imported.
+        self.environment = create_default_environment(self.ctx, self.config)
+        self.atmosphere = self.environment
         self._u_rayleigh_beta = self.resolve_prog.get("u_RayleighBeta", None)
         self._u_mie_beta = self.resolve_prog.get("u_MieBeta", None)
         self._u_mie_g = self.resolve_prog.get("u_MieG", None)
@@ -511,7 +537,6 @@ class RenderPipeline:
         self._u_star_density = self.resolve_prog.get("u_StarDensity", None)
         self._u_atmo_turbidity = self.resolve_prog.get("u_AtmosphereTurbidity", None)
         self._u_atmo_sun_dir = self.resolve_prog.get("u_AtmosphereSunDir", None)
-        self._prev_atmo_key: tuple | None = None
 
         # 8.5. GPU Compute Particle System & Volumetric VFX (Phase 2)
         part_enabled = getattr(self.config, "particles_enabled", True)
@@ -552,8 +577,118 @@ class RenderPipeline:
             frame_context=self.frame_context,
         )
 
+        # Render extension graph: describes the built-in frame so ordering and
+        # resource declarations are validated, and hosts module render features.
+        self.render_features = RenderFeatureRegistry()
+        self._render_services = RenderServices(
+            ctx=self.ctx,
+            config=self.config,
+            width=w,
+            height=h,
+            frame_context=self.frame_context,
+            g_buffer=self.g_buffer,
+            csm=self.csm,
+            hdr_fbo=self.post_process.hdr_fbo,
+            hdr_texture=self.post_process.hdr_texture,
+            depth_texture=self.g_buffer.depth_texture,
+            mega_buffer=self.mega_buffer,
+            texture_atlas=self.texture_atlas,
+            material_registry=self.material_registry,
+        )
+        self.render_graph = self._build_render_graph()
+
         # Automatically synchronize framebuffers with window resolution changes
         subscribe_event(WindowResizeEvent, self._on_window_resize, priority=90)
+
+    # ---------------- Render Extension Graph ----------------
+
+    def _build_render_graph(self) -> RenderGraph:
+        """Describes the built-in frame as a validated render graph.
+
+        The built-in passes are declared with their resource contracts so the
+        graph can prove the frame is schedulable. Execution still follows the
+        explicit order in ``render_frame``; this graph is the contract that
+        module render features are validated against.
+        """
+        graph = RenderGraph()
+        graph.declare_external_input(
+            "g_buffer",
+            "csm",
+            "hdr_fbo",
+            "scene_color",
+            "prev_view",
+            "hdr_color",
+            "ldr_color",
+            "prev_unjittered_vp",
+        )
+
+        builtin_passes: list[RenderPass] = [
+            _BuiltinPass("ClusteredLights", outputs=("point_light_count", "spot_light_count", "shadow_spot_lights")),
+            _BuiltinPass("CascadedShadows", inputs=("csm",), outputs=("shadow_atlas",)),
+            _BuiltinPass("SpotShadows", inputs=("shadow_spot_lights",), outputs=("spot_shadow_atlas",)),
+            _BuiltinPass("GBuffer", inputs=("g_buffer",), outputs=("gbuffer_depth",)),
+            _BuiltinPass("SSDM", inputs=("g_buffer",), outputs=("ssdm_output",)),
+            _BuiltinPass("Decals", inputs=("g_buffer",), outputs=("decal_output",)),
+            _BuiltinPass("HiZ", inputs=("g_buffer",), outputs=("hiz_texture",)),
+            _BuiltinPass("AmbientOcclusion", inputs=("g_buffer",), outputs=("ao_texture",)),
+            _BuiltinPass("GlobalIllumination", inputs=("g_buffer", "scene_color"), outputs=("gi_texture",)),
+            _BuiltinPass("IBL", outputs=("ibl_lut", "ibl_env_map", "ibl_irradiance")),
+            _BuiltinPass("SSR", inputs=("g_buffer", "scene_color"), outputs=("ssr_texture",)),
+            _BuiltinPass("SkyAtmosphere", outputs=("sky_view_lut", "transmittance_lut", "multiscattering_lut")),
+            _BuiltinPass(
+                "DeferredResolve",
+                inputs=(
+                    "g_buffer",
+                    "shadow_atlas",
+                    "ao_texture",
+                    "gi_texture",
+                    "ibl_lut",
+                    "ibl_env_map",
+                    "ssr_texture",
+                    "sky_view_lut",
+                    "transmittance_lut",
+                    "hiz_texture",
+                    "hdr_fbo",
+                ),
+                outputs=("hdr_color",),
+            ),
+            _BuiltinPass("VolumetricFog", inputs=("g_buffer", "csm", "hdr_fbo"), outputs=("fog_output",)),
+            _BuiltinPass("Water", inputs=("g_buffer", "hdr_fbo"), outputs=("water_output",)),
+            _BuiltinPass("Particles", inputs=("g_buffer", "hdr_fbo"), outputs=("particle_output",)),
+            _BuiltinPass("CameraOptics", inputs=("g_buffer", "hdr_fbo"), outputs=("lens_flare_texture",)),
+            _BuiltinPass("TAA", inputs=("hdr_color", "g_buffer"), outputs=("taa_output",)),
+            _BuiltinPass("PostProcess", inputs=("hdr_color",), outputs=("ldr_color",)),
+        ]
+        for render_pass in builtin_passes:
+            graph.add_pass(render_pass)
+
+        return graph
+
+    def register_feature(self, feature: RenderFeature) -> RenderFeature:
+        """Registers a render feature and validates the resulting graph.
+
+        Raises:
+            RenderGraphError: if the feature's passes break ordering or resource
+                contracts. The feature is not retained on failure.
+        """
+        self.render_features.register(feature)
+        report = self.render_features.apply_to(self.render_graph, self._render_services)
+        if not report.is_valid:
+            self.render_features.unregister(feature)
+            self.render_graph = self._build_render_graph()
+            report.raise_for_errors()
+        return feature
+
+    def unregister_feature(self, feature: RenderFeature) -> bool:
+        """Removes a render feature and rebuilds the validated graph."""
+        removed = self.render_features.unregister(feature)
+        if removed:
+            try:
+                feature.destroy()
+            except Exception:
+                pass
+            self.render_graph = self._build_render_graph()
+        return removed
 
     def add_point_light(
         self,
@@ -841,19 +976,22 @@ class RenderPipeline:
         self._cam_fwd[1] = fy * inv_fwd_len
         self._cam_fwd[2] = fz * inv_fwd_len
 
-        # 3. Advance atmosphere day-night simulation and synchronise lighting
+        # 3. Advance environment simulation and synchronise lighting
         if dt is None:
             calc_dt = max(0.0, min(0.1, time_elapsed - self._prev_time)) if self._prev_time > 0.0 else 0.016
         else:
             calc_dt = dt
         self._prev_time = time_elapsed
 
+        env = self.environment
         if calc_dt > 0.0:
-            self.atmosphere.update(calc_dt)
+            env.update(calc_dt)
 
-        atmo_sun_dir = self.atmosphere.compute_sun_vector()
-        atmo_dir, atmo_lux, atmo_col, atmo_ambient = self.atmosphere.compute_lighting()
-        is_custom_sun = (sun_dir != (0.35, -0.85, 0.40) and self.atmosphere.config.day_speed == 0.0)
+        atmo_sun_dir = env.compute_sun_vector()
+        atmo_dir, atmo_lux, atmo_col, atmo_ambient = env.compute_lighting()
+        env_config = getattr(env, "config", None)
+        day_speed = float(getattr(env_config, "day_speed", 0.0)) if env_config is not None else 0.0
+        is_custom_sun = (sun_dir != (0.35, -0.85, 0.40) and day_speed == 0.0)
         true_sun_dir = sun_dir if is_custom_sun else atmo_sun_dir
         active_sun_dir = sun_dir if is_custom_sun else atmo_dir
         active_sun_lux = sun_lux if (sun_lux != 4.0 and is_custom_sun) else atmo_lux
@@ -909,17 +1047,20 @@ class RenderPipeline:
 
         if draw_batches is not None:
             active_aabbs = ecs.get_active_aabbs_view()
-            # Filter shadow caster batches per active cascade
-            caster_batches = [
-                b for b in draw_batches
-                if b[1] > 0 and (not b[3] if len(b) >= 4 else True) and (b[4] if len(b) >= 5 else True)
-            ]
+            # Filter shadow caster batches per active cascade. The scratch list is
+            # reused across frames to keep the inner loop allocation-free.
+            caster_batches = self._caster_batches_scratch
+            caster_batches.clear()
+            for b in draw_batches:
+                if b[1] > 0 and (not b[3] if len(b) >= 4 else True) and (b[4] if len(b) >= 5 else True):
+                    caster_batches.append(b)
             culled_cascades = self.csm.cull_cascades(
                 aabbs=active_aabbs,
                 active_count=active_count,
                 draw_batches=caster_batches,
                 cascade_count=self.config.csm_cascades,
             )
+            shadow_commands = 0
             for c_idx in range(self.config.csm_cascades):
                 casc_mdi = self.cascade_shadow_mdis[c_idx]
                 for item in culled_cascades[c_idx]:
@@ -930,6 +1071,9 @@ class RenderPipeline:
                         else mesh_item
                     )
                     casc_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
+                    shadow_commands += 1
+            self.stats_shadow_commands = shadow_commands
+            self.stats_shadow_commands_unculled = len(caster_batches) * self.config.csm_cascades
 
             # Spot shadow maps are rendered once per spot light, so they reuse a single
             # command list holding every shadow caster (no per-light frustum culling).
@@ -1171,7 +1315,7 @@ class RenderPipeline:
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
         # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs Radiance Cascades) ----
         ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
-        ctx.resources["sky_view_lut"] = self.sky_atmosphere_pass.sky_view_lut
+        ctx.resources["sky_view_lut"] = env.sky_view_lut
         if self.config.gi_mode == "RADIANCE_CASCADES":
             ctx.resources["prev_view"] = self._prev_view_mat
             self.rc_pass.execute(ctx)
@@ -1185,13 +1329,12 @@ class RenderPipeline:
         self.ibl_pass.execute(ctx)
         self.ssr_pass.execute(ctx)
 
-        # ---- PASS 6.5: Physical Sky & Atmosphere (Sébastien Hillaire Eurographics 2020) ----
-        self.sky_atmosphere_pass.update(
-            atmo_config=self.atmosphere.config,
+        # ---- PASS 6.5: Environment Sky & Atmosphere (provider-owned) ----
+        env.render_sky(
             camera_pos=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
             sun_dir=true_sun_dir,
             sun_color=active_sun_col,
-            sun_intensity=self.atmosphere.config.sun_intensity,
+            sun_intensity=float(getattr(env_config, "sun_intensity", 4.0)) if env_config is not None else 4.0,
         )
 
         # ---- PASS 7: Consolidated Deferred Resolve ----
@@ -1217,8 +1360,7 @@ class RenderPipeline:
         ssr_tex = ctx.resources.get("ssr_texture", self.ssr_pass.black_fallback)
         ssr_tex.use(location=8)
 
-        self.sky_atmosphere_pass.sky_view_lut.use(location=10)
-        self.sky_atmosphere_pass.transmittance_lut.use(location=11)
+        env.bind_luts(10, 11)
         self.spot_shadow_map.depth_texture.use(location=12)
         self.ibl_pass.irradiance_tex.use(location=13)
         self.hiz_pass.hiz_texture.use(location=14)
@@ -1238,6 +1380,12 @@ class RenderPipeline:
             self._u_shadow_bias.value = float(self.config.shadow_bias)
         if self._u_shadow_normal_bias is not None:
             self._u_shadow_normal_bias.value = float(getattr(self.config, "shadow_normal_bias", 0.0010))
+        if self._u_shadow_bias_slope is not None:
+            self._u_shadow_bias_slope.value = float(getattr(self.config, "shadow_bias_slope_scale", 2.0))
+        if self._u_shadow_bias_min is not None:
+            self._u_shadow_bias_min.value = float(getattr(self.config, "shadow_bias_min_scale", 0.5))
+        if self._u_shadow_bias_max is not None:
+            self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
         if self._u_shadow_offset is not None:
             self._u_shadow_offset.value = (
                 float(getattr(self.config, "shadow_offset_x", 0.0)),
@@ -1277,84 +1425,13 @@ class RenderPipeline:
                 self._spot_matrices_bytes[i * 64 : (i + 1) * 64] = mat.tobytes()
             self._u_spot_vp.write(self._spot_matrices_bytes)
 
-        # Upload Parameterized Physical Atmosphere Uniforms (Cached to avoid redundant OpenGL driver calls)
-        atmo = self.atmosphere.config
-        atmo_key = (
-            atmo.rayleigh_beta,
-            atmo.mie_beta,
-            atmo.mie_asymmetry,
-            atmo.ozone_beta,
-            atmo.turbidity,
-            atmo.planet_radius,
-            atmo.atmosphere_radius,
-            atmo.h_r,
-            atmo.h_m,
-            atmo.ozone_center,
-            atmo.ozone_width,
-            atmo.sun_disc_size,
-            atmo.moon_disc_size,
-            atmo.moon_color,
-            atmo.star_intensity,
-            atmo.star_density,
-            atmo.ground_color,
-            atmo.night_zenith,
-            atmo.night_horizon,
-            atmo.sky_mode,
-            atmo.space_zenith,
-            atmo.nebula_color,
-            atmo.nebula_intensity,
-            atmo.moon_intensity,
-        )
-        if atmo_key != self._prev_atmo_key:
-            self._prev_atmo_key = atmo_key
-            self.sky_atmosphere_pass._update_common_uniforms(self.resolve_prog, atmo)
-            if self._u_rayleigh_beta is not None:
-                self._u_rayleigh_beta.value = atmo.rayleigh_beta
-            if self._u_mie_beta is not None:
-                mb = float(atmo.mie_beta)
-                self._u_mie_beta.value = (mb, mb, mb)
-            if self._u_mie_g is not None:
-                self._u_mie_g.value = atmo.mie_asymmetry
-            if self._u_ozone_beta is not None:
-                self._u_ozone_beta.value = atmo.ozone_beta
-            if self._u_atmo_ground_col is not None:
-                self._u_atmo_ground_col.value = atmo.ground_color
-            if self._u_night_zenith is not None:
-                self._u_night_zenith.value = atmo.night_zenith
-            if self._u_night_horizon is not None:
-                self._u_night_horizon.value = atmo.night_horizon
-            if self._u_sky_mode is not None:
-                self._u_sky_mode.value = 1 if atmo.sky_mode.upper() == "SPACE" else 0
-            if self._u_space_zenith is not None:
-                self._u_space_zenith.value = atmo.space_zenith
-            if self._u_nebula_color is not None:
-                self._u_nebula_color.value = atmo.nebula_color
-            if self._u_nebula_intensity is not None:
-                self._u_nebula_intensity.value = atmo.nebula_intensity
-            if self._u_sun_disc_size is not None:
-                self._u_sun_disc_size.value = atmo.sun_disc_size
-            if self._u_moon_disc_size is not None:
-                self._u_moon_disc_size.value = atmo.moon_disc_size
-            if self._u_moon_color is not None:
-                self._u_moon_color.value = atmo.moon_color
-            if self._u_moon_intensity is not None:
-                self._u_moon_intensity.value = atmo.moon_intensity
-            if self._u_star_intensity is not None:
-                self._u_star_intensity.value = atmo.star_intensity
-            if self._u_star_density is not None:
-                self._u_star_density.value = atmo.star_density
-            if self._u_atmo_turbidity is not None:
-                self._u_atmo_turbidity.value = atmo.turbidity
-
-        if self._u_atmo_sun_dir is not None:
-            sx, sy, sz = float(true_sun_dir[0]), float(true_sun_dir[1]), float(true_sun_dir[2])
-            if (sx, sy, sz) != self._atmo_sun_tuple:
-                self._atmo_sun_tuple = (sx, sy, sz)
-                self._u_atmo_sun_dir.value = self._atmo_sun_tuple
+        # Upload environment uniforms (provider-owned, internally cached)
+        env.apply_resolve_uniforms(self.resolve_prog)
+        env.apply_sun_direction(self.resolve_prog, true_sun_dir)
 
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
 
-        self.sky_cloud_pass.render(
+        env.render_clouds(
             hdr_fbo=self.post_process.hdr_fbo,
             depth_texture=self.g_buffer.depth_texture,
             inverse_projection=self._inv_proj,
@@ -1362,10 +1439,7 @@ class RenderPipeline:
             camera_position=(float(self._cam_pos[0]), float(self._cam_pos[1]), float(self._cam_pos[2])),
             sun_direction=true_sun_dir,
             sun_color=active_sun_col,
-            moon_color=self.atmosphere.config.moon_color,
-            moon_intensity=self.atmosphere.config.moon_intensity,
             time_elapsed=time_elapsed,
-            cloud_config=self.atmosphere.config,
         )
 
         # ---- PASS 7.5: Immediate-Mode 3D Debug Wireframes ----
@@ -1482,8 +1556,7 @@ class RenderPipeline:
 
     def destroy(self) -> None:
         unsubscribe_event(WindowResizeEvent, self._on_window_resize)
-        self.sky_cloud_pass.destroy()
-        self.sky_atmosphere_pass.destroy()
+        self.environment.destroy()
         self.debug.destroy()
         self.resources.close()
         self.frame_context.destroy()

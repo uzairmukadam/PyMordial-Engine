@@ -166,6 +166,26 @@ The validation harness is the heaviest smoke test and exercises nearly every pas
 
 ---
 
+## 7.1 Visual Regression Gate
+
+`tests/test_horizon2_golden.py` renders a fixed scene and compares it against
+`tests/baseline/*.npy`. It guards the default sky, lighting, and deferred-resolve output.
+
+```powershell
+.\.venv\Scripts\python.exe -m tests.golden_capture --check    # verify
+.\.venv\Scripts\python.exe -m tests.golden_capture --write    # re-record intentionally
+```
+
+The capture runs in a **subprocess** on purpose. Creating and destroying several GL contexts
+inside one process measurably perturbs later frames on some drivers (observed MAE up to 3.2
+after unrelated pipeline tests), so an in-process capture would report false regressions
+depending on test ordering. Do not "optimize" this into an in-process fixture.
+
+Tolerance is a mean absolute error of 2.0 on the 0–255 scale. Re-record only when a visual
+change is intentional, and say so in the commit message.
+
+---
+
 ## 8. Linting
 
 ```powershell

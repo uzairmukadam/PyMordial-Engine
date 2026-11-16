@@ -64,9 +64,9 @@ Read in this order if you are new to the roadmap.
 |---|---|:---:|---|
 | [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) | `DONE` / `PLANNED` | 1–5 | **Authoritative** horizon dashboard and task tracker |
 | [PYMORDIAL_UPGRADE_ROADMAP.md](./PYMORDIAL_UPGRADE_ROADMAP.md) | `STRATEGY` | all | Beta-transition blueprint, hardware tiers, pruning rationale |
-| [MODULAR_ENGINE_ARCHITECTURE.md](./MODULAR_ENGINE_ARCHITECTURE.md) | `PROPOSAL` | 2 | Target module-system design |
-| [MODULAR_ENGINE_IMPLEMENTATION_PLAN.md](./MODULAR_ENGINE_IMPLEMENTATION_PLAN.md) | `PROPOSAL` | 2 | Phased delivery of the module system |
-| [MODULAR_ENGINE_MIGRATION_PROMPTS.md](./MODULAR_ENGINE_MIGRATION_PROMPTS.md) | `PROPOSAL` | 2 | Copy-paste agent prompts per increment |
+| [MODULAR_ENGINE_ARCHITECTURE.md](./MODULAR_ENGINE_ARCHITECTURE.md) | `DESIGN` | 2 | Target module-system design (Horizon 2 delivered) |
+| [MODULAR_ENGINE_IMPLEMENTATION_PLAN.md](./MODULAR_ENGINE_IMPLEMENTATION_PLAN.md) | `DESIGN` | 2 | Phased delivery of the module system (Phases 2–3 done) |
+| [MODULAR_ENGINE_MIGRATION_PROMPTS.md](./MODULAR_ENGINE_MIGRATION_PROMPTS.md) | `DESIGN` | 2 | Copy-paste agent prompts per increment |
 | [WORLD_BUILDING_ROADMAP.md](./WORLD_BUILDING_ROADMAP.md) | `ANALYSIS` | 4 | Open-world gap assessment |
 | [SSR_PLAN.md](./SSR_PLAN.md) | `DESIGN` | — | Hi-Z accelerated SSR design |
 | [ANDROID_SUPPORT.md](./ANDROID_SUPPORT.md) | `PROPOSAL` | — | Android / OpenGL ES 3.0 target |
@@ -78,7 +78,7 @@ Read in this order if you are new to the roadmap.
 | Horizon | Focus | Status |
 |---|---|:---:|
 | **1** | Foundation clean-up, pruning, true hardware MDI | `DONE` |
-| **2** | Module host architecture & render extension graph | `PLANNED` |
+| **2** | Module host architecture & render extension graph | `DONE` |
 | **3** | Player settings, world lifecycle & persistence | `PLANNED` |
 | **4** | Decima-grade world systems & streaming | `PLANNED` |
 | **5** | Packaging, CI qualification & distribution | `PLANNED` |

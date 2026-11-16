@@ -15,6 +15,9 @@ from engine.gfx.g_buffer import GBuffer
 from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.gfx.post_process import PostProcessPipeline
 from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.render_graph import RenderGraph, RenderGraphContext, RenderGraphError, RenderPass
+from engine.gfx.render_feature import RenderFeature, RenderFeatureRegistry
+from engine.gfx.render_services import RenderCapabilityError, RenderServices
 from engine.gfx.material_registry import MaterialDef, MaterialRegistry
 from engine.gfx.hud_overlay import HudOverlay
 from engine.gfx.loading_screen import LoadingScreen
@@ -34,6 +37,14 @@ __all__ = [
     "CascadedShadowMap",
     "PostProcessPipeline",
     "RenderPipeline",
+    "RenderGraph",
+    "RenderGraphContext",
+    "RenderGraphError",
+    "RenderPass",
+    "RenderFeature",
+    "RenderFeatureRegistry",
+    "RenderCapabilityError",
+    "RenderServices",
     "MaterialDef",
     "MaterialRegistry",
     "HudOverlay",

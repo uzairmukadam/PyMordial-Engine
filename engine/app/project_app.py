@@ -12,6 +12,7 @@ import pygame
 
 from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
+from engine.app.module_registry import ModuleHost, ModuleRegistry
 from engine.app.project_validator import validate_project_config
 from engine.audio import AudioEngine, get_audio_engine
 from engine.camera.camera_manager import CameraManager
@@ -57,6 +58,7 @@ class ProjectApp:
         "debug_toast",
         "debug_menu",
         "_modules",
+        "_module_host",
         "_static_draw_batches",
         "_active_draw_batches",
         "_clock",
@@ -164,6 +166,7 @@ class ProjectApp:
         # 7. Modules & World Generation
         self.world_builder: BaseWorldBuilder | None = None
         self._modules: list[ProjectModule] = []
+        self._module_host: ModuleHost | None = None
         self._static_draw_batches: list[tuple[MeshAllocation, int, int, bool, bool]] = []
         self._active_draw_batches: list[tuple[MeshAllocation, int, int, bool, bool]] = []
         self._clock = pygame.time.Clock()
@@ -176,10 +179,29 @@ class ProjectApp:
     # ---------------- Module Management ----------------
 
     def add_module(self, module: ProjectModule) -> ProjectModule:
-        """Attaches a project module and triggers its on_attach lifecycle hook."""
-        self._modules.append(module)
+        """Attaches a project module and triggers its on_attach lifecycle hook.
+
+        If ``on_attach`` raises, the module is not retained, so a failed module
+        never leaves a half-initialized entry in the active module list.
+        """
         module.on_attach(self)
+        self._modules.append(module)
         return module
+
+    def load_modules(self, registry: ModuleRegistry) -> list[ProjectModule]:
+        """Attaches a validated module graph in dependency order with rollback.
+
+        On failure every already-attached module is detached before the
+        ``ModuleAttachError`` propagates, so startup never continues with a
+        partially initialized module set.
+        """
+        host = ModuleHost(registry)
+        instances = host.attach_all(self)
+        self._module_host = host
+        for instance in instances:
+            if isinstance(instance, ProjectModule):
+                self._modules.append(instance)
+        return instances
 
     def get_module(self, module_type: type[T]) -> T | None:
         """Finds and returns the first attached module matching the given class."""
@@ -197,6 +219,16 @@ class ProjectApp:
         if module in self._modules:
             module.on_detach(self)
             self._modules.remove(module)
+
+    # ---------------- Render Feature Registration ----------------
+
+    def register_render_feature(self, feature: Any) -> Any:
+        """Registers a render feature module with the pipeline's validated graph."""
+        return self.pipeline.register_feature(feature)
+
+    def unregister_render_feature(self, feature: Any) -> bool:
+        """Removes a render feature module from the pipeline."""
+        return self.pipeline.unregister_feature(feature)
 
     # ---------------- World & Batch Management ----------------
 
@@ -541,6 +573,12 @@ class ProjectApp:
             except Exception:
                 pass
         self._modules.clear()
+
+        if self._module_host is not None:
+            # Modules loaded through the host are already in _modules and were
+            # detached above; only drop the host's bookkeeping here.
+            self._module_host.forget()
+            self._module_host = None
 
         if self.world_builder is not None:
             self.world_builder.teardown_world(self)

@@ -2,7 +2,7 @@
 
 > **Document Status**: Living Master Roadmap & Progress Tracker  
 > **Last Updated**: 2026-11-15  
-> **Repository Baseline**: 306/306 Core Tests Passing (100% Green)
+> **Repository Baseline**: 407/407 Core Tests Passing (100% Green)
 
 > **This is the authoritative roadmap.** Other documents in [`roadmap/`](./) are supporting designs and analyses. For current engine behaviour, see [`../reference/`](../reference/). For building a game, see [`../guides/`](../guides/).
 
@@ -15,7 +15,7 @@ Use this dashboard to track overall progress across the 5 strategic horizons. Up
 | Horizon | Focus Area | Status | Progress | Target Milestone | Last Verified Commit / Date |
 |---|---|:---:|:---:|---|---|
 | **Horizon 1** | Foundation Clean-up, Pruning & True MDI | `DONE` | 100% | M1: Clean Base | 306/306 tests green (audit follow-up) |
-| **Horizon 2** | Module Host Architecture & Render Graph | `PLANNED` | 0% | M2: Modular Host & Sky | — |
+| **Horizon 2** | Module Host Architecture & Render Graph | `DONE` | 100% | M2: Modular Host & Sky | 407/407 tests green |
 | **Horizon 3** | Player Settings, World Lifecycle & Persistence | `PLANNED` | 0% | M3: Settings & Saves | — |
 | **Horizon 4** | Decima-Grade World Systems & Streaming | `PLANNED` | 0% | M4: Decima World & Foliage | — |
 | **Horizon 5** | Packaging, CI Qualification & Distribution | `PLANNED` | 0% | M5: Standalone Release | — |
@@ -118,55 +118,55 @@ Every high-end visual technique has a mathematically sound, lightweight counterp
 
 ### Horizon 2: Module Host Architecture & Render Extension Graph
 * **Goal**: Implement the module system and extract the first official engine feature without breaking turnkey defaults.
-* **Status**: `PLANNED`
+* **Status**: `DONE`
 * **Prerequisite**: Horizon 1 completed.
 
 #### Task Breakdown
 
-- [ ] **H2.1 — Module Metadata Schema & Manifest System**
-  - **Status**: `PLANNED`
+- [x] **H2.1 — Module Metadata Schema & Manifest System**
+  - **Status**: `DONE`
   - **Reference**: Modular Plan Phase 2 (`P2.1`, `P2.2`)
   - **Scope**:
     - Define manifest schema (`module.toml` or typed dataclass) supporting `id`, `version`, `api_version`, `role`, `dependencies`, and `config_schema`.
     - Distinguish role-specific contracts (`GameplayModule`, `RenderFeatureModule`, `ToolModule`).
   - **Verification Gate**: Schema parser validates valid manifests and catches invalid keys/types.
-  - **Notes / Log**: 
+  - **Notes / Log**: Implemented as typed dataclasses (no TOML file format, per project decision) in `engine/app/module_manifest.py`: `ModuleRole` (`GAMEPLAY`/`RENDER_FEATURE`/`TOOL`), frozen `ModuleManifest`, `ModuleDependency`, `build_manifest()`, `manifest_from_object()`, and `validate_manifest()` reusing the existing `ValidationReport`. Validation is side-effect free — it never imports or executes module code — and covers id format, semver, API major compatibility, role, `module.path:ClassName` entry shape, self/duplicate dependencies, and capability types. Role contracts live in `engine/app/module_contracts.py`. Modules declare metadata via a `MODULE_MANIFEST` attribute or `get_module_manifest()`; legacy modules without metadata still work. 24 tests in `tests/test_horizon2_manifest.py`.
 
-- [ ] **H2.2 — Module Registry & Deterministic Dependency Resolver**
-  - **Status**: `PLANNED`
+- [x] **H2.2 — Module Registry & Deterministic Dependency Resolver**
+  - **Status**: `DONE`
   - **Reference**: Modular Plan Phase 2 (`P2.3`, `P2.4`, `P2.5`)
   - **Scope**:
     - Implement topological dependency sorting and cycle detection.
     - Implement robust rollback: clean up already-attached modules if any module fails initialization.
   - **Verification Gate**: Missing, cyclic, or failing modules abort safely without leaving dangling resources or event listeners.
-  - **Notes / Log**: 
+  - **Notes / Log**: `engine/app/module_registry.py` provides `ModuleRegistry` (registration, cross-manifest validation, deterministic Kahn topological sort with id tie-break, cycle detection reporting the cycle path) and `ModuleHost` (attach in dependency order, detach in reverse, rollback on failure). `ModuleHost.subscribe()` records host-owned event subscriptions so rollback and detach remove them — no dangling listeners. `ProjectApp.add_module()` now attaches *before* retaining the module, so a failed attach never leaves a half-initialized entry; `ProjectApp.load_modules(registry)` attaches a validated graph with rollback. Render-feature modules dispatch to `ProjectApp.register_render_feature` instead of the gameplay hooks. 22 tests in `tests/test_horizon2_registry.py`.
 
-- [ ] **H2.3 — Render Graph Extension Points**
-  - **Status**: `PLANNED`
+- [x] **H2.3 — Render Graph Extension Points**
+  - **Status**: `DONE`
   - **Reference**: Modular Plan Phase 3 (`P3.1`, `P3.2`)
   - **Scope**:
     - Expose frame context, scene inputs, G-buffer attachments, and pass scheduling contracts in `RenderPipeline`.
     - Validate render graph dependencies and reject missing inputs before execution.
   - **Verification Gate**: Custom render pass can be registered and scheduled via validated interfaces.
-  - **Notes / Log**: 
+  - **Notes / Log**: `RenderPass` gained `inputs`/`outputs`/`after`/`before`/`capabilities`; `RenderGraph` gained `validate()`, `compile()`, `declare_external_input()`, and `remove_pass()`. Validation rejects unknown ordering references, duplicate outputs, missing inputs, and cycles before any GPU work. Passes that declare nothing keep insertion order, so existing behaviour is unchanged. New `engine/gfx/render_services.py` defines the stable renderer surface (`RenderServices`: context, config, frame context, G-buffer, CSM, HDR target, capability queries, texture-unit reservations with the core resolve units marked reserved) and `engine/gfx/render_feature.py` defines `RenderFeature`/`RenderFeatureRegistry`. `RenderPipeline` now builds a validated graph describing its own 19 built-in stages (`_build_render_graph`) and exposes `register_feature`/`unregister_feature`; `ProjectApp` forwards those for the module host. 21 tests in `tests/test_horizon2_render_graph.py`.
 
-- [ ] **H2.4 — First Engine Module Extraction: Atmosphere & Sky**
-  - **Status**: `PLANNED`
+- [x] **H2.4 — First Engine Module Extraction: Atmosphere & Sky**
+  - **Status**: `DONE`
   - **Reference**: Modular Plan Phase 3 (`P3.3`, `P3.4`)
   - **Scope**:
     - Extract `AtmosphereSystem` into official engine module `pymordial.atmosphere`.
     - Enable, configure, or disable atmosphere via project configuration without editing `pipeline.py`.
   - **Verification Gate**: Projects can toggle or replace the atmosphere pass seamlessly; visual regressions within zero-tolerance.
-  - **Notes / Log**: 
+  - **Notes / Log**: New `engine/modules/atmosphere/` package (`config.py`, `system.py`, `environment.py`, `module.py`) with manifest `pymordial.atmosphere` (role `RENDER_FEATURE`, capabilities `render.sky`/`lighting.environment`/`render.clouds`). New core contract `engine/gfx/environment.py` defines `EnvironmentProvider` plus a `FlatEnvironment` fallback; `create_default_environment()` resolves the provider lazily so a disabled module is never imported. `RenderPipeline` now consumes `self.environment` (with `self.atmosphere` kept as an alias) and no longer reaches into atmosphere config: the ~90-line uniform block became `env.apply_resolve_uniforms()` + `env.apply_sun_direction()`, and sky/cloud rendering became `env.render_sky()`/`env.render_clouds()`. `ProjectConfig` gained `atmosphere_enabled` and `atmosphere_settings` (preset + direct overrides). `engine/gfx/atmosphere.py` remains as a deprecated re-export shim. `EngineTweaks` writes through the provider's public config, so F2 keeps working. Visual regression is gated by `tests/test_horizon2_golden.py` (subprocess capture vs `tests/baseline/`), which stayed at MAE 0.0 through the extraction. 19 tests in `tests/test_horizon2_atmosphere_module.py`, 5 in `tests/test_horizon2_reference_project.py`.
 
-- [ ] **H2.5 — Cascaded Shadow Map (CSM) Per-Cascade Frustum Culling & Sloped Bias**
-  - **Status**: `PLANNED`
+- [x] **H2.5 — Cascaded Shadow Map (CSM) Per-Cascade Frustum Culling & Sloped Bias**
+  - **Status**: `DONE`
   - **Scope**:
     - Cull shadow-casting entities against individual cascade view volumes.
     - Implement sloped depth bias:
       $$\text{bias} = \text{clamp}\left(\text{bias}_{\text{base}} \cdot \tan(\arccos(N \cdot L)), \text{bias}_{\text{min}}, \text{bias}_{\text{max}}\right)$$
   - **Verification Gate**: 40–60% vertex reduction on distant shadow cascades; eliminates shadow acne on steep surfaces.
-  - **Notes / Log**: 
+  - **Notes / Log**: Per-cascade culling and the slope-scaled bias were already present from earlier work (`CascadedShadowMap.cull_cascades` + `slope = tan(acos(N·L))` in `deferred_resolve.frag`), so this task was hardening rather than reimplementation. Fixed a zero-allocation violation: `render_frame` built a new `caster_batches` list every frame; it now reuses `_caster_batches_scratch`. The hardcoded `0.5`/`6.0`/`2.0` bias clamps became `RenderConfig.shadow_bias_min_scale`/`shadow_bias_max_scale`/`shadow_bias_slope_scale`, uploaded as `u_ShadowBiasMinScale`/`u_ShadowBiasMaxScale`/`u_ShadowBiasSlopeScale`. Added `stats_shadow_commands`/`stats_shadow_commands_unculled` instrumentation. Note: culling is evaluated **per draw batch**, not per instance, and casters behind a cascade are deliberately retained because they can cast into it. 8 tests in `tests/test_horizon2_csm.py`.
 
 ---
 

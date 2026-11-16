@@ -70,6 +70,9 @@ uniform int u_ShadowMode = 2;          // 0=Hard, 1=PCF, 2=PCSS (Default: PCSS)
 uniform float u_ShadowSoftness = 1.2;  // Penumbra scale & PCF radius
 uniform float u_ShadowBias = 0.0015;   // Base world-space shadow depth bias (meters)
 uniform float u_ShadowNormalBias = 0.0010; // Normal offset bias scale
+uniform float u_ShadowBiasSlopeScale = 2.0; // Slope multiplier for the base bias
+uniform float u_ShadowBiasMinScale = 0.5;   // Lower clamp, as a multiple of the base bias
+uniform float u_ShadowBiasMaxScale = 6.0;   // Upper clamp, as a multiple of the base bias
 uniform vec2 u_ShadowOffset = vec2(0.0);   // Manual alignment offset (delta from calibrated base)
 
 // Phase 5 Toggles & Settings
@@ -291,9 +294,9 @@ float SampleSingleCascade(
     }
     float base_bias_world = max(u_ShadowBias, 0.0);
     float bias_world = max(clamp(
-        base_bias_world * (1.0 + slope * 2.0),
-        base_bias_world * 0.5,
-        base_bias_world * 6.0
+        base_bias_world * (1.0 + slope * u_ShadowBiasSlopeScale),
+        base_bias_world * u_ShadowBiasMinScale,
+        base_bias_world * u_ShadowBiasMaxScale
     ), world_texel_size * min(slope, 3.5) * 0.05);
     float bias = bias_world * inv_far;
 

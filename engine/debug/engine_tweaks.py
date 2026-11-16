@@ -401,7 +401,7 @@ class EngineTweaks:
 
     def apply_atmo_preset(self, preset_name: str) -> None:
         """Applies a named planet atmosphere preset to tweak fields."""
-        from engine.gfx.atmosphere import ATMOSPHERE_PRESETS
+        from engine.modules.atmosphere.config import ATMOSPHERE_PRESETS
         preset = ATMOSPHERE_PRESETS.get(preset_name.upper())
         if preset is not None:
             self.atmo_preset = preset_name.upper()
@@ -726,9 +726,13 @@ class EngineTweaks:
             if hasattr(pipeline, "post_process") and pipeline.post_process is not None:
                 pipeline.post_process.config = p_cfg
 
-        # 11. Atmosphere System
-        if hasattr(pipeline, "atmosphere") and pipeline.atmosphere is not None:
-            atmo = pipeline.atmosphere
+        # 11. Environment Provider (atmosphere module)
+        # The pipeline exposes the provider as `environment`; `atmosphere` is a
+        # compatibility alias for the same object. Tweaks write through the
+        # provider's public config.
+        env = getattr(pipeline, "atmosphere", None) or getattr(pipeline, "environment", None)
+        if env is not None:
+            atmo = env
             if hasattr(atmo, "config") and atmo.config is not None:
                 atmo.config.day_speed = float(self.day_speed)
                 atmo.config.azimuth_deg = float(self.azimuth_deg)
