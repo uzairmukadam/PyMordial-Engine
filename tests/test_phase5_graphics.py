@@ -107,8 +107,10 @@ class TestGTAOAndBilateralBlur:
     def test_gtao_and_blur_textures(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
 
-        assert pipeline.ao_pass.raw_ao_tex.size == (160, 120)
-        assert pipeline.ao_pass.blur_ao_tex.size == (160, 120)
+        # AO defaults to full resolution so its screen-space radius matches the
+        # actual viewport (a half-res target silently shrank the effect).
+        assert pipeline.ao_pass.raw_ao_tex.size == (320, 240)
+        assert pipeline.ao_pass.blur_ao_tex.size == (320, 240)
 
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
@@ -124,6 +126,20 @@ class TestGTAOAndBilateralBlur:
         assert np.any(ao_arr > 0)
 
         pipeline.destroy()
+
+    def test_ao_resolution_scale_is_honoured(self, render_ctx: RenderContext):
+        """A downscaled AO target must still be told the full render size."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ao_resolution_scale = 0.5
+            pipeline.apply_config(pipeline.config)
+            assert pipeline.ao_pass.raw_ao_tex.size == (160, 120)
+
+            pipeline.config.ao_resolution_scale = 1.0
+            pipeline.apply_config(pipeline.config)
+            assert pipeline.ao_pass.raw_ao_tex.size == (320, 240)
+        finally:
+            pipeline.destroy()
 
 
 class TestSSGIGlobalIllumination:

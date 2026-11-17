@@ -58,16 +58,19 @@ class SMAAPass(RenderPass):
         self._u_neigh_inv_screen = self.prog_neigh.get("u_InverseScreenSize", None)
         self._u_resolve_inv_screen = self.prog_resolve.get("u_InverseScreenSize", None)
         self._u_resolve_temporal_weight = self.prog_resolve.get("u_TemporalWeight", None)
+        self._u_resolve_jitter = self.prog_resolve.get("u_Jitter", None)
 
         self._inv_screen = (1.0 / max(self.width, 1), 1.0 / max(self.height, 1))
+        # Pre-allocated scratch for the per-frame jitter uniform (zero-allocation inner loop)
+        self._jitter_scratch = [0.0, 0.0]
 
         self._create_textures()
 
     def _create_textures(self) -> None:
         w, h = self.width, self.height
 
-        # Pass 1: Edges (RG8)
-        self.tex_edge = self.ctx.texture((w, h), 2, dtype="f1")
+        # Pass 1: Edges (RGBA8) — xy = orthogonal, zw = diagonal
+        self.tex_edge = self.ctx.texture((w, h), 4, dtype="f1")
         self.tex_edge.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.tex_edge.repeat_x = False
         self.tex_edge.repeat_y = False
@@ -103,6 +106,20 @@ class SMAAPass(RenderPass):
         self._read_hist = self.hist_a
         self._write_fbo = self.fbo_hist_b
         self._write_hist = self.hist_b
+
+        # Buffer written during the most recent execute() call (survives the ping-pong swap)
+        self._last_written_fbo = self.fbo_smaa
+        self._last_written_tex = self.tex_smaa
+
+    @property
+    def output_fbo(self) -> moderngl.Framebuffer:
+        """Framebuffer written by the most recent execute() call (pre-swap target)."""
+        return self._last_written_fbo
+
+    @property
+    def output_texture(self) -> moderngl.Texture:
+        """Color attachment of the framebuffer written by the most recent execute() call."""
+        return self._last_written_tex
 
     def get_jitter(self, width: int, height: int, mode: str, frame_idx: int | None = None) -> tuple[float, float]:
         """Returns subpixel projection jitter for temporal SMAA 2x / 4x."""
@@ -180,10 +197,16 @@ class SMAAPass(RenderPass):
 
         # If SMAA 1x, we are done
         if aa_mode == "SMAA_1X" or g_buffer is None:
+            self._last_written_fbo = self.fbo_smaa
+            self._last_written_tex = self.tex_smaa
             context.resources["smaa_output"] = self.tex_smaa
             return
 
         # ---- PASS 4: Temporal Subpixel Resolve (SMAA 2x / 4x) ----
+        # Publish the write target before any swap so callers see this frame's buffer
+        self._last_written_fbo = self._write_fbo
+        self._last_written_tex = self._write_hist
+
         self._write_fbo.use()
         self.tex_smaa.use(location=0)
         self._read_hist.use(location=1)
@@ -195,12 +218,21 @@ class SMAAPass(RenderPass):
         if self._u_resolve_temporal_weight is not None:
             weight = 0.75 if aa_mode == "SMAA_4X" else 0.50
             self._u_resolve_temporal_weight.value = weight
+        if self._u_resolve_jitter is not None:
+            jitter = getattr(context.frame_context, "jitter", None)
+            if jitter is None:
+                self._jitter_scratch[0] = 0.0
+                self._jitter_scratch[1] = 0.0
+            else:
+                self._jitter_scratch[0] = float(jitter[0])
+                self._jitter_scratch[1] = float(jitter[1])
+            self._u_resolve_jitter.value = self._jitter_scratch
 
         self.vao_resolve.render(moderngl.TRIANGLES, vertices=3)
 
-        context.resources["smaa_output"] = self._write_hist
+        context.resources["smaa_output"] = self._last_written_tex
 
-        # Ping-pong swap
+        # Ping-pong swap (applies to the *next* frame; output_fbo keeps this frame's target)
         if self._read_hist is self.hist_a:
             self._read_hist = self.hist_b
             self._write_fbo = self.fbo_hist_a

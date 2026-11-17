@@ -9,6 +9,7 @@ layout (binding = 2) uniform sampler2D u_VelocityTexture;
 layout (binding = 3) uniform sampler2D u_GBufferDepth;
 
 uniform vec2 u_InverseScreenSize;
+uniform vec2 u_Jitter = vec2(0.0, 0.0); // Current frame subpixel jitter (UV space)
 uniform float u_TemporalWeight = 0.50; // 0.50 for 2x, 0.75 for 4x
 
 void main() {
@@ -16,15 +17,26 @@ void main() {
 
     // Fetch velocity
     vec2 velocity = texture(u_VelocityTexture, v_UV).xy;
-    vec2 prev_uv = v_UV - velocity;
+
+    // The current frame is jittered, so the nominal (unjittered) previous UV is:
+    vec2 histUV = (v_UV - u_Jitter) - velocity;
 
     // Disocclusion / boundary rejection
-    if (prev_uv.x < 0.0 || prev_uv.x > 1.0 || prev_uv.y < 0.0 || prev_uv.y > 1.0) {
+    if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {
         out_Color = current;
         return;
     }
 
-    vec4 history = texture(u_HistoryFrame, prev_uv);
+    // Depth-based disocclusion rejection (reversed-Z: larger = closer to camera)
+    float curr_depth = texture(u_GBufferDepth, v_UV).r;
+    float hist_depth = texture(u_GBufferDepth, histUV).r;
+    float depth_delta = abs(curr_depth - hist_depth);
+    if (depth_delta > 0.10 * max(max(abs(curr_depth), abs(hist_depth)), 1e-5)) {
+        out_Color = current;
+        return;
+    }
+
+    vec4 history = texture(u_HistoryFrame, histUV);
 
     // 3x3 Neighborhood bounding box in RGB to eliminate ghosting
     vec3 c_min = current.rgb;

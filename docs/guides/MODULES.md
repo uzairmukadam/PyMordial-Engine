@@ -206,10 +206,45 @@ process measurably perturbs later frames on some drivers.
 
 ---
 
-## 8. Reference project
+## 8. Reference projects
 
-`projects/reference_game/` is the end-to-end example: it declares engine-module settings in
-`config.py`, registers a gameplay module with a manifest, and can be launched with the
+Two projects ship as end-to-end references.
+
+### `projects/playground/` — the canonical workflow reference
+
+Playground is the complete project workflow in one place: declarative `config.py`, a
+project-owned `BaseWorldBuilder` (`world/arena.py`), four manifest-declared modules loaded
+through `ModuleRegistry`, a `GameStateManager` Playing/Paused flow, and a headless CI path.
+
+```powershell
+python -m engine.tools.project validate --project playground
+python -m engine.tools.project run --project playground --headless --frames 5
+python projects/playground/main.py --headless --frames 5 --no-atmosphere
+python -m engine.tools.packager --project playground --target pyinstaller --dry-run
+```
+
+Its module layout is the one the packager expects — **one package directory per module**:
+
+```text
+projects/playground/
+├── config.py                     # ProjectConfig (display, physics, engine modules)
+├── main.py                       # ProjectApp + world builder + ModuleRegistry
+├── world/arena.py                # PlaygroundArenaBuilder(BaseWorldBuilder)
+└── modules/
+    ├── player/__init__.py        # playground.player  (GAMEPLAY)
+    ├── hud/__init__.py           # playground.hud     (GAMEPLAY, depends on player)
+    ├── menu/__init__.py          # playground.menu    (GAMEPLAY, depends on player)
+    └── tweaks/__init__.py        # playground.tweaks  (TOOL, depends on player)
+```
+
+> **Packaging gotcha**: `ProjectPackager.detect_modules()` tree-shakes by *directory* under
+> `modules/`. A flat `modules/foo.py` is silently dropped from a packaged build. Always use
+> `modules/foo/__init__.py`.
+
+### `projects/reference_game/` — the minimal engine-module reference
+
+A smaller example focused on engine-module configuration: it declares atmosphere settings in
+`config.py`, registers one gameplay module with a manifest, and can be launched with the
 atmosphere disabled:
 
 ```powershell

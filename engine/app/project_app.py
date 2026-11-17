@@ -492,6 +492,10 @@ class ProjectApp:
                 # 1. Input event polling & dispatch
                 events = self.input_manager.poll_events()
                 for ev in events:
+                    # Let the window translate OS events (resize, focus, minimize)
+                    # into engine events before gameplay sees them.
+                    self.render_ctx.window.poll_window_events(ev)
+
                     if ev.type == pygame.QUIT:
                         self.is_running = False
                         break

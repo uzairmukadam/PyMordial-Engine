@@ -20,12 +20,15 @@ uniform vec3 u_SpaceZenithColor = vec3(0.0015, 0.0020, 0.0060);
 uniform vec3 u_NebulaColor = vec3(0.16, 0.055, 0.28);
 uniform float u_NebulaIntensity = 0.35;
 uniform vec3 u_AtmosphereSunDir = vec3(0.35, -0.85, 0.40);    // True astronomical sun vector
+uniform vec3 u_AtmosphereMoonDir = vec3(-0.35, 0.85, -0.40);  // True astronomical moon vector
 uniform float u_SunDiscSize = 0.00465;                          // Solar disc angular radius (radians)
 uniform float u_MoonDiscSize = 0.00450;                         // Lunar disc angular radius (radians)
 uniform vec3 u_MoonColor = vec3(0.70, 0.82, 1.0);
 uniform float u_MoonIntensity = 0.40;
 uniform float u_StarIntensity = 1.0;
 uniform float u_StarDensity = 1.0;
+uniform float u_SkyExposure = 1.0;                              // Sky radiance multiplier
+uniform float u_SkySaturation = 1.0;                            // Luminance-preserving saturation
 
 vec3 EvaluateSpaceSky(vec3 d, vec3 sunDir, vec3 sunColor, float sunLux, float time) {
     float phi = atan(d.z, d.x);
@@ -38,21 +41,23 @@ vec3 EvaluateSpaceSky(vec3 d, vec3 sunDir, vec3 sunColor, float sunLux, float ti
     float nebula = smoothstep(0.28, 0.78, nebulaNoise) * band;
     vec3 space = u_SpaceZenithColor + u_NebulaColor * nebula * u_NebulaIntensity;
 
-    vec2 starCoord = vec2(phi, theta) * (180.0 * u_StarDensity);
+    // Sparse natural starfield: coarse cell grid, few occupied cells, steep
+    // magnitude curve so a handful of bright stars stand out against faint ones.
+    vec2 starCoord = vec2(phi, theta) * (90.0 * u_StarDensity);
     vec2 cell = floor(starCoord);
     vec2 f = fract(starCoord);
     vec2 hash = fract(sin(vec2(
         dot(cell, vec2(127.1, 311.7)),
         dot(cell, vec2(269.5, 183.3))
     )) * 43758.5453);
-    if (hash.x > 0.91 && u_StarIntensity > 0.0) {
+    if (hash.x > 0.975 && u_StarIntensity > 0.0) {
         vec2 starPos = 0.25 + 0.50 * hash;
         float dist = length(f - starPos);
-        float point = exp(-dist * dist * 140.0);
+        float point = exp(-dist * dist * 220.0);
         float twinkle = 0.94 + 0.06 * sin(time * 2.1 + hash.y * 62.83);
-        float magnitude = (hash.x - 0.91) / 0.09;
+        float magnitude = (hash.x - 0.975) / 0.025;
         vec3 tint = mix(vec3(0.78, 0.86, 1.0), vec3(1.0, 0.78, 0.54), hash.y);
-        space += tint * point * twinkle * (1.5 + 7.0 * magnitude) * u_StarIntensity;
+        space += tint * point * twinkle * (0.4 + 2.4 * magnitude * magnitude) * u_StarIntensity;
     }
 
     vec3 L = normalize(-sunDir);
@@ -62,7 +67,7 @@ vec3 EvaluateSpaceSky(vec3 d, vec3 sunDir, vec3 sunColor, float sunLux, float ti
         space += sunColor * sunLux * 35.0 * edge;
     }
 
-    float moonAngle = acos(clamp(dot(d, sunDir), -1.0, 1.0));
+    float moonAngle = acos(clamp(dot(d, normalize(-u_AtmosphereMoonDir)), -1.0, 1.0));
     if (moonAngle < u_MoonDiscSize) {
         float edge = 1.0 - smoothstep(0.85, 1.0, moonAngle / max(u_MoonDiscSize, 1e-5));
         space += u_MoonColor * u_MoonIntensity * 12.0 * edge;
@@ -130,11 +135,35 @@ vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, f
     }
 
     // 3. Night Sky foundation (Lunar disc & Twinkling Starfield)
-    float dayFactor = smoothstep(-0.06, 0.02, sunElevation);
+    //
+    // Physically motivated twilight. The solar transmittance along the sun
+    // direction measures how much direct sunlight still reaches the observer, so
+    // the sky darkens through blue -> orange -> deep blue as it falls instead of
+    // snapping at a fixed elevation. The elevation ramp keeps the horizon glow
+    // alive through civil twilight, and the transmittance term makes the falloff
+    // depend on the planet's air column (thicker or hazier atmospheres produce
+    // longer, deeper twilights).
+    float mu_twilight = max(mu_s, 0.12);
+    vec2 twilightUv = LutTransmittanceParamsToUv(r, mu_twilight);
+    vec3 T_twilight = texture(u_TransmittanceLUT, twilightUv).rgb;
+    float twilightLum = dot(T_twilight, vec3(0.2126, 0.7152, 0.0722));
+    vec2 zenithUv = LutTransmittanceParamsToUv(r, 1.0);
+    float zenithLum = max(dot(texture(u_TransmittanceLUT, zenithUv).rgb, vec3(0.2126, 0.7152, 0.0722)), 1e-4);
+    float sunTransmittance = clamp(twilightLum / zenithLum, 0.0, 1.0);
+    float dayFactor = smoothstep(-0.14, 0.03, sunElevation) * mix(0.55, 1.0, sunTransmittance);
+
+    // Sky grading: exposure scales the physical radiance before the night blend,
+    // saturation is a luminance-preserving lerp towards (or away from) grey.
+    skyRadiance *= u_SkyExposure;
+    float skyLum = dot(skyRadiance, vec3(0.2126, 0.7152, 0.0722));
+    skyRadiance = mix(vec3(skyLum), skyRadiance, u_SkySaturation);
+
     vec3 nightSky = mix(u_NightHorizonColor, u_NightZenithColor, pow(max(d.y, 0.0), 0.7));
 
-    // Lunar disc & halo (facing opposite the sun)
-    float moonCosTheta = dot(d, sunDir);
+    // Lunar disc & halo, placed on the moon's own orbit rather than antipodal to
+    // the sun so it rises and sets independently.
+    vec3 M = normalize(-u_AtmosphereMoonDir);
+    float moonCosTheta = dot(d, M);
     float moonAng = acos(clamp(moonCosTheta, -1.0, 1.0));
     if (moonAng < u_MoonDiscSize && d.y > 0.0) {
         float mNorm = moonAng / u_MoonDiscSize;
@@ -145,10 +174,12 @@ vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, f
     // Twinkling Starfield (naturally fades out in daylight)
     float starDayFade = 1.0 - smoothstep(0.0, 0.12, dayFactor);
     if (d.y > 0.02 && u_StarIntensity > 0.0 && starDayFade > 0.001) {
-        // High-frequency celestial spherical mapping
+        // High-frequency celestial spherical mapping. The cell grid is coarser
+        // than a naive 180/cell mapping so the sky reads as a sparse natural
+        // starfield rather than a dense speckle.
         float phi = atan(d.z, d.x);
         float theta = asin(clamp(d.y, -1.0, 1.0));
-        vec2 starCoord = vec2(phi, theta) * (180.0 * u_StarDensity);
+        vec2 starCoord = vec2(phi, theta) * (90.0 * u_StarDensity);
 
         vec2 cell = floor(starCoord);
         vec2 f = fract(starCoord);
@@ -156,14 +187,16 @@ vec3 EvaluateAtmosphere(vec3 rayDir, vec3 sunDir, vec3 sunColor, float sunLux, f
         // Fast hash for this celestial grid cell
         vec2 hash = fract(sin(vec2(dot(cell, vec2(127.1, 311.7)), dot(cell, vec2(269.5, 183.3)))) * 43758.5453);
 
-        if (hash.x > 0.92) {
+        // Only a small fraction of cells host a star, and most of those are dim.
+        if (hash.x > 0.975) {
             vec2 starPos = 0.25 + 0.50 * hash; // jittered within cell interior
             float dist = length(f - starPos);
-            float starPoint = exp(-dist * dist * 140.0); // Fine pinpoint star
+            float starPoint = exp(-dist * dist * 220.0); // tighter pinpoint
 
-            float twinkle = 0.70 + 0.30 * sin(time * 3.5 + hash.y * 62.83);
-            float starMag = (hash.x - 0.92) / 0.08;
-            float starBrightness = (2.0 + 8.0 * starMag) * starPoint * twinkle * u_StarIntensity;
+            float twinkle = 0.85 + 0.15 * sin(time * 3.5 + hash.y * 62.83);
+            float starMag = (hash.x - 0.975) / 0.025;
+            // Steep magnitude curve: a few bright stars, many faint ones.
+            float starBrightness = (0.35 + 2.2 * starMag * starMag) * starPoint * twinkle * u_StarIntensity;
 
             // Star color temperature variation (cool blue-white to warm amber)
             vec3 starTint = mix(vec3(0.85, 0.92, 1.0), vec3(1.0, 0.82, 0.60), hash.y);

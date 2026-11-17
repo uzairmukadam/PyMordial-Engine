@@ -17,13 +17,6 @@ uniform float u_MaxCoCRadius;          // Maximum blur radius in pixels (e.g. 24
 uniform int   u_BokehShape;            // 0 = Circular, 1 = Hexagonal, 2 = Anamorphic
 uniform float u_AnamorphicRatio;       // Horizontal stretch ratio (e.g. 2.0 for anamorphic)
 
-// Motion Blur Uniforms
-uniform int   u_MotionBlurEnabled;     // 0 = Off, 1 = On
-uniform int   u_MotionBlurSamples;     // Number of directional blur taps (e.g. 8 to 24)
-uniform float u_MotionBlurIntensity;   // Shutter speed / blur scale factor
-uniform float u_MaxMotionRadius;       // Max motion vector in pixels
-uniform mat4  u_PrevViewProjection;    // Previous frame VP matrix
-
 // -----------------------------------------------------------------------------
 // Golden Spiral Disc Kernel Generator for Bokeh Sampling
 // -----------------------------------------------------------------------------
@@ -117,55 +110,5 @@ void main() {
         }
     }
 
-    vec3 finalOpticsColor = dofColor;
-
-    // -------------------------------------------------------------------------
-    // 2. Camera Velocity Motion Blur
-    // -------------------------------------------------------------------------
-    if (u_MotionBlurEnabled == 1 && centerRawDepth > 1e-6) {
-        // Reconstruct current 3D world position from depth
-        vec4 clipPos = vec4(v_UV * 2.0 - 1.0, centerRawDepth, 1.0);
-        vec4 viewPos = u_InvProjection * clipPos;
-        viewPos /= max(viewPos.w, 1e-6);
-        vec4 worldPos = u_InvView * viewPos;
-
-        // Project world position with previous frame's View-Projection matrix
-        vec4 prevClipPos = u_PrevViewProjection * vec4(worldPos.xyz, 1.0);
-        vec2 prevUV = (prevClipPos.xy / max(prevClipPos.w, 1e-6)) * 0.5 + 0.5;
-
-        // Screen-space motion vector
-        vec2 motionVec = (v_UV - prevUV) * u_MotionBlurIntensity;
-
-        // Clamp maximum motion length in pixel space
-        float motionLen = length(motionVec / texelSize);
-        if (motionLen > u_MaxMotionRadius) {
-            motionVec *= (u_MaxMotionRadius / max(motionLen, 1e-4));
-        }
-
-        // Only blur if there is noticeable subpixel motion
-        if (motionLen > 0.35) {
-            int samples = clamp(u_MotionBlurSamples, 4, 32);
-            vec3 mbAccum = vec3(0.0);
-            float mbWeight = 0.0;
-
-            for (int i = 0; i < samples; ++i) {
-                float t = float(i) / float(samples - 1) - 0.5; // [-0.5, 0.5] centered
-                vec2 tapUV = v_UV + motionVec * t;
-
-                vec3 tapCol = texture(u_SceneHDR, tapUV).rgb;
-                float tapRawDepth = texture(u_DepthTexture, tapUV).r;
-                float tapDepth = linearizeDepth(tapRawDepth, tapUV);
-
-                // Depth-aware weighting to prevent bleeding behind foreground geometry
-                float dw = clamp(1.0 - abs(tapDepth - centerDepth) / max(centerDepth * 0.25, 0.5), 0.1, 1.0);
-
-                mbAccum += tapCol * dw;
-                mbWeight += dw;
-            }
-
-            finalOpticsColor = mbAccum / max(mbWeight, 1e-4);
-        }
-    }
-
-    out_HDRColor = vec4(finalOpticsColor, 1.0);
+    out_HDRColor = vec4(dofColor, 1.0);
 }

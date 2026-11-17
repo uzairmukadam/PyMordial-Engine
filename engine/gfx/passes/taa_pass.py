@@ -62,6 +62,10 @@ class TAAPass(RenderPass):
         self._write_fbo = self.fbo_b
         self._write_hist = self.hist_b
 
+        # Buffer written during the most recent execute() call (survives the ping-pong swap)
+        self._last_written_fbo = self.fbo_b
+        self._last_written_tex = self.hist_b
+
         self._prev_vp = np.identity(4, dtype=np.float32).flatten()
 
         quad_vert = load_shader("fullscreen_quad.vert")
@@ -74,6 +78,8 @@ class TAAPass(RenderPass):
         self._u_feedback = self.prog.get("u_Feedback", None)
         self._u_sharpness = self.prog.get("u_Sharpness", None)
         self._u_gamma = self.prog.get("u_Gamma", None)
+        self._u_min_feedback = self.prog.get("u_MinFeedback", None)
+        self._u_normal_reject = self.prog.get("u_NormalReject", None)
 
     def get_jitter(self, width: int, height: int) -> tuple[float, float]:
         """Calculates subpixel projection offset for the current frame in UV coordinates."""
@@ -107,7 +113,19 @@ class TAAPass(RenderPass):
         self._read_hist = self.hist_a
         self._write_fbo = self.fbo_b
         self._write_hist = self.hist_b
+        self._last_written_fbo = self.fbo_b
+        self._last_written_tex = self.hist_b
         self.frame_idx = 0
+
+    @property
+    def output_fbo(self) -> moderngl.Framebuffer:
+        """Framebuffer written by the most recent execute() call (pre-swap target)."""
+        return self._last_written_fbo
+
+    @property
+    def output_texture(self) -> moderngl.Texture:
+        """Color attachment of the framebuffer written by the most recent execute() call."""
+        return self._last_written_tex
 
     def execute(self, context: RenderGraphContext) -> None:
         self.frame_idx += 1
@@ -121,6 +139,10 @@ class TAAPass(RenderPass):
             context.resources["taa_output"] = current_tex
             return
 
+        # Publish the write target before any swap so callers see this frame's buffer
+        self._last_written_fbo = self._write_fbo
+        self._last_written_tex = self._write_hist
+
         self._write_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.disable(moderngl.DEPTH_TEST)
@@ -129,6 +151,16 @@ class TAAPass(RenderPass):
         self._read_hist.use(location=1)
         g_buffer.depth_texture.use(location=2)
         g_buffer.velocity_texture.use(location=3)
+
+        # Normal-based history rejection (octahedral world normals from the G-buffer).
+        # Falls back to the depth texture with the test disabled when unavailable.
+        normal_tex = getattr(g_buffer, "normal_metallic_texture", None)
+        if normal_tex is not None:
+            normal_tex.use(location=4)
+        else:
+            g_buffer.depth_texture.use(location=4)
+        if self._u_normal_reject is not None:
+            self._u_normal_reject.value = 0.85 if normal_tex is not None else 0.0
 
         # On frame 1, seed previous unjittered VP from current to avoid initialization flash
         prev_vp_candidate = context.resources.get("prev_unjittered_vp")
@@ -140,16 +172,18 @@ class TAAPass(RenderPass):
         if self._u_prev_vp is not None:
             self._u_prev_vp.write(self._prev_vp.tobytes())
         if self._u_feedback is not None:
-            self._u_feedback.value = float(getattr(context.config, "taa_feedback", 0.95))
+            self._u_feedback.value = float(getattr(context.config, "taa_max_feedback", 0.95))
+        if self._u_min_feedback is not None:
+            self._u_min_feedback.value = float(getattr(context.config, "taa_min_feedback", 0.78))
         if self._u_sharpness is not None:
             self._u_sharpness.value = float(getattr(context.config, "taa_sharpness", 0.35))
         if self._u_gamma is not None:
-            self._u_gamma.value = float(getattr(context.config, "taa_gamma", 1.25))
+            self._u_gamma.value = float(getattr(context.config, "taa_variance_gamma", 1.25))
 
         self.vao.render(moderngl.TRIANGLES, vertices=3)
 
-        # Ping-pong swap
-        context.resources["taa_output"] = self._write_hist
+        # Ping-pong swap (applies to the *next* frame; output_fbo keeps this frame's target)
+        context.resources["taa_output"] = self._last_written_tex
         if self._read_hist is self.hist_a:
             self._read_hist = self.hist_b
             self._write_fbo = self.fbo_a

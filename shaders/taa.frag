@@ -4,7 +4,8 @@
 //
 //  Clean Ground-Up Rewrite:
 //  - Subpixel projection unjittering and nominal history tracking
-//  - 3x3 depth-dilated velocity fetching (eliminates edge ghosting)
+//  - 3x3 depth-dilated + magnitude-dilated velocity fetching (eliminates edge ghosting)
+//  - Normal-based history rejection (octahedral G-buffer normals)
 //  - Tonemapped YCoCg variance-clipping (zero color shift, zero fireflies)
 //  - Normalized 5-tap Catmull-Rom bicubic history reprojection
 //  - Velocity-adaptive temporal feedback
@@ -18,6 +19,9 @@ layout (binding = 0) uniform sampler2D u_CurrentFrame;
 layout (binding = 1) uniform sampler2D u_HistoryFrame;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;
 layout (binding = 3) uniform sampler2D u_VelocityTexture;
+// Octahedral world normal (RG) + metallic (B) + AO (A). Bound by TAAPass; when the
+// G-buffer does not expose it the sampler reads black and normal rejection is skipped.
+layout (binding = 4) uniform sampler2D u_GBufferNormalMetallic;
 
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -43,6 +47,21 @@ uniform mat4 u_PrevViewProjection;
 uniform float u_Feedback = 0.95;   // Base temporal feedback (0.80 .. 0.98)
 uniform float u_Sharpness = 0.35;  // Post-resolve sharpening (0.0 .. 1.0)
 uniform float u_Gamma = 1.25;      // Variance box scale factor (0.75 .. 2.0)
+uniform float u_MinFeedback = 0.78; // Feedback floor under fast motion (0.50 .. 0.95)
+uniform float u_NormalReject = 0.85; // cos(angle) below which history is rejected
+
+// ============================================================
+//  Octahedral Normal Decoding (matches common/pbr_brdf.glsl)
+// ============================================================
+
+vec3 OctahedralDecode(vec2 f) {
+    f = f * 2.0 - 1.0;
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = clamp(-n.z, 0.0, 1.0);
+    n.x += (n.x >= 0.0) ? -t : t;
+    n.y += (n.y >= 0.0) ? -t : t;
+    return normalize(n);
+}
 
 // ============================================================
 //  Color Space Transforms: RGB <-> YCoCg
@@ -148,6 +167,11 @@ void main() {
     float closestDepth = -1.0;
     vec2  closestUV    = v_UV;
 
+    // Simultaneously track the largest velocity magnitude in the 3x3 footprint so
+    // background pixels adjacent to fast foreground geometry inherit its motion.
+    vec2  maxVelUV   = v_UV;
+    float maxVelMag2 = -1.0;
+
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             vec2 sUV = v_UV + vec2(x, y) * texel;
@@ -156,10 +180,23 @@ void main() {
                 closestDepth = d;
                 closestUV    = sUV;
             }
+            vec2 v = texture(u_VelocityTexture, sUV).xy;
+            float mag2 = dot(v, v);
+            if (mag2 > maxVelMag2) {
+                maxVelMag2 = mag2;
+                maxVelUV   = sUV;
+            }
         }
     }
 
     vec2 velocity = texture(u_VelocityTexture, closestUV).xy;
+
+    // Magnitude dilation: adopt the fastest neighbour's velocity when it clearly
+    // exceeds the depth-dilated one (covers background pixels hugging a moving edge).
+    vec2 maxVelocity = texture(u_VelocityTexture, maxVelUV).xy;
+    if (dot(maxVelocity, maxVelocity) > dot(velocity, velocity) * 1.5) {
+        velocity = maxVelocity;
+    }
 
     // 2. Camera-Matrix Reprojection Fallback for background / sky
     if (closestDepth <= 1e-6 || dot(velocity, velocity) <= 1e-12) {
@@ -183,6 +220,19 @@ void main() {
     if (any(lessThan(histUV, vec2(0.0))) || any(greaterThan(histUV, vec2(1.0)))) {
         out_ResolvedColor = texture(u_CurrentFrame, v_UV);
         return;
+    }
+
+    // 3b. Normal-Based History Rejection
+    // A large normal change between the current pixel and the reprojected history
+    // location means the history belongs to a different surface (silhouette /
+    // disocclusion). u_NormalReject <= 0 disables the test (no normal texture bound).
+    if (u_NormalReject > 0.0) {
+        vec3 n_curr = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
+        vec3 n_hist = OctahedralDecode(texture(u_GBufferNormalMetallic, histUV).rg);
+        if (dot(n_curr, n_hist) < u_NormalReject) {
+            out_ResolvedColor = texture(u_CurrentFrame, v_UV);
+            return;
+        }
     }
 
     // 4. Sample Current Frame and History Frame
@@ -222,7 +272,7 @@ void main() {
 
     // 7. Motion-Adaptive Temporal Blend
     float speedPx = length(velocity * res);
-    float fb = mix(u_Feedback, max(u_Feedback - 0.15, 0.78), smoothstep(1.5, 6.0, speedPx));
+    float fb = mix(u_Feedback, max(u_Feedback - 0.15, u_MinFeedback), smoothstep(1.5, 6.0, speedPx));
 
     vec3 blended_yc = mix(curr_yc, clipped_yc, fb);
     vec3 resolved_rgb = max(YCoCgtoRGB(UntonemapYCoCg(blended_yc)), vec3(0.0));

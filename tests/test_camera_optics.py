@@ -58,7 +58,11 @@ def test_camera_optics_pass_init_and_resize(render_ctx: RenderContext):
 
 
 def test_camera_optics_render_dof_and_motion_blur(render_ctx: RenderContext):
-    """Tests execution of Depth of Field and Motion Blur passes with various bokeh diaphragms."""
+    """Tests execution of the Depth of Field pass with various bokeh diaphragms.
+
+    Motion blur moved to ``MotionBlurPass`` (see ``tests/test_motion_blur.py``);
+    this test covers the DoF path that remains in ``CameraOpticsPass``.
+    """
     ctx = render_ctx.ctx
     w, h = 160, 120
 
@@ -74,7 +78,6 @@ def test_camera_optics_render_dof_and_motion_blur(render_ctx: RenderContext):
     inv_proj_mat = np.eye(4, dtype=np.float32).flatten()
     inv_view_mat = np.eye(4, dtype=np.float32).flatten()
     vp_mat = np.eye(4, dtype=np.float32).flatten()
-    prev_vp_mat = np.eye(4, dtype=np.float32).flatten()
 
     frame_ctx.update(
         view_mat=view_mat,
@@ -90,22 +93,21 @@ def test_camera_optics_render_dof_and_motion_blur(render_ctx: RenderContext):
     optics = CameraOpticsPass(ctx, width=w, height=h)
     cfg = RenderConfig()
     cfg.dof_enabled = True
-    cfg.motion_blur_enabled = True
 
     # 1. Circular Bokeh
     cfg.dof_bokeh_shape = "CIRCULAR"
-    res1 = optics.render_optics(hdr_tex, depth_tex, prev_vp_mat, cfg)
+    res1 = optics.render_optics(hdr_tex, depth_tex, cfg)
     assert res1 is not None
 
     # 2. Hexagonal Bokeh
     cfg.dof_bokeh_shape = "HEXAGONAL"
-    res2 = optics.render_optics(hdr_tex, depth_tex, prev_vp_mat, cfg)
+    res2 = optics.render_optics(hdr_tex, depth_tex, cfg)
     assert res2 is not None
 
     # 3. Anamorphic 2x Bokeh
     cfg.dof_bokeh_shape = "ANAMORPHIC"
     cfg.dof_anamorphic_ratio = 2.0
-    res3 = optics.render_optics(hdr_tex, depth_tex, prev_vp_mat, cfg)
+    res3 = optics.render_optics(hdr_tex, depth_tex, cfg)
     assert res3 is not None
 
     optics.destroy()

@@ -41,6 +41,8 @@ from engine.gfx.material_registry import MaterialRegistry
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
+from engine.gfx.passes.solar_flare_pass import SolarFlarePass
+from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.water_pass import WaterPass
@@ -153,12 +155,14 @@ class RenderPipeline:
         "_u_pcf_samples",
         "_u_shadow_mode",
         "_u_shadow_softness",
+        "_u_sun_angular_radius",
         "_u_shadow_bias",
         "_u_shadow_normal_bias",
         "_u_shadow_bias_slope",
         "_u_shadow_bias_min",
         "_u_shadow_bias_max",
         "_u_shadow_offset",
+        "_u_cascade_atlas_rect",
         "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
@@ -231,6 +235,8 @@ class RenderPipeline:
         "_u_atmo_sun_dir",
         "particle_pass",
         "camera_optics_pass",
+        "solar_flare_pass",
+        "motion_blur_pass",
         "water_pass",
         "_prev_time",
         "_graph_context",
@@ -278,6 +284,8 @@ class RenderPipeline:
             cascade_count=self.config.csm_cascades,
             max_distance=self.config.shadow_distance,
             split_lambda=getattr(self.config, "csm_split_lambda", 0.85),
+            split_mode=getattr(self.config, "csm_split_mode", "PSSM"),
+            nonuniform_atlas=getattr(self.config, "csm_nonuniform_atlas", False),
         )
 
         # 5. Initialize SSBO 1 (Transforms) & SSBO 2 (Materials)
@@ -451,12 +459,14 @@ class RenderPipeline:
         self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
         self._u_shadow_mode = self.resolve_prog.get("u_ShadowMode", None)
         self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
+        self._u_sun_angular_radius = self.resolve_prog.get("u_SunAngularRadius", None)
         self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
         self._u_shadow_normal_bias = self.resolve_prog.get("u_ShadowNormalBias", None)
         self._u_shadow_bias_slope = self.resolve_prog.get("u_ShadowBiasSlopeScale", None)
         self._u_shadow_bias_min = self.resolve_prog.get("u_ShadowBiasMinScale", None)
         self._u_shadow_bias_max = self.resolve_prog.get("u_ShadowBiasMaxScale", None)
         self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
+        self._u_cascade_atlas_rect = self.resolve_prog.get("u_CascadeAtlasRect", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
         self._u_hiz_debug_mip = self.resolve_prog.get("u_HiZDebugMip", None)
@@ -551,6 +561,10 @@ class RenderPipeline:
 
         # 8.6. Cinematic Camera Optics & Lens Effects (Phase 3)
         self.camera_optics_pass = CameraOpticsPass(self.ctx, w, h)
+        # 8.6b. Sun-anchored physically-based solar flare (lens_flare_mode == "SOLAR")
+        self.solar_flare_pass = SolarFlarePass(self.ctx, w, h)
+        # 8.6c. Velocity-buffer motion blur (executes after TAA)
+        self.motion_blur_pass = MotionBlurPass(self.ctx, w, h)
 
         # 8.7. HDR Bloom Pyramid
         self.bloom_pass = BloomPass(self.ctx, w, h)
@@ -766,11 +780,14 @@ class RenderPipeline:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
         self.csm.resize_atlas(new_config.shadow_resolution)
+        self.csm.set_nonuniform_atlas(getattr(new_config, "csm_nonuniform_atlas", False))
         self.spot_shadow_map.resize_atlas(getattr(new_config, "spot_shadow_resolution", 2048))
         self.csm.update_splits(
             new_config.shadow_distance,
             new_config.csm_cascades,
             getattr(new_config, "csm_split_lambda", 0.85),
+            getattr(new_config, "csm_split_mode", "PSSM"),
+            getattr(new_config, "csm_cascade_distance_scale", None),
         )
         self.post_process.config = new_config
         self.ctx_wrapper.config = new_config
@@ -788,6 +805,11 @@ class RenderPipeline:
 
         if self.ao_pass is not None:
             self.ao_pass.enabled = getattr(new_config, "ao_mode", "GTAO") != "OFF"
+            self.ao_pass.set_resolution_scale(
+                getattr(new_config, "ao_resolution_scale", 1.0),
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+            )
         if self.ssr_pass is not None:
             self.ssr_pass.enabled = getattr(new_config, "ssr_enabled", True)
             self.ssr_pass.resize(
@@ -823,6 +845,8 @@ class RenderPipeline:
         self.smaa_pass.resize(width, height)
         self.volumetric_fog_pass.resize(width, height)
         self.camera_optics_pass.resize(width, height)
+        self.solar_flare_pass.resize(width, height)
+        self.motion_blur_pass.resize(width, height)
         self.bloom_pass.resize(width, height)
         self.water_pass.resize(width, height)
         self.post_process.resize(width, height)
@@ -872,6 +896,33 @@ class RenderPipeline:
         res = self.texture_atlas.load_materials_from_folder(textures_dir, progress_callback=progress_callback)
         self.material_registry.sync_with_atlas(self.texture_atlas)
         return res
+
+    def _compute_sun_screen_position(self) -> tuple[tuple[float, float], bool]:
+        """Projects the sun direction to UV space for the solar flare.
+
+        Returns ``((u, v), on_screen)``. ``on_screen`` is False when the sun is
+        behind the camera, in which case the flare must not draw.
+        """
+        sx = float(self._sun_v[0])
+        sy = float(self._sun_v[1])
+        sz = float(self._sun_v[2])
+        # The sun sits at infinity along -sun_dir (sun_dir points into the scene).
+        dx, dy, dz = -sx, -sy, -sz
+
+        vp = self._vp_mat
+        # Column-major mat4 * vec4: clip = VP * (dir, 0) for a direction at infinity.
+        cx = vp[0] * dx + vp[4] * dy + vp[8] * dz
+        cy = vp[1] * dx + vp[5] * dy + vp[9] * dz
+        cw = vp[3] * dx + vp[7] * dy + vp[11] * dz
+
+        if cw <= 1e-6:
+            return (0.5, 0.5), False
+
+        inv_w = 1.0 / cw
+        u = (cx * inv_w) * 0.5 + 0.5
+        v = (cy * inv_w) * 0.5 + 0.5
+        on_screen = 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0
+        return (u, v), on_screen
 
     def render_frame(
         self,
@@ -930,16 +981,24 @@ class RenderPipeline:
         matrix_look_at(camera_pos, camera_target, up=(0.0, 1.0, 0.0), out=self._view_mat)
 
         # Synchronize CSM splits with active shadow distance and cascade count
+        cascade_scale = getattr(self.config, "csm_cascade_distance_scale", None)
         if (
             self.csm.max_distance != self.config.shadow_distance
             or self.csm.cascade_count != self.config.csm_cascades
             or self.csm.split_lambda != getattr(self.config, "csm_split_lambda", 0.85)
+            or self.csm.split_mode != getattr(self.config, "csm_split_mode", "PSSM")
+            or self.csm.cascade_distance_scale != cascade_scale
         ):
             self.csm.update_splits(
                 self.config.shadow_distance,
                 self.config.csm_cascades,
                 getattr(self.config, "csm_split_lambda", 0.85),
+                getattr(self.config, "csm_split_mode", "PSSM"),
+                cascade_scale,
             )
+        # Keep the per-cascade atlas allocation in sync with the live config.
+        if self.csm.nonuniform_atlas != bool(getattr(self.config, "csm_nonuniform_atlas", False)):
+            self.csm.set_nonuniform_atlas(getattr(self.config, "csm_nonuniform_atlas", False))
 
         matrix_perspective(
             math.radians(fovy_deg),
@@ -1372,10 +1431,14 @@ class RenderPipeline:
         if self._u_pcf_samples is not None:
             self._u_pcf_samples.value = self.config.pcf_samples
         if self._u_shadow_mode is not None:
-            mode_val = 0 if self.config.shadow_mode == "HARD" else (1 if self.config.shadow_mode == "PCF" else 2)
+            mode_val = {"HARD": 0, "PCF": 1, "PCSS": 2, "PCSS_ULTRA": 3}.get(
+                str(self.config.shadow_mode).upper(), 2
+            )
             self._u_shadow_mode.value = mode_val
         if self._u_shadow_softness is not None:
             self._u_shadow_softness.value = float(self.config.shadow_softness)
+        if self._u_sun_angular_radius is not None:
+            self._u_sun_angular_radius.value = float(getattr(self.config, "sun_angular_radius", 0.00465))
         if self._u_shadow_bias is not None:
             self._u_shadow_bias.value = float(self.config.shadow_bias)
         if self._u_shadow_normal_bias is not None:
@@ -1393,6 +1456,8 @@ class RenderPipeline:
             )
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
+        if self._u_cascade_atlas_rect is not None:
+            self._u_cascade_atlas_rect.write(self.csm.cascade_rect_uv_array.tobytes())
         if self._u_gbuffer_debug is not None:
             self._u_gbuffer_debug.value = self.config.debug_gbuffer
         if self._u_hiz_debug_mip is not None:
@@ -1478,26 +1543,34 @@ class RenderPipeline:
         # ---- PASS 7.8: Cinematic Camera Optics & Lens Flares (Phase 3) ----
         flare_tex = None
         if self.camera_optics_pass is not None:
-            optics_needed = (
-                getattr(self.config, "dof_enabled", False)
-                or getattr(self.config, "motion_blur_enabled", False)
-            )
+            optics_needed = getattr(self.config, "dof_enabled", False)
             if optics_needed:
                 scene_hdr_tex = self.post_process.hdr_fbo.color_attachments[0]
                 self.camera_optics_pass.render_optics(
                     scene_hdr_texture=scene_hdr_tex,
                     depth_texture=self.g_buffer.depth_texture,
-                    prev_vp_mat=self._prev_vp_mat,
                     config=self.config,
                 )
                 self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.camera_optics_pass.optics_fbo)
 
-            if getattr(self.config, "lens_flare_enabled", True):
+            flare_mode = str(getattr(self.config, "lens_flare_mode", "ANAMORPHIC")).upper()
+            flare_enabled = getattr(self.config, "lens_flare_enabled", True) and flare_mode != "OFF"
+            if flare_enabled:
                 scene_hdr_tex = self.post_process.hdr_fbo.color_attachments[0]
-                flare_tex = self.camera_optics_pass.render_flare(
-                    scene_hdr_texture=scene_hdr_tex,
-                    config=self.config,
-                )
+                if flare_mode == "SOLAR" and self.solar_flare_pass is not None:
+                    sun_uv, sun_visible = self._compute_sun_screen_position()
+                    flare_tex = self.solar_flare_pass.render(
+                        scene_hdr_texture=scene_hdr_tex,
+                        depth_texture=self.g_buffer.depth_texture,
+                        sun_screen_pos=sun_uv,
+                        sun_on_screen=sun_visible,
+                        config=self.config,
+                    )
+                else:
+                    flare_tex = self.camera_optics_pass.render_flare(
+                        scene_hdr_texture=scene_hdr_tex,
+                        config=self.config,
+                    )
 
         # ---- PASS 7.9: Temporal Anti-Aliasing (TAA in linear HDR space before Tonemapping) ----
         aa_mode = getattr(self.config, "aa_mode", "OFF")
@@ -1507,7 +1580,14 @@ class RenderPipeline:
             ctx.resources["g_buffer"] = self.g_buffer
             ctx.resources["prev_unjittered_vp"] = self._prev_vp_mat
             self.taa_pass.execute(ctx)
-            self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.taa_pass._write_fbo)
+            self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.taa_pass.output_fbo)
+
+        # ---- PASS 7.95: Velocity-Buffer Motion Blur (after TAA, before bloom) ----
+        if getattr(self.config, "motion_blur_enabled", False) and self.motion_blur_pass is not None:
+            ctx.resources["hdr_color"] = self.post_process.hdr_fbo.color_attachments[0]
+            ctx.resources["g_buffer"] = self.g_buffer
+            self.motion_blur_pass.execute(ctx)
+            self.ctx.copy_framebuffer(self.post_process.hdr_fbo, self.motion_blur_pass.output_fbo)
 
         bloom_tex = None
         if self.config.bloom_enabled:
@@ -1537,7 +1617,7 @@ class RenderPipeline:
             if aa_mode == "SMAA_1X":
                 self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass.fbo_smaa)
             else:
-                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass._write_fbo)
+                self.ctx.copy_framebuffer(self.post_process.final_fbo, self.smaa_pass.output_fbo)
 
         if not self.ctx_wrapper.is_headless:
             self.ctx.copy_framebuffer(self.ctx.screen, self.post_process.final_fbo)
@@ -1579,6 +1659,10 @@ class RenderPipeline:
             self.particle_pass.destroy()
         if self.camera_optics_pass is not None:
             self.camera_optics_pass.destroy()
+        if self.solar_flare_pass is not None:
+            self.solar_flare_pass.destroy()
+        if self.motion_blur_pass is not None:
+            self.motion_blur_pass.destroy()
         self.bloom_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()

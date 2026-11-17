@@ -1,5 +1,7 @@
 #version 450 core
 
+#include "shaders/common/blur.glsl"
+
 in vec2 v_UV;
 layout (location = 0) out vec4 out_FilteredSSGI;
 
@@ -29,83 +31,24 @@ layout (std140, binding = 0) uniform FrameData {
 
 uniform vec2 u_BlurDirection;
 
-vec3 OctahedralDecode(vec2 f) {
-    f = f * 2.0 - 1.0;
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = clamp(-n.z, 0.0, 1.0);
-    n.x += (n.x >= 0.0) ? -t : t;
-    n.y += (n.y >= 0.0) ? -t : t;
-    return normalize(n);
-}
-
-vec3 GetViewPos(vec2 uv, float raw_depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
-    vec4 view = u_InvProjection * clip;
-    return view.xyz / max(abs(view.w), 1e-6);
-}
-
 void main() {
-    vec4 center_ssgi = texture(u_InputSSGI, v_UV);
     float center_raw_depth = texture(u_GBufferDepth, v_UV).r;
     if (center_raw_depth <= 0.000001) {
         out_FilteredSSGI = vec4(0.0);
         return;
     }
 
-    vec3 center_pos_view = GetViewPos(v_UV, center_raw_depth);
-    vec3 center_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
-    vec3 center_normal_view = normalize(mat3(u_View) * center_normal_world);
-
-    // 5-tap Gaussian kernel weights
-    const float weights[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
-    vec4 total_color = center_ssgi * weights[0];
-    float total_weight = weights[0];
-
     // Distance-adaptive tangent plane tolerance prevents neighbor rejection at camera distance
-    float plane_sigma = max(0.12, abs(center_pos_view.z) * 0.025);
-    float plane_sigma_sq2 = 2.0 * plane_sigma * plane_sigma;
+    float center_z = LinearizeViewDepth(center_raw_depth, v_UV, u_InvProjection);
+    float plane_sigma = max(0.12, abs(center_z) * 0.025);
 
-    for (int i = 1; i <= 4; ++i) {
-        float w = weights[i];
-        vec2 offset = u_BlurDirection * (float(i) * 2.0);
+    vec4 result = BilateralBlurDepthNormal(
+        u_InputSSGI, u_GBufferDepth, u_GBufferNormalMetallic,
+        v_UV, u_BlurDirection, 2.0, plane_sigma, 2.0, u_InvProjection,
+        BLUR_USE_NORMAL | BLUR_METRIC_PLANE,
+        mat3(u_View)
+    );
 
-        // Positive offset
-        vec2 uv_pos = v_UV + offset;
-        float depth_raw_pos = texture(u_GBufferDepth, uv_pos).r;
-        if (depth_raw_pos > 0.000001) {
-            vec3 pos_pos = GetViewPos(uv_pos, depth_raw_pos);
-            vec3 norm_world_pos = OctahedralDecode(texture(u_GBufferNormalMetallic, uv_pos).rg);
-            vec3 norm_view_pos = normalize(mat3(u_View) * norm_world_pos);
-
-            // Plane distance test: distance of neighbor point to center surface tangent plane
-            float plane_dist = abs(dot(center_normal_view, pos_pos - center_pos_view));
-            float w_z = exp(-(plane_dist * plane_dist) / plane_sigma_sq2);
-            float w_n = pow(max(dot(center_normal_view, norm_view_pos), 0.0), 2.0);
-            float weight_pos = w * w_z * w_n;
-
-            total_color += texture(u_InputSSGI, uv_pos) * weight_pos;
-            total_weight += weight_pos;
-        }
-
-        // Negative offset
-        vec2 uv_neg = v_UV - offset;
-        float depth_raw_neg = texture(u_GBufferDepth, uv_neg).r;
-        if (depth_raw_neg > 0.000001) {
-            vec3 pos_neg = GetViewPos(uv_neg, depth_raw_neg);
-            vec3 norm_world_neg = OctahedralDecode(texture(u_GBufferNormalMetallic, uv_neg).rg);
-            vec3 norm_view_neg = normalize(mat3(u_View) * norm_world_neg);
-
-            float plane_dist = abs(dot(center_normal_view, pos_neg - center_pos_view));
-            float w_z = exp(-(plane_dist * plane_dist) / plane_sigma_sq2);
-            float w_n = pow(max(dot(center_normal_view, norm_view_neg), 0.0), 2.0);
-            float weight_neg = w * w_z * w_n;
-
-            total_color += texture(u_InputSSGI, uv_neg) * weight_neg;
-            total_weight += weight_neg;
-        }
-    }
-
-    vec4 result = total_color / max(total_weight, 0.0001);
     if (isnan(result.r) || isnan(result.g) || isnan(result.b) || isnan(result.a) ||
         isinf(result.r) || isinf(result.g) || isinf(result.b) || isinf(result.a)) {
         result = vec4(0.0);

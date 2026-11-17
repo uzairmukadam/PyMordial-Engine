@@ -5,6 +5,42 @@ import math
 import numpy as np
 import moderngl
 
+SPLIT_MODES = ("PSSM", "GEOMETRIC", "UNIFORM")
+
+# Hard ceiling on the world-space span ratio between neighbouring cascades.
+# Texel density is inversely proportional to slice span for a fixed map size, so
+# a larger ratio shows up as a visible quality step at the cascade boundary.
+MAX_SPAN_RATIO = 2.5
+
+
+def _pssm_splits(near: float, far: float, count: int, blend: float) -> list[float]:
+    """Standard practical split scheme: log/uniform blend anchored at ``near``."""
+    log_ratio = far / near
+    splits: list[float] = []
+    for index in range(1, count + 1):
+        fraction = index / count
+        logarithmic = near * log_ratio ** fraction
+        uniform = near + (far - near) * fraction
+        splits.append(blend * logarithmic + (1.0 - blend) * uniform)
+    return splits
+
+
+def _max_span_ratio(splits: list[float], near: float) -> float:
+    """Worst adjacent world-space span ratio for a split list."""
+    previous = near
+    worst = 1.0
+    previous_span = 0.0
+    for split in splits:
+        span = split - previous
+        if previous_span > 0.0:
+            ratio = span / previous_span
+            if ratio > worst:
+                worst = ratio
+        previous_span = span
+        previous = split
+    return worst
+
+
 class CascadedShadowMap:
     """Manages a cascaded shadow atlas with frustum fitting and texel snapping."""
 
@@ -14,6 +50,8 @@ class CascadedShadowMap:
         "cascade_count",
         "max_distance",
         "split_lambda",
+        "split_mode",
+        "cascade_distance_scale",
         "depth_texture",
         "fbo",
         "split_distances",
@@ -22,6 +60,10 @@ class CascadedShadowMap:
         "cullers",
         "cascade_visible_masks",
         "cascade_draw_batches",
+        "nonuniform_atlas",
+        "cascade_rects",
+        "cascade_rect_uv",
+        "cascade_rect_uv_array",
     )
 
     def __init__(
@@ -31,20 +73,38 @@ class CascadedShadowMap:
         cascade_count: int = 4,
         max_distance: float = 500.0,
         split_lambda: float = 0.85,
+        split_mode: str = "PSSM",
+        nonuniform_atlas: bool = False,
     ) -> None:
         self.ctx = ctx
         self.atlas_size = atlas_size
         self.cascade_count = cascade_count
         self.max_distance = float(max_distance)
         self.split_lambda = float(split_lambda)
+        self.split_mode = str(split_mode).upper()
+        self.nonuniform_atlas = bool(nonuniform_atlas)
 
         # Depth texture atlas and framebuffer
         self.depth_texture = None  # type: ignore[assignment]
         self.fbo = None  # type: ignore[assignment]
         self._create_atlas()
 
-        # Compute cascade split distances (log-linear blend)
-        self.update_splits(max_distance=max_distance, cascade_count=cascade_count, lambda_val=split_lambda)
+        # Per-cascade atlas rects (x, y, w, h) in texels, plus the matching
+        # (offset_x, offset_y, scale_x, scale_y) UV rects uploaded to the shader.
+        self.cascade_rects: list[tuple[int, int, int, int]] = []
+        self.cascade_rect_uv: list[tuple[float, float, float, float]] = []
+        # Flat (4, 4) float32 mirror of ``cascade_rect_uv`` so the per-frame
+        # uniform upload is a zero-allocation ``tobytes()`` on a stable buffer.
+        self.cascade_rect_uv_array = np.zeros((4, 4), dtype=np.float32)
+        self._update_cascade_rects()
+
+        # Compute cascade split distances
+        self.update_splits(
+            max_distance=max_distance,
+            cascade_count=cascade_count,
+            lambda_val=split_lambda,
+            mode=self.split_mode,
+        )
         self.light_matrices = [np.zeros(16, dtype=np.float32) for _ in range(4)]
         self.stabilize_cascades: bool = True
 
@@ -54,13 +114,76 @@ class CascadedShadowMap:
         self.cascade_visible_masks: list[np.ndarray | None] = [None] * 4
         self.cascade_draw_batches: list[list[tuple]] = [[] for _ in range(4)]
 
+    def _update_cascade_rects(self) -> None:
+        """Rebuilds the per-cascade atlas rects for the current atlas size.
+
+        With ``nonuniform_atlas`` disabled the rects reproduce the legacy 2x2
+        quadrant layout exactly, so existing behaviour and goldens are unchanged.
+        """
+        size = int(self.atlas_size)
+        rects: list[tuple[int, int, int, int]] = []
+        if self.nonuniform_atlas:
+            # Near cascades cover less world space per texel, so they get the
+            # larger share of the atlas: 2048/2048/1024/1024 in a 4096 atlas.
+            half = size // 2
+            quarter = size // 4
+            rects = [
+                (0, 0, half, half),
+                (half, 0, half, half),
+                (0, half, quarter, quarter),
+                (quarter, half, quarter, quarter),
+            ]
+        else:
+            half = size // 2
+            rects = [
+                (0, 0, half, half),
+                (half, 0, half, half),
+                (0, half, half, half),
+                (half, half, half, half),
+            ]
+        self.cascade_rects = rects
+        inv = 1.0 / float(max(size, 1))
+        self.cascade_rect_uv = [
+            (x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in rects
+        ]
+        # Refresh the pre-allocated upload buffer in place (no per-frame allocation).
+        self.cascade_rect_uv_array[:] = np.asarray(self.cascade_rect_uv, dtype=np.float32)
+
+    def set_nonuniform_atlas(self, enabled: bool) -> None:
+        """Toggles per-cascade atlas allocation and rebuilds the rect table."""
+        enabled = bool(enabled)
+        if enabled == self.nonuniform_atlas:
+            return
+        self.nonuniform_atlas = enabled
+        self._update_cascade_rects()
+
+    def cascade_texel_size(self, cascade_idx: int) -> int:
+        """Square texel size of one cascade's atlas rect."""
+        return int(self.cascade_rects[max(0, min(3, int(cascade_idx)))][2])
+
     def update_splits(
         self,
         max_distance: float,
         cascade_count: int | None = None,
         lambda_val: float = 0.85,
+        mode: str = "PSSM",
+        cascade_distance_scale: tuple[float, float, float, float] | None = None,
     ) -> None:
-        """Computes practical logarithmic/uniform splits for the active cascades."""
+        """Computes cascade splits with a bounded adjacent span ratio.
+
+        ``mode`` selects the distribution scheme:
+
+        * ``"PSSM"`` - practical split scheme (log/uniform blend). The blend is
+          automatically reduced towards uniform spacing when the requested
+          ``lambda_val`` would push the adjacent span ratio above
+          :data:`MAX_SPAN_RATIO`.
+        * ``"GEOMETRIC"`` - pure geometric spacing (constant span ratio).
+        * ``"UNIFORM"`` - equal world-space spans.
+
+        ``cascade_distance_scale`` optionally scales each cascade's far distance
+        independently, so a project can push the near cascades out (or pull the
+        far ones in) without changing the overall shadow distance.
+        """
         if cascade_count is not None:
             self.cascade_count = max(1, min(4, int(cascade_count)))
         self.max_distance = max(float(max_distance), 1.1)
@@ -70,19 +193,52 @@ class CascadedShadowMap:
         count = max(1, min(4, self.cascade_count))
         blend = min(1.0, max(0.0, float(lambda_val)))
         self.split_lambda = blend
+        split_mode = str(mode).upper()
+        if split_mode not in SPLIT_MODES:
+            split_mode = "PSSM"
+        self.split_mode = split_mode
+        self.cascade_distance_scale = (
+            tuple(float(v) for v in cascade_distance_scale)
+            if cascade_distance_scale is not None
+            else None
+        )
+
         if count == 1:
             splits = [far]
+        elif split_mode == "UNIFORM":
+            span = (far - near) / count
+            splits = [near + span * (index + 1) for index in range(count)]
+        elif split_mode == "GEOMETRIC":
+            ratio = far / near
+            splits = [near * ratio ** ((index + 1) / count) for index in range(count)]
         else:
-            # Keep nearby receivers in a tight high-resolution cascade, then
-            # distribute the remaining range using practical log/uniform splits.
-            near_split = min(10.0, far * 0.18)
-            splits = [near_split]
-            remaining_cascades = count - 1
-            for index in range(1, count):
-                fraction = index / remaining_cascades
-                logarithmic = near_split * (far / near_split) ** fraction
-                uniform = near_split + (far - near_split) * fraction
-                splits.append(blend * logarithmic + (1.0 - blend) * uniform)
+            splits = _pssm_splits(near, far, count, blend)
+            if _max_span_ratio(splits, near) > MAX_SPAN_RATIO:
+                # Bisect for the largest blend that still respects the bound so
+                # texel density never drops in a visible step.
+                low, high = 0.0, blend
+                for _ in range(24):
+                    mid = 0.5 * (low + high)
+                    if _max_span_ratio(_pssm_splits(near, far, count, mid), near) > MAX_SPAN_RATIO:
+                        high = mid
+                    else:
+                        low = mid
+                splits = _pssm_splits(near, far, count, low)
+
+        # Optional per-cascade far-distance scaling. Applied after the base
+        # distribution so the shape of the split curve is preserved while each
+        # cascade's reach can be tuned independently.
+        if cascade_distance_scale is not None:
+            scaled: list[float] = []
+            for index, split in enumerate(splits):
+                scale = float(cascade_distance_scale[min(index, 3)])
+                scaled.append(max(near + 1e-3, split * max(scale, 1e-3)))
+            # Keep the sequence strictly increasing so cascade selection stays valid.
+            for index in range(1, len(scaled)):
+                if scaled[index] <= scaled[index - 1]:
+                    scaled[index] = scaled[index - 1] + 1e-3
+            splits = scaled
+
         splits.extend([far] * (4 - len(splits)))
         self.split_distances = tuple(splits[:4])
 
@@ -119,7 +275,6 @@ class CascadedShadowMap:
         camera_up /= max(float(np.linalg.norm(camera_up)), 1e-8)
 
         camera_pos64 = np.asarray(camera_pos, dtype=np.float64)
-        quad_size = max(self.atlas_size // 2, 1)
         use_stabilize = self.stabilize_cascades if stabilize is None else bool(stabilize)
         count = max(1, min(4, self.cascade_count))
         blend_fraction = min(0.5, max(0.0, float(blend_fraction)))
@@ -167,6 +322,9 @@ class CascadedShadowMap:
             slice_center = camera_pos64 + forward * center_distance
             center_x = float(np.dot(light_right, slice_center))
             center_y = float(np.dot(light_up, slice_center))
+            # Snap against this cascade's own rect size so non-uniform atlases
+            # keep exact texel alignment per cascade.
+            quad_size = max(self.cascade_rects[cascade][2], 1)
             texel_world = (2.0 * radius) / float(quad_size)
             if use_stabilize:
                 center_x = math.floor(center_x / texel_world + 0.5) * texel_world
@@ -214,11 +372,9 @@ class CascadedShadowMap:
         return self.light_matrices
 
     def begin_cascade(self, cascade_idx: int) -> None:
-        """Sets viewport to the specific cascade quadrant in the 2x2 atlas."""
-        half = self.atlas_size // 2
-        x = (cascade_idx % 2) * half
-        y = (cascade_idx // 2) * half
-        self.ctx.viewport = (x, y, half, half)
+        """Sets the viewport to this cascade's atlas rect."""
+        x, y, w, h = self.cascade_rects[max(0, min(3, int(cascade_idx)))]
+        self.ctx.viewport = (x, y, w, h)
 
     def clear(self) -> None:
         self.fbo.use()
@@ -238,6 +394,7 @@ class CascadedShadowMap:
         self.destroy()
         self.atlas_size = new_size
         self._create_atlas()
+        self._update_cascade_rects()
 
     def cull_cascades(
         self,

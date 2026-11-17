@@ -57,6 +57,7 @@ class SSGIPass(RenderPass):
         self._u_rays = self.ssgi_prog.get("u_SSGI_RayCount", None)
         self._u_dist = self.ssgi_prog.get("u_SSGI_RayDistance", None)
         self._u_thickness = self.ssgi_prog.get("u_SSGI_Thickness", None)
+        self._u_hiz_mips = self.ssgi_prog.get("u_HiZMipCount", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
@@ -115,6 +116,18 @@ class SSGIPass(RenderPass):
         g_buffer.depth_texture.use(location=2)
         scene_color = context.resources.get("scene_color", g_buffer.albedo_roughness_texture)
         scene_color.use(location=3)
+
+        # Hi-Z pyramid (unit 4) for empty-space skipping. Falls back to the depth
+        # texture with a mip count of 1, which disables the skip in the shader.
+        hiz_tex = context.resources.get("hiz_texture", None)
+        hiz_mips = int(context.resources.get("hiz_mip_count", 1))
+        if hiz_tex is not None:
+            hiz_tex.use(location=4)
+        else:
+            g_buffer.depth_texture.use(location=4)
+            hiz_mips = 1
+        if self._u_hiz_mips is not None:
+            self._u_hiz_mips.value = hiz_mips
 
         if self._u_steps is not None:
             self._u_steps.value = getattr(context.config, "ssgi_steps", 16)

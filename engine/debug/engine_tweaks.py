@@ -29,6 +29,8 @@ class GBufferDebugMode(IntEnum):
     HIZ = 11           # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
     SPOT_LIGHTS = 12   # Accumulated dynamic spot-light contribution
     RADIANCE_CASCADES = 13  # Radiance Cascades indirect diffuse
+    CASCADE_INDEX = 14      # Selected CSM cascade index (false colour)
+    CASCADE_COVERAGE = 15   # Per-cascade coverage / border fade
 
 
 class EngineTweaks:
@@ -49,18 +51,23 @@ class EngineTweaks:
         "shadow_resolution",
         "shadow_mode",
         "shadow_softness",
+        "sun_angular_radius",
         "shadow_bias",
         "shadow_normal_bias",
         "shadow_offset_x",
         "shadow_offset_y",
         "shadow_distance",
         "csm_split_lambda",
+        "csm_split_mode",
+        "csm_cascade_distance_scale",
         "csm_cascades",
         "csm_stabilization",
+        "csm_nonuniform_atlas",
         "pcf_samples",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
+        "ao_resolution_scale",
         "gi_mode",
         "ssgi_steps",
         "ssgi_rays",
@@ -90,6 +97,9 @@ class EngineTweaks:
         "taa_feedback",
         "taa_sharpness",
         "taa_gamma",
+        "taa_max_feedback",
+        "taa_min_feedback",
+        "taa_variance_gamma",
         "point_lights_enabled",
         "spot_lights_enabled",
         "spot_shadows_enabled",
@@ -127,6 +137,12 @@ class EngineTweaks:
         "day_speed",
         "azimuth_deg",
         "latitude_deg",
+        "declination_deg",
+        "moon_orbit_offset_hours",
+        "moon_declination_deg",
+        "moon_azimuth_offset_deg",
+        "sky_exposure",
+        "sky_saturation",
         "atmo_preset",
         "sky_mode",
         "rayleigh_r",
@@ -183,12 +199,17 @@ class EngineTweaks:
         "motion_blur_intensity",
         "motion_blur_max_radius",
         "lens_flare_enabled",
+        "lens_flare_mode",
         "lens_flare_threshold",
         "lens_flare_streak_intensity",
         "lens_flare_streak_width",
         "lens_flare_ghost_intensity",
         "lens_flare_halo_intensity",
         "lens_flare_tint",
+        "solar_flare_blade_count",
+        "solar_flare_bloom_intensity",
+        "solar_flare_starburst_intensity",
+        "solar_flare_occlusion_fade",
         "chromatic_aberration_enabled",
         "chromatic_aberration_intensity",
         "vignette_enabled",
@@ -247,20 +268,25 @@ class EngineTweaks:
         self.shadow_resolution = 4096
         self.shadow_mode = "PCSS"
         self.shadow_softness = 1.2
+        self.sun_angular_radius = 0.00465
         self.shadow_bias = 0.0015
         self.shadow_normal_bias = 0.0010
         self.shadow_offset_x = 0.0
         self.shadow_offset_y = 0.0
         self.shadow_distance = 500.0
         self.csm_split_lambda = 0.85
+        self.csm_split_mode = "PSSM"
+        self.csm_cascade_distance_scale = (1.0, 1.0, 1.0, 1.0)
         self.csm_cascades = 4
         self.csm_stabilization = True
+        self.csm_nonuniform_atlas = False
         self.pcf_samples = 24
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
         self.ao_intensity = 1.2
         self.ao_radius = 0.35
+        self.ao_resolution_scale = 1.0
         self.gi_mode = GIMode.SSGI.value
         self.ssgi_steps = 16
         self.ssgi_rays = 8
@@ -290,6 +316,9 @@ class EngineTweaks:
         self.taa_feedback = 0.95
         self.taa_sharpness = 0.35
         self.taa_gamma = 1.25
+        self.taa_max_feedback = 0.95
+        self.taa_min_feedback = 0.78
+        self.taa_variance_gamma = 1.25
         self.point_lights_enabled = True
         self.spot_lights_enabled = True
         self.spot_shadows_enabled = True
@@ -314,6 +343,12 @@ class EngineTweaks:
         self.day_speed = 0.0          # 0.0 = manual / paused
         self.azimuth_deg = 45.0
         self.latitude_deg = 35.0
+        self.declination_deg = 0.0
+        self.moon_orbit_offset_hours = 12.0
+        self.moon_declination_deg = 0.0
+        self.moon_azimuth_offset_deg = 0.0
+        self.sky_exposure = 1.0
+        self.sky_saturation = 1.0
         self.atmo_preset = "EARTH_DAY"
         self.rayleigh_r = 5.802       # m^-1 * 1e6
         self.rayleigh_g = 13.558
@@ -377,12 +412,17 @@ class EngineTweaks:
         self.motion_blur_max_radius = 48.0
 
         self.lens_flare_enabled = True
+        self.lens_flare_mode = "ANAMORPHIC"
         self.lens_flare_threshold = 1.8
         self.lens_flare_streak_intensity = 0.6
         self.lens_flare_streak_width = 32.0
         self.lens_flare_ghost_intensity = 0.35
         self.lens_flare_halo_intensity = 0.25
         self.lens_flare_tint = (0.25, 0.65, 1.0)
+        self.solar_flare_blade_count = 6
+        self.solar_flare_bloom_intensity = 1.0
+        self.solar_flare_starburst_intensity = 0.6
+        self.solar_flare_occlusion_fade = 1.0
 
         self.chromatic_aberration_enabled = True
         self.chromatic_aberration_intensity = 0.005
@@ -411,6 +451,12 @@ class EngineTweaks:
                 "day_speed",
                 "azimuth_deg",
                 "latitude_deg",
+                "declination_deg",
+                "moon_orbit_offset_hours",
+                "moon_declination_deg",
+                "moon_azimuth_offset_deg",
+                "sky_exposure",
+                "sky_saturation",
                 "sun_intensity",
                 "mie_asymmetry",
                 "star_intensity",
@@ -595,12 +641,17 @@ class EngineTweaks:
             p_cfg.motion_blur_max_radius = float(self.motion_blur_max_radius)
 
             p_cfg.lens_flare_enabled = bool(self.lens_flare_enabled)
+            p_cfg.lens_flare_mode = str(self.lens_flare_mode)
             p_cfg.lens_flare_threshold = float(self.lens_flare_threshold)
             p_cfg.lens_flare_streak_intensity = float(self.lens_flare_streak_intensity)
             p_cfg.lens_flare_streak_width = float(self.lens_flare_streak_width)
             p_cfg.lens_flare_ghost_intensity = float(self.lens_flare_ghost_intensity)
             p_cfg.lens_flare_halo_intensity = float(self.lens_flare_halo_intensity)
             p_cfg.lens_flare_tint = tuple(float(c) for c in self.lens_flare_tint)
+            p_cfg.solar_flare_blade_count = int(self.solar_flare_blade_count)
+            p_cfg.solar_flare_bloom_intensity = float(self.solar_flare_bloom_intensity)
+            p_cfg.solar_flare_starburst_intensity = float(self.solar_flare_starburst_intensity)
+            p_cfg.solar_flare_occlusion_fade = float(self.solar_flare_occlusion_fade)
 
             # 3. Global Illumination & Ambient Occlusion
             p_cfg.gi_mode = self.gi_mode
@@ -634,6 +685,9 @@ class EngineTweaks:
             p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
             p_cfg.taa_sharpness = float(getattr(self, "taa_sharpness", 0.35))
             p_cfg.taa_gamma = float(getattr(self, "taa_gamma", 1.25))
+            p_cfg.taa_max_feedback = float(getattr(self, "taa_max_feedback", 0.95))
+            p_cfg.taa_min_feedback = float(getattr(self, "taa_min_feedback", 0.78))
+            p_cfg.taa_variance_gamma = float(getattr(self, "taa_variance_gamma", 1.25))
             p_cfg.fxaa_subpixel = float(self.fxaa_subpixel)
             p_cfg.fxaa_edge_threshold = float(self.fxaa_edge_threshold)
             p_cfg.smaa_threshold = float(self.smaa_threshold)
@@ -648,27 +702,37 @@ class EngineTweaks:
             # 5. Shadows & CSM
             p_cfg.shadow_mode = self.shadow_mode
             p_cfg.shadow_softness = float(self.shadow_softness)
+            p_cfg.sun_angular_radius = float(self.sun_angular_radius)
             p_cfg.shadow_bias = float(self.shadow_bias)
             p_cfg.shadow_normal_bias = float(self.shadow_normal_bias)
             p_cfg.shadow_distance = float(self.shadow_distance)
             p_cfg.csm_split_lambda = float(self.csm_split_lambda)
+            p_cfg.csm_split_mode = str(self.csm_split_mode)
+            p_cfg.csm_cascade_distance_scale = tuple(float(v) for v in self.csm_cascade_distance_scale)
             p_cfg.csm_cascades = int(self.csm_cascades)
             p_cfg.shadow_resolution = int(self.shadow_resolution)
             p_cfg.pcf_samples = int(self.pcf_samples)
             p_cfg.csm_stabilization = bool(self.csm_stabilization)
+            p_cfg.csm_nonuniform_atlas = bool(self.csm_nonuniform_atlas)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
                 if self.shadow_resolution != pipeline.csm.atlas_size:
                     pipeline.csm.resize_atlas(self.shadow_resolution)
+                if self.csm_nonuniform_atlas != pipeline.csm.nonuniform_atlas:
+                    pipeline.csm.set_nonuniform_atlas(self.csm_nonuniform_atlas)
                 if (
                     self.shadow_distance != pipeline.csm.max_distance
                     or self.csm_cascades != pipeline.csm.cascade_count
                     or self.csm_split_lambda != pipeline.csm.split_lambda
+                    or self.csm_split_mode != pipeline.csm.split_mode
+                    or tuple(self.csm_cascade_distance_scale) != pipeline.csm.cascade_distance_scale
                 ):
                     pipeline.csm.update_splits(
                         self.shadow_distance,
                         self.csm_cascades,
                         self.csm_split_lambda,
+                        self.csm_split_mode,
+                        tuple(float(v) for v in self.csm_cascade_distance_scale),
                     )
 
             if hasattr(pipeline, "spot_shadow_map") and pipeline.spot_shadow_map is not None:
@@ -737,6 +801,12 @@ class EngineTweaks:
                 atmo.config.day_speed = float(self.day_speed)
                 atmo.config.azimuth_deg = float(self.azimuth_deg)
                 atmo.config.latitude_deg = float(self.latitude_deg)
+                atmo.config.declination_deg = float(self.declination_deg)
+                atmo.config.moon_orbit_offset_hours = float(self.moon_orbit_offset_hours)
+                atmo.config.moon_declination_deg = float(self.moon_declination_deg)
+                atmo.config.moon_azimuth_offset_deg = float(self.moon_azimuth_offset_deg)
+                atmo.config.sky_exposure = float(self.sky_exposure)
+                atmo.config.sky_saturation = float(self.sky_saturation)
                 if self.day_speed > 0.0:
                     self.time_of_day = float(atmo.config.time_of_day)
                 else:
@@ -805,21 +875,25 @@ class EngineTweaks:
             "dof_enabled", "dof_focus_distance", "dof_focal_length", "dof_aperture",
             "dof_bokeh_shape", "dof_anamorphic_ratio", "dof_max_coc",
             "motion_blur_enabled", "motion_blur_samples", "motion_blur_intensity", "motion_blur_max_radius",
-            "lens_flare_enabled", "lens_flare_threshold", "lens_flare_streak_intensity",
+            "lens_flare_enabled", "lens_flare_mode", "lens_flare_threshold", "lens_flare_streak_intensity",
             "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
             "lens_flare_tint",
+            "solar_flare_blade_count", "solar_flare_bloom_intensity",
+            "solar_flare_starburst_intensity", "solar_flare_occlusion_fade",
             "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
             "ssgi_intensity",
             "rc_ray_count", "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
             "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
-            "ao_mode", "ao_intensity", "ao_radius",
+            "ao_mode", "ao_intensity", "ao_radius", "ao_resolution_scale",
             "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
             "ssr_max_distance", "fxaa_subpixel", "fxaa_edge_threshold", "smaa_threshold",
             "spot_shadow_resolution",
             "aa_mode", "taa_enabled", "taa_feedback", "taa_sharpness", "taa_gamma",
-            "shadow_mode", "shadow_softness", "shadow_bias", "shadow_normal_bias",
-            "shadow_distance", "csm_split_lambda", "csm_cascades", "shadow_resolution",
-            "pcf_samples", "csm_stabilization",
+            "taa_max_feedback", "taa_min_feedback", "taa_variance_gamma",
+            "shadow_mode", "shadow_softness", "sun_angular_radius", "shadow_bias", "shadow_normal_bias",
+            "shadow_distance", "csm_split_lambda", "csm_split_mode", "csm_cascade_distance_scale",
+            "csm_cascades", "shadow_resolution",
+            "pcf_samples", "csm_stabilization", "csm_nonuniform_atlas",
             "pom_enabled", "pom_min_samples", "pom_max_samples", "pom_height_scale", "pom_self_shadow",
             "disp_near_radius", "disp_mid_radius", "tess_enabled", "tess_max_level",
             "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled", "hiz_cull_enabled",
@@ -860,6 +934,12 @@ class EngineTweaks:
                 self.day_speed = float(getattr(config, "day_speed", 0.0))
                 self.azimuth_deg = float(getattr(config, "azimuth_deg", 45.0))
                 self.latitude_deg = float(getattr(config, "latitude_deg", 35.0))
+                self.declination_deg = float(getattr(config, "declination_deg", 0.0))
+                self.moon_orbit_offset_hours = float(getattr(config, "moon_orbit_offset_hours", 12.0))
+                self.moon_declination_deg = float(getattr(config, "moon_declination_deg", 0.0))
+                self.moon_azimuth_offset_deg = float(getattr(config, "moon_azimuth_offset_deg", 0.0))
+                self.sky_exposure = float(getattr(config, "sky_exposure", 1.0))
+                self.sky_saturation = float(getattr(config, "sky_saturation", 1.0))
                 self.atmo_preset = str(getattr(config, "preset_name", "CUSTOM"))
                 self.sky_mode = str(getattr(config, "sky_mode", "ATMOSPHERE"))
                 beta = getattr(config, "rayleigh_beta", (5.802e-6, 13.558e-6, 33.100e-6))
@@ -932,12 +1012,17 @@ class EngineTweaks:
             "motion_blur_intensity": float(self.motion_blur_intensity),
             "motion_blur_max_radius": float(self.motion_blur_max_radius),
             "lens_flare_enabled": bool(self.lens_flare_enabled),
+            "lens_flare_mode": str(self.lens_flare_mode),
             "lens_flare_threshold": float(self.lens_flare_threshold),
             "lens_flare_streak_intensity": float(self.lens_flare_streak_intensity),
             "lens_flare_streak_width": float(self.lens_flare_streak_width),
             "lens_flare_ghost_intensity": float(self.lens_flare_ghost_intensity),
             "lens_flare_halo_intensity": float(self.lens_flare_halo_intensity),
             "lens_flare_tint": [float(c) for c in self.lens_flare_tint],
+            "solar_flare_blade_count": int(self.solar_flare_blade_count),
+            "solar_flare_bloom_intensity": float(self.solar_flare_bloom_intensity),
+            "solar_flare_starburst_intensity": float(self.solar_flare_starburst_intensity),
+            "solar_flare_occlusion_fade": float(self.solar_flare_occlusion_fade),
             "gi_mode": str(self.gi_mode),
             "ssgi_steps": int(self.ssgi_steps),
             "ssgi_rays": int(self.ssgi_rays),
@@ -956,6 +1041,7 @@ class EngineTweaks:
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),
+            "ao_resolution_scale": float(self.ao_resolution_scale),
             "ibl_enabled": bool(self.ibl_enabled),
             "ssr_enabled": bool(self.ssr_enabled),
             "ssr_steps": int(self.ssr_steps),
@@ -975,12 +1061,16 @@ class EngineTweaks:
             "spot_shadow_bias": float(self.spot_shadow_bias),
             "shadow_mode": str(self.shadow_mode),
             "shadow_softness": float(self.shadow_softness),
+            "sun_angular_radius": float(self.sun_angular_radius),
             "shadow_bias": float(self.shadow_bias),
             "shadow_normal_bias": float(self.shadow_normal_bias),
             "shadow_distance": float(self.shadow_distance),
             "csm_split_lambda": float(self.csm_split_lambda),
+            "csm_split_mode": str(self.csm_split_mode),
+            "csm_cascade_distance_scale": [float(v) for v in self.csm_cascade_distance_scale],
             "csm_cascades": int(self.csm_cascades),
             "csm_stabilization": bool(self.csm_stabilization),
+            "csm_nonuniform_atlas": bool(self.csm_nonuniform_atlas),
             "shadow_resolution": int(self.shadow_resolution),
             "pcf_samples": int(self.pcf_samples),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
@@ -997,6 +1087,12 @@ class EngineTweaks:
             "day_speed": float(self.day_speed),
             "azimuth_deg": float(self.azimuth_deg),
             "latitude_deg": float(self.latitude_deg),
+            "declination_deg": float(self.declination_deg),
+            "moon_orbit_offset_hours": float(self.moon_orbit_offset_hours),
+            "moon_declination_deg": float(self.moon_declination_deg),
+            "moon_azimuth_offset_deg": float(self.moon_azimuth_offset_deg),
+            "sky_exposure": float(self.sky_exposure),
+            "sky_saturation": float(self.sky_saturation),
             "atmo_preset": str(self.atmo_preset),
             "rayleigh_r": float(self.rayleigh_r),
             "rayleigh_g": float(self.rayleigh_g),
@@ -1057,6 +1153,9 @@ class EngineTweaks:
             "taa_enabled": bool(self.taa_enabled),
             "taa_feedback": float(self.taa_feedback),
             "taa_sharpness": float(self.taa_sharpness),
+            "taa_max_feedback": float(getattr(self, "taa_max_feedback", 0.95)),
+            "taa_min_feedback": float(getattr(self, "taa_min_feedback", 0.78)),
+            "taa_variance_gamma": float(getattr(self, "taa_variance_gamma", 1.25)),
         }
 
     def from_dict(self, data: dict[str, Any]) -> None:

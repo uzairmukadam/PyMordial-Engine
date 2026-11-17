@@ -14,12 +14,13 @@ PyMordial-Engine/
 │   ├── world/                    # World builder interfaces and default builders
 │   └── tools/                    # Asset cooker and release packagers
 ├── projects/                     # Standalone game projects directory
-│   ├── shotgun_beat_the_speed/  # Example project
-│   │   ├── modules/              # Self-contained, portable game feature modules
+│   ├── playground/               # ★ Canonical workflow reference (start here)
+│   │   ├── modules/              # One package directory per portable module
 │   │   ├── world/                # Project-specific level and world builders
 │   │   ├── assets/               # Project-local textures, audio, meshes
 │   │   ├── config.py             # Project configuration
 │   │   └── main.py               # Project entry point
+│   └── reference_game/           # Minimal engine-module reference
 └── tests/                        # Engine unit and integration test suite
 ```
 
@@ -27,6 +28,9 @@ Key Benefits:
 - **Clean Engine Core**: The engine remains lean, fast, and unpolluted by gameplay scripts.
 - **Portable Modules**: Modules (`character_motor`, `day_night_cycle`, `heat_system`, etc.) are 100% self-contained folders that can be copy-pasted into any other project.
 - **Simple Upgrades**: Updating the engine never breaks project directories or requires modifying game logic.
+
+> **Start from `projects/playground/`.** It is the complete, working reference for every step
+> below: config, world builder, manifest modules, registry loading, state flow, and packaging.
 
 ---
 

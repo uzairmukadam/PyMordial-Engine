@@ -71,6 +71,10 @@ class TestRadianceCascadesPass:
             camera_pos=(0.0, 2.0, 4.0),
             camera_target=(0.0, 0.0, 0.0),
             time_elapsed=0.1,
+            # Pin the sun so the red cube's camera-facing side is lit. Without this
+            # the assertion below would depend on the atmosphere's solar arc, which
+            # is a separate concern from radiance-cascade colour bleed.
+            sun_dir=(0.3, -0.85, -0.4),
         )
 
         # Verify filtered RC texture has data

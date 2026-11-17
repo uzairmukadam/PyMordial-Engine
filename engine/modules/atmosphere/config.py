@@ -19,6 +19,19 @@ class AtmosphereConfig:
     day_speed: float = 0.0          # Multiplier: e.g. 1.0 = 1 min full cycle, 0.0 = manual/paused
     azimuth_deg: float = 45.0       # Sun orbit azimuth heading in degrees
     latitude_deg: float = 35.0      # Earth/planetary latitude affecting sun tilt
+    declination_deg: float = 0.0    # Solar declination (0.0 = equinox, +/-23.44 = solstice)
+    # Lunar hour-angle offset from the sun. 12.0 h keeps the historical antipodal
+    # moon (full moon rising as the sun sets); any other value gives the moon its
+    # own independent rise/set cycle.
+    moon_orbit_offset_hours: float = 12.0
+    # Lunar orbital plane, independent of the solar one. The moon's declination
+    # varies +/-28.5 deg over the nodal cycle, so it does not trace the sun's arc.
+    # Default 0.0 keeps the historical antipodal moon; set a non-zero value to
+    # give the moon its own arc.
+    moon_declination_deg: float = 0.0
+    # Extra azimuth heading applied only to the moon, so its rise/set points can
+    # be placed independently of the sun's.
+    moon_azimuth_offset_deg: float = 0.0
 
     # Wavelength-dependent scattering coefficients (m^-1)
     # Earth physical constants (Sébastien Hillaire Eurographics 2020)
@@ -52,6 +65,10 @@ class AtmosphereConfig:
     nebula_color: tuple[float, float, float] = (0.16, 0.055, 0.28)
     nebula_intensity: float = 0.35
 
+    # Sky grading applied in the resolve shader (before the night blend)
+    sky_exposure: float = 1.0       # Linear radiance multiplier on the sky-view LUT
+    sky_saturation: float = 1.0     # Luminance-preserving saturation (1.0 = untouched)
+
     # Procedural cloud deck, positioned in the world's +Y half-space.
     cloud_enabled: bool = True
     cloud_coverage: float = 0.46
@@ -70,6 +87,8 @@ _ATMOSPHERE_PRESET_BASE: dict[str, Any] = {
     "day_speed": 0.0,
     "azimuth_deg": 45.0,
     "latitude_deg": 35.0,
+    "declination_deg": 0.0,
+    "moon_orbit_offset_hours": 12.0,
     "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
     "mie_beta": 3.996e-6,
     "mie_asymmetry": 0.80,
@@ -95,6 +114,8 @@ _ATMOSPHERE_PRESET_BASE: dict[str, Any] = {
     "space_zenith": (0.0015, 0.0020, 0.0060),
     "nebula_color": (0.16, 0.055, 0.28),
     "nebula_intensity": 0.35,
+    "sky_exposure": 1.0,
+    "sky_saturation": 1.0,
     "cloud_enabled": True,
     "cloud_coverage": 0.46,
     "cloud_opacity": 0.88,
@@ -112,7 +133,11 @@ ATMOSPHERE_PRESETS: dict[str, dict[str, Any]] = {
         "sky_mode": "ATMOSPHERE",
         "time_of_day": 12.0,
         "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
-        "mie_beta": 3.996e-6,
+        # Retuned for realism: the physical Hillaire aerosol coefficient (3.996e-6)
+        # plus turbidity 1.0 leaves a milky, desaturated zenith. Dropping Mie to
+        # 2.2e-6 keeps the aerosol haze thin so Rayleigh scattering dominates and
+        # the zenith reads as a deep natural blue while the horizon stays pale.
+        "mie_beta": 2.2e-6,
         "mie_asymmetry": 0.80,
         "turbidity": 1.0,
         "sun_intensity": 4.0,
@@ -129,9 +154,15 @@ ATMOSPHERE_PRESETS: dict[str, dict[str, Any]] = {
         "sky_mode": "ATMOSPHERE",
         "time_of_day": 18.0,
         "rayleigh_beta": (5.802e-6, 13.558e-6, 33.100e-6),
-        "mie_beta": 6.0e-6,
+        # Retuned for realism: a sunset needs a dense, forward-scattering aerosol
+        # layer to carry the long-path orange/red glow along the horizon. Mie is
+        # raised to 9.0e-6 (2.25x the physical value) so the horizon warms strongly
+        # while the zenith above it stays deep. Turbidity is left at 1.0 because it
+        # multiplies extinction and would otherwise darken the whole sky instead of
+        # only thickening the haze.
+        "mie_beta": 9.0e-6,
         "mie_asymmetry": 0.80,
-        "turbidity": 1.2,
+        "turbidity": 1.0,
         "sun_intensity": 3.5,
         "sun_color": (1.0, 0.70, 0.40),
         "ground_color": (0.15, 0.12, 0.10),

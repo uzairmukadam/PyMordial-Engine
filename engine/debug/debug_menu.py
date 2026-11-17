@@ -622,6 +622,13 @@ class DebugMenu:
                         et.ao_radius = ao_rad_val
                         et.mark_custom()
 
+                    ao_res_changed, ao_res_val = imgui.slider_float(
+                        "AO Resolution Scale", float(getattr(et, "ao_resolution_scale", 1.0)), 0.25, 1.0, "%.2f"
+                    )
+                    if ao_res_changed:
+                        et.ao_resolution_scale = ao_res_val
+                        et.mark_custom()
+
             if imgui.collapsing_header("Image Quality, Reflections & Local Lights"):
 
                 # IBL
@@ -687,6 +694,21 @@ class DebugMenu:
                     taa_gm_c, taa_gm_v = imgui.slider_float("TAA Variance Box (Gamma)", getattr(et, "taa_gamma", 1.25), 0.75, 2.50, "%.2f")
                     if taa_gm_c:
                         et.taa_gamma = taa_gm_v
+                        et.mark_custom()
+
+                    taa_maxfb_c, taa_maxfb_v = imgui.slider_float("TAA Max Feedback", getattr(et, "taa_max_feedback", 0.95), 0.80, 0.99, "%.2f")
+                    if taa_maxfb_c:
+                        et.taa_max_feedback = taa_maxfb_v
+                        et.mark_custom()
+
+                    taa_minfb_c, taa_minfb_v = imgui.slider_float("TAA Min Feedback", getattr(et, "taa_min_feedback", 0.78), 0.50, 0.95, "%.2f")
+                    if taa_minfb_c:
+                        et.taa_min_feedback = taa_minfb_v
+                        et.mark_custom()
+
+                    taa_vg_c, taa_vg_v = imgui.slider_float("TAA Variance Gamma", getattr(et, "taa_variance_gamma", 1.25), 0.75, 2.50, "%.2f")
+                    if taa_vg_c:
+                        et.taa_variance_gamma = taa_vg_v
                         et.mark_custom()
                 elif et.aa_mode == "FXAA":
                     fxaa_subpixel_changed, fxaa_subpixel = imgui.slider_float("FXAA Subpixel Quality", et.fxaa_subpixel, 0.0, 1.0, "%.2f")
@@ -804,6 +826,42 @@ class DebugMenu:
                 latitude_c, latitude_v = imgui.slider_float("Planet Latitude", et.latitude_deg, -90.0, 90.0, "%.1f deg")
                 if latitude_c:
                     et.latitude_deg = latitude_v
+                    et.atmo_preset = "CUSTOM"
+                declination_c, declination_v = imgui.slider_float(
+                    "Solar Declination", et.declination_deg, -23.44, 23.44, "%.2f deg"
+                )
+                if declination_c:
+                    et.declination_deg = declination_v
+                    et.atmo_preset = "CUSTOM"
+                moon_offset_c, moon_offset_v = imgui.slider_float(
+                    "Moon Orbit Offset", et.moon_orbit_offset_hours, 0.0, 24.0, "%.2f h"
+                )
+                if moon_offset_c:
+                    et.moon_orbit_offset_hours = moon_offset_v
+                    et.atmo_preset = "CUSTOM"
+                moon_decl_c, moon_decl_v = imgui.slider_float(
+                    "Moon Declination", et.moon_declination_deg, -28.5, 28.5, "%.2f deg"
+                )
+                if moon_decl_c:
+                    et.moon_declination_deg = moon_decl_v
+                    et.atmo_preset = "CUSTOM"
+                moon_az_c, moon_az_v = imgui.slider_float(
+                    "Moon Azimuth Offset", et.moon_azimuth_offset_deg, -180.0, 180.0, "%.1f deg"
+                )
+                if moon_az_c:
+                    et.moon_azimuth_offset_deg = moon_az_v
+                    et.atmo_preset = "CUSTOM"
+                sky_exposure_c, sky_exposure_v = imgui.slider_float(
+                    "Sky Exposure", et.sky_exposure, 0.1, 4.0, "%.2f"
+                )
+                if sky_exposure_c:
+                    et.sky_exposure = sky_exposure_v
+                    et.atmo_preset = "CUSTOM"
+                sky_saturation_c, sky_saturation_v = imgui.slider_float(
+                    "Sky Saturation", et.sky_saturation, 0.0, 2.0, "%.2f"
+                )
+                if sky_saturation_c:
+                    et.sky_saturation = sky_saturation_v
                     et.atmo_preset = "CUSTOM"
 
                 # Collapsible Alien & Physical Scattering Tuning
@@ -1067,18 +1125,52 @@ class DebugMenu:
                         et.motion_blur_max_radius = mbr_v
                         et.mark_custom()
 
-                # Anamorphic Lens Flare
-                lf_c, lf_v = imgui.checkbox("Anamorphic Lens Flare", getattr(et, "lens_flare_enabled", True))
-                if lf_c:
-                    et.lens_flare_enabled = lf_v
+                # Lens Flare Mode (OFF / ANAMORPHIC / SOLAR)
+                flare_modes = ["OFF", "ANAMORPHIC", "SOLAR"]
+                curr_flare = str(getattr(et, "lens_flare_mode", "ANAMORPHIC")).upper()
+                fl_idx = flare_modes.index(curr_flare) if curr_flare in flare_modes else 1
+                flm_c, flm_idx = imgui.combo("Lens Flare Mode", fl_idx, flare_modes)
+                if flm_c and flm_idx != fl_idx:
+                    et.lens_flare_mode = flare_modes[flm_idx]
+                    et.lens_flare_enabled = flare_modes[flm_idx] != "OFF"
                     et.mark_custom()
-                    self.toast.show(f"Lens Flare: {'ON' if lf_v else 'OFF'}", duration=1.5)
+                    self.toast.show(f"Lens Flare: {et.lens_flare_mode}", duration=1.5)
 
                 if getattr(et, "lens_flare_enabled", True):
                     lft_c, lft_v = imgui.slider_float("Flare Threshold", et.lens_flare_threshold, 1.0, 5.0, "%.2f")
                     if lft_c:
                         et.lens_flare_threshold = lft_v
                         et.mark_custom()
+
+                    # Solar-flare-only controls
+                    if str(getattr(et, "lens_flare_mode", "ANAMORPHIC")).upper() == "SOLAR":
+                        sfb_c, sfb_v = imgui.slider_int(
+                            "Solar Blade Count", int(getattr(et, "solar_flare_blade_count", 6)), 2, 16
+                        )
+                        if sfb_c:
+                            et.solar_flare_blade_count = sfb_v
+                            et.mark_custom()
+
+                        sbl_c, sbl_v = imgui.slider_float(
+                            "Solar Bloom", float(getattr(et, "solar_flare_bloom_intensity", 1.0)), 0.0, 3.0, "%.2f"
+                        )
+                        if sbl_c:
+                            et.solar_flare_bloom_intensity = sbl_v
+                            et.mark_custom()
+
+                        sst_c, sst_v = imgui.slider_float(
+                            "Solar Starburst", float(getattr(et, "solar_flare_starburst_intensity", 0.6)), 0.0, 3.0, "%.2f"
+                        )
+                        if sst_c:
+                            et.solar_flare_starburst_intensity = sst_v
+                            et.mark_custom()
+
+                        soc_c, soc_v = imgui.slider_float(
+                            "Solar Occlusion Fade", float(getattr(et, "solar_flare_occlusion_fade", 1.0)), 0.0, 1.0, "%.2f"
+                        )
+                        if soc_c:
+                            et.solar_flare_occlusion_fade = soc_v
+                            et.mark_custom()
 
                     lfs_c, lfs_v = imgui.slider_float("Streak Intensity", et.lens_flare_streak_intensity, 0.0, 2.0, "%.2f")
                     if lfs_c:
@@ -1273,8 +1365,8 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"Shadow Resolution: {et.shadow_resolution}x{et.shadow_resolution}", duration=2.0)
 
-                # 2. Shadow Mode (HARD, PCF, PCSS)
-                shadow_modes = ["HARD", "PCF", "PCSS"]
+                # 2. Shadow Mode (HARD, PCF, PCSS, PCSS_ULTRA)
+                shadow_modes = ["HARD", "PCF", "PCSS", "PCSS_ULTRA"]
                 s_idx = shadow_modes.index(et.shadow_mode) if et.shadow_mode in shadow_modes else 2
                 sm_changed, new_sm_idx = imgui.combo("Shadow Mode", s_idx, shadow_modes)
                 if sm_changed and new_sm_idx != s_idx:
@@ -1282,8 +1374,8 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"Shadow Mode: {et.shadow_mode}", duration=2.0)
 
-                # 3. Shadow Softness (PCF / PCSS)
-                if et.shadow_mode in ("PCF", "PCSS"):
+                # 3. Shadow Softness (PCF / PCSS / PCSS_ULTRA)
+                if et.shadow_mode in ("PCF", "PCSS", "PCSS_ULTRA"):
                     soft_changed, soft_val = imgui.slider_float("Shadow Softness", et.shadow_softness, 0.2, 3.0, "%.2f")
                     if soft_changed:
                         et.shadow_softness = soft_val
@@ -1337,12 +1429,29 @@ class DebugMenu:
                     et.csm_split_lambda = split_value
                     et.mark_custom()
 
+                split_modes = ["PSSM", "GEOMETRIC", "UNIFORM"]
+                curr_mode_idx = split_modes.index(et.csm_split_mode) if et.csm_split_mode in split_modes else 0
+                mode_changed, new_mode_idx = imgui.combo("Cascade Split Mode", curr_mode_idx, split_modes)
+                if mode_changed and new_mode_idx != curr_mode_idx:
+                    et.csm_split_mode = split_modes[new_mode_idx]
+                    et.mark_custom()
+                    self.toast.show(f"Cascade Split Mode: {et.csm_split_mode}", duration=2.0)
+
                 # 5c. CSM Texel Stabilization (Shimmer Elimination)
                 csm_stab_changed, csm_stab_val = imgui.checkbox("CSM Texel Stabilization", getattr(et, "csm_stabilization", True))
                 if csm_stab_changed:
                     et.csm_stabilization = csm_stab_val
                     et.mark_custom()
                     self.toast.show(f"CSM Stabilization: {'ON' if csm_stab_val else 'OFF'}", duration=1.5)
+
+                # 5d. Per-Cascade Atlas Allocation (near cascades get more texels)
+                csm_nu_changed, csm_nu_val = imgui.checkbox(
+                    "Non-Uniform Cascade Atlas", getattr(et, "csm_nonuniform_atlas", False)
+                )
+                if csm_nu_changed:
+                    et.csm_nonuniform_atlas = csm_nu_val
+                    et.mark_custom()
+                    self.toast.show(f"Non-Uniform Cascade Atlas: {'ON' if csm_nu_val else 'OFF'}", duration=1.5)
 
             if imgui.collapsing_header("Diagnostics: Render Views"):
 

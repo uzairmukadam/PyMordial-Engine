@@ -112,7 +112,10 @@ void main() {
         vec3 rayleigh_scat = u_RayleighBeta * dR;
         vec3 mie_scat = vec3(u_MieBetaScat) * dM;
 
-        // Single scattering + multi-scattering
+        // Single scattering + multiple scattering. `L_ms` is the Psi_ms energy
+        // term baked by the multi-scattering LUT (2nd order + infinite geometric
+        // series), so the sky-view LUT carries the full multiple-scattering
+        // energy rather than only the first bounce.
         vec3 S = (rayleigh_scat * phaseR + mie_scat * phaseM) * T_sun * sunRadiance + sigma_s * L_ms * sunRadiance;
         L_sky += S * T_view * dt;
     }

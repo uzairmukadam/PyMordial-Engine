@@ -7,6 +7,7 @@ layout (binding = 0) uniform sampler2D u_GBufferAlbedoRoughness;
 layout (binding = 1) uniform sampler2D u_GBufferNormalMetallic;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;
 layout (binding = 3) uniform sampler2D u_SceneColor;
+layout (binding = 4) uniform sampler2D u_HiZTexture;   // Hierarchical-Z depth pyramid
 
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -29,6 +30,7 @@ layout (std140, binding = 0) uniform FrameData {
 };
 
 uniform int u_SSGI_Steps = 16;
+uniform int u_HiZMipCount = 1;   // >1 enables Hi-Z empty-space skipping
 uniform int u_SSGI_RayCount = 8;
 uniform float u_SSGI_RayDistance = 3.0;
 uniform float u_SSGI_Thickness = 0.35;
@@ -122,6 +124,17 @@ void main() {
 
             float scene_depth = texture(u_GBufferDepth, sample_uv).r;
             if (scene_depth <= 0.000001) {
+                // Hi-Z empty-space skipping: when the coarse pyramid reports no
+                // geometry here, advance several steps at once instead of
+                // marching texel by texel through open sky.
+                if (u_HiZMipCount > 1) {
+                    float coarse = textureLod(u_HiZTexture, sample_uv, 2.0).r;
+                    if (coarse <= 0.000001) {
+                        s += 2;
+                        prev_p = curr_p;
+                        continue;
+                    }
+                }
                 prev_p = curr_p;
                 continue;
             }

@@ -74,6 +74,12 @@ ProjectApp(config)
 
 Step 1 is the contract that makes malformed projects fail with a readable message instead of a driver-level crash. See [project_validator.py](../../engine/app/project_validator.py).
 
+### Window Resize Propagation
+
+`RenderContext.resize()` is the single entry point for a resolution change. It updates the GL viewport **and** forwards the new size to `RenderPipeline.resize()`, which reallocates every intermediate target (G-Buffer, AO + its blur pair, Hi-Z, SSGI, SSR, TAA/SMAA, volumetrics, bloom, HDR, final LDR).
+
+Resizing only the viewport is a bug: the passes keep their old dimensions, so the final blit covers just the bottom-left fraction of the window (AO in particular appears scaled down to roughly half height). `Window.poll_window_events()` translates `pygame.VIDEORESIZE` into a `WindowResizeEvent`, which `RenderContext` (priority 100) and `RenderPipeline` (priority 90) both consume.
+
 ---
 
 ## 3. Per-Frame Data Flow
@@ -144,15 +150,18 @@ Step 1 is the contract that makes malformed projects fail with a readable messag
 | 7.6 | Volumetric fog | HDR | Froxel raymarch |
 | 7.65 | Water | HDR | Per-entity water surfaces |
 | 7.7 | Particles | HDR | GPU compute emitters |
-| 7.8 | Camera optics | HDR | DoF, motion blur, lens flare |
+| 7.8 | Camera optics | HDR | DoF + lens flare (`lens_flare_mode`: `ANAMORPHIC` or `SOLAR`) |
 | 7.9 | TAA | HDR | Temporal accumulation in linear space |
+| 7.95 | Motion blur | HDR | Velocity-buffer tile-max reconstruction (after TAA) |
 | 8 | **Post-process (exclusive)** | LDR | Tonemap + exactly one AA: FXAA / SMAA / none |
 
 **Exclusivity invariants**
 
 - Pass 5 runs exactly one GI path. `gi_mode` selects it; there is no "both".
 - Pass 8 runs exactly one anti-aliasing path. TAA (7.9) and FXAA/SMAA (8) are mutually exclusive.
+- Motion blur (7.95) runs **after** TAA so the temporal filter accumulates a sharp image before the blur is applied once. Running it before TAA double-blurs.
 - `u_RCTexture` is bound at texture unit **15** in `deferred_resolve.frag`. Do not reassign it.
+- The Hi-Z pyramid is published as `hiz_texture` / `hiz_mip_count` and consumed by SSR (unit 4) and SSGI (unit 4). Both fall back to the depth texture with a mip count of 1 when the pyramid is unavailable, which disables the accelerated path.
 - Pass 6.5 is owned by the environment provider. `RenderPipeline` calls `env.render_sky()` /
   `env.render_clouds()` and never reads atmosphere config directly. Disabling
   `ProjectConfig.atmosphere_enabled` swaps in `FlatEnvironment`, which still binds valid LUTs.

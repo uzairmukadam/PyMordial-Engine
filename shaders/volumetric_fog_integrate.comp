@@ -13,6 +13,10 @@ uniform float u_FogNear = 0.1;
 uniform float u_FogFar = 400.0;
 uniform ivec3 u_GridSize = ivec3(160, 90, 64);
 
+// Shared froxel slice mapping and analytic Beer-Lambert integration.
+#define VOLUMETRICS_NO_CSM
+#include "shaders/common/volumetrics.glsl"
+
 void main() {
     ivec2 xy = ivec2(gl_GlobalInvocationID.xy);
     if (xy.x >= u_GridSize.x || xy.y >= u_GridSize.y) {
@@ -22,8 +26,6 @@ void main() {
     vec3 accumulatedScattering = vec3(0.0);
     float accumulatedTransmittance = 1.0;
 
-    float logRatio = log(u_FogFar / u_FogNear);
-
     for (int z = 0; z < u_GridSize.z; ++z) {
         ivec3 voxelCoord = ivec3(xy, z);
         vec4 sampleData = imageLoad(u_ScatterExtinctionVol, voxelCoord);
@@ -31,13 +33,13 @@ void main() {
         float extinction = sampleData.a;
 
         // Slice thickness in view-space meters
-        float z0 = u_FogNear * exp((float(z) / float(u_GridSize.z)) * logRatio);
-        float z1 = u_FogNear * exp((float(z + 1) / float(u_GridSize.z)) * logRatio);
+        float z0 = FroxelSliceToViewDepth(float(z) / float(u_GridSize.z), u_FogNear, u_FogFar);
+        float z1 = FroxelSliceToViewDepth(float(z + 1) / float(u_GridSize.z), u_FogNear, u_FogFar);
         float deltaZ = max(z1 - z0, 0.001);
 
         // Analytical integration of Beer-Lambert law over slice deltaZ
         float stepTransmittance = exp(-extinction * deltaZ);
-        vec3 stepScattering = scattering * ((1.0 - stepTransmittance) / max(extinction, 1e-6));
+        vec3 stepScattering = BeerLambertIntegrate(scattering, extinction, deltaZ);
 
         accumulatedScattering += stepScattering * accumulatedTransmittance;
         accumulatedTransmittance *= stepTransmittance;

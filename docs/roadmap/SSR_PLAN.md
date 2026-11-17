@@ -1,6 +1,6 @@
 # PyMordial Engine: Hi-Z Screen-Space Reflections (SSR) Design
 
-> **Status: DESIGN — partially implemented.** A working `SSRPass` exists (`engine/gfx/passes/ssr_pass.py`) using view-space ray marching with depth intersection and IBL fallback. The Hi-Z accelerated variant described below is **not** implemented. See [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) for scheduling.
+> **Status: DONE — Hi-Z accelerated variant implemented.** `SSRPass` supports both `RenderConfig.ssr_mode = "HIZ"` (default) and `"LINEAR"` (legacy). The Hi-Z march strides empty space in coarse mips and refines on contact, sharing the linear path's hit validation so both modes agree on accepted hits. Hi-Z empty-space skipping is also wired into SSGI. See [MASTER_FUTURE_PLAN.md](./MASTER_FUTURE_PLAN.md) for scheduling.
 
 Here is a production-ready, highly efficient design for a custom **Hierarchical Screen-Space Reflection (Hi-Z SSR)** pipeline.
 

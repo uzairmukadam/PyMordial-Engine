@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.golden import CAPTURE_VARIANTS
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -44,6 +46,17 @@ def test_default_frame_matches_golden(capture_result: subprocess.CompletedProces
         "Regenerate with 'python -m tests.golden_capture --write' only if the change is intentional."
     )
     assert "atmosphere_on" in capture_result.stdout
+
+
+def test_all_capture_variants_match_golden() -> None:
+    """Every subsystem variant must match its own golden frame."""
+    result = _run_capture("--check")
+    assert result.returncode == 0, (
+        "One or more capture variants regressed:\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
+    for name in CAPTURE_VARIANTS:
+        assert f"[+] {name}:" in result.stdout, f"Variant '{name}' was not verified."
 
 
 def _result_lines(output: str) -> list[str]:

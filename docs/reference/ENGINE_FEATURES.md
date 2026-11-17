@@ -47,6 +47,11 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - Stable frustum-slice radii with overlapping receiver regions and texel-snapped light-space bounds reduce cascade shimmer and popping.
 - Scene AABBs upstream of each receiver slice extend cascade depth ranges so relevant off-camera casters remain visible.
 - Texel-aware slope bias, PCF/PCSS sampling, and depth-aware blending across cascade boundaries reduce distant acne and filtering seams.
+- **Split modes** (`RenderConfig.csm_split_mode`): `PSSM` (default), `GEOMETRIC`, `UNIFORM`. The default blend is automatically reduced so adjacent cascade spans never exceed a 2.5x ratio, which keeps texel density from dropping in visible steps.
+- **Per-cascade distance** (`RenderConfig.csm_cascade_distance_scale`): a 4-tuple of far-distance multipliers so each cascade's reach can be tuned independently without changing the overall shadow distance.
+- **Filter modes** (`RenderConfig.shadow_mode`): `HARD`, `PCF`, `PCSS`, `PCSS_ULTRA`. PCSS derives its penumbra from the physical solar angular radius (`RenderConfig.sun_angular_radius`, default 0.00465 rad) rather than an arbitrary constant, and rotates its Vogel disk per pixel so banding becomes TAA-resolvable noise. One cascade texel is `1 / atlas_size` in atlas UV — using `2 / atlas_size` doubles every filter radius and is the classic cause of blurry, banded PCSS.
+- **Per-cascade atlas allocation** (`RenderConfig.csm_nonuniform_atlas`, default off): near cascades can claim a larger share of the atlas. When disabled the rects reproduce the legacy 2x2 quadrant layout exactly.
+- **Debug views**: `debug_gbuffer` 14 shows the selected cascade index as false colour; 15 shows per-cascade coverage.
 
 ### 2.4 Deferred G-Buffer MRT Layout (`engine.gfx.g_buffer.GBuffer`)
 - **RT0 (RGBA16F)**: Albedo RGB + Roughness A (HDR emissive capable).
@@ -61,15 +66,19 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - **Steep Parallax Occlusion Mapping (POM)**: Raymarches displacement layers in tangent space with linear search + secant root-finding and POM self-shadowing.
 
 ### 2.6 Global Illumination & Lighting Passes
-- **Ground Truth Ambient Occlusion (GTAO)**: High-performance horizon-based occlusion with spatial bilateral blur filter.
+- **Ground Truth Ambient Occlusion (GTAO)**: High-performance horizon-based occlusion with spatial bilateral blur filter. Renders at full resolution by default (`RenderConfig.ao_resolution_scale = 1.0`) so its screen-space radius matches the actual viewport; a downscaled target must still be told the full render size or the radius clamp silently shrinks the effect.
 - **Screen-Space Global Illumination (SSGI)**: Real-time indirect diffuse bounce from on-screen surfaces.
 - **Radiance Cascades (SSRC + FFPC)**: Half-resolution cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges; temporal confidence is reduced for fast screen-space motion and history depth is checked in the previous camera view to limit ghosting. History is invalidated when RC is disabled. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI path.
 - **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `IBL`, `SSGI`, and `RADIANCE_CASCADES` (SSRC + FFPC).
 - **Clustered Forward+ Local Lights (`engine.gfx.passes.clustered_lights.ClusteredLightingPass`)**: Computes 3D screen frustum grid clusters to evaluate hundreds of dynamic point and spot lights simultaneously.
-- **Screen-Space Reflections (SSR)**: Full-resolution high/ultra/cinematic view-space reflection tracing with tight depth intersection and subpixel refinement. Rough surfaces use depth/normal-aware reflection reconstruction, and missing screen-space hits fade into prefiltered HDR IBL. SSR remains limited to camera-visible geometry.
+- **Screen-Space Reflections (SSR)**: Full-resolution high/ultra/cinematic view-space reflection tracing with tight depth intersection and subpixel refinement. Rough surfaces use depth/normal-aware reflection reconstruction, and missing screen-space hits fade into prefiltered HDR IBL. SSR remains limited to camera-visible geometry. `RenderConfig.ssr_mode` selects `HIZ` (default, hierarchical-Z accelerated march that strides empty space in coarse mips and refines on contact) or `LINEAR` (legacy fixed-step march). Both modes share the same hit validation, so they agree on which hits are accepted.
 - **Image-Based Lighting (IBL)**: Split-sum GGX specular lighting with a runtime sun-driven linear HDR sky, solid-angle-aware roughness prefiltering across the full mip chain, cosine-convolved diffuse irradiance, and a BRDF integration LUT.
 - **Atmosphere & Sky (`engine.gfx.atmosphere.AtmosphereSystem`)**: Configurable Hillaire Rayleigh/Mie/ozone scattering, planetary dimensions and scale heights, day/night lighting, sun and moon discs, procedural clouds, and a separate star-and-nebula space mode. Built-in presets cover Earth day/sunset/night, two alien atmospheres, and outer space; `AtmosphereConfig` can be customized directly per project.
-- **Volumetric Fog**: Light-shaft raymarching through anisotropic participating media.
+- **Solar Kinematics**: `compute_sun_vector` derives the sun from a direct East-North-Up vector, so the arc is continuous through solar noon (an azimuth-only formulation degenerates there and snaps by 90 degrees). `AtmosphereConfig.declination_deg` sets the seasonal tilt; `latitude_deg` and `azimuth_deg` set the observer position and heading.
+- **Global Light System (`engine.modules.atmosphere.global_light.GlobalLightSystem`)**: Single source of truth for `sun_dir`/`sun_lux`/`moon_dir`/`moon_lux`/`moon_phase`/`ambient` plus `primary_dir`/`primary_lux`, which pick whichever body is above the horizon. Shadows, fog, particles, and clouds all read this one surface. The moon orbits on its own hour angle (`moon_orbit_offset_hours`) and its own orbital plane (`moon_declination_deg`, `moon_azimuth_offset_deg`), so it does not simply retrace the sun's arc; its intensity is modulated by the sun-moon separation. All three lunar parameters default to values that preserve the historical antipodal moon, so projects opt in to an independent lunar path.
+- **Sky Tuning**: `AtmosphereConfig.sky_exposure` and `sky_saturation` scale the sky radiance; the day/night blend is driven by sun transmittance so twilight passes through blue, orange, and deep blue instead of snapping.
+- **Volumetric Fog**: Froxel raymarch through anisotropic participating media. Shared phase functions, noise, and CSM sampling live in `shaders/common/volumetrics.glsl` so fog, particles, and clouds use one canonical implementation.
+- **Shared Blur Library**: `shaders/common/blur.glsl` provides Gaussian, Kawase, tent, and depth/normal-aware bilateral kernels. `engine.gfx.passes.blur_pass.BlurPass` owns the ping-pong pair so low-resolution features (AO, SSR, SSGI) share one implementation.
 
 ### 2.7 Entity Shapes & Water Surfaces
 - `EntityManager.create_entity` supports the built-in `cube`, `sphere`, `plane`, `capsule`, `cylinder`, `cone`, and `water` shapes. `dimensions` sets local mesh size in meters; `shape`, `position`, `rotation`, `scale`, and material values can also be edited later through `TransformProxy`.
@@ -87,10 +96,12 @@ The rendering architecture implements a state-of-the-art deferred rendering pipe
 - Wave, refraction, foam, clarity, roughness, and water colors are authored per surface with `WaterProperties` from `engine.core`. Pass `water=WaterProperties(...)` to `create_entity(shape="water", ...)`, or edit the result through `app.ecs.get_transform(water_id).water`.
 
 ### 2.8 Anti-Aliasing & Post-Processing
-- **Temporal Anti-Aliasing (TAA)**: Subpixel Halton jittering with neighborhood color clamping to prevent ghosting.
-- **Subpixel Morphological Anti-Aliasing (SMAA 1X / 2X / 4X)** & **Fast Approximate Anti-Aliasing (FXAA)**.
+- **Temporal Anti-Aliasing (TAA)**: Subpixel Halton jittering with 3x3 depth-dilated and magnitude-dilated velocity fetching, octahedral-normal history rejection, tonemapped YCoCg variance clipping, Catmull-Rom history reprojection, and contrast-adaptive sharpening. Tunable via `taa_feedback`, `taa_max_feedback`, `taa_min_feedback`, `taa_sharpness`, `taa_variance_gamma`.
+- **Subpixel Morphological Anti-Aliasing (SMAA 1X / 2X / 4X)** & **Fast Approximate Anti-Aliasing (FXAA)**. SMAA detects both orthogonal and diagonal edges and resolves history with the same jitter-aware reprojection TAA uses.
 - **Tone-Mapping**: ACES filmic curve, AgX, Reinhard, Uncharted 2, and neutral exposure operators.
 - **Camera Optics**: Physical bokeh depth of field, bloom, chromatic aberration, and lens distortion.
+- **Motion Blur**: Velocity-buffer driven (reads G-buffer RT2), 2-pass tile-max reconstruction (McGuire et al.) with depth-aware weighting and velocity dilation. Runs after TAA so the temporal filter accumulates a sharp image before the blur is applied once.
+- **Lens Flare**: `RenderConfig.lens_flare_mode` selects `ANAMORPHIC` (horizontal streak, optical ghosts, halo ring) or `SOLAR` (sun-anchored disc bloom, aperture starburst, streak, ghosts, halo, with a depth-buffer occlusion test).
 
 ---
 

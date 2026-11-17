@@ -28,9 +28,32 @@ CAPTURE_DT = 1.0 / 60.0
 # Mean absolute error (0..255 scale) tolerated between a capture and its golden image.
 DEFAULT_TOLERANCE = 2.0
 
+# Named capture variants. Each entry is the config override set applied on top of
+# the deterministic base scene, so a regression in one subsystem is isolated to
+# its own golden instead of being averaged into a single frame.
+#
+# Keys are split by target: ``project`` overrides land on ``ProjectConfig`` before
+# the app is built, ``render`` overrides land on the pipeline's ``RenderConfig``
+# afterwards. Render settings are not ProjectConfig fields, so they must be
+# applied post-construction.
+CAPTURE_VARIANTS: dict[str, dict[str, dict[str, object]]] = {
+    "atmosphere_on": {},
+    "atmosphere_off": {"project": {"atmosphere_enabled": False}},
+    "shadows_pcss": {"render": {"shadow_mode": "PCSS", "shadow_softness": 1.2}},
+    "shadows_pcf": {"render": {"shadow_mode": "PCF", "shadow_softness": 1.0}},
+    "aa_taa": {"render": {"aa_mode": "TAA", "taa_enabled": True}},
+    "aa_smaa4x": {"render": {"aa_mode": "SMAA_4X"}},
+    "fog_volumetric": {"render": {"volumetric_fog_enabled": True, "fog_density": 0.012}},
+    "motion_blur": {"render": {"motion_blur_enabled": True, "motion_blur_intensity": 1.5}},
+    "flare_solar": {"render": {"lens_flare_enabled": True}},
+}
+
 
 def build_capture_app(**config_overrides) -> ProjectApp:
-    """Creates a deterministic headless app with a fixed world and camera."""
+    """Creates a deterministic headless app with a fixed world and camera.
+
+    ``config_overrides`` are ``ProjectConfig`` fields applied before construction.
+    """
     cfg = ProjectConfig(
         title="GoldenCapture",
         width=CAPTURE_WIDTH,
@@ -77,6 +100,34 @@ def capture_scene(**config_overrides) -> np.ndarray:
     """Builds, renders, and tears down a capture app, returning the frame."""
     app = build_capture_app(**config_overrides)
     try:
+        return capture_frame(app)
+    finally:
+        app.shutdown()
+
+
+def capture_variant(name: str) -> np.ndarray:
+    """Captures a named variant from ``CAPTURE_VARIANTS``.
+
+    ``project`` overrides are applied to ``ProjectConfig`` before the app is
+    built; ``render`` overrides are applied to the pipeline's ``RenderConfig``
+    afterwards, because render settings are not ``ProjectConfig`` fields.
+    """
+    if name not in CAPTURE_VARIANTS:
+        raise KeyError(f"Unknown capture variant '{name}'. Known: {sorted(CAPTURE_VARIANTS)}")
+
+    spec = CAPTURE_VARIANTS[name]
+    project_overrides = dict(spec.get("project", {}))
+    render_overrides = dict(spec.get("render", {}))
+
+    app = build_capture_app(**project_overrides)
+    try:
+        for key, value in render_overrides.items():
+            if not hasattr(app.pipeline.config, key):
+                raise AttributeError(
+                    f"Capture variant '{name}' sets unknown RenderConfig field '{key}'."
+                )
+            setattr(app.pipeline.config, key, value)
+        app.pipeline.apply_config(app.pipeline.config)
         return capture_frame(app)
     finally:
         app.shutdown()

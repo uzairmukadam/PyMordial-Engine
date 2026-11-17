@@ -22,6 +22,14 @@ uniform float u_CloudLayerSeparation;
 uniform float u_CloudSecondaryOpacity;
 uniform vec2 u_CloudWind;
 
+// Shared phase functions for physically consistent forward scattering.
+#define VOLUMETRICS_NO_CSM
+#include "shaders/common/volumetrics.glsl"
+
+// Henyey-Greenstein anisotropy tuned so the peak-normalised lobe closely
+// matches the previous pow(viewSun, 10.0) forward-scatter falloff.
+const float CLOUD_PHASE_G = 0.70;
+
 void SampleCloudLayer(vec3 rayDir, float altitude, float worldPeriod, out vec4 layerNoise, out float shape) {
     float layerDistance = (altitude - u_CameraPosition.y) / rayDir.y;
     vec2 layerPos = u_CameraPosition.xz + rayDir.xz * layerDistance;
@@ -119,7 +127,7 @@ void main() {
         * smoothstep(-0.16, -0.02, sunElevation);
     float horizon = 1.0 - smoothstep(0.015, 0.28, rayDir.y);
     float viewSun = max(dot(-rayDir, sunDirection), 0.0);
-    float forwardScatter = pow(viewSun, 10.0) * daylight;
+    float forwardScatter = HenyeyGreensteinPeakNormalized(viewSun, CLOUD_PHASE_G) * daylight;
 
     vec3 dayTint = mix(vec3(0.76, 0.81, 0.91), vec3(0.97, 0.985, 1.0), daylight);
     vec3 nightTint = u_MoonColor * (0.08 + 0.15 * u_MoonIntensity);

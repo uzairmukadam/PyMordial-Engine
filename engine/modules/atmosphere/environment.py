@@ -30,6 +30,7 @@ class AtmosphereEnvironment:
         "cloud_pass",
         "_prev_atmo_key",
         "_atmo_sun_tuple",
+        "_atmo_moon_tuple",
     )
 
     def __init__(self, ctx: moderngl.Context, config: AtmosphereConfig | None = None) -> None:
@@ -41,6 +42,7 @@ class AtmosphereEnvironment:
         self.cloud_pass = SkyCloudPass(ctx)
         self._prev_atmo_key: tuple | None = None
         self._atmo_sun_tuple: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self._atmo_moon_tuple: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
     # ---------------- Simulation ----------------
 
@@ -49,6 +51,14 @@ class AtmosphereEnvironment:
 
     def compute_sun_vector(self) -> tuple[float, float, float]:
         return self.system.compute_sun_vector()
+
+    def compute_moon_vector(self) -> tuple[float, float, float]:
+        return self.system.compute_moon_vector()
+
+    @property
+    def moon_phase(self) -> float:
+        """Illuminated fraction of the moon: 0.0 at new moon, 1.0 at full moon."""
+        return self.system.moon_phase
 
     def compute_lighting(self) -> tuple[
         tuple[float, float, float], float, tuple[float, float, float], float
@@ -144,6 +154,8 @@ class AtmosphereEnvironment:
             atmo.nebula_color,
             atmo.nebula_intensity,
             atmo.moon_intensity,
+            atmo.sky_exposure,
+            atmo.sky_saturation,
         )
         if atmo_key == self._prev_atmo_key:
             return
@@ -175,16 +187,32 @@ class AtmosphereEnvironment:
         _set("u_StarIntensity", atmo.star_intensity)
         _set("u_StarDensity", atmo.star_density)
         _set("u_AtmosphereTurbidity", atmo.turbidity)
+        _set("u_SkyExposure", atmo.sky_exposure)
+        _set("u_SkySaturation", atmo.sky_saturation)
 
     def apply_sun_direction(self, program: moderngl.Program, sun_dir: tuple[float, float, float]) -> None:
-        """Uploads the atmosphere sun direction, skipping redundant writes."""
+        """Uploads the celestial directions (sun + moon), skipping redundant writes.
+
+        The moon is derived from its own hour angle, so it is uploaded alongside
+        the sun to keep the sky disc and the lighting in lockstep.
+        """
         sx, sy, sz = float(sun_dir[0]), float(sun_dir[1]), float(sun_dir[2])
-        if (sx, sy, sz) == self._atmo_sun_tuple:
+        if (sx, sy, sz) != self._atmo_sun_tuple:
+            self._atmo_sun_tuple = (sx, sy, sz)
+            uniform = program.get("u_AtmosphereSunDir", None)
+            if uniform is not None:
+                uniform.value = self._atmo_sun_tuple
+        self.apply_moon_direction(program, self.system.compute_moon_vector())
+
+    def apply_moon_direction(self, program: moderngl.Program, moon_dir: tuple[float, float, float]) -> None:
+        """Uploads the atmosphere moon direction, skipping redundant writes."""
+        mx, my, mz = float(moon_dir[0]), float(moon_dir[1]), float(moon_dir[2])
+        if (mx, my, mz) == self._atmo_moon_tuple:
             return
-        self._atmo_sun_tuple = (sx, sy, sz)
-        uniform = program.get("u_AtmosphereSunDir", None)
+        self._atmo_moon_tuple = (mx, my, mz)
+        uniform = program.get("u_AtmosphereMoonDir", None)
         if uniform is not None:
-            uniform.value = self._atmo_sun_tuple
+            uniform.value = self._atmo_moon_tuple
 
     def bind_luts(self, sky_view_unit: int, transmittance_unit: int) -> None:
         self.sky_pass.sky_view_lut.use(location=sky_view_unit)

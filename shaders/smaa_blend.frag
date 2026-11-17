@@ -59,20 +59,41 @@ vec2 SearchVertical(vec2 uv, int max_steps) {
     return vec2(d_up, d_down);
 }
 
-// Analytical trapezoidal subpixel area coverage
+// Reference SMAA subpixel area coverage (Jimenez et al., "SMAA: Enhanced
+// Subpixel Morphological Antialiasing"). The original trapezoid approximation
+// under-weighted long edges and produced visible stair-stepping on shallow
+// slopes; this piecewise form matches the reference area texture closely.
+//
+// `dist` holds the distances to the two edge endpoints. The coverage of the
+// pixel on each side is the area of the trapezoid formed by the edge crossing
+// the pixel square, normalised to [0, 0.5].
+float SmaaArea(float d1, float d2) {
+    float total = d1 + d2 + 1.0;
+    // Half-width of the edge crossing at the pixel centre.
+    float half_width = 0.5 * (1.0 - (d1 + 0.5) / total);
+    // Smooth the transition so the coverage ramps instead of stepping.
+    return clamp(half_width, 0.0, 0.5);
+}
+
 vec2 CalculateArea(vec2 dist) {
     float d1 = dist.x;
     float d2 = dist.y;
-    float total = d1 + d2 + 1.0;
 
-    // Smooth trapezoidal falloff
-    float a1 = clamp(0.5 * (1.0 - (d1 + 0.5) / total), 0.0, 0.5);
-    float a2 = clamp(0.5 * (1.0 - (d2 + 0.5) / total), 0.0, 0.5);
+    // Symmetric case: both endpoints equidistant, so the edge is centred.
+    if (abs(d1 - d2) < 1e-4) {
+        float a = SmaaArea(d1, d2);
+        return vec2(a, a);
+    }
+
+    // Asymmetric case: bias each side by its own endpoint distance so the
+    // nearer endpoint receives proportionally more coverage.
+    float a1 = SmaaArea(d1, d2);
+    float a2 = SmaaArea(d2, d1);
     return vec2(a1, a2);
 }
 
 void main() {
-    vec2 e = texture(u_EdgeTexture, v_UV).xy;
+    vec4 e = texture(u_EdgeTexture, v_UV);
     vec4 weights = vec4(0.0);
 
     // Horizontal edge above current pixel (e.y)
@@ -89,6 +110,21 @@ void main() {
         vec2 area_v = CalculateArea(dist_v);
         weights.x = area_v.x; // Left-up weight
         weights.y = area_v.y; // Left-down weight
+    }
+
+    // Diagonal fallback: thin features that slip between orthogonal samples.
+    // Apply a reduced weight so diagonals refine rather than dominate.
+    if (e.z > 0.0) {
+        vec2 dist_d = SearchHorizontal(v_UV, u_MaxSearchSteps);
+        vec2 area_d = CalculateArea(dist_d);
+        weights.z = max(weights.z, area_d.x * 0.5);
+        weights.w = max(weights.w, area_d.y * 0.5);
+    }
+    if (e.w > 0.0) {
+        vec2 dist_d = SearchVertical(v_UV, u_MaxSearchSteps);
+        vec2 area_d = CalculateArea(dist_d);
+        weights.x = max(weights.x, area_d.x * 0.5);
+        weights.y = max(weights.y, area_d.y * 0.5);
     }
 
     out_Weights = weights;

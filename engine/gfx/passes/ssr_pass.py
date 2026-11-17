@@ -62,6 +62,8 @@ class SSRPass(RenderPass):
         self._u_max_dist = self.prog.get("u_SSR_MaxDistance", None)
         self._u_thickness = self.prog.get("u_SSR_Thickness", None)
         self._u_max_rough = self.prog.get("u_SSR_MaxRoughness", None)
+        self._u_mode = self.prog.get("u_SSR_Mode", None)
+        self._u_hiz_mips = self.prog.get("u_HiZMipCount", None)
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
@@ -129,6 +131,17 @@ class SSRPass(RenderPass):
         g_buffer.depth_texture.use(location=2)
         scene_tex.use(location=3)
 
+        # Hi-Z pyramid (unit 4). Falls back to the depth texture when the
+        # pyramid has not been built yet, so the shader always has a valid
+        # binding; u_HiZMipCount == 1 forces the linear march in that case.
+        hiz_tex = context.resources.get("hiz_texture", None)
+        hiz_mips = int(context.resources.get("hiz_mip_count", 1))
+        if hiz_tex is not None:
+            hiz_tex.use(location=4)
+        else:
+            g_buffer.depth_texture.use(location=4)
+            hiz_mips = 1
+
         if self._u_steps is not None:
             self._u_steps.value = int(getattr(context.config, "ssr_steps", 48))
         if self._u_max_dist is not None:
@@ -137,6 +150,11 @@ class SSRPass(RenderPass):
             self._u_thickness.value = float(getattr(context.config, "ssr_thickness", 0.12))
         if self._u_max_rough is not None:
             self._u_max_rough.value = float(getattr(context.config, "ssr_max_roughness", 0.65))
+        if self._u_mode is not None:
+            mode = str(getattr(context.config, "ssr_mode", "HIZ")).upper()
+            self._u_mode.value = 1 if mode == "HIZ" else 0
+        if self._u_hiz_mips is not None:
+            self._u_hiz_mips.value = hiz_mips
         self.vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo

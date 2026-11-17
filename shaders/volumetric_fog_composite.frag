@@ -36,11 +36,9 @@ uniform float u_FogFar = 400.0;
 uniform float u_GridDepth = 64.0;
 uniform int u_DebugMode = 0; // 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
-// Interleaved Gradient Noise for sub-voxel anti-banding reconstruction
-float InterleavedGradientNoise(vec2 screenPos) {
-    vec3 magic = vec3(0.06711056, 0.00583715, 52.9829189);
-    return fract(magic.z * fract(dot(screenPos, magic.xy)));
-}
+// Shared interleaved gradient noise for sub-voxel anti-banding reconstruction.
+#define VOLUMETRICS_NO_CSM
+#include "shaders/common/volumetrics.glsl"
 
 void main() {
     float rawDepth = texture(u_GBufferDepth, v_UV).r;

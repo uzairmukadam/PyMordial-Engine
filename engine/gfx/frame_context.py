@@ -121,5 +121,10 @@ class FrameContext:
     def inv_view_mat(self) -> np.ndarray:
         return self.buffer[64:80]
 
+    @property
+    def jitter(self) -> tuple[float, float]:
+        """Subpixel projection jitter in UV space (u_ScreenSize_Jitter.zw)."""
+        return (float(self.buffer[86]), float(self.buffer[87]))
+
     def destroy(self) -> None:
         self.ubo.release()

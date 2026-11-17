@@ -112,7 +112,12 @@ class RenderContext:
         return cls(width=width, height=height, hidden=True)
 
     def resize(self, new_width: int, new_height: int) -> None:
-        """Updates internal viewport resolution."""
+        """Updates internal viewport resolution and resizes the render pipeline.
+
+        The pipeline owns every intermediate target (G-Buffer, AO, HDR, TAA...).
+        Growing only the GL viewport would leave those targets at the old size,
+        so the final blit would cover just a fraction of the window.
+        """
         if new_width <= 0 or new_height <= 0:
             return
         self.width = new_width
@@ -123,6 +128,8 @@ class RenderContext:
                 self.ctx.screen.viewport = (0, 0, new_width, new_height)
             except Exception:
                 pass
+        if self.pipeline is not None:
+            self.pipeline.resize(new_width, new_height)
 
     def clear(
         self,

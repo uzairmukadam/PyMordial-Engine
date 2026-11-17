@@ -224,6 +224,33 @@ class TestRenderPipelineHeadless:
         assert len(data) == 400 * 300 * 4
         pipeline.destroy()
 
+    def test_render_context_resize_propagates_to_pipeline(self, render_ctx: RenderContext):
+        """RenderContext.resize must resize every pipeline target, not just the viewport.
+
+        Regression: growing only the GL viewport left the G-Buffer, AO and HDR
+        targets at the old size, so the final blit covered just the bottom-left
+        fraction of the window (AO appeared scaled down to ~half height).
+        """
+        pipeline = RenderPipeline(render_ctx)
+        render_ctx.pipeline = pipeline
+
+        old_w, old_h = pipeline.g_buffer.width, pipeline.g_buffer.height
+        new_w, new_h = old_w * 2, old_h * 2
+
+        render_ctx.resize(new_w, new_h)
+
+        assert pipeline.g_buffer.width == new_w
+        assert pipeline.g_buffer.height == new_h
+        assert pipeline.ao_pass.width == new_w
+        assert pipeline.ao_pass.height == new_h
+        assert pipeline.ao_pass.blur_pass.width == new_w
+        assert pipeline.ao_pass.blur_pass.height == new_h
+        assert pipeline.post_process.width == new_w
+        assert pipeline.post_process.height == new_h
+        assert pipeline.post_process.hdr_texture.size == (new_w, new_h)
+        assert pipeline.post_process.final_fbo.size == (new_w, new_h)
+        pipeline.destroy()
+
     def test_volumetric_fog_resolution_scaling(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         ecs = EntityManager(max_entities=10)

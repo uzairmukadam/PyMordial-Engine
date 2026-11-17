@@ -214,13 +214,13 @@ Every high-end visual technique has a mathematically sound, lightweight counterp
   - **Verification Gate**: Repeated world transitions do not leak GPU memory, physics colliders, or event callbacks.
   - **Notes / Log**: 
 
-- [ ] **H3.5 — Depth-Dilated TAA Velocity Fetching & Motion Blur**
-  - **Status**: `PLANNED`
+- [x] **H3.5 — Depth-Dilated TAA Velocity Fetching & Motion Blur**
+  - **Status**: `DONE`
   - **Scope**:
     - In `taa.frag`, sample $3 \times 3$ neighborhood and select velocity of the pixel with closest depth to camera.
     - Implement 2-pass velocity tile-max motion blur (McGuire et al.).
   - **Verification Gate**: Eliminates background edge ghosting behind moving foreground silhouettes; smooth camera/object blur.
-  - **Notes / Log**: 
+  - **Notes / Log**: TAA now does 3x3 depth-dilated **and** magnitude-dilated velocity fetching plus octahedral-normal history rejection. Motion blur moved out of `camera_optics.frag` into `engine/gfx/passes/motion_blur_pass.py`, which reads the G-buffer velocity buffer (RT2) and runs a 2-pass tile-max reconstruction (`motion_blur_tile.frag` + `motion_blur_gather.frag`). It now executes **after** TAA (pass 7.95) instead of before, removing the previous double-blur. New config: `motion_blur_tile_size`, `motion_blur_max_samples`. 4 tests in `tests/test_motion_blur.py`.
 
 ---
 

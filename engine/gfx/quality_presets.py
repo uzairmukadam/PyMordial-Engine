@@ -36,8 +36,9 @@ class RenderConfig:
 
     # Shadow Settings
     shadow_resolution: int = 4096  # CSM Atlas size (1024, 2048, 4096)
-    shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS"
+    shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS", "PCSS_ULTRA"
     shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
+    sun_angular_radius: float = 0.00465  # Physical solar angular radius (rad, ~0.266 deg)
     shadow_bias: float = 0.0015    # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
     # Slope-scaled bias clamp: bias = clamp(base * (1 + slope * scale), base * min, base * max)
@@ -50,7 +51,11 @@ class RenderConfig:
     pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
     shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
     csm_split_lambda: float = 0.85 # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_split_mode: str = "PSSM"   # Cascade split distribution: "PSSM", "GEOMETRIC", "UNIFORM"
     csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
+    csm_nonuniform_atlas: bool = False # Per-cascade atlas rects (near cascades get more texels)
+    # Per-cascade far-distance multipliers (cascade 0..3). 1.0 = use the split as-is.
+    csm_cascade_distance_scale: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
 
     # Depth Precision & GPU Culling
     reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
@@ -63,6 +68,7 @@ class RenderConfig:
     ao_mode: str = "GTAO"          # "OFF", "SSAO", "GTAO"
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
+    ao_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
 
     # Global Illumination (SSGI vs Radiance Cascades)
     gi_mode: str = "RADIANCE_CASCADES"  # "OFF", "IBL", "SSGI", "RADIANCE_CASCADES"
@@ -88,6 +94,7 @@ class RenderConfig:
     ibl_enabled: bool = True
     ssr_enabled: bool = True
     ssr_resolution_scale: float = 0.5
+    ssr_mode: str = "HIZ"          # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
     ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.12
@@ -99,6 +106,9 @@ class RenderConfig:
     taa_feedback: float = 0.82
     taa_sharpness: float = 0.35
     taa_gamma: float = 1.25
+    taa_max_feedback: float = 0.95
+    taa_min_feedback: float = 0.78
+    taa_variance_gamma: float = 1.25
     fxaa_subpixel: float = 0.75
     fxaa_edge_threshold: float = 0.125
     smaa_threshold: float = 0.08
@@ -135,7 +145,7 @@ class RenderConfig:
     fog_debug_mode: int = 0         # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
     # Debug Visualization
-    debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas
+    debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage
     wireframe: bool = False        # ModernGL polygon line rasterization mode
 
     # Phase 6: Parallax Occlusion Mapping (POM)
@@ -180,15 +190,24 @@ class RenderConfig:
     motion_blur_samples: int = 12        # Directional blur taps (4 to 32)
     motion_blur_intensity: float = 1.5   # Shutter angle / blur strength scale
     motion_blur_max_radius: float = 48.0 # Max blur vector in pixels
+    motion_blur_tile_size: int = 16      # Tile footprint (px) for the tile-max reduction
+    motion_blur_max_samples: int = 32    # Upper bound on gather taps per pixel
 
     # Anamorphic Lens Flare & Ghost Reflections
     lens_flare_enabled: bool = True
+    lens_flare_mode: str = "ANAMORPHIC"  # "OFF", "ANAMORPHIC", "SOLAR"
     lens_flare_threshold: float = 1.8    # Luminance cutoff for specular streaks
     lens_flare_streak_intensity: float = 0.6
     lens_flare_streak_width: float = 32.0 # Horizontal spread in pixels
     lens_flare_ghost_intensity: float = 0.0
     lens_flare_halo_intensity: float = 0.25
     lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0) # Anamorphic blue/cyan
+
+    # Solar Flare (lens_flare_mode == "SOLAR")
+    solar_flare_blade_count: int = 6          # Aperture blades -> diffraction spike count
+    solar_flare_bloom_intensity: float = 1.0  # Sun disc bloom weight
+    solar_flare_starburst_intensity: float = 0.6  # Diffraction spike weight
+    solar_flare_occlusion_fade: float = 1.0   # 0 = ignore geometry, 1 = full depth occlusion
 
     # Optical Lens Imperfections
     chromatic_aberration_enabled: bool = True

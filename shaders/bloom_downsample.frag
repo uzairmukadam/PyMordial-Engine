@@ -1,5 +1,7 @@
 #version 450 core
 
+#include "shaders/common/blur.glsl"
+
 in vec2 v_UV;
 layout(location = 0) out vec4 out_Color;
 
@@ -21,6 +23,13 @@ vec3 sample_source(vec2 uv) {
 
 void main() {
     vec2 texel = 1.0 / vec2(textureSize(u_Source, 0));
+
+    // Without a threshold the 3x3 tent is a plain blur, so the shared kernel applies.
+    if (u_Threshold < 0.0) {
+        out_Color = vec4(TentBlur3x3(u_Source, v_UV, texel).rgb, 1.0);
+        return;
+    }
+
     vec3 color = vec3(0.0);
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {

@@ -21,6 +21,7 @@ import moderngl
 
 from engine.modules.atmosphere.config import AtmosphereConfig, ATMOSPHERE_PRESETS
 from engine.modules.atmosphere.environment import AtmosphereEnvironment
+from engine.modules.atmosphere.global_light import GlobalLightSystem
 from engine.modules.atmosphere.module import AtmosphereModule
 from engine.modules.atmosphere.system import AtmosphereSystem
 
@@ -36,7 +37,8 @@ def create_atmosphere_environment(
     Recognized settings keys:
         ``preset``: name of an entry in ``ATMOSPHERE_PRESETS``.
         ``time_of_day``, ``day_speed``, ``azimuth_deg``, ``latitude_deg``,
-        ``cloud_enabled``: direct ``AtmosphereConfig`` overrides.
+        ``declination_deg``, ``cloud_enabled``: direct ``AtmosphereConfig``
+        overrides.
     """
     config = AtmosphereConfig()
     settings = dict(settings or {})
@@ -60,6 +62,7 @@ __all__ = [
     "AtmosphereEnvironment",
     "AtmosphereModule",
     "AtmosphereSystem",
+    "GlobalLightSystem",
     "MODULE_MANIFEST",
     "create_atmosphere_environment",
 ]

@@ -2,14 +2,14 @@
 
 Coordinates:
 - Physically-based Bokeh Depth of Field (Circle of Confusion, Anamorphic/Hexagonal bokeh)
-- Velocity Buffer Motion Blur (reconstructed from current and previous View-Projection matrices)
 - Anamorphic Lens Flare & Ghost Reflections (1D horizontal streak, optical ghosts, halo ring)
+
+Motion blur lives in ``engine.gfx.passes.motion_blur_pass`` and runs after TAA.
 """
 
 from __future__ import annotations
 from typing import Any
 import moderngl
-import numpy as np
 
 from engine.gfx.render_graph import RenderPass
 
@@ -22,7 +22,7 @@ _load_shader = load_shader
 
 
 class CameraOpticsPass(RenderPass):
-    """Manages Bokeh Depth of Field, Camera Motion Blur, and Anamorphic Lens Flares."""
+    """Manages Bokeh Depth of Field and Anamorphic Lens Flares."""
 
     BOKEH_SHAPE_MAP = {
         "CIRCULAR": 0,
@@ -61,12 +61,6 @@ class CameraOpticsPass(RenderPass):
         self._u_max_coc = self.optics_prog.get("u_MaxCoCRadius", None)
         self._u_bokeh_shape = self.optics_prog.get("u_BokehShape", None)
         self._u_anamorphic_ratio = self.optics_prog.get("u_AnamorphicRatio", None)
-
-        self._u_mb_enabled = self.optics_prog.get("u_MotionBlurEnabled", None)
-        self._u_mb_samples = self.optics_prog.get("u_MotionBlurSamples", None)
-        self._u_mb_intensity = self.optics_prog.get("u_MotionBlurIntensity", None)
-        self._u_mb_max_radius = self.optics_prog.get("u_MaxMotionRadius", None)
-        self._u_prev_vp = self.optics_prog.get("u_PrevViewProjection", None)
 
         # 3. Cache Flare Uniform Handles
         self._u_flare_thresh = self.flare_prog.get("u_FlareThreshold", None)
@@ -135,11 +129,10 @@ class CameraOpticsPass(RenderPass):
         self,
         scene_hdr_texture: moderngl.Texture,
         depth_texture: moderngl.Texture,
-        prev_vp_mat: np.ndarray,
         config: Any,
         target_fbo: moderngl.Framebuffer | None = None,
     ) -> moderngl.Texture:
-        """Applies Depth of Field and Camera Motion Blur to the scene HDR buffer."""
+        """Applies Depth of Field to the scene HDR buffer."""
         fbo = target_fbo if target_fbo is not None else self.optics_fbo
         fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
@@ -167,19 +160,6 @@ class CameraOpticsPass(RenderPass):
             self._u_bokeh_shape.value = self.BOKEH_SHAPE_MAP.get(shape_str, 0)
         if self._u_anamorphic_ratio is not None:
             self._u_anamorphic_ratio.value = float(getattr(config, "dof_anamorphic_ratio", 1.0))
-
-        # Upload Motion Blur uniforms
-        mb_on = getattr(config, "motion_blur_enabled", True)
-        if self._u_mb_enabled is not None:
-            self._u_mb_enabled.value = 1 if mb_on else 0
-        if self._u_mb_samples is not None:
-            self._u_mb_samples.value = int(getattr(config, "motion_blur_samples", 12))
-        if self._u_mb_intensity is not None:
-            self._u_mb_intensity.value = float(getattr(config, "motion_blur_intensity", 1.0))
-        if self._u_mb_max_radius is not None:
-            self._u_mb_max_radius.value = float(getattr(config, "motion_blur_max_radius", 32.0))
-        if self._u_prev_vp is not None:
-            self._u_prev_vp.write(prev_vp_mat.tobytes())
 
         # Render full-screen procedural quad
         self.optics_vao.render(mode=moderngl.TRIANGLES, vertices=3)
@@ -229,21 +209,20 @@ class CameraOpticsPass(RenderPass):
         resources = getattr(context, "resources", {})
         hdr_fbo = resources.get("hdr_fbo")
         g_buffer = resources.get("g_buffer")
-        prev_vp = resources.get("prev_vp_mat", np.identity(4, dtype=np.float32).flatten())
         config = getattr(context, "config", None)
 
         if hdr_fbo is not None and g_buffer is not None and config is not None:
             depth_tex = g_buffer.depth_texture
             scene_hdr_tex = hdr_fbo.color_attachments[0]
 
-            # 1. Render Optics (DoF + Motion Blur)
-            out_optics = self.render_optics(scene_hdr_tex, depth_tex, prev_vp, config)
+            # 1. Render Optics (Depth of Field)
+            out_optics = self.render_optics(scene_hdr_tex, depth_tex, config)
             # Copy result back into hdr_fbo so subsequent passes read blurred HDR
             self.ctx.copy_framebuffer(hdr_fbo, self.optics_fbo)
 
-            # 2. Render Anamorphic Flares if enabled
+            # 2. Render the configured lens flare
             if getattr(config, "lens_flare_enabled", True):
-                out_flare = self.render_flare(out_optics, config)
+                out_flare = self.render_flare(out_optics, config, depth_texture=depth_tex)
                 resources["lens_flare_texture"] = out_flare
 
     def destroy(self) -> None:

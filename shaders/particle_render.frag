@@ -2,6 +2,10 @@
 
 #include "common/frame_data.glsl"
 
+// Shared Henyey-Greenstein phase function (no CSM sampling needed here).
+#define VOLUMETRICS_NO_CSM
+#include "shaders/common/volumetrics.glsl"
+
 in vec2  v_UV;
 in vec4  v_Color;
 in float v_LifeFraction;
@@ -66,10 +70,9 @@ void main() {
         vec3 toSun = -u_SunDirection_Intensity.xyz; // points towards sun
         float cosTheta = dot(viewDir, toSun);
 
-        // Forward scattering lobe (g = 0.65)
-        const float g = 0.65;
-        const float g2 = g * g;
-        float hgPhase = (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * cosTheta, 0.01), 1.5);
+        // Forward scattering lobe (g = 0.65). The shared phase function is
+        // normalised by 1/4PI; scale back to the unnormalised glint convention.
+        float hgPhase = HenyeyGreenstein(cosTheta, 0.65) * (4.0 * PI);
 
         float sunGlint = hgPhase * u_SunScatterIntensity;
         vec3 sunLight = u_SunColor_Ambient.rgb * (u_SunDirection_Intensity.w * (0.2 + sunGlint));

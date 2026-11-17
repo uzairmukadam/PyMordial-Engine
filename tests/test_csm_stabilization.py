@@ -15,6 +15,20 @@ from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.debug.engine_tweaks import EngineTweaks
 
 
+def _max_span_ratio(splits: tuple[float, ...], near: float = 0.1) -> float:
+    """Worst adjacent world-space span ratio between cascade slices."""
+    previous = near
+    previous_span = 0.0
+    worst = 1.0
+    for split in splits:
+        span = split - previous
+        if previous_span > 0.0:
+            worst = max(worst, span / previous_span)
+        previous_span = span
+        previous = split
+    return worst
+
+
 @pytest.fixture(scope="module")
 def headless_ctx():
     ctx = RenderContext.create_headless(width=320, height=240)
@@ -89,14 +103,25 @@ class TestCSMStabilization:
     def test_practical_splits_and_lambda_updates(self, headless_ctx: RenderContext):
         csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=2048, cascade_count=4, max_distance=600.0)
         logarithmic = csm.split_distances
-        assert logarithmic[0] == pytest.approx(10.0)
         assert all(logarithmic[i] < logarithmic[i + 1] for i in range(3))
         assert logarithmic[-1] == pytest.approx(600.0)
+        assert _max_span_ratio(logarithmic) <= 2.5
 
         csm.update_splits(600.0, cascade_count=4, lambda_val=0.0)
         uniform = csm.split_distances
-        assert uniform == pytest.approx((10.0, 206.6666667, 403.3333333, 600.0))
+        assert uniform == pytest.approx((150.075, 300.05, 450.025, 600.0))
         assert uniform != logarithmic
+        assert _max_span_ratio(uniform) == pytest.approx(1.0)
+
+        csm.update_splits(600.0, cascade_count=4, lambda_val=0.85, mode="UNIFORM")
+        assert csm.split_distances == pytest.approx((150.075, 300.05, 450.025, 600.0))
+        assert csm.split_mode == "UNIFORM"
+
+        csm.update_splits(600.0, cascade_count=4, lambda_val=0.85, mode="GEOMETRIC")
+        geometric = csm.split_distances
+        assert geometric[-1] == pytest.approx(600.0)
+        assert all(geometric[i] < geometric[i + 1] for i in range(3))
+        assert _max_span_ratio(geometric) == pytest.approx(6000.0 ** 0.25, rel=1e-6)
         csm.destroy()
 
     def test_cascade_depth_fit_includes_upstream_casters_only_in_footprint(self, headless_ctx: RenderContext):
