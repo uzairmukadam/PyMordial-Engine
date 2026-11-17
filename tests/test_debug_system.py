@@ -1,13 +1,14 @@
 """Unit tests for the dedicated 3-Tiered Debug System."""
 
 import time
+
 from engine.debug import (
-    SystemMonitor,
-    EngineTweaks,
-    GBufferDebugMode,
-    GameTweaks,
-    DebugToast,
     DebugDraw,
+    DebugToast,
+    EngineTweaks,
+    GameTweaks,
+    GBufferDebugMode,
+    SystemMonitor,
 )
 from engine.gfx.quality_presets import GraphicsQuality
 
@@ -282,8 +283,9 @@ class TestDebugSystem:
 
     def test_engine_tweaks_apply_to_pipeline(self):
         """Validates that EngineTweaks.apply_to_pipeline synchronizes all post-processing and optics settings."""
-        from engine.gfx.quality_presets import RenderConfig
         from unittest.mock import MagicMock
+
+        from engine.gfx.quality_presets import RenderConfig
 
         pipeline = MagicMock()
         pipeline.config = RenderConfig()

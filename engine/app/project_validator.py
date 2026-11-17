@@ -5,6 +5,7 @@ before allocating heavy graphics contexts or physics worlds.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -17,12 +18,14 @@ if TYPE_CHECKING:
 
 class ProjectValidationError(Exception):
     """Raised when a project directory structure or configuration is invalid."""
+
     pass
 
 
 @dataclass
 class ValidationReport:
     """Contains diagnostic messages from a project validation check."""
+
     is_valid: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -39,7 +42,9 @@ def validate_project_config(config: ProjectConfig) -> ValidationReport:
 
     # 1. Display dimensions
     if config.width <= 0 or config.height <= 0:
-        report.errors.append(f"Invalid window resolution: ({config.width}x{config.height}). Dimensions must be positive.")
+        report.errors.append(
+            f"Invalid window resolution: ({config.width}x{config.height}). Dimensions must be positive."
+        )
 
     # 2. Window title
     if not str(getattr(config, "title", "")).strip():

@@ -19,7 +19,7 @@ from typing import Any
 
 import moderngl
 
-from engine.modules.atmosphere.config import AtmosphereConfig, ATMOSPHERE_PRESETS
+from engine.modules.atmosphere.config import ATMOSPHERE_PRESETS, AtmosphereConfig
 from engine.modules.atmosphere.environment import AtmosphereEnvironment
 from engine.modules.atmosphere.global_light import GlobalLightSystem
 from engine.modules.atmosphere.module import AtmosphereModule

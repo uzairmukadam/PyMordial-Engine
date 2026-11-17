@@ -6,18 +6,17 @@ raymarching (SSR, SSGI), contact shadows, and GPU occlusion culling.
 """
 
 from __future__ import annotations
+
 import math
+
 import moderngl
 import numpy as np
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
-
-
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 _load_shader = load_shader
-
 
 
 class HiZPass(RenderPass):
@@ -187,10 +186,10 @@ class HiZPass(RenderPass):
         count = min(active_count, self._max_cull_entities)
 
         # Pack into (count, 2, 4) std430 layout without runtime reallocation
-        self._aabb_scratch[:count, 0, 0:3] = aabbs[:count, 0:3] # center
-        self._aabb_scratch[:count, 0, 3] = aabbs[:count, 3]     # extent.x
-        self._aabb_scratch[:count, 1, 0:2] = aabbs[:count, 4:6] # extent.y, extent.z
-        self._aabb_scratch[:count, 1, 2:4] = 0.0                # padding/flags
+        self._aabb_scratch[:count, 0, 0:3] = aabbs[:count, 0:3]  # center
+        self._aabb_scratch[:count, 0, 3] = aabbs[:count, 3]  # extent.x
+        self._aabb_scratch[:count, 1, 0:2] = aabbs[:count, 4:6]  # extent.y, extent.z
+        self._aabb_scratch[:count, 1, 2:4] = 0.0  # padding/flags
 
         # Upload to SSBO 5
         self.ssbo_aabb.write(self._aabb_scratch[:count].tobytes(), offset=0)

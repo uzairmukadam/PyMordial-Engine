@@ -1,13 +1,14 @@
 """Unit tests for GPU Hierarchical-Z (Hi-Z) Depth Pyramid Pass."""
 
 import math
+
 import numpy as np
 import pytest
 
+from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
 from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.pipeline import RenderPipeline
-from engine.core.ecs import EntityManager
 
 
 class TestHiZPass:
@@ -52,12 +53,15 @@ class TestHiZPass:
         # Block 1 (top-right 2x2): [0.5, 0.5; 0.5, 0.2] -> min = 0.2
         # Block 2 (bottom-left 2x2): [0.95, 0.95; 0.95, 0.95] -> min = 0.95
         # Block 3 (bottom-right 2x2): [0.4, 0.3; 0.2, 0.1] -> min = 0.1
-        test_depths = np.array([
-            [0.90, 0.80, 0.50, 0.50],
-            [0.70, 0.60, 0.50, 0.20],
-            [0.95, 0.95, 0.40, 0.30],
-            [0.95, 0.95, 0.20, 0.10],
-        ], dtype=np.float32)
+        test_depths = np.array(
+            [
+                [0.90, 0.80, 0.50, 0.50],
+                [0.70, 0.60, 0.50, 0.20],
+                [0.95, 0.95, 0.40, 0.30],
+                [0.95, 0.95, 0.20, 0.10],
+            ],
+            dtype=np.float32,
+        )
 
         # Upload to mip 0 of hiz_texture
         pass_instance.hiz_texture.write(test_depths.tobytes(), level=0)
@@ -126,6 +130,7 @@ class TestHiZPass:
     def test_cull_indirect_shader_compilation(self, render_ctx: RenderContext):
         """Verify GPU-driven occlusion culling compute shader (cull_indirect.comp) compiles."""
         from engine.gfx.shader_utils import load_shader
+
         src = load_shader("cull_indirect.comp")
         prog = render_ctx.ctx.compute_shader(src)
         assert prog is not None
@@ -158,9 +163,9 @@ class TestHiZPass:
 
         assert len(mask) == 3
         # Entity 0 should be visible
-        assert mask[0] == True
+        assert mask[0]
         # Entity 1 and 2 outside frustum
-        assert mask[1] == False
-        assert mask[2] == False
+        assert not mask[1]
+        assert not mask[2]
 
         pass_instance.destroy()

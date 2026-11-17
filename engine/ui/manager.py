@@ -5,15 +5,17 @@ input event dispatching, and per-frame rendering.
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 import moderngl
 import pygame
 
-from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+from engine.events import WindowResizeEvent, subscribe_event, unsubscribe_event
+from engine.input.codes import GamepadButton
+from engine.ui.elements import UIElement
 from engine.ui.renderer import UIRenderer
 from engine.ui.theme import UITheme
-from engine.ui.elements import UIElement
-from engine.input.codes import GamepadButton
 
 if TYPE_CHECKING:
     from engine.app.project_app import ProjectApp
@@ -235,8 +237,12 @@ class UIManager:
             rel = getattr(event, "rel", (0, 0))
             is_grabbed = bool(pygame.display.get_init() and pygame.event.get_grab())
             if is_grabbed or (self.cursor_visible and rel != (0, 0)):
-                self.cursor_pos[0] = max(0.0, min(self.reference_width, self.cursor_pos[0] + float(rel[0]) / self.ui_scale))
-                self.cursor_pos[1] = max(0.0, min(self.reference_height, self.cursor_pos[1] + float(rel[1]) / self.ui_scale))
+                self.cursor_pos[0] = max(
+                    0.0, min(self.reference_width, self.cursor_pos[0] + float(rel[0]) / self.ui_scale)
+                )
+                self.cursor_pos[1] = max(
+                    0.0, min(self.reference_height, self.cursor_pos[1] + float(rel[1]) / self.ui_scale)
+                )
             else:
                 vx = (float(event.pos[0]) - self.offset_x) / self.ui_scale
                 vy = (float(event.pos[1]) - self.offset_y) / self.ui_scale
@@ -282,8 +288,12 @@ class UIManager:
                 pad_move = input_mgr.get_vector2("move")
                 if abs(pad_move[0]) > 0.08 or abs(pad_move[1]) > 0.08:
                     speed = 950.0  # Pixels per second
-                    self.cursor_pos[0] = max(0.0, min(self.reference_width, self.cursor_pos[0] + pad_move[0] * speed * dt))
-                    self.cursor_pos[1] = max(0.0, min(self.reference_height, self.cursor_pos[1] - pad_move[1] * speed * dt))
+                    self.cursor_pos[0] = max(
+                        0.0, min(self.reference_width, self.cursor_pos[0] + pad_move[0] * speed * dt)
+                    )
+                    self.cursor_pos[1] = max(
+                        0.0, min(self.reference_height, self.cursor_pos[1] - pad_move[1] * speed * dt)
+                    )
                     self._mouse_pos = (self.cursor_pos[0], self.cursor_pos[1])
                     top.on_mouse_move(self.cursor_pos[0], self.cursor_pos[1])
                 if input_mgr.is_gamepad_pressed(GamepadButton.A):

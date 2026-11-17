@@ -51,10 +51,7 @@ def test_default_frame_matches_golden(capture_result: subprocess.CompletedProces
 def test_all_capture_variants_match_golden() -> None:
     """Every subsystem variant must match its own golden frame."""
     result = _run_capture("--check")
-    assert result.returncode == 0, (
-        "One or more capture variants regressed:\n"
-        f"{result.stdout}\n{result.stderr}"
-    )
+    assert result.returncode == 0, f"One or more capture variants regressed:\n{result.stdout}\n{result.stderr}"
     for name in CAPTURE_VARIANTS:
         assert f"[+] {name}:" in result.stdout, f"Variant '{name}' was not verified."
 

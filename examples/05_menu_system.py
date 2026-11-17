@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pygame
-
 from _common import FlyCameraControls, add_box, create_app, create_parser
+
 from engine.app.module import ProjectModule
 from engine.camera import FreeFlyCamera
 from engine.ui import UIButton, UILabel, UIPanel, UIScreen

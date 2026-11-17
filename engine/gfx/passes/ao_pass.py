@@ -5,11 +5,11 @@ with an edge-preserving metric view-depth bilateral filter.
 """
 
 from __future__ import annotations
+
 import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
-
 from engine.gfx.passes.blur_pass import BlurPass
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
@@ -32,9 +32,7 @@ class AmbientOcclusionPass(RenderPass):
         self.raw_ao_tex.repeat_y = False
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ao_tex])
 
-        self.blur_pass = BlurPass(
-            ctx, self.width, self.height, shader="bilateral_blur.frag", components=1, dtype="f1"
-        )
+        self.blur_pass = BlurPass(ctx, self.width, self.height, shader="bilateral_blur.frag", components=1, dtype="f1")
 
         # 1x1 fallback white texture when AO is disabled
         self.white_fallback = self.ctx.texture((1, 1), 1, data=b"\xff", dtype="f1")
@@ -153,9 +151,7 @@ class AmbientOcclusionPass(RenderPass):
         vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 3. Horizontal then vertical bilateral blur through the shared helper
-        context.resources["ao_texture"] = self.blur_pass.blur_hv(
-            self.raw_ao_tex, g_buffer.depth_texture
-        )
+        context.resources["ao_texture"] = self.blur_pass.blur_hv(self.raw_ao_tex, g_buffer.depth_texture)
 
         self.ctx.viewport = prev_viewport
 

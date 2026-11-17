@@ -5,6 +5,7 @@ pipeline quality, physics stepping frequency, debug flags, and asset paths.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
 

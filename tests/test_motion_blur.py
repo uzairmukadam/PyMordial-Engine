@@ -15,9 +15,9 @@ import pytest
 
 from engine.gfx.context import RenderContext
 from engine.gfx.frame_context import FrameContext
+from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.render_graph import RenderGraphContext
-from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 

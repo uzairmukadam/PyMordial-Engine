@@ -6,10 +6,12 @@ directly over the ModernGL framebuffer using zero-VBO screen-space quad renderin
 """
 
 from __future__ import annotations
+
 import time
 from typing import TYPE_CHECKING
-import pygame
+
 import moderngl
+import pygame
 
 if TYPE_CHECKING:
     from engine.debug.toast import DebugToast

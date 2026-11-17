@@ -68,6 +68,7 @@ When the application window size or resolution changes (e.g., $1600 \times 900$,
 ```python
 from engine.ui import UIScreen, UIPanel, UILabel, UIButton, UIStyle
 
+
 class MainMenuScreen(UIScreen):
     def __init__(self, on_start, on_quit):
         super().__init__(name="MainMenu")
@@ -126,12 +127,13 @@ Without a state manager, games often end up with scattered boolean flags (`if no
 from engine import GameState, ProjectApp
 import pygame
 
+
 class PlayingState(GameState):
     name = "Playing"
-    allow_fixed_update = True    # Run 60Hz physics
-    allow_variable_update = True # Run per-frame logic
-    show_cursor = False          # Hide mouse pointer
-    grab_mouse = True            # Lock mouse for FPS/chase look
+    allow_fixed_update = True  # Run 60Hz physics
+    allow_variable_update = True  # Run per-frame logic
+    show_cursor = False  # Hide mouse pointer
+    grab_mouse = True  # Lock mouse for FPS/chase look
 
     def on_enter(self, app: ProjectApp, prev_state: str | None = None, **kwargs) -> None:
         """Called when this state becomes active."""
@@ -165,6 +167,7 @@ Here is how `GameStateManager` and `UIManager` work together in harmony:
 
 ```python
 from engine import ProjectApp, ProjectConfig, GameState
+
 
 class MainMenuState(GameState):
     name = "MainMenu"

@@ -1,13 +1,16 @@
 """3D Spatial Audio Calculations and Listener Tracking for PyMordial Engine."""
 
 from __future__ import annotations
-from enum import IntEnum
+
 import math
+from enum import IntEnum
+
 import numpy as np
 
 
 class AttenuationModel(IntEnum):
     """Distance attenuation curve models."""
+
     INVERSE_DISTANCE = 0
     LINEAR = 1
     EXPONENTIAL = 2
@@ -24,7 +27,11 @@ class AudioListener:
         self.up = np.array([0.0, 1.0, 0.0], dtype=np.float32)
         self.velocity = np.array([0.0, 0.0, 0.0], dtype=np.float32)
 
-    def sync_with_camera(self, camera_position: tuple[float, float, float] | np.ndarray, forward_vec: tuple[float, float, float] | np.ndarray) -> None:
+    def sync_with_camera(
+        self,
+        camera_position: tuple[float, float, float] | np.ndarray,
+        forward_vec: tuple[float, float, float] | np.ndarray,
+    ) -> None:
         """Aligns listener position and orientation with the active 3D camera."""
         self.position[0] = float(camera_position[0])
         self.position[1] = float(camera_position[1])

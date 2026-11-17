@@ -5,8 +5,8 @@ from __future__ import annotations
 import math
 
 import pygame
-
 from _common import FlyCameraControls, add_box, create_app, create_parser
+
 from engine.app.module import ProjectModule
 from engine.camera import FreeFlyCamera
 from engine.input.codes import GamepadButton
@@ -44,9 +44,7 @@ class BenchmarkOverlay(ProjectModule):
         self.fps_label = panel.add_child(
             UILabel("FPS: waiting for samples", x=18.0, y=52.0, w=474.0, h=26.0, font_size=16)
         )
-        self.mode_label = panel.add_child(
-            UILabel("GI: SSGI | SSR: ON", x=18.0, y=86.0, w=474.0, h=26.0, font_size=15)
-        )
+        self.mode_label = panel.add_child(UILabel("GI: SSGI | SSR: ON", x=18.0, y=86.0, w=474.0, h=26.0, font_size=15))
         app.ui.set_screen(screen)
 
     def on_update(self, app, dt: float) -> None:
@@ -138,9 +136,13 @@ def build_scene(app, entity_count: int) -> None:
         )
 
     app.pipeline.lights_pass.clear()
-    app.pipeline.add_point_light((-half_span, 5.0, -half_span), radius=side * 1.6, color=(1.0, 0.35, 0.18), intensity=5.0)
+    app.pipeline.add_point_light(
+        (-half_span, 5.0, -half_span), radius=side * 1.6, color=(1.0, 0.35, 0.18), intensity=5.0
+    )
     app.pipeline.add_point_light((half_span, 5.0, -half_span), radius=side * 1.6, color=(0.18, 0.5, 1.0), intensity=5.0)
-    app.pipeline.add_point_light((-half_span, 5.0, half_span), radius=side * 1.6, color=(0.25, 1.0, 0.42), intensity=5.0)
+    app.pipeline.add_point_light(
+        (-half_span, 5.0, half_span), radius=side * 1.6, color=(0.25, 1.0, 0.42), intensity=5.0
+    )
     app.pipeline.add_point_light((half_span, 5.0, half_span), radius=side * 1.6, color=(1.0, 0.72, 0.2), intensity=5.0)
 
     camera = FreeFlyCamera(

@@ -1,9 +1,10 @@
 """Unit Tests for PyMordial Engine Game State Management Subsystem."""
 
 import pygame
-from engine.core.state import GameState, GameStateManager
-from engine.app.project_app import ProjectApp
+
 from engine.app.config import ProjectConfig
+from engine.app.project_app import ProjectApp
+from engine.core.state import GameState, GameStateManager
 
 
 class MockGameState(GameState):

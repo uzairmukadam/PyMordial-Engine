@@ -6,18 +6,20 @@ gamepad hot-plugging, and a dedicated debug input layer.
 """
 
 from __future__ import annotations
+
 import math
-from typing import Sequence, Any
+from typing import Any, Sequence
+
 import pygame
 
+from engine.input.actions import ActionBinding, AxisBinding, Vector2Binding
 from engine.input.codes import (
+    DeviceType,
+    GamepadAxis,
+    GamepadButton,
     Key,
     MouseButton,
-    GamepadButton,
-    GamepadAxis,
-    DeviceType,
 )
-from engine.input.actions import ActionBinding, AxisBinding, Vector2Binding
 from engine.input.context import InputContext, InputContextStack
 from engine.input.haptics import HapticsManager
 
@@ -69,17 +71,17 @@ class InputManager:
     )
 
     RAW_XBOX_BUTTON_MAP: dict[int, int] = {
-        0: GamepadButton.A,              # 0
-        1: GamepadButton.B,              # 1
-        2: GamepadButton.X,              # 2
-        3: GamepadButton.Y,              # 3
-        4: GamepadButton.LEFT_BUMPER,     # 9
-        5: GamepadButton.RIGHT_BUMPER,    # 10
-        6: GamepadButton.BACK,            # 4
-        7: GamepadButton.START,           # 6
-        8: GamepadButton.LEFT_STICK,      # 7
-        9: GamepadButton.RIGHT_STICK,     # 8
-        10: GamepadButton.GUIDE,          # 5
+        0: GamepadButton.A,  # 0
+        1: GamepadButton.B,  # 1
+        2: GamepadButton.X,  # 2
+        3: GamepadButton.Y,  # 3
+        4: GamepadButton.LEFT_BUMPER,  # 9
+        5: GamepadButton.RIGHT_BUMPER,  # 10
+        6: GamepadButton.BACK,  # 4
+        7: GamepadButton.START,  # 6
+        8: GamepadButton.LEFT_STICK,  # 7
+        9: GamepadButton.RIGHT_STICK,  # 8
+        10: GamepadButton.GUIDE,  # 5
     }
 
     def __init__(self, register_defaults: bool = True) -> None:
@@ -170,6 +172,7 @@ class InputManager:
         # Connect SDL2 Controllers (preferred, standardized AAA hardware mapping)
         try:
             from pygame._sdl2 import controller as sdl2_controller
+
             if not sdl2_controller.get_init():
                 sdl2_controller.init()
             self._has_sdl2_controller = True
@@ -590,6 +593,7 @@ class InputManager:
         elif ev_type == pygame.CONTROLLERDEVICEADDED:
             try:
                 from pygame._sdl2 import controller as sdl2_controller
+
                 if sdl2_controller.is_controller(event.device_index):
                     c = sdl2_controller.Controller(event.device_index)
                     self._controllers[c.id] = c
@@ -625,7 +629,12 @@ class InputManager:
         elif ev_type == pygame.JOYHATMOTION:
             self.active_device = DeviceType.GAMEPAD
             hx, hy = event.value
-            dpad_btns = (GamepadButton.DPAD_UP, GamepadButton.DPAD_DOWN, GamepadButton.DPAD_LEFT, GamepadButton.DPAD_RIGHT)
+            dpad_btns = (
+                GamepadButton.DPAD_UP,
+                GamepadButton.DPAD_DOWN,
+                GamepadButton.DPAD_LEFT,
+                GamepadButton.DPAD_RIGHT,
+            )
             for db in dpad_btns:
                 if db in self._pad_down:
                     self._pad_down.discard(db)
@@ -833,6 +842,7 @@ class InputManager:
         """Locks and hides mouse cursor for FPS or orbit cameras."""
         self.is_mouse_grabbed = grab
         import os
+
         if os.environ.get("PYTEST_CURRENT_TEST"):
             return
         try:
@@ -883,4 +893,3 @@ class InputManager:
             self._axes_values[k] = 0.0
         self.mouse_delta = (0, 0)
         self.mouse_wheel = 0.0
-

@@ -319,10 +319,10 @@ Defer marketplace infrastructure until external module APIs and dependency/versi
 - **Render‑config tunables** – A new `RenderConfig` section lets developers constrain mobile‑specific limits:
   ```python
   RenderConfig(
-      max_shadow_cascades=2,            # lower cascade count on phones
-      shadow_map_resolution=1024,       # smaller textures
-      enable_multi_draw=False,          # fallback when EXT_multi_draw_indirect unavailable
-      gi_mode="OFF",                  # disable SSGI/Radiance Cascades on low‑end devices
+      max_shadow_cascades=2,  # lower cascade count on phones
+      shadow_map_resolution=1024,  # smaller textures
+      enable_multi_draw=False,  # fallback when EXT_multi_draw_indirect unavailable
+      gi_mode="OFF",  # disable SSGI/Radiance Cascades on low‑end devices
       enable_ssr=False,
   )
   ```

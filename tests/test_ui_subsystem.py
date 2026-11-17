@@ -1,12 +1,11 @@
 """Unit Tests for Engine Native ModernGL UI Subsystem."""
 
-
 from engine.ui import (
-    UIPanel,
     UIButton,
-    UISlider,
-    UISegmentGroup,
+    UIPanel,
     UIScreen,
+    UISegmentGroup,
+    UISlider,
 )
 
 
@@ -49,7 +48,9 @@ def test_ui_slider_value_change():
     def on_change(v):
         slider_val[0] = v
 
-    slider = UISlider(label="Laps", min_val=1.0, max_val=10.0, val=3.0, step=1.0, x=0, y=0, w=100, h=40, on_change=on_change)
+    slider = UISlider(
+        label="Laps", min_val=1.0, max_val=10.0, val=3.0, step=1.0, x=0, y=0, w=100, h=40, on_change=on_change
+    )
     assert slider.val == 3.0
 
     # Drag to 80% of width
@@ -85,6 +86,7 @@ def test_ui_segment_group():
 
 def test_ui_screen_stack_lifecycle():
     from engine.ui import UIManager
+
     mgr = UIManager(ctx=None)
 
     entered = []
@@ -118,6 +120,7 @@ def test_ui_screen_stack_lifecycle():
 
 def test_ui_event_dispatch():
     import pygame
+
     from engine.ui import UIManager
 
     mgr = UIManager(ctx=None)
@@ -150,6 +153,7 @@ def test_ui_event_dispatch():
 def test_ui_non_modal_hud_passthrough():
     """Ensures non-modal HUD screens pass unhandled mouse motions through to gameplay."""
     import pygame
+
     from engine.ui import UIManager
 
     mgr = UIManager(ctx=None)
@@ -164,8 +168,9 @@ def test_ui_non_modal_hud_passthrough():
 
 def test_capsule_mesh_primitive_proportions():
     """Validates that capsule mesh primitive has correct radius and smooth geometry without pinch distortion."""
-    import numpy as np
     import moderngl
+    import numpy as np
+
     from engine.gfx.mega_buffer import MegaBuffer
 
     ctx = moderngl.create_context(standalone=True)
@@ -202,7 +207,8 @@ def test_capsule_mesh_primitive_proportions():
 def test_ui_captured_virtual_cursor():
     """Validates that UIManager tracks and accumulates relative mouse delta when captured."""
     import pygame
-    from engine.ui import UIManager, UIScreen, UIButton
+
+    from engine.ui import UIButton, UIManager, UIScreen
 
     mgr = UIManager(ctx=None, width=1280, height=720)
     screen = UIScreen(name="Menu", is_modal=True)
@@ -245,8 +251,9 @@ def test_ui_captured_virtual_cursor():
 def test_ui_canvas_scaling_and_resolution_independence():
     """Validates that UIManager scales canvas proportionally to screen resolution with accurate hit-testing."""
     import pygame
-    from engine.ui import UIManager, UIScreen, UIButton
+
     from engine.events import WindowResizeEvent
+    from engine.ui import UIButton, UIManager, UIScreen
 
     # Reference resolution: 1280x720
     mgr = UIManager(ctx=None, width=1280, height=720, reference_width=1280.0, reference_height=720.0)
@@ -313,6 +320,7 @@ def test_ui_canvas_scaling_and_resolution_independence():
 def test_ui_renderer_quad_scaling():
     """Validates that UIRenderer correctly scales quad vertex data based on active scale and offsets."""
     import moderngl
+
     from engine.ui import UIRenderer, UIStyle
 
     ctx = moderngl.create_context(standalone=True)
@@ -334,5 +342,3 @@ def test_ui_renderer_quad_scaling():
     # Params: [corner_radius*1.5, border_width*1.5, ...] = [12.0, 3.0, ...]
     assert abs(vd[20] - 12.0) < 1e-3
     assert abs(vd[21] - 3.0) < 1e-3
-
-

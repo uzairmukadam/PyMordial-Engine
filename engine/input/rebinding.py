@@ -1,10 +1,12 @@
 """Input Rebinding Persistence and Serialization for PyMordial Engine."""
 
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any
-from engine.logging import log_info, log_warn, LogChannel
+
+from engine.logging import LogChannel, log_info, log_warn
 
 
 def export_bindings_to_dict(actions_dict: dict[str, Any]) -> dict[str, Any]:

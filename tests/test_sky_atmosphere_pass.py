@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager
-from engine.gfx.context import RenderContext
 from engine.gfx.atmosphere import AtmosphereConfig, AtmosphereSystem
+from engine.gfx.context import RenderContext
 from engine.gfx.passes.sky_atmosphere_pass import SkyAtmospherePass
 from engine.gfx.passes.sky_cloud_pass import SkyCloudPass
 from engine.gfx.pipeline import RenderPipeline
@@ -36,7 +36,9 @@ def test_hillaire_sky_atmosphere_lut_baking(render_ctx: RenderContext):
     sky_pass.bake_static_luts(atmo.config)
 
     # Read Transmittance LUT
-    trans_data = np.frombuffer(sky_pass.transmittance_lut.read(), dtype=np.float16 if sky_pass.transmittance_lut.dtype == "f2" else np.float32)
+    trans_data = np.frombuffer(
+        sky_pass.transmittance_lut.read(), dtype=np.float16 if sky_pass.transmittance_lut.dtype == "f2" else np.float32
+    )
     assert len(trans_data) > 0
     # Transmittance values must be in [0, 1] range
     assert np.all(trans_data >= 0.0)
@@ -44,7 +46,10 @@ def test_hillaire_sky_atmosphere_lut_baking(render_ctx: RenderContext):
     assert np.max(trans_data) > 0.5
 
     # Read Multi-Scattering LUT
-    ms_data = np.frombuffer(sky_pass.multiscattering_lut.read(), dtype=np.float16 if sky_pass.multiscattering_lut.dtype == "f2" else np.float32)
+    ms_data = np.frombuffer(
+        sky_pass.multiscattering_lut.read(),
+        dtype=np.float16 if sky_pass.multiscattering_lut.dtype == "f2" else np.float32,
+    )
     assert len(ms_data) > 0
     assert np.all(ms_data >= 0.0)
 
@@ -52,12 +57,14 @@ def test_hillaire_sky_atmosphere_lut_baking(render_ctx: RenderContext):
     sky_pass.update(
         atmo_config=atmo.config,
         camera_pos=(0.0, 10.0, 0.0),
-        sun_dir=(0.0, -1.0, 0.0), # Noon sun
+        sun_dir=(0.0, -1.0, 0.0),  # Noon sun
         sun_color=(1.0, 0.98, 0.92),
         sun_intensity=4.0,
     )
 
-    sky_data = np.frombuffer(sky_pass.sky_view_lut.read(), dtype=np.float16 if sky_pass.sky_view_lut.dtype == "f2" else np.float32)
+    sky_data = np.frombuffer(
+        sky_pass.sky_view_lut.read(), dtype=np.float16 if sky_pass.sky_view_lut.dtype == "f2" else np.float32
+    )
     assert len(sky_data) > 0
     assert np.all(sky_data >= 0.0)
     # Daylight sky radiance must be positive

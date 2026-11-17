@@ -7,16 +7,15 @@ Implements the AAA production atmospheric scattering system:
 """
 
 from __future__ import annotations
+
 import moderngl
 
 from engine.gfx.render_graph import RenderPass
-
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_and_preprocess_shader = load_shader
-
 
 
 class SkyAtmospherePass(RenderPass):

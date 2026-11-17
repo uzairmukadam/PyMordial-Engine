@@ -1,7 +1,9 @@
 """6-DOF Free-Fly Debug and Viewport Camera for PyMordial Engine."""
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 
 from engine.camera.camera import VirtualCamera
@@ -86,4 +88,3 @@ class FreeFlyCamera(VirtualCamera):
 FreeCamera = FreeFlyCamera
 
 __all__ = ["FreeFlyCamera", "FreeCamera"]
-

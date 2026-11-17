@@ -6,6 +6,7 @@ and live watch expressions) organized into clean collapsible categories.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Callable

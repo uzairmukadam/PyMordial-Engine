@@ -6,9 +6,11 @@ Games that do not need it never import or instantiate it, incurring zero overhea
 """
 
 from __future__ import annotations
+
 import math
 import random
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:

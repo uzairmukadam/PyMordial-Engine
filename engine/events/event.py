@@ -1,6 +1,7 @@
 """Event Base Classes and Standard Engine Events for PyMordial Engine."""
 
 from __future__ import annotations
+
 import time
 from typing import Any
 
@@ -20,6 +21,7 @@ class Event:
 
 
 # --- Window Events ---
+
 
 class WindowResizeEvent(Event):
     """Fired when the window resolution or viewport changes."""
@@ -77,6 +79,7 @@ class WindowCloseEvent(Event):
 
 # --- Input Events ---
 
+
 class InputActionEvent(Event):
     """Fired when a semantic gameplay action transitions state."""
 
@@ -100,6 +103,7 @@ class InputActionEvent(Event):
 
 
 # --- Configuration & Time Events ---
+
 
 class CVarChangedEvent(Event):
     """Fired when a console variable's value is altered."""
@@ -131,6 +135,7 @@ class TimeScaleChangedEvent(Event):
 
 
 # --- Audio Events ---
+
 
 class PlaySoundCueEvent(Event):
     """Fired to trigger an audio playback request."""

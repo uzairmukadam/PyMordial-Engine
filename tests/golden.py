@@ -123,9 +123,7 @@ def capture_variant(name: str) -> np.ndarray:
     try:
         for key, value in render_overrides.items():
             if not hasattr(app.pipeline.config, key):
-                raise AttributeError(
-                    f"Capture variant '{name}' sets unknown RenderConfig field '{key}'."
-                )
+                raise AttributeError(f"Capture variant '{name}' sets unknown RenderConfig field '{key}'.")
             setattr(app.pipeline.config, key, value)
         app.pipeline.apply_config(app.pipeline.config)
         return capture_frame(app)
@@ -158,7 +156,6 @@ def load_golden(name: str) -> np.ndarray:
     path = golden_path(name)
     if not path.exists():
         raise FileNotFoundError(
-            f"Missing golden frame '{name}' at {path}. "
-            f"Regenerate with: python -m tests.golden_capture --write"
+            f"Missing golden frame '{name}' at {path}. Regenerate with: python -m tests.golden_capture --write"
         )
     return np.load(path)

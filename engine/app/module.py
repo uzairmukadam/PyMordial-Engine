@@ -4,7 +4,9 @@ Defines the standard lifecycle contract for pluggable, self-contained game featu
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 import pygame
 
 if TYPE_CHECKING:

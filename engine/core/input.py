@@ -4,14 +4,14 @@ All engine input is now centralized exclusively in `engine.input`.
 """
 
 from engine.input import (
+    ActionBinding,
+    AxisBinding,
+    DeviceType,
+    GamepadAxis,
+    GamepadButton,
     InputManager,
     Key,
     MouseButton,
-    GamepadButton,
-    GamepadAxis,
-    DeviceType,
-    ActionBinding,
-    AxisBinding,
     Vector2Binding,
 )
 

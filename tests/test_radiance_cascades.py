@@ -12,9 +12,9 @@ import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import GIMode, GraphicsQuality, get_quality_preset
 from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
 from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.quality_presets import GIMode, GraphicsQuality, get_quality_preset
 
 
 @pytest.fixture(scope="module")
@@ -92,16 +92,15 @@ class TestRadianceCascadesPass:
 
         raw_frames = [
             np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
-            .reshape(120, 160, 4)[..., :3].astype(np.float32)
+            .reshape(120, 160, 4)[..., :3]
+            .astype(np.float32)
         ]
         filtered_frames = [pixel_array[..., :3].astype(np.float32)]
-        raw_spatial_delta = (
-            np.mean(np.abs(raw_frames[0][1:] - raw_frames[0][:-1]))
-            + np.mean(np.abs(raw_frames[0][:, 1:] - raw_frames[0][:, :-1]))
+        raw_spatial_delta = np.mean(np.abs(raw_frames[0][1:] - raw_frames[0][:-1])) + np.mean(
+            np.abs(raw_frames[0][:, 1:] - raw_frames[0][:, :-1])
         )
-        filtered_spatial_delta = (
-            np.mean(np.abs(filtered_frames[0][1:] - filtered_frames[0][:-1]))
-            + np.mean(np.abs(filtered_frames[0][:, 1:] - filtered_frames[0][:, :-1]))
+        filtered_spatial_delta = np.mean(np.abs(filtered_frames[0][1:] - filtered_frames[0][:-1])) + np.mean(
+            np.abs(filtered_frames[0][:, 1:] - filtered_frames[0][:, :-1])
         )
         assert filtered_spatial_delta < raw_spatial_delta * 0.50
         raw_luminance = raw_frames[0] @ np.array((0.2126, 0.7152, 0.0722))
@@ -116,11 +115,13 @@ class TestRadianceCascadesPass:
             )
             raw_frames.append(
                 np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
-                .reshape(120, 160, 4)[..., :3].astype(np.float32)
+                .reshape(120, 160, 4)[..., :3]
+                .astype(np.float32)
             )
             filtered_frames.append(
                 np.frombuffer(pipeline.rc_pass._current_history.read(), dtype=np.float16)
-                .reshape(120, 160, 4)[..., :3].astype(np.float32)
+                .reshape(120, 160, 4)[..., :3]
+                .astype(np.float32)
             )
 
         raw_frame_delta = np.mean(np.abs(raw_frames[-1] - raw_frames[-2]))

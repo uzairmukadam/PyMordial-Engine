@@ -5,15 +5,17 @@ material atlas upload, static physics box collider, and atmospheric directional 
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import TYPE_CHECKING
+
 import numpy as np
 
+from engine.assets.mesh_format import PMMesh, build_pm_mesh
 from engine.gfx.texture_atlas import (
     DisplacementMode,
     decode_material_folder,
 )
-from engine.assets.mesh_format import PMMesh, build_pm_mesh
 from engine.world.base import BaseWorldBuilder
 
 if TYPE_CHECKING:
@@ -167,7 +169,9 @@ class DefaultWorldBuilder(BaseWorldBuilder):
                     width=target_res,
                     height=target_res,
                     name=self.material_name,
-                    cooked_folder=raw_mat_dir if (raw_mat_dir / "diff.pm_tex").is_file() else (cooked_mat_dir if cooked_mat_dir.is_dir() else None),
+                    cooked_folder=raw_mat_dir
+                    if (raw_mat_dir / "diff.pm_tex").is_file()
+                    else (cooked_mat_dir if cooked_mat_dir.is_dir() else None),
                 )
                 layer_idx = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
                 pipeline.material_registry.sync_with_atlas(pipeline.texture_atlas)
@@ -182,7 +186,9 @@ class DefaultWorldBuilder(BaseWorldBuilder):
         pipeline.csm_vao = pipeline.mega_buffer.get_vao(pipeline.csm_prog)
         pipeline.gbuffer_vao = pipeline.mega_buffer.get_vao(pipeline.gbuffer_prog)
         if pipeline.gbuffer_tess_prog is not None:
-            pipeline.gbuffer_tess_vao = pipeline.mega_buffer.get_vao(pipeline.gbuffer_tess_prog, mode=pipeline.ctx.PATCHES)
+            pipeline.gbuffer_tess_vao = pipeline.mega_buffer.get_vao(
+                pipeline.gbuffer_tess_prog, mode=pipeline.ctx.PATCHES
+            )
         if pipeline.csm_tess_prog is not None:
             pipeline.csm_tess_vao = pipeline.mega_buffer.get_vao(pipeline.csm_tess_prog, mode=pipeline.ctx.PATCHES)
 

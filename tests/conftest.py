@@ -1,6 +1,7 @@
 """Pytest configuration and shared fixtures for PyMordial Engine tests."""
 
 import os
+
 import pytest
 
 # Ensure audio driver does not block in test environments
@@ -32,5 +33,5 @@ def engine_loop(ecs):
 def pytest_runtest_teardown(item, nextitem):
     """Ensures immediate garbage collection of GPU buffers and resources between tests."""
     import gc
-    gc.collect()
 
+    gc.collect()

@@ -4,9 +4,11 @@ Maintains a single std140 uniform buffer bound to binding 0 across all shaders.
 """
 
 from __future__ import annotations
+
 import math
-import numpy as np
+
 import moderngl
+import numpy as np
 
 
 class FrameContext:

@@ -11,14 +11,15 @@ Both targets perform:
 """
 
 from __future__ import annotations
+
 import argparse
-from dataclasses import dataclass, field
 import importlib.util
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from engine.assets.vfs import PakWriter
 
@@ -26,13 +27,14 @@ from engine.assets.vfs import PakWriter
 @dataclass
 class PackagingConfig:
     """Configuration options for bundling a PyMordial project."""
+
     project_dir: Path
-    target: str = "pyinstaller"           # 'pyinstaller' or 'nuitka'
-    release: bool = True                  # When True, strips debug modules and enables full optimizations
+    target: str = "pyinstaller"  # 'pyinstaller' or 'nuitka'
+    release: bool = True  # When True, strips debug modules and enables full optimizations
     output_dir: Path = Path("dist")
     clean: bool = True
     compress_pak: bool = False
-    windowed: bool = True                 # Hide console window on Windows release builds
+    windowed: bool = True  # Hide console window on Windows release builds
     dry_run: bool = False
     extra_hidden_imports: list[str] = field(default_factory=list)
 
@@ -40,6 +42,7 @@ class PackagingConfig:
 @dataclass
 class StagingResult:
     """Artifacts created during the project staging step."""
+
     staging_dir: Path
     entry_point: Path
     pak_path: Path
@@ -51,6 +54,7 @@ class StagingResult:
 @dataclass
 class BuildResult:
     """Outcome of the packaging build process."""
+
     success: bool
     staging: StagingResult
     command: list[str]
@@ -232,10 +236,12 @@ if __name__ == "__main__":
 
         # Add data files (game.pak and shaders)
         sep = ";" if sys.platform == "win32" else ":"
-        cmd.extend([
-            f"--add-data={staging.pak_path}{sep}.",
-            f"--add-data={staging.staging_dir / 'shaders'}{sep}shaders",
-        ])
+        cmd.extend(
+            [
+                f"--add-data={staging.pak_path}{sep}.",
+                f"--add-data={staging.staging_dir / 'shaders'}{sep}shaders",
+            ]
+        )
 
         # Essential hidden imports for OpenGL, Rapier, and PyGame
         hidden_imports = [
@@ -278,10 +284,12 @@ if __name__ == "__main__":
             cmd.append("--windows-disable-console")
 
         # Include shaders and pak archive
-        cmd.extend([
-            f"--include-data-files={staging.pak_path}=game.pak",
-            f"--include-data-dir={staging.staging_dir / 'shaders'}=shaders",
-        ])
+        cmd.extend(
+            [
+                f"--include-data-files={staging.pak_path}=game.pak",
+                f"--include-data-dir={staging.staging_dir / 'shaders'}=shaders",
+            ]
+        )
 
         # Hidden packages
         for pkg in ("moderngl", "pygame", "pymordial_rapier", "rapier2d", "zstandard"):
@@ -348,17 +356,17 @@ if __name__ == "__main__":
 
 def main() -> None:
     """CLI entry point for the PyMordial project packager."""
-    parser = argparse.ArgumentParser(
-        description="PyMordial Engine Dual-Target Release Packager (PyInstaller / Nuitka)"
-    )
+    parser = argparse.ArgumentParser(description="PyMordial Engine Dual-Target Release Packager (PyInstaller / Nuitka)")
     parser.add_argument(
-        "-p", "--project",
+        "-p",
+        "--project",
         type=str,
         required=True,
         help="Path or name of the project to package (e.g. 'shotgun_beat_the_speed' or 'projects/shotgun_beat_the_speed')",
     )
     parser.add_argument(
-        "-t", "--target",
+        "-t",
+        "--target",
         choices=["pyinstaller", "nuitka"],
         default="pyinstaller",
         help="Target compiler/bundler (default: 'pyinstaller' for zero C++ tool dependencies)",
@@ -377,7 +385,8 @@ def main() -> None:
         help="Build debug binary including debug overlays and console output",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=Path("dist"),
         help="Destination directory for distribution build (default: dist/)",

@@ -5,9 +5,11 @@ Rapier3D physics, Audio, ECS, Input, Cameras, and self-contained ProjectModules.
 """
 
 from __future__ import annotations
+
 import sys
 import time
-from typing import TYPE_CHECKING, TypeVar, Any
+from typing import TYPE_CHECKING, Any, TypeVar
+
 import pygame
 
 from engine.app.config import ProjectConfig
@@ -16,16 +18,16 @@ from engine.app.module_registry import ModuleHost, ModuleRegistry
 from engine.app.project_validator import validate_project_config
 from engine.audio import AudioEngine, get_audio_engine
 from engine.camera.camera_manager import CameraManager
-from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop
+from engine.core.state import GameStateManager
+from engine.gfx.context import RenderContext
 from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
 from engine.input import InputManager
 from engine.physics.rapier_world import PhysicsManager
-from engine.gfx.context import RenderContext
-from engine.window import VSyncMode
 from engine.ui import UIManager
-from engine.core.state import GameStateManager
+from engine.window import VSyncMode
 
 if TYPE_CHECKING:
     from engine.gfx.mega_buffer import MeshAllocation
@@ -92,7 +94,6 @@ class ProjectApp:
         self.pipeline.apply_config(self.pipeline.config)
         self.render_ctx.pipeline = self.pipeline
 
-
         # 3. ECS & Native Rapier3D Physics
         max_ent = getattr(self.config, "max_entities", 50_000)
         self.ecs = EntityManager(max_entities=max_ent)
@@ -129,20 +130,18 @@ class ProjectApp:
         if self.config.enable_debug and not self.config.headless:
             try:
                 from engine.debug import (
-                    SystemMonitor,
+                    DebugMenu,
+                    DebugToast,
                     EngineTweaks,
                     GameTweaks,
-                    DebugToast,
-                    DebugMenu,
+                    SystemMonitor,
                 )
 
                 self.system_monitor = SystemMonitor()
                 self.engine_tweaks = EngineTweaks()
                 self.engine_tweaks.vsync_enabled = self.config.vsync
                 self.engine_tweaks.on_vsync_changed(
-                    lambda enabled: self.render_ctx.window.set_vsync(
-                        VSyncMode.ON if enabled else VSyncMode.OFF
-                    )
+                    lambda enabled: self.render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF)
                 )
                 self.game_tweaks = GameTweaks()
                 self.debug_toast = DebugToast()
@@ -161,6 +160,7 @@ class ProjectApp:
                     self.engine_tweaks.sync_from_pipeline(self.pipeline)
             except Exception as e:
                 import logging
+
                 logging.getLogger("PyMordial").warning("Failed to initialize DebugMenu: %s", e)
 
         # 7. Modules & World Generation
@@ -415,11 +415,17 @@ class ProjectApp:
                     point_lights=point_lights,
                     spot_lights=spot_lights,
                     draw_batches=len(self._active_draw_batches),
-                    quality=self.engine_tweaks.quality_preset.value if self.engine_tweaks is not None else self.config.quality_preset,
+                    quality=self.engine_tweaks.quality_preset.value
+                    if self.engine_tweaks is not None
+                    else self.config.quality_preset,
                 )
 
         def on_ui_step() -> None:
-            if hasattr(self.pipeline, "post_process") and self.pipeline.post_process and self.pipeline.post_process.final_fbo:
+            if (
+                hasattr(self.pipeline, "post_process")
+                and self.pipeline.post_process
+                and self.pipeline.post_process.final_fbo
+            ):
                 self.pipeline.post_process.final_fbo.use()
 
             if self.ui is not None:
@@ -446,7 +452,6 @@ class ProjectApp:
                     self.debug_menu.render()
 
                 self.render_ctx.window.swap_buffers()
-
 
         self.engine_loop.on_fixed_update = on_fixed_step
         self.engine_loop.on_update = on_variable_step
@@ -506,7 +511,11 @@ class ProjectApp:
                             if ev.key == pygame.K_F1:
                                 style = self.debug_menu.cycle_f1()
                                 if self.debug_toast:
-                                    msg = "Debug: Performance HUD [F1]" if style == 1 else ("Debug: Profiler [F1]" if style == 2 else "Debug HUD Closed")
+                                    msg = (
+                                        "Debug: Performance HUD [F1]"
+                                        if style == 1
+                                        else ("Debug: Profiler [F1]" if style == 2 else "Debug HUD Closed")
+                                    )
                                     self.debug_toast.show(msg, duration=2.0, color=(56, 189, 248))
                                 continue
                             elif ev.key == pygame.K_F2:

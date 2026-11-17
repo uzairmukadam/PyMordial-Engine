@@ -19,13 +19,15 @@ Comprehensive, unified interactive showcase testing all engine subsystems in a s
 """
 
 from __future__ import annotations
+
 import argparse
 import math
 import random
 import sys
 from pathlib import Path
-import pygame
+
 import numpy as np
+import pygame
 from PIL import Image
 
 # Ensure project root is in sys.path
@@ -33,54 +35,54 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from engine.assets.cooker import cook_all_materials, cook_mesh, cook_texture, pack_directory  # noqa: E402
+from engine.audio import get_audio_engine  # noqa: E402
+from engine.camera import CameraManager, FreeFlyCamera, VirtualCamera  # noqa: E402
+from engine.core.async_loader import BackgroundAssetLoader  # noqa: E402
+from engine.core.character_camera import CharacterCamera, CharacterCameraConfig  # noqa: E402
 from engine.core.ecs import EntityManager  # noqa: E402
 from engine.core.loop import EngineLoop  # noqa: E402
-from engine.core.async_loader import BackgroundAssetLoader  # noqa: E402
-from engine.input import (  # noqa: E402
-    InputManager,
-    Key,
-    MouseButton,
-    GamepadButton,
+from engine.debug import (  # noqa: E402
+    DebugMenu,
+    DebugToast,
+    EngineTweaks,
+    GameTweaks,
+    GBufferDebugMode,
+    SystemMonitor,
 )
-from engine.physics.rapier_world import PhysicsManager  # noqa: E402
-from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig  # noqa: E402
-from engine.core.character_camera import CharacterCamera, CharacterCameraConfig  # noqa: E402
-from engine.assets.cooker import cook_mesh, cook_texture, cook_all_materials, pack_directory  # noqa: E402
 from engine.gfx import (  # noqa: E402
+    GIMode,
+    GraphicsQuality,
+    LoadingScreen,
     RenderContext,
     RenderPipeline,
-    GraphicsQuality,
-    GIMode,
     get_quality_preset,
-    LoadingScreen,
 )
+from engine.gfx.mega_buffer import MeshAllocation  # noqa: E402
 from engine.gfx.texture_atlas import (  # noqa: E402
     DisplacementMode,
     encode_mat_flags,
 )
-from engine.gfx.mega_buffer import MeshAllocation  # noqa: E402
-from engine.debug import (  # noqa: E402
-    SystemMonitor,
-    EngineTweaks,
-    GameTweaks,
-    DebugToast,
-    DebugMenu,
-    GBufferDebugMode,
+from engine.input import (  # noqa: E402
+    GamepadButton,
+    InputManager,
+    Key,
+    MouseButton,
 )
-from engine.camera import CameraManager, FreeFlyCamera, VirtualCamera  # noqa: E402
-from engine.audio import get_audio_engine  # noqa: E402
-from engine.window import WindowMode, VSyncMode  # noqa: E402
+from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig  # noqa: E402
+from engine.physics.rapier_world import PhysicsManager  # noqa: E402
+from engine.window import VSyncMode, WindowMode  # noqa: E402
 
 VALIDATION_LANTERNS = (
     # (base_x, base_y, base_z, radius, color, intensity, speed, orbit_radius, phase)
-    (0.0, 3.4, -23.5, 16.0, (1.0, 0.85, 0.30), 5.5, 0.5, 2.0, 0.0),       # 1. Altar Relic (Gold)
-    (0.0, 1.8, -9.5, 14.0, (0.15, 0.85, 1.0), 4.5, 0.8, 2.8, 1.0),        # 2. Pool Basin (Cyan)
-    (-4.5, 2.6, -7.0, 12.0, (1.0, 0.25, 0.15), 4.2, 0.9, 1.8, 2.0),       # 3. West Colonnade (Ruby)
-    (4.5, 2.6, -7.0, 12.0, (0.85, 0.25, 1.0), 4.2, 0.9, 1.8, 3.0),        # 4. East Colonnade (Violet)
-    (-4.5, 2.6, -17.0, 12.0, (0.20, 1.0, 0.40), 4.2, 0.7, 1.8, 4.0),      # 5. North-West Sconce (Emerald)
-    (4.5, 2.6, -17.0, 12.0, (1.0, 0.55, 0.10), 4.2, 0.7, 1.8, 5.0),       # 6. North-East Sconce (Amber)
-    (14.0, 2.8, -11.0, 13.0, (0.25, 0.65, 1.0), 4.0, 0.6, 2.2, 1.5),      # 7. Material Gallery (Sapphire)
-    (-14.0, 2.8, -11.0, 13.0, (1.0, 0.95, 0.85), 4.0, 0.6, 2.2, 3.5),     # 8. Parkour Course (Pearl White)
+    (0.0, 3.4, -23.5, 16.0, (1.0, 0.85, 0.30), 5.5, 0.5, 2.0, 0.0),  # 1. Altar Relic (Gold)
+    (0.0, 1.8, -9.5, 14.0, (0.15, 0.85, 1.0), 4.5, 0.8, 2.8, 1.0),  # 2. Pool Basin (Cyan)
+    (-4.5, 2.6, -7.0, 12.0, (1.0, 0.25, 0.15), 4.2, 0.9, 1.8, 2.0),  # 3. West Colonnade (Ruby)
+    (4.5, 2.6, -7.0, 12.0, (0.85, 0.25, 1.0), 4.2, 0.9, 1.8, 3.0),  # 4. East Colonnade (Violet)
+    (-4.5, 2.6, -17.0, 12.0, (0.20, 1.0, 0.40), 4.2, 0.7, 1.8, 4.0),  # 5. North-West Sconce (Emerald)
+    (4.5, 2.6, -17.0, 12.0, (1.0, 0.55, 0.10), 4.2, 0.7, 1.8, 5.0),  # 6. North-East Sconce (Amber)
+    (14.0, 2.8, -11.0, 13.0, (0.25, 0.65, 1.0), 4.0, 0.6, 2.2, 1.5),  # 7. Material Gallery (Sapphire)
+    (-14.0, 2.8, -11.0, 13.0, (1.0, 0.95, 0.85), 4.0, 0.6, 2.2, 3.5),  # 8. Parkour Course (Pearl White)
 )
 
 
@@ -100,15 +102,15 @@ def generate_monolith_obj(filepath: Path) -> None:
         "v  1.0 0.0  1.0",  # 3
         "v -1.0 0.0  1.0",  # 4
         # Plinth top Y=0.25 (vertical sides)
-        "v -1.0 0.25 -1.0", # 5
-        "v  1.0 0.25 -1.0", # 6
-        "v  1.0 0.25  1.0", # 7
-        "v -1.0 0.25  1.0", # 8
+        "v -1.0 0.25 -1.0",  # 5
+        "v  1.0 0.25 -1.0",  # 6
+        "v  1.0 0.25  1.0",  # 7
+        "v -1.0 0.25  1.0",  # 8
         # Shaft bottom Y=0.45 (beveled inward transition)
-        "v -0.8 0.45 -0.8", # 9
-        "v  0.8 0.45 -0.8", # 10
-        "v  0.8 0.45  0.8", # 11
-        "v -0.8 0.45  0.8", # 12
+        "v -0.8 0.45 -0.8",  # 9
+        "v  0.8 0.45 -0.8",  # 10
+        "v  0.8 0.45  0.8",  # 11
+        "v -0.8 0.45  0.8",  # 12
         # Shaft top Y=3.6
         "v -0.6 3.6 -0.6",  # 13
         "v  0.6 3.6 -0.6",  # 14
@@ -123,16 +125,16 @@ def generate_monolith_obj(filepath: Path) -> None:
         "vt 0.0 1.0",
         "vt 0.5 1.0",
         # Normals
-        "vn  0.0 -1.0  0.0",   # 1 Bottom
-        "vn  0.0  1.0  0.0",   # 2 Top
-        "vn  0.0  0.0 -1.0",   # 3 North
-        "vn  1.0  0.0  0.0",   # 4 East
-        "vn  0.0  0.0  1.0",   # 5 South
-        "vn -1.0  0.0  0.0",   # 6 West
-        "vn  0.0  0.707 -0.707", # 7 Bevel North
-        "vn  0.707 0.707 0.0",   # 8 Bevel East
-        "vn  0.0  0.707  0.707", # 9 Bevel South
-        "vn -0.707 0.707 0.0",   # 10 Bevel West
+        "vn  0.0 -1.0  0.0",  # 1 Bottom
+        "vn  0.0  1.0  0.0",  # 2 Top
+        "vn  0.0  0.0 -1.0",  # 3 North
+        "vn  1.0  0.0  0.0",  # 4 East
+        "vn  0.0  0.0  1.0",  # 5 South
+        "vn -1.0  0.0  0.0",  # 6 West
+        "vn  0.0  0.707 -0.707",  # 7 Bevel North
+        "vn  0.707 0.707 0.0",  # 8 Bevel East
+        "vn  0.0  0.707  0.707",  # 9 Bevel South
+        "vn -0.707 0.707 0.0",  # 10 Bevel West
         # Faces: Bottom
         "f 1/1/1 2/2/1 3/3/1",
         "f 1/1/1 3/3/1 4/4/1",
@@ -259,13 +261,26 @@ def main() -> None:
     parser.add_argument("--headless", action="store_true", help="Run without window display")
     parser.add_argument("--frames", type=int, default=0, help="Exit after N frames")
     parser.add_argument("--screenshot", type=str, default="", help="Save screenshot to path")
-    parser.add_argument("--preset", type=str, default="custom", choices=["custom", "low", "medium", "high", "ultra", "cinematic"], help="Initial quality preset (default: custom)")
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default="custom",
+        choices=["custom", "low", "medium", "high", "ultra", "cinematic"],
+        help="Initial quality preset (default: custom)",
+    )
     parser.add_argument("--vsync", action="store_true", default=False, help="Enable VSync (default: False/uncapped)")
     parser.add_argument("--width", type=int, default=1280, help="Window width")
     parser.add_argument("--height", type=int, default=720, help="Window height")
     parser.add_argument("--wireframe", action="store_true", help="Start with mesh wireframe enabled")
-    parser.add_argument("--no-physics-colliders", action="store_true", default=True, help="Disable physics colliders wireframe (default: True/disabled)")
-    parser.add_argument("--show-physics-colliders", action="store_true", default=False, help="Enable physics colliders wireframe")
+    parser.add_argument(
+        "--no-physics-colliders",
+        action="store_true",
+        default=True,
+        help="Disable physics colliders wireframe (default: True/disabled)",
+    )
+    parser.add_argument(
+        "--show-physics-colliders", action="store_true", default=False, help="Enable physics colliders wireframe"
+    )
     parser.add_argument(
         "--debug-menu",
         dest="debug_menu",
@@ -280,14 +295,53 @@ def main() -> None:
         help="Start with debug menu closed",
     )
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
-    parser.add_argument("--shadow-mode", type=str, default="pcss", choices=["hard", "pcf", "pcss"], help="Shadow filtering mode (default: pcss)")
-    parser.add_argument("--shadow-res", type=int, default=2048, choices=[1024, 2048, 4096], help="Shadow map atlas resolution (default: 2048)")
-    parser.add_argument("--shadow-distance", type=float, default=500.0, help="Maximum shadow draw distance in meters (default: 500.0)")
-    parser.add_argument("--shadow-cascades", type=int, default=4, choices=[1, 2, 3, 4], help="Number of CSM cascades (default: 4)")
-    parser.add_argument("--gbuffer-debug", type=int, default=0, help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RadianceCascades)")
-    parser.add_argument("--ao-mode", type=str, default="", choices=["", "off", "ssao", "gtao"], help="AO mode override (off, ssao, gtao)")
-    parser.add_argument("--gi-mode", type=str, default="", choices=["", "off", "ibl", "ssgi", "radiance_cascades"], help="GI mode override (off, ibl, ssgi, radiance_cascades)")
-    parser.add_argument("--aa-mode", type=str, default="", choices=["", "off", "fxaa", "smaa_1x", "smaa_2x", "smaa_4x", "taa"], help="AA mode override (off, fxaa, smaa_1x, smaa_2x, smaa_4x, taa)")
+    parser.add_argument(
+        "--shadow-mode",
+        type=str,
+        default="pcss",
+        choices=["hard", "pcf", "pcss"],
+        help="Shadow filtering mode (default: pcss)",
+    )
+    parser.add_argument(
+        "--shadow-res",
+        type=int,
+        default=2048,
+        choices=[1024, 2048, 4096],
+        help="Shadow map atlas resolution (default: 2048)",
+    )
+    parser.add_argument(
+        "--shadow-distance", type=float, default=500.0, help="Maximum shadow draw distance in meters (default: 500.0)"
+    )
+    parser.add_argument(
+        "--shadow-cascades", type=int, default=4, choices=[1, 2, 3, 4], help="Number of CSM cascades (default: 4)"
+    )
+    parser.add_argument(
+        "--gbuffer-debug",
+        type=int,
+        default=0,
+        help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RadianceCascades)",
+    )
+    parser.add_argument(
+        "--ao-mode",
+        type=str,
+        default="",
+        choices=["", "off", "ssao", "gtao"],
+        help="AO mode override (off, ssao, gtao)",
+    )
+    parser.add_argument(
+        "--gi-mode",
+        type=str,
+        default="",
+        choices=["", "off", "ibl", "ssgi", "radiance_cascades"],
+        help="GI mode override (off, ibl, ssgi, radiance_cascades)",
+    )
+    parser.add_argument(
+        "--aa-mode",
+        type=str,
+        default="",
+        choices=["", "off", "fxaa", "smaa_1x", "smaa_2x", "smaa_4x", "taa"],
+        help="AA mode override (off, fxaa, smaa_1x, smaa_2x, smaa_4x, taa)",
+    )
     parser.add_argument(
         "--all-effects",
         dest="all_effects",
@@ -329,7 +383,9 @@ def main() -> None:
         help="Initial physical atmosphere preset (earth_day, earth_sunset, earth_night, alien_cyan_purple, alien_crimson_mars)",
     )
     parser.add_argument("--time-of-day", type=float, default=None, help="Initial time of day in hours (0.0 to 24.0)")
-    parser.add_argument("--day-speed", type=float, default=None, help="Day-night orbital speed multiplier (0.0 = paused)")
+    parser.add_argument(
+        "--day-speed", type=float, default=None, help="Day-night orbital speed multiplier (0.0 = paused)"
+    )
     args = parser.parse_args()
 
     width, height = args.width, args.height
@@ -405,7 +461,7 @@ def main() -> None:
         engine_tweaks.gi_mode = args.gi_mode.upper()
     if args.aa_mode:
         engine_tweaks.aa_mode = args.aa_mode.upper()
-        engine_tweaks.taa_enabled = (args.aa_mode.upper() == "TAA")
+        engine_tweaks.taa_enabled = args.aa_mode.upper() == "TAA"
     if args.atmo_preset:
         engine_tweaks.apply_atmo_preset(args.atmo_preset)
     if args.time_of_day is not None:
@@ -464,7 +520,9 @@ def main() -> None:
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
-    engine_tweaks.on_vsync_changed(lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF))
+    engine_tweaks.on_vsync_changed(
+        lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF)
+    )
 
     # 3. Mount Cooked .pak Archive via Virtual File System (VFS)
     loading_screen.set_progress(0.10, status="Mounting Cooked Asset Archive (.pak)...")
@@ -489,6 +547,7 @@ def main() -> None:
         if pipeline.texture_atlas.width != target_res or pipeline.texture_atlas.height != target_res:
             pipeline.texture_atlas.destroy()
             from engine.gfx.texture_atlas import TextureArrayAtlas
+
             pipeline.texture_atlas = TextureArrayAtlas(pipeline.ctx, width=target_res, height=target_res, max_layers=32)
 
         async_loader = BackgroundAssetLoader()
@@ -540,68 +599,104 @@ def main() -> None:
     step_boxes.append(((0.0, 0.02, -9.5), (5.0, 0.04, 16.0)))
 
     # Pool Basin Framing Curbs
-    curb_north = spawn_static_box(ecs, physics, (0.0, 0.06, -17.65), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
-    curb_south = spawn_static_box(ecs, physics, (0.0, 0.06, -1.35), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
-    curb_west = spawn_static_box(ecs, physics, (-2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
-    curb_east = spawn_static_box(ecs, physics, (2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1)
+    curb_north = spawn_static_box(
+        ecs, physics, (0.0, 0.06, -17.65), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1
+    )
+    curb_south = spawn_static_box(
+        ecs, physics, (0.0, 0.06, -1.35), (5.6, 0.08, 0.3), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1
+    )
+    curb_west = spawn_static_box(
+        ecs, physics, (-2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1
+    )
+    curb_east = spawn_static_box(
+        ecs, physics, (2.65, 0.06, -9.5), (0.3, 0.08, 16.6), color=(0.42, 0.44, 0.48), roughness=0.5, metallic=0.1
+    )
     cube_ids.extend([curb_north, curb_south, curb_west, curb_east])
-    step_boxes.extend([
-        ((0.0, 0.06, -17.65), (5.6, 0.08, 0.3)),
-        ((0.0, 0.06, -1.35), (5.6, 0.08, 0.3)),
-        ((-2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
-        ((2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
-    ])
+    step_boxes.extend(
+        [
+            ((0.0, 0.06, -17.65), (5.6, 0.08, 0.3)),
+            ((0.0, 0.06, -1.35), (5.6, 0.08, 0.3)),
+            ((-2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
+            ((2.65, 0.06, -9.5), (0.3, 0.08, 16.6)),
+        ]
+    )
 
     # C. Temple Altar Stepped Dais (3-Tier Stepped Platform at the North End)
     d1_pos, d1_size = (0.0, 0.10, -23.5), (9.0, 0.20, 7.0)
-    cube_ids.append(spawn_static_box(ecs, physics, d1_pos, d1_size, color=(0.28, 0.30, 0.35), roughness=0.55, metallic=0.1))
+    cube_ids.append(
+        spawn_static_box(ecs, physics, d1_pos, d1_size, color=(0.28, 0.30, 0.35), roughness=0.55, metallic=0.1)
+    )
     step_boxes.append((d1_pos, d1_size))
 
     d2_pos, d2_size = (0.0, 0.30, -23.5), (7.0, 0.20, 5.5)
-    cube_ids.append(spawn_static_box(ecs, physics, d2_pos, d2_size, color=(0.32, 0.34, 0.40), roughness=0.50, metallic=0.1))
+    cube_ids.append(
+        spawn_static_box(ecs, physics, d2_pos, d2_size, color=(0.32, 0.34, 0.40), roughness=0.50, metallic=0.1)
+    )
     step_boxes.append((d2_pos, d2_size))
 
     d3_pos, d3_size = (0.0, 0.50, -23.5), (5.0, 0.20, 4.0)
-    cube_ids.append(spawn_static_box(ecs, physics, d3_pos, d3_size, color=(0.38, 0.40, 0.46), roughness=0.45, metallic=0.1))
+    cube_ids.append(
+        spawn_static_box(ecs, physics, d3_pos, d3_size, color=(0.38, 0.40, 0.46), roughness=0.45, metallic=0.1)
+    )
     step_boxes.append((d3_pos, d3_size))
 
     # D. Transverse Lintels & Longitudinal Architectural Beams (Spanning Pillars)
     colonnade_z = [-2.0, -8.0, -14.0, -20.0]
     for cz in colonnade_z:
-        lintel = spawn_static_box(ecs, physics, (0.0, 4.25, cz), (10.2, 0.35, 1.0), color=(0.36, 0.38, 0.44), roughness=0.5, metallic=0.1)
+        lintel = spawn_static_box(
+            ecs, physics, (0.0, 4.25, cz), (10.2, 0.35, 1.0), color=(0.36, 0.38, 0.44), roughness=0.5, metallic=0.1
+        )
         cube_ids.append(lintel)
         step_boxes.append(((0.0, 4.25, cz), (10.2, 0.35, 1.0)))
 
-    beam_l = spawn_static_box(ecs, physics, (-4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1)
-    beam_r = spawn_static_box(ecs, physics, (4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1)
+    beam_l = spawn_static_box(
+        ecs, physics, (-4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1
+    )
+    beam_r = spawn_static_box(
+        ecs, physics, (4.5, 4.55, -11.0), (1.0, 0.30, 20.0), color=(0.34, 0.36, 0.42), roughness=0.5, metallic=0.1
+    )
     cube_ids.extend([beam_l, beam_r])
-    step_boxes.extend([
-        ((-4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
-        ((4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
-    ])
+    step_boxes.extend(
+        [
+            ((-4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
+            ((4.5, 4.55, -11.0), (1.0, 0.30, 20.0)),
+        ]
+    )
 
     # E. East Wing — Material & Micro-Geometry Gallery
-    gal_floor = spawn_static_box(ecs, physics, (14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1)
+    gal_floor = spawn_static_box(
+        ecs, physics, (14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1
+    )
     cube_ids.append(gal_floor)
     step_boxes.append(((14.0, 0.025, -11.0), (12.0, 0.05, 24.0)))
 
     # 7 Material Inspection Pedestals
     pedestal_z = [-20.0, -17.0, -14.0, -11.0, -8.0, -5.0, -2.0]
     for pz in pedestal_z:
-        ped = spawn_static_box(ecs, physics, (14.0, 0.45, pz), (1.0, 0.90, 1.0), color=(0.30, 0.32, 0.36), roughness=0.6, metallic=0.05)
+        ped = spawn_static_box(
+            ecs, physics, (14.0, 0.45, pz), (1.0, 0.90, 1.0), color=(0.30, 0.32, 0.36), roughness=0.6, metallic=0.05
+        )
         cube_ids.append(ped)
         step_boxes.append(((14.0, 0.45, pz), (1.0, 0.90, 1.0)))
 
     # 3 Advanced Feature Exhibition Slabs (POM, SSDM, Hardware Tessellation)
-    slab_pom = spawn_static_box(ecs, physics, (17.5, 0.60, -17.0), (2.0, 1.20, 2.0), color=(0.55, 0.50, 0.45), roughness=0.4, metallic=0.1)
-    slab_ssdm = spawn_static_box(ecs, physics, (17.5, 0.60, -11.0), (2.0, 1.20, 2.0), color=(0.45, 0.50, 0.55), roughness=0.4, metallic=0.1)
-    slab_tess = spawn_static_box(ecs, physics, (17.5, 0.60, -5.0), (2.0, 1.20, 2.0), color=(0.60, 0.60, 0.60), roughness=0.7, metallic=0.05)
+    slab_pom = spawn_static_box(
+        ecs, physics, (17.5, 0.60, -17.0), (2.0, 1.20, 2.0), color=(0.55, 0.50, 0.45), roughness=0.4, metallic=0.1
+    )
+    slab_ssdm = spawn_static_box(
+        ecs, physics, (17.5, 0.60, -11.0), (2.0, 1.20, 2.0), color=(0.45, 0.50, 0.55), roughness=0.4, metallic=0.1
+    )
+    slab_tess = spawn_static_box(
+        ecs, physics, (17.5, 0.60, -5.0), (2.0, 1.20, 2.0), color=(0.60, 0.60, 0.60), roughness=0.7, metallic=0.05
+    )
     cube_ids.extend([slab_pom, slab_ssdm, slab_tess])
-    step_boxes.extend([
-        ((17.5, 0.60, -17.0), (2.0, 1.20, 2.0)),
-        ((17.5, 0.60, -11.0), (2.0, 1.20, 2.0)),
-        ((17.5, 0.60, -5.0), (2.0, 1.20, 2.0)),
-    ])
+    step_boxes.extend(
+        [
+            ((17.5, 0.60, -17.0), (2.0, 1.20, 2.0)),
+            ((17.5, 0.60, -11.0), (2.0, 1.20, 2.0)),
+            ((17.5, 0.60, -5.0), (2.0, 1.20, 2.0)),
+        ]
+    )
 
     # Assign Poly Haven PBR Materials & Mutually Exclusive Displacement Modes to Slabs
     d_pom = ecs.pool.get_dense_index(slab_pom)
@@ -620,44 +715,93 @@ def main() -> None:
     ecs.material_data[d_tess, 7] = encode_mat_flags(l_tess > 0, DisplacementMode.TESSELLATION)
 
     # F. West Wing — Gameplay Parkour & Obstacle Zone
-    pk_floor = spawn_static_box(ecs, physics, (-14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1)
+    pk_floor = spawn_static_box(
+        ecs, physics, (-14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1
+    )
     cube_ids.append(pk_floor)
     step_boxes.append(((-14.0, 0.025, -11.0), (12.0, 0.05, 24.0)))
 
     # 3 Auto-stepping Curbs (0.10m, 0.20m, 0.30m)
-    p_s1 = spawn_static_box(ecs, physics, (-14.0, 0.05, -3.0), (3.0, 0.10, 1.5), color=(0.55, 0.55, 0.52), roughness=0.4, metallic=0.0)
-    p_s2 = spawn_static_box(ecs, physics, (-14.0, 0.10, -5.5), (3.0, 0.20, 1.5), color=(0.60, 0.60, 0.58), roughness=0.4, metallic=0.0)
-    p_s3 = spawn_static_box(ecs, physics, (-14.0, 0.15, -8.0), (3.0, 0.30, 1.5), color=(0.65, 0.65, 0.62), roughness=0.4, metallic=0.0)
-    p_hurdle = spawn_static_box(ecs, physics, (-14.0, 0.35, -11.0), (3.0, 0.70, 0.5), color=(0.75, 0.40, 0.20), roughness=0.3, metallic=0.2)
-    p_vault = spawn_static_box(ecs, physics, (-14.0, 0.75, -14.0), (3.0, 1.50, 0.6), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
+    p_s1 = spawn_static_box(
+        ecs, physics, (-14.0, 0.05, -3.0), (3.0, 0.10, 1.5), color=(0.55, 0.55, 0.52), roughness=0.4, metallic=0.0
+    )
+    p_s2 = spawn_static_box(
+        ecs, physics, (-14.0, 0.10, -5.5), (3.0, 0.20, 1.5), color=(0.60, 0.60, 0.58), roughness=0.4, metallic=0.0
+    )
+    p_s3 = spawn_static_box(
+        ecs, physics, (-14.0, 0.15, -8.0), (3.0, 0.30, 1.5), color=(0.65, 0.65, 0.62), roughness=0.4, metallic=0.0
+    )
+    p_hurdle = spawn_static_box(
+        ecs, physics, (-14.0, 0.35, -11.0), (3.0, 0.70, 0.5), color=(0.75, 0.40, 0.20), roughness=0.3, metallic=0.2
+    )
+    p_vault = spawn_static_box(
+        ecs, physics, (-14.0, 0.75, -14.0), (3.0, 1.50, 0.6), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7
+    )
     cube_ids.extend([p_s1, p_s2, p_s3, p_hurdle, p_vault])
-    step_boxes.extend([
-        ((-14.0, 0.05, -3.0), (3.0, 0.10, 1.5)),
-        ((-14.0, 0.10, -5.5), (3.0, 0.20, 1.5)),
-        ((-14.0, 0.15, -8.0), (3.0, 0.30, 1.5)),
-        ((-14.0, 0.35, -11.0), (3.0, 0.70, 0.5)),
-        ((-14.0, 0.75, -14.0), (3.0, 1.50, 0.6)),
-    ])
+    step_boxes.extend(
+        [
+            ((-14.0, 0.05, -3.0), (3.0, 0.10, 1.5)),
+            ((-14.0, 0.10, -5.5), (3.0, 0.20, 1.5)),
+            ((-14.0, 0.15, -8.0), (3.0, 0.30, 1.5)),
+            ((-14.0, 0.35, -11.0), (3.0, 0.70, 0.5)),
+            ((-14.0, 0.75, -14.0), (3.0, 1.50, 0.6)),
+        ]
+    )
 
     # 3 Slope Testing Ramps (20° Green Walkable, 38° Yellow Medium, 52° Red Sliding)
     q_ramp_20 = make_quat_rot_x(math.radians(-20.0))
-    ramp_20 = spawn_static_box(ecs, physics, (-17.0, 0.85, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_20, color=(0.22, 0.72, 0.38), roughness=0.4, metallic=0.1)
+    ramp_20 = spawn_static_box(
+        ecs,
+        physics,
+        (-17.0, 0.85, -19.5),
+        (2.5, 0.2, 5.0),
+        rotation=q_ramp_20,
+        color=(0.22, 0.72, 0.38),
+        roughness=0.4,
+        metallic=0.1,
+    )
     q_ramp_38 = make_quat_rot_x(math.radians(-38.0))
-    ramp_38 = spawn_static_box(ecs, physics, (-14.0, 1.35, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_38, color=(0.88, 0.78, 0.20), roughness=0.4, metallic=0.1)
+    ramp_38 = spawn_static_box(
+        ecs,
+        physics,
+        (-14.0, 1.35, -19.5),
+        (2.5, 0.2, 5.0),
+        rotation=q_ramp_38,
+        color=(0.88, 0.78, 0.20),
+        roughness=0.4,
+        metallic=0.1,
+    )
     q_ramp_52 = make_quat_rot_x(math.radians(-52.0))
-    ramp_52 = spawn_static_box(ecs, physics, (-11.0, 1.85, -19.5), (2.5, 0.2, 5.0), rotation=q_ramp_52, color=(0.85, 0.22, 0.22), roughness=0.3, metallic=0.2)
+    ramp_52 = spawn_static_box(
+        ecs,
+        physics,
+        (-11.0, 1.85, -19.5),
+        (2.5, 0.2, 5.0),
+        rotation=q_ramp_52,
+        color=(0.85, 0.22, 0.22),
+        roughness=0.3,
+        metallic=0.2,
+    )
     cube_ids.extend([ramp_20, ramp_38, ramp_52])
 
     # G. South Arrival Plaza Gate & Boundary Walls
-    gate_col_l = spawn_static_box(ecs, physics, (-3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
-    gate_col_r = spawn_static_box(ecs, physics, (3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7)
-    boundary_wall = spawn_static_box(ecs, physics, (0.0, 2.0, 13.0), (16.0, 4.0, 0.6), color=(0.32, 0.36, 0.44), roughness=0.5, metallic=0.1)
+    gate_col_l = spawn_static_box(
+        ecs, physics, (-3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7
+    )
+    gate_col_r = spawn_static_box(
+        ecs, physics, (3.5, 2.0, 10.0), (1.2, 4.0, 1.2), color=(0.40, 0.45, 0.55), roughness=0.2, metallic=0.7
+    )
+    boundary_wall = spawn_static_box(
+        ecs, physics, (0.0, 2.0, 13.0), (16.0, 4.0, 0.6), color=(0.32, 0.36, 0.44), roughness=0.5, metallic=0.1
+    )
     cube_ids.extend([gate_col_l, gate_col_r, boundary_wall])
-    step_boxes.extend([
-        ((-3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
-        ((3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
-        ((0.0, 2.0, 13.0), (16.0, 4.0, 0.6)),
-    ])
+    step_boxes.extend(
+        [
+            ((-3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
+            ((3.5, 2.0, 10.0), (1.2, 4.0, 1.2)),
+            ((0.0, 2.0, 13.0), (16.0, 4.0, 0.6)),
+        ]
+    )
 
     # H. Monolith Columns: 8 Colonnade Pillars + 1 Golden Altar Relic Monolith
     monolith_ids: list[int] = []
@@ -847,12 +991,18 @@ def main() -> None:
     if args.camera and args.camera.lower() != "follow":
         camera_mgr.switch_to(args.camera.lower())
     if args.camera_pos is not None:
-        camera_mgr.active_camera.position = (float(args.camera_pos[0]), float(args.camera_pos[1]), float(args.camera_pos[2]))
+        camera_mgr.active_camera.position = (
+            float(args.camera_pos[0]),
+            float(args.camera_pos[1]),
+            float(args.camera_pos[2]),
+        )
 
     # 6. Configure Unified Input Bindings (AAA Standard)
     # Character actions
     input_mgr.bind_action("jump", keys=[Key.SPACE], gamepad_buttons=[GamepadButton.A])
-    input_mgr.bind_action("sprint", keys=[Key.LSHIFT, Key.RSHIFT], gamepad_buttons=[GamepadButton.LEFT_STICK, GamepadButton.LEFT_BUMPER])
+    input_mgr.bind_action(
+        "sprint", keys=[Key.LSHIFT, Key.RSHIFT], gamepad_buttons=[GamepadButton.LEFT_STICK, GamepadButton.LEFT_BUMPER]
+    )
     input_mgr.bind_action("reset_player", keys=[Key.R], gamepad_buttons=[GamepadButton.Y])
     input_mgr.bind_action("reset_camera", keys=[Key.Z], gamepad_buttons=[GamepadButton.RIGHT_STICK])
 
@@ -895,7 +1045,9 @@ def main() -> None:
         batch_size = int(sphere_batch_tweak.value)
         for _ in range(batch_size):
             spawn_pbr_sphere()
-        toast.show(f"Spawned {batch_size} PBR Spheres (Dynamic: {len(dynamic_sphere_ids)})", duration=2.0, color=(74, 222, 128))
+        toast.show(
+            f"Spawned {batch_size} PBR Spheres (Dynamic: {len(dynamic_sphere_ids)})", duration=2.0, color=(74, 222, 128)
+        )
 
     def trigger_clear_spheres() -> None:
         count = len(dynamic_sphere_ids)
@@ -937,38 +1089,147 @@ def main() -> None:
 
     # Tweaks & Sliders
     walk_spd_tweak = game_tweaks.add_float("Character", "Walk Speed", default=6.0, min_val=2.0, max_val=15.0, step=0.5)
-    run_spd_tweak = game_tweaks.add_float("Character", "Sprint Speed", default=11.5, min_val=5.0, max_val=25.0, step=1.0)
-    jump_force_tweak = game_tweaks.add_float("Character", "Jump Force", default=8.5, min_val=4.0, max_val=20.0, step=0.5)
+    run_spd_tweak = game_tweaks.add_float(
+        "Character", "Sprint Speed", default=11.5, min_val=5.0, max_val=25.0, step=1.0
+    )
+    jump_force_tweak = game_tweaks.add_float(
+        "Character", "Jump Force", default=8.5, min_val=4.0, max_val=20.0, step=0.5
+    )
     invert_pitch_tweak = game_tweaks.add_bool("Controls", "Invert Look Y", default=True)
-    cam_sens_tweak = game_tweaks.add_float("Controls", "Camera Sensitivity", default=1.0, min_val=0.2, max_val=3.0, step=0.1)
+    cam_sens_tweak = game_tweaks.add_float(
+        "Controls", "Camera Sensitivity", default=1.0, min_val=0.2, max_val=3.0, step=0.1
+    )
     sphere_batch_tweak = game_tweaks.add_int("Physics", "Batch Spawn Count", default=8, min_val=1, max_val=32)
 
     # Rendering Tweaks
     wireframe_tweak = game_tweaks.add_bool(
-        "Rendering", "Mesh Wireframe", default=False,
+        "Rendering",
+        "Mesh Wireframe",
+        default=False,
         on_changed=lambda val: setattr(engine_tweaks, "show_wireframe", val),
     )
     physics_wire_tweak = game_tweaks.add_bool(
-        "Rendering", "Physics Gizmos", default=False,
+        "Rendering",
+        "Physics Gizmos",
+        default=False,
         on_changed=lambda val: setattr(engine_tweaks, "show_physics_colliders", val),
     )
-    game_tweaks.add_float("Shadows", "Align X", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_x", v))
-    game_tweaks.add_float("Shadows", "Align Y", default=0.0, min_val=-0.05, max_val=0.05, step=0.001, on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_y", v))
-    game_tweaks.add_float("Shadows", "Normal Bias", default=0.0010, min_val=0.0, max_val=0.0050, step=0.0001, on_changed=lambda v: setattr(engine_tweaks, "shadow_normal_bias", v))
+    game_tweaks.add_float(
+        "Shadows",
+        "Align X",
+        default=0.0,
+        min_val=-0.05,
+        max_val=0.05,
+        step=0.001,
+        on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_x", v),
+    )
+    game_tweaks.add_float(
+        "Shadows",
+        "Align Y",
+        default=0.0,
+        min_val=-0.05,
+        max_val=0.05,
+        step=0.001,
+        on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_y", v),
+    )
+    game_tweaks.add_float(
+        "Shadows",
+        "Normal Bias",
+        default=0.0010,
+        min_val=0.0,
+        max_val=0.0050,
+        step=0.0001,
+        on_changed=lambda v: setattr(engine_tweaks, "shadow_normal_bias", v),
+    )
 
     # Phase 6: Micro-Geometry Tweaks (POM, SSDM, Hardware Tessellation)
-    game_tweaks.add_bool("MicroGeometry", "POM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "POM Scale Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "pom_height_scale", v))
-    game_tweaks.add_bool("MicroGeometry", "POM Self-Shadow", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_self_shadow", v))
-    game_tweaks.add_float("MicroGeometry", "Near Radius", default=8.0, min_val=2.0, max_val=25.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "disp_near_radius", v))
-    game_tweaks.add_float("MicroGeometry", "Mid Radius", default=25.0, min_val=10.0, max_val=60.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "disp_mid_radius", v))
-    game_tweaks.add_bool("MicroGeometry", "GPU Tessellation", default=True, on_changed=lambda v: setattr(engine_tweaks, "tess_enabled", v))
-    game_tweaks.add_bool("MicroGeometry", "Frustum Culling", default=True, on_changed=lambda v: setattr(engine_tweaks, "frustum_cull_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "Max Tess Level", default=24.0, min_val=1.0, max_val=32.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_max_level", v))
-    game_tweaks.add_float("MicroGeometry", "Med Tess Level", default=8.0, min_val=1.0, max_val=16.0, step=1.0, on_changed=lambda v: setattr(engine_tweaks, "tess_med_level", v))
-    game_tweaks.add_float("MicroGeometry", "Tess Disp Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "tess_displacement_scale", v))
-    game_tweaks.add_bool("MicroGeometry", "SSDM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "ssdm_enabled", v))
-    game_tweaks.add_float("MicroGeometry", "SSDM Scale Mult", default=1.0, min_val=0.1, max_val=3.0, step=0.1, on_changed=lambda v: setattr(engine_tweaks, "ssdm_scale", v))
+    game_tweaks.add_bool(
+        "MicroGeometry", "POM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "pom_enabled", v)
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "POM Scale Mult",
+        default=1.0,
+        min_val=0.1,
+        max_val=3.0,
+        step=0.1,
+        on_changed=lambda v: setattr(engine_tweaks, "pom_height_scale", v),
+    )
+    game_tweaks.add_bool(
+        "MicroGeometry",
+        "POM Self-Shadow",
+        default=True,
+        on_changed=lambda v: setattr(engine_tweaks, "pom_self_shadow", v),
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "Near Radius",
+        default=8.0,
+        min_val=2.0,
+        max_val=25.0,
+        step=1.0,
+        on_changed=lambda v: setattr(engine_tweaks, "disp_near_radius", v),
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "Mid Radius",
+        default=25.0,
+        min_val=10.0,
+        max_val=60.0,
+        step=1.0,
+        on_changed=lambda v: setattr(engine_tweaks, "disp_mid_radius", v),
+    )
+    game_tweaks.add_bool(
+        "MicroGeometry",
+        "GPU Tessellation",
+        default=True,
+        on_changed=lambda v: setattr(engine_tweaks, "tess_enabled", v),
+    )
+    game_tweaks.add_bool(
+        "MicroGeometry",
+        "Frustum Culling",
+        default=True,
+        on_changed=lambda v: setattr(engine_tweaks, "frustum_cull_enabled", v),
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "Max Tess Level",
+        default=24.0,
+        min_val=1.0,
+        max_val=32.0,
+        step=1.0,
+        on_changed=lambda v: setattr(engine_tweaks, "tess_max_level", v),
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "Med Tess Level",
+        default=8.0,
+        min_val=1.0,
+        max_val=16.0,
+        step=1.0,
+        on_changed=lambda v: setattr(engine_tweaks, "tess_med_level", v),
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "Tess Disp Mult",
+        default=1.0,
+        min_val=0.1,
+        max_val=3.0,
+        step=0.1,
+        on_changed=lambda v: setattr(engine_tweaks, "tess_displacement_scale", v),
+    )
+    game_tweaks.add_bool(
+        "MicroGeometry", "SSDM Enabled", default=True, on_changed=lambda v: setattr(engine_tweaks, "ssdm_enabled", v)
+    )
+    game_tweaks.add_float(
+        "MicroGeometry",
+        "SSDM Scale Mult",
+        default=1.0,
+        min_val=0.1,
+        max_val=3.0,
+        step=0.1,
+        on_changed=lambda v: setattr(engine_tweaks, "ssdm_scale", v),
+    )
 
     def trigger_reset_camera() -> None:
         cam.yaw_deg = 0.0
@@ -996,12 +1257,28 @@ def main() -> None:
     def trigger_toggle_vsync() -> None:
         new_vsync = VSyncMode.OFF if render_ctx.window.vsync == VSyncMode.ON else VSyncMode.ON
         render_ctx.window.set_vsync(new_vsync)
-        engine_tweaks.vsync_enabled = (new_vsync == VSyncMode.ON)
+        engine_tweaks.vsync_enabled = new_vsync == VSyncMode.ON
         toast.show(f"VSync: {new_vsync.name}", duration=2.0, color=(74, 222, 128))
 
     # Audio Tweaks
-    game_tweaks.add_float("Audio", "Master Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("master", v))
-    game_tweaks.add_float("Audio", "SFX Volume", default=1.0, min_val=0.0, max_val=1.0, step=0.05, on_changed=lambda v: audio_engine.mixer.set_volume("sfx", v))
+    game_tweaks.add_float(
+        "Audio",
+        "Master Volume",
+        default=1.0,
+        min_val=0.0,
+        max_val=1.0,
+        step=0.05,
+        on_changed=lambda v: audio_engine.mixer.set_volume("master", v),
+    )
+    game_tweaks.add_float(
+        "Audio",
+        "SFX Volume",
+        default=1.0,
+        min_val=0.0,
+        max_val=1.0,
+        step=0.05,
+        on_changed=lambda v: audio_engine.mixer.set_volume("sfx", v),
+    )
     game_tweaks.add_action("Audio", "Play Test Click", lambda: audio_engine.play_sound("click", volume=0.8))
 
     # Actions
@@ -1033,7 +1310,11 @@ def main() -> None:
     game_tweaks.add_watch("Camera", "Active View", lambda: camera_mgr.active_camera_name.title())
     game_tweaks.add_watch("Camera", "Distance", lambda: f"{cam.current_distance:.1f} m")
 
-    toast.show("PyMordial PAMT Ready — F1 (Perf), F2 (Graphics), F4-F6 (Cameras), F9 (Mouse Grab)", duration=4.5, color=(56, 189, 248))
+    toast.show(
+        "PyMordial PAMT Ready — F1 (Perf), F2 (Graphics), F4-F6 (Cameras), F9 (Mouse Grab)",
+        duration=4.5,
+        color=(56, 189, 248),
+    )
 
     # Pre-cache MeshAllocation objects for zero-allocation MDI batch rendering
     alloc_cube = pipeline.mega_buffer.allocations["cube"]
@@ -1160,9 +1441,8 @@ def main() -> None:
                 break
 
         # Mouse capture toggle (F9)
-        if (
-            input_mgr.is_action_pressed("debug_mouse_capture")
-            or input_mgr.is_action_pressed("debug_mouse_capture_toggle")
+        if input_mgr.is_action_pressed("debug_mouse_capture") or input_mgr.is_action_pressed(
+            "debug_mouse_capture_toggle"
         ):
             new_grab = not input_mgr.is_mouse_grabbed
             input_mgr.set_mouse_grab(new_grab)
@@ -1186,7 +1466,11 @@ def main() -> None:
             trigger_toggle_fullscreen()
 
         # Direct Debug Panel Hotkeys (F1 = Multi-Style Perf + Graphics, F2 = Graphics Options, F3 = Game Tweaks)
-        if input_mgr.is_action_pressed("debug_perf") or input_mgr.is_action_pressed("debug_perf_toggle") or input_mgr.is_action_pressed("debug_menu_toggle"):
+        if (
+            input_mgr.is_action_pressed("debug_perf")
+            or input_mgr.is_action_pressed("debug_perf_toggle")
+            or input_mgr.is_action_pressed("debug_menu_toggle")
+        ):
             style = debug_menu.cycle_f1()
             # If opening F1, also open Graphics Options and free the mouse
             if style > 0 and not debug_menu.show_graphics:
@@ -1195,7 +1479,9 @@ def main() -> None:
                 input_mgr.set_mouse_grab(False)
                 input_mgr._was_mouse_grabbed = False
             if style == 1:
-                toast.show("Debug: Performance HUD & Graphics Options [F1/F2] (Mouse Free)", duration=2.0, color=(56, 189, 248))
+                toast.show(
+                    "Debug: Performance HUD & Graphics Options [F1/F2] (Mouse Free)", duration=2.0, color=(56, 189, 248)
+                )
             elif style == 2:
                 toast.show("Debug: Performance Profiler [Expanded] (F1)", duration=1.5, color=(147, 197, 253))
             else:
@@ -1422,7 +1708,9 @@ def main() -> None:
                 dt=dt,
                 forward_axis=move_fwd,
                 right_axis=move_strafe,
-                up_axis=1.0 if input_mgr.is_action_down("jump") else (-1.0 if input_mgr.is_action_down("sprint") else 0.0),
+                up_axis=1.0
+                if input_mgr.is_action_down("jump")
+                else (-1.0 if input_mgr.is_action_down("sprint") else 0.0),
                 boost=input_mgr.is_action_down("sprint"),
             )
             if input_mgr.is_mouse_grabbed or input_mgr.is_mouse_down(MouseButton.RIGHT):
@@ -1492,7 +1780,7 @@ def main() -> None:
                     color=(0.35, 0.75, 0.45, 0.5),
                 )
             # All spheres colliders (Gallery + Dynamic Sub-Frame Coordinates)
-            for sph in (gallery_sphere_ids + dynamic_sphere_ids):
+            for sph in gallery_sphere_ids + dynamic_sphere_ids:
                 s_idx = ecs.pool.get_dense_index(sph)
                 if s_idx >= 0:
                     s_pos = (
@@ -1592,12 +1880,18 @@ def main() -> None:
         print(" Scene:               PyMordial Architecture & Material Testbed (PAMT)")
         print(f" Resolution:          {render_ctx.width}x{render_ctx.height}")
         print(f" Quality Preset:      {engine_tweaks.quality_preset.value.upper()}")
-        print(f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | Cascades: {engine_tweaks.csm_cascades}")
+        print(
+            f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | Cascades: {engine_tweaks.csm_cascades}"
+        )
         print(f" Ambient Occlusion:   {engine_tweaks.ao_mode}")
         print(f" Global Illumination: {engine_tweaks.gi_mode}")
         print(f" Anti-Aliasing:       {engine_tweaks.aa_mode}")
-        print(f" SSR / IBL:           SSR={'ON' if engine_tweaks.ssr_enabled else 'OFF'} | IBL={'ON' if engine_tweaks.ibl_enabled else 'OFF'}")
-        print(f" Clustered Lights:    8 Dynamic Orbiting Lanterns ({'ON' if engine_tweaks.point_lights_enabled else 'OFF'})")
+        print(
+            f" SSR / IBL:           SSR={'ON' if engine_tweaks.ssr_enabled else 'OFF'} | IBL={'ON' if engine_tweaks.ibl_enabled else 'OFF'}"
+        )
+        print(
+            f" Clustered Lights:    8 Dynamic Orbiting Lanterns ({'ON' if engine_tweaks.point_lights_enabled else 'OFF'})"
+        )
         print(f" Total Frames Tested: {len(bench_times)}")
         print("-" * 80)
         print(f"  Average FPS:        {avg_fps:6.1f} FPS  ({avg_ms:.2f} ms)")

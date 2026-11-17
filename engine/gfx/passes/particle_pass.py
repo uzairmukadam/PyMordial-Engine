@@ -5,20 +5,22 @@ on the GPU with curl-noise motion and soft depth-feathering.
 """
 
 from __future__ import annotations
+
+import math
 from dataclasses import dataclass
 from enum import Enum
-import math
 from typing import Any
+
 import moderngl
 import numpy as np
 
 from engine.gfx.render_graph import RenderPass
-
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_shader = load_shader
+
 
 class ParticleMode(str, Enum):
     DUST_MOTES = "DUST_MOTES"
@@ -45,12 +47,15 @@ class ParticleEmitter:
     follow_camera: bool = False
 
 
-PARTICLE_DTYPE = np.dtype([
-    ("pos_size", np.float32, 4),      # xyz = world pos, w = remaining life (s)
-    ("vel_life", np.float32, 4),      # xyz = vel, w = max life (s)
-    ("color_alpha", np.float32, 4),   # rgb = tint, a = target opacity
-    ("params", np.float32, 4),        # x = radius, y = rot, z = rot_spd, w = mode
-])
+PARTICLE_DTYPE = np.dtype(
+    [
+        ("pos_size", np.float32, 4),  # xyz = world pos, w = remaining life (s)
+        ("vel_life", np.float32, 4),  # xyz = vel, w = max life (s)
+        ("color_alpha", np.float32, 4),  # rgb = tint, a = target opacity
+        ("params", np.float32, 4),  # x = radius, y = rot, z = rot_spd, w = mode
+    ]
+)
+
 
 class ParticleSystemPass(RenderPass):
     """Manages GPU compute simulation and instanced rendering of volumetric particles."""
@@ -99,10 +104,10 @@ class ParticleSystemPass(RenderPass):
 
         # Mode-specific gravity / buoyancy defaults
         self._gravity_map = {
-            0: (0.0, -0.04, 0.0),    # Dust motes: slow settling
-            1: (0.0, 0.75, 0.0),     # Embers: thermal updraft
-            2: (0.0, 0.0, 0.0),      # Fireflies: neutral drift
-            3: (0.0, 0.01, 0.0),     # Smoke: gentle buoyancy
+            0: (0.0, -0.04, 0.0),  # Dust motes: slow settling
+            1: (0.0, 0.75, 0.0),  # Embers: thermal updraft
+            2: (0.0, 0.0, 0.0),  # Fireflies: neutral drift
+            3: (0.0, 0.01, 0.0),  # Smoke: gentle buoyancy
         }
 
         # 1. Compile Shaders
@@ -121,12 +126,18 @@ class ParticleSystemPass(RenderPass):
         # 6 vertices covering [-1, 1] quad
         quad_data = np.array(
             [
-                -1.0, -1.0,
-                 1.0, -1.0,
-                 1.0,  1.0,
-                -1.0, -1.0,
-                 1.0,  1.0,
-                -1.0,  1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -1.0,
+                1.0,
             ],
             dtype=np.float32,
         )
@@ -196,13 +207,9 @@ class ParticleSystemPass(RenderPass):
         count = emitter.count
         table = np.zeros((count, 16), dtype=np.float32)
         mode = self.MODE_MAP[emitter.mode]
-        rng = np.random.default_rng(
-            seed=(emitter.start * 17 + emitter.count * 31 + mode) & 0xFFFFFFFF
-        )
+        rng = np.random.default_rng(seed=(emitter.start * 17 + emitter.count * 31 + mode) & 0xFFFFFFFF)
         half = np.asarray(emitter.half_extents, dtype=np.float32)
-        table[:, 0:3] = np.asarray(center, dtype=np.float32) + rng.uniform(
-            -1.0, 1.0, size=(count, 3)
-        ) * half
+        table[:, 0:3] = np.asarray(center, dtype=np.float32) + rng.uniform(-1.0, 1.0, size=(count, 3)) * half
 
         if mode == self.MODE_MAP["EMBERS"]:
             max_life = rng.uniform(1.5, 3.5, size=count)

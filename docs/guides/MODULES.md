@@ -67,10 +67,10 @@ dependencies and ordered after declared modules.
 
 ```python
 def on_attach(self, app) -> None: ...
-def on_fixed_update(self, app, dt: float) -> None: ...   # 60 Hz simulation
-def on_update(self, app, dt: float) -> None: ...         # variable-rate presentation
+def on_fixed_update(self, app, dt: float) -> None: ...  # 60 Hz simulation
+def on_update(self, app, dt: float) -> None: ...  # variable-rate presentation
 def on_ui(self, app) -> None: ...
-def on_event(self, app, event) -> bool: ...              # return True to consume
+def on_event(self, app, event) -> bool: ...  # return True to consume
 def on_detach(self, app) -> None: ...
 ```
 
@@ -145,8 +145,7 @@ class OutlinePass(RenderPass):
             after=("DeferredResolve",),
         )
 
-    def execute(self, context):
-        ...
+    def execute(self, context): ...
 
 
 class OutlineFeature(RenderFeature):
@@ -178,8 +177,8 @@ disable them from project configuration — never by editing `pipeline.py`:
 ProjectConfig(
     atmosphere_enabled=True,
     atmosphere_settings={
-        "preset": "EARTH_SUNSET",   # any key in ATMOSPHERE_PRESETS
-        "time_of_day": 17.5,        # direct AtmosphereConfig overrides
+        "preset": "EARTH_SUNSET",  # any key in ATMOSPHERE_PRESETS
+        "time_of_day": 17.5,  # direct AtmosphereConfig overrides
         "day_speed": 0.0,
     },
 )

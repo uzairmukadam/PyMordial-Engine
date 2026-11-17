@@ -5,11 +5,13 @@ with event hit-testing and styling hooks.
 """
 
 from __future__ import annotations
-from typing import Callable, Any
+
+from typing import Any, Callable
+
 import moderngl
 
-from engine.ui.theme import UIStyle, UITheme
 from engine.ui.renderer import UIRenderer
+from engine.ui.theme import UIStyle, UITheme
 
 
 class UIElement:
@@ -394,7 +396,7 @@ class UISegmentGroup(UIElement):
         # Draw individual segments
         for i, (label, val) in enumerate(self.options):
             bx = ax + i * btn_w
-            is_selected = (i == self.selected_index)
+            is_selected = i == self.selected_index
 
             if is_selected:
                 seg_style = UIStyle(

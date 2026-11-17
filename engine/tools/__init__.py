@@ -11,6 +11,6 @@ __all__ = ["PackagingConfig", "ProjectPackager"]
 def __getattr__(name: str):
     if name in ("PackagingConfig", "ProjectPackager"):
         import engine.tools.packager as pkg
+
         return getattr(pkg, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-

@@ -2,12 +2,14 @@
 
 import math
 from pathlib import Path
+
 import pygame
+
 from engine.core.ecs import EntityManager
+from engine.debug import DebugMenu, DebugToast, EngineTweaks, GameTweaks, SystemMonitor
 from engine.input import InputManager, Key
-from engine.physics.rapier_world import PhysicsManager
 from engine.physics.character_motor import CharacterMotor
-from engine.debug import SystemMonitor, EngineTweaks, GameTweaks, DebugToast, DebugMenu
+from engine.physics.rapier_world import PhysicsManager
 
 
 class TestDebugMenuAndMouseCapture:
@@ -281,7 +283,7 @@ class TestDebugMenuAndMouseCapture:
 
     def test_debug_menu_resolution_resize_adaptation(self):
         """Validates that DebugMenu synchronizes its viewport and dimensions on WindowResizeEvent."""
-        from engine.events import publish_event, WindowResizeEvent
+        from engine.events import WindowResizeEvent, publish_event
 
         input_mgr = InputManager()
         menu = DebugMenu(
@@ -400,4 +402,3 @@ class TestDebugMenuAndMouseCapture:
         )
         assert menu_path.config_filepath == path_obj
         menu_path.destroy()
-

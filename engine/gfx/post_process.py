@@ -1,6 +1,7 @@
 """Post-Processing, Camera Optics, and Tone-Mapping Pipeline."""
 
 from __future__ import annotations
+
 import moderngl
 
 from engine.gfx.quality_presets import RenderConfig
@@ -185,7 +186,9 @@ class PostProcessPipeline:
         if self._u_chromatic_aberration_enabled is not None:
             self._u_chromatic_aberration_enabled.value = 1 if ca_on else 0
         if self._u_chromatic_aberration_intensity is not None:
-            self._u_chromatic_aberration_intensity.value = float(getattr(self.config, "chromatic_aberration_intensity", 0.005))
+            self._u_chromatic_aberration_intensity.value = float(
+                getattr(self.config, "chromatic_aberration_intensity", 0.005)
+            )
 
         # Vignette
         vig_on = getattr(self.config, "vignette_enabled", True)

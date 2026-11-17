@@ -1,18 +1,20 @@
 """Unit tests for Phase 1: Dynamic Spot Lights with Shadow Casting."""
 
 import math
+
 import numpy as np
 import pytest
 
-from engine.gfx.passes.clustered_lights import ClusteredLightingPass, SpotLight
-from engine.gfx.spot_shadows import SpotLightShadowMap
-from engine.gfx.quality_presets import RenderConfig
 from engine.debug.engine_tweaks import EngineTweaks
+from engine.gfx.passes.clustered_lights import ClusteredLightingPass, SpotLight
+from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.render_graph import RenderGraphContext
+from engine.gfx.spot_shadows import SpotLightShadowMap
 
 
 class DummyBuffer:
     """Mock ModernGL buffer for headless unit testing."""
+
     def __init__(self, size: int):
         self.size = size
         self.data = bytearray(size)
@@ -30,6 +32,7 @@ class DummyBuffer:
 
 class DummyContext:
     """Mock ModernGL context for headless unit testing."""
+
     def __init__(self):
         self.viewport = (0, 0, 800, 600)
 
@@ -42,12 +45,18 @@ class TestSpotLightData:
 
     def test_spot_light_creation(self):
         spot = SpotLight(
-            x=1.0, y=2.0, z=3.0,
+            x=1.0,
+            y=2.0,
+            z=3.0,
             radius=25.0,
-            dir_x=0.0, dir_y=-0.2, dir_z=-1.0,
+            dir_x=0.0,
+            dir_y=-0.2,
+            dir_z=-1.0,
             inner_cone_angle=math.radians(15.0),
             outer_cone_angle=math.radians(30.0),
-            r=1.0, g=0.9, b=0.8,
+            r=1.0,
+            g=0.9,
+            b=0.8,
             intensity=5.0,
             cast_shadow=True,
             shadow_bias=0.002,
@@ -103,7 +112,7 @@ class TestSpotLightData:
         assert pytest.approx(point_data[0]) == 0.0  # x
         assert pytest.approx(point_data[1]) == 1.0  # y
         assert pytest.approx(point_data[2]) == 2.0  # z
-        assert pytest.approx(point_data[3]) == 10.0 # radius
+        assert pytest.approx(point_data[3]) == 10.0  # radius
 
         # Spot lights start at offset 8192
         spot_offset = 8192
@@ -111,10 +120,10 @@ class TestSpotLightData:
         assert pytest.approx(spot_data[0]) == 0.0  # x
         assert pytest.approx(spot_data[1]) == 2.0  # y
         assert pytest.approx(spot_data[2]) == 0.0  # z
-        assert pytest.approx(spot_data[3]) == 30.0 # radius
-        assert pytest.approx(spot_data[7]) == math.cos(math.radians(15.0)) # inner_cos
-        assert pytest.approx(spot_data[12]) == math.cos(math.radians(30.0)) # outer_cos
-        assert pytest.approx(spot_data[13]) == 0.0 # shadow_index = 0
+        assert pytest.approx(spot_data[3]) == 30.0  # radius
+        assert pytest.approx(spot_data[7]) == math.cos(math.radians(15.0))  # inner_cos
+        assert pytest.approx(spot_data[12]) == math.cos(math.radians(30.0))  # outer_cos
+        assert pytest.approx(spot_data[13]) == 0.0  # shadow_index = 0
 
     def test_clear_lights(self):
         ctx = DummyContext()

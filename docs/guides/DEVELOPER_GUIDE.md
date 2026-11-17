@@ -55,6 +55,7 @@ Declare display, physics, and quality presets:
 ```python
 from engine.app.config import ProjectConfig
 
+
 def get_project_config() -> ProjectConfig:
     return ProjectConfig(
         title="My Epic Game",
@@ -81,6 +82,7 @@ Or define your own custom level generator by inheriting from `BaseWorldBuilder`:
 from engine.world.base import BaseWorldBuilder
 from engine.app.project_app import ProjectApp
 
+
 class DungeonWorldBuilder(BaseWorldBuilder):
     def build_world(self, app: ProjectApp) -> None:
         # Spawn rooms, obstacles, and colliders
@@ -99,12 +101,14 @@ from projects.my_game.config import get_project_config
 from projects.my_game.world.level import DungeonWorldBuilder
 from projects.my_game.modules.character_motor import CharacterMotorModule
 
+
 def main() -> None:
     config = get_project_config()
     game = ProjectApp(config)
     game.set_world_builder(DungeonWorldBuilder())
     game.add_module(CharacterMotorModule())
     game.run()
+
 
 if __name__ == "__main__":
     main()
@@ -120,6 +124,7 @@ All game features (weapons, inventories, vehicles, weather, AI) should be implem
 from engine.app.module import ProjectModule
 from engine.app.project_app import ProjectApp
 import pygame
+
 
 class JumpPadModule(ProjectModule):
     def __init__(self, jump_force: float = 15.0) -> None:

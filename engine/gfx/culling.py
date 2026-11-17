@@ -6,6 +6,7 @@ Indirect (MDI) batch filtering.
 """
 
 from __future__ import annotations
+
 import numpy as np
 
 
@@ -90,9 +91,7 @@ class FrustumCuller:
             self.planes[5] = r3 - r2
 
         # Normalize plane equations
-        lengths = np.sqrt(
-            self.planes[:, 0] ** 2 + self.planes[:, 1] ** 2 + self.planes[:, 2] ** 2
-        )
+        lengths = np.sqrt(self.planes[:, 0] ** 2 + self.planes[:, 1] ** 2 + self.planes[:, 2] ** 2)
         # Avoid division by zero
         lengths[lengths < 1e-7] = 1.0
         self.planes /= lengths[:, np.newaxis]
@@ -229,7 +228,9 @@ class FrustumCuller:
                         in_run = False
                         run_len = idx - run_start
                         if orig_len >= 5:
-                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow))
+                            self._filtered_batches.append(
+                                (mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow)
+                            )
                         elif orig_len == 4:
                             self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess))
                         else:

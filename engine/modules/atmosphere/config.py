@@ -5,6 +5,7 @@ along with the built-in planet presets.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,10 +17,10 @@ class AtmosphereConfig:
     sky_mode: str = "ATMOSPHERE"  # ATMOSPHERE or SPACE
     # Time of Day (0.0 to 24.0 hours) and orbital speed multiplier (0.0 = paused)
     time_of_day: float = 12.0
-    day_speed: float = 0.0          # Multiplier: e.g. 1.0 = 1 min full cycle, 0.0 = manual/paused
-    azimuth_deg: float = 45.0       # Sun orbit azimuth heading in degrees
-    latitude_deg: float = 35.0      # Earth/planetary latitude affecting sun tilt
-    declination_deg: float = 0.0    # Solar declination (0.0 = equinox, +/-23.44 = solstice)
+    day_speed: float = 0.0  # Multiplier: e.g. 1.0 = 1 min full cycle, 0.0 = manual/paused
+    azimuth_deg: float = 45.0  # Sun orbit azimuth heading in degrees
+    latitude_deg: float = 35.0  # Earth/planetary latitude affecting sun tilt
+    declination_deg: float = 0.0  # Solar declination (0.0 = equinox, +/-23.44 = solstice)
     # Lunar hour-angle offset from the sun. 12.0 h keeps the historical antipodal
     # moon (full moon rising as the sun sets); any other value gives the moon its
     # own independent rise/set cycle.
@@ -37,9 +38,9 @@ class AtmosphereConfig:
     # Earth physical constants (Sébastien Hillaire Eurographics 2020)
     rayleigh_beta: tuple[float, float, float] = (5.802e-6, 13.558e-6, 33.100e-6)
     mie_beta: float = 3.996e-6
-    mie_asymmetry: float = 0.80     # Mie forward scattering factor (g)
+    mie_asymmetry: float = 0.80  # Mie forward scattering factor (g)
     ozone_beta: tuple[float, float, float] = (0.650e-6, 1.881e-6, 0.085e-6)
-    turbidity: float = 1.0          # Atmospheric aerosol turbidity / haziness
+    turbidity: float = 1.0  # Atmospheric aerosol turbidity / haziness
     planet_radius: float = 6360000.0
     atmosphere_radius: float = 6460000.0
     h_r: float = 8000.0
@@ -66,8 +67,8 @@ class AtmosphereConfig:
     nebula_intensity: float = 0.35
 
     # Sky grading applied in the resolve shader (before the night blend)
-    sky_exposure: float = 1.0       # Linear radiance multiplier on the sky-view LUT
-    sky_saturation: float = 1.0     # Luminance-preserving saturation (1.0 = untouched)
+    sky_exposure: float = 1.0  # Linear radiance multiplier on the sky-view LUT
+    sky_saturation: float = 1.0  # Luminance-preserving saturation (1.0 = untouched)
 
     # Procedural cloud deck, positioned in the world's +Y half-space.
     cloud_enabled: bool = True

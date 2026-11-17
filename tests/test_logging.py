@@ -1,11 +1,13 @@
 """Unit tests for PyMordial Engine Structured Logging System."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 from engine.logging import (
+    LogChannel,
     Logger,
     LogLevel,
-    LogChannel,
 )
 
 

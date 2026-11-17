@@ -7,14 +7,14 @@ import json
 import math
 from pathlib import Path
 
+from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
 from engine.core.ecs import EntityManager
 from engine.core.math_utils import quat_from_euler
-from engine.physics.rapier_world import PhysicsManager
-from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
-from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
 from engine.gfx.context import RenderContext
 from engine.gfx.pipeline import RenderPipeline
-from engine.gfx.quality_presets import get_quality_preset, GraphicsQuality
+from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
+from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
+from engine.physics.rapier_world import PhysicsManager
 
 
 class TestCharacterController:
@@ -299,4 +299,3 @@ class TestCharacterController:
         assert abs(ecs.rigid_body_state[1, dense_idx, 0] - 10.0) < 1e-4
         assert abs(ecs.rigid_body_state[1, dense_idx, 1] - 5.0) < 1e-4
         assert abs(ecs.rigid_body_state[1, dense_idx, 2] - (-15.0)) < 1e-4
-

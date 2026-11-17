@@ -1,17 +1,19 @@
 """Log Sinks for PyMordial Engine Structured Logging."""
 
 from __future__ import annotations
+
+import sys
+import threading
 from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-import sys
-import threading
 
 
 class LogLevel(IntEnum):
     """Severity levels for engine logging."""
+
     TRACE = 0
     DEBUG = 1
     INFO = 2
@@ -23,6 +25,7 @@ class LogLevel(IntEnum):
 @dataclass(slots=True, frozen=True)
 class LogEntry:
     """Represents a single immutable log event."""
+
     timestamp: float
     datetime_str: str
     level: LogLevel
@@ -53,14 +56,14 @@ class ConsoleSink(LogSink):
     # ANSI color codes
     RESET = "\033[0m"
     LEVEL_COLORS = {
-        LogLevel.TRACE: "\033[90m",       # Gray
-        LogLevel.DEBUG: "\033[36m",       # Cyan
-        LogLevel.INFO: "\033[32m",        # Green
-        LogLevel.WARN: "\033[33m",        # Yellow
-        LogLevel.ERROR: "\033[31m",       # Red
-        LogLevel.FATAL: "\033[41;97m",    # White on Red
+        LogLevel.TRACE: "\033[90m",  # Gray
+        LogLevel.DEBUG: "\033[36m",  # Cyan
+        LogLevel.INFO: "\033[32m",  # Green
+        LogLevel.WARN: "\033[33m",  # Yellow
+        LogLevel.ERROR: "\033[31m",  # Red
+        LogLevel.FATAL: "\033[41;97m",  # White on Red
     }
-    CHANNEL_COLOR = "\033[35m"            # Magenta
+    CHANNEL_COLOR = "\033[35m"  # Magenta
 
     __slots__ = ("min_level", "use_colors")
 

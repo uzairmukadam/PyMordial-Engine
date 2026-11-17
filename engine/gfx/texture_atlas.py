@@ -13,9 +13,11 @@ and their displacement mode via material_data[entity, 7].
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
+
 import numpy as np
 from PIL import Image
 
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
 @dataclass(slots=True)
 class DecodedMaterialLayer:
     """Pre-decoded raw pixel buffers for all 4 PBR channels ready for GPU upload."""
+
     name: str
     diffuse_bytes: bytes
     normal_bytes: bytes
@@ -50,7 +53,6 @@ class DecodedMaterialLayer:
     arm_bytes: bytes
     width: int
     height: int
-
 
 
 def _fit_image(img: Image.Image, w: int, h: int) -> Image.Image:
@@ -175,7 +177,6 @@ def decode_material_folder(
     )
 
 
-
 _IDENTITY_CACHE: dict[tuple[int, int], tuple[bytes, bytes, bytes, bytes]] = {}
 
 
@@ -239,7 +240,9 @@ class TextureArrayAtlas:
         # Create 2D array textures (sampler2DArray) with pre-allocated layers
         # Diffuse: RGBA8 (sRGB albedo)
         self.diffuse_array = ctx.texture_array(
-            (width, height, max_layers), 4, dtype="f1",
+            (width, height, max_layers),
+            4,
+            dtype="f1",
         )
         self.diffuse_array.filter = (ctx.LINEAR_MIPMAP_LINEAR, ctx.LINEAR)
         self.diffuse_array.anisotropy = 16.0
@@ -248,7 +251,9 @@ class TextureArrayAtlas:
 
         # Normal: RGBA8 (tangent-space XYZ packed as [0,1])
         self.normal_array = ctx.texture_array(
-            (width, height, max_layers), 4, dtype="f1",
+            (width, height, max_layers),
+            4,
+            dtype="f1",
         )
         self.normal_array.filter = (ctx.LINEAR_MIPMAP_LINEAR, ctx.LINEAR)
         self.normal_array.anisotropy = 16.0
@@ -257,7 +262,9 @@ class TextureArrayAtlas:
 
         # Displacement: single-channel R8 heightfield (0.0=low, 1.0=high)
         self.displacement_array = ctx.texture_array(
-            (width, height, max_layers), 1, dtype="f1",
+            (width, height, max_layers),
+            1,
+            dtype="f1",
         )
         self.displacement_array.filter = (ctx.LINEAR_MIPMAP_LINEAR, ctx.LINEAR)
         self.displacement_array.anisotropy = 16.0
@@ -266,7 +273,9 @@ class TextureArrayAtlas:
 
         # ARM: RGBA8 (R=AO, G=Roughness, B=Metallic, A=unused)
         self.arm_array = ctx.texture_array(
-            (width, height, max_layers), 4, dtype="f1",
+            (width, height, max_layers),
+            4,
+            dtype="f1",
         )
         self.arm_array.filter = (ctx.LINEAR_MIPMAP_LINEAR, ctx.LINEAR)
         self.arm_array.anisotropy = 16.0
@@ -286,7 +295,6 @@ class TextureArrayAtlas:
         self.arm_array.write(arm, viewport=(0, 0, 0, w, h, 1))
         self._next_layer = 1
 
-
     def add_layer_from_images(
         self,
         diffuse_path: str | Path | None = None,
@@ -301,9 +309,7 @@ class TextureArrayAtlas:
             return self.name_to_layer[name]
 
         if self._next_layer >= self.max_layers:
-            raise RuntimeError(
-                f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers"
-            )
+            raise RuntimeError(f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers")
 
         layer = self._next_layer
         w, h = self.width, self.height
@@ -387,9 +393,7 @@ class TextureArrayAtlas:
     ) -> int:
         """Uploads pre-decoded PBR texture buffers into the GPU texture array on the main thread."""
         if self._next_layer >= self.max_layers:
-            raise RuntimeError(
-                f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers"
-            )
+            raise RuntimeError(f"TextureArrayAtlas full: {self._next_layer}/{self.max_layers} layers")
 
         layer = self._next_layer
         w, h = self.width, self.height

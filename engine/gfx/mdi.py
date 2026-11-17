@@ -1,8 +1,9 @@
 """Multi-Draw Indirect (MDI) Command Batcher and Submitter."""
 
 from __future__ import annotations
-import numpy as np
+
 import moderngl
+import numpy as np
 
 from engine.gfx.mega_buffer import MeshAllocation
 from engine.logging.logger import log_warn

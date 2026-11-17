@@ -5,14 +5,16 @@ view-projection matrices, eliminating shadow shimmering and edge swimming.
 """
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 import pytest
 
-from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import RenderConfig, GraphicsQuality, get_quality_preset
-from engine.gfx.shadow_csm import CascadedShadowMap
 from engine.debug.engine_tweaks import EngineTweaks
+from engine.gfx.context import RenderContext
+from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
+from engine.gfx.shadow_csm import CascadedShadowMap
 
 
 def _max_span_ratio(splits: tuple[float, ...], near: float = 0.1) -> float:
@@ -44,7 +46,13 @@ class TestCSMStabilization:
         cfg = RenderConfig()
         assert cfg.csm_stabilization is True
 
-        for quality in [GraphicsQuality.LOW, GraphicsQuality.MEDIUM, GraphicsQuality.HIGH, GraphicsQuality.ULTRA, GraphicsQuality.CINEMATIC]:
+        for quality in [
+            GraphicsQuality.LOW,
+            GraphicsQuality.MEDIUM,
+            GraphicsQuality.HIGH,
+            GraphicsQuality.ULTRA,
+            GraphicsQuality.CINEMATIC,
+        ]:
             preset = get_quality_preset(quality)
             assert preset.csm_stabilization is True
 
@@ -121,7 +129,7 @@ class TestCSMStabilization:
         geometric = csm.split_distances
         assert geometric[-1] == pytest.approx(600.0)
         assert all(geometric[i] < geometric[i + 1] for i in range(3))
-        assert _max_span_ratio(geometric) == pytest.approx(6000.0 ** 0.25, rel=1e-6)
+        assert _max_span_ratio(geometric) == pytest.approx(6000.0**0.25, rel=1e-6)
         csm.destroy()
 
     def test_cascade_depth_fit_includes_upstream_casters_only_in_footprint(self, headless_ctx: RenderContext):
@@ -131,13 +139,11 @@ class TestCSMStabilization:
         sun_dir = np.array([0.0, -1.0, 0.0], dtype=np.float32)
         baseline = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir)[0].copy()
         upstream = np.array([[0.0, 100.0, -2.0, 0.5, 0.5, 0.5]], dtype=np.float32)
-        relevant = csm.compute_cascade_matrices(
-            cam_pos, cam_fwd, sun_dir, aabbs=upstream, active_count=1
-        )[0].copy()
+        relevant = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, aabbs=upstream, active_count=1)[0].copy()
         outside_footprint = np.array([[1000.0, 100.0, -2.0, 0.5, 0.5, 0.5]], dtype=np.float32)
-        outside = csm.compute_cascade_matrices(
-            cam_pos, cam_fwd, sun_dir, aabbs=outside_footprint, active_count=1
-        )[0].copy()
+        outside = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, aabbs=outside_footprint, active_count=1)[
+            0
+        ].copy()
 
         assert not np.allclose(relevant, baseline)
         np.testing.assert_array_equal(outside, baseline)
@@ -200,8 +206,7 @@ class TestCSMStabilization:
         forward_b /= np.linalg.norm(forward_b)
 
         matrices_a = [
-            matrix.copy()
-            for matrix in csm.compute_cascade_matrices(cam_pos, forward_a, sun_dir, stabilize=False)
+            matrix.copy() for matrix in csm.compute_cascade_matrices(cam_pos, forward_a, sun_dir, stabilize=False)
         ]
         matrices_b = csm.compute_cascade_matrices(cam_pos, forward_b, sun_dir, stabilize=False)
         for cascade in range(csm.cascade_count):

@@ -108,9 +108,7 @@ class TestSSRModeSelection:
             try:
                 _render(pipeline, ecs)
                 tex = pipeline.ssr_pass.raw_ssr_tex
-                data = np.frombuffer(tex.read(), dtype=np.float16).reshape(
-                    (tex.size[1], tex.size[0], 4)
-                )
+                data = np.frombuffer(tex.read(), dtype=np.float16).reshape((tex.size[1], tex.size[0], 4))
                 results[mode] = float(np.max(np.abs(data[..., :3])))
             finally:
                 pipeline.destroy()

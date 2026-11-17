@@ -1,10 +1,12 @@
 """Unit tests for PyMordial Engine 3D Spatial Audio Subsystem."""
 
 from __future__ import annotations
+
 import numpy as np
+
 from engine.audio import (
-    AudioMixer,
     AudioListener,
+    AudioMixer,
     calculate_spatial_pan_and_attenuation,
     get_audio_engine,
 )

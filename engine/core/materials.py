@@ -6,9 +6,11 @@ Pure CPU data structures with zero dependencies on OpenGL or render pipelines.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
@@ -17,9 +19,10 @@ if TYPE_CHECKING:
 
 class DisplacementMode(IntEnum):
     """Mutually exclusive displacement modes per entity."""
-    NONE = 0          # Standard PBR (normal mapping only, no displacement)
-    POM = 1           # Parallax Occlusion Mapping (fragment shader raymarch + self-shadowing)
-    SSDM = 2          # Screen-Space Displacement Mapping (post-G-buffer depth extrusion)
+
+    NONE = 0  # Standard PBR (normal mapping only, no displacement)
+    POM = 1  # Parallax Occlusion Mapping (fragment shader raymarch + self-shadowing)
+    SSDM = 2  # Screen-Space Displacement Mapping (post-G-buffer depth extrusion)
     TESSELLATION = 3  # Hardware Tessellation (GPU TCS+TES vertex displacement along normal)
 
 
@@ -63,13 +66,13 @@ DEFAULT_MATERIAL_DEPTHS: dict[str, float] = {
     "identity": 0.0,
     "brick_wall": 0.035,
     "concrete_floor": 0.005,
-    "clay_roof_tiles_02": 0.040,      # Terracotta roof tiles (4.0 cm physical depth)
-    "metal_grate_rusty": 0.015,       # Metal floor grate (1.5 cm physical depth)
-    "castle_brick_02_red": 0.035,     # Exterior masonry brick (3.5 cm depth)
-    "mud_cracked_dry_03": 0.045,      # Dry cracked ground fissures (4.5 cm depth)
-    "cracked_dry_mud": 0.045,         # Dry cracked ground fissures (4.5 cm depth)
-    "floor_pattern_02": 0.025,        # Decorative stone floor tiles (2.5 cm depth)
-    "ribbed_corduroy": 0.008,         # Fabric corduroy micro-ribs (0.8 cm depth)
+    "clay_roof_tiles_02": 0.040,  # Terracotta roof tiles (4.0 cm physical depth)
+    "metal_grate_rusty": 0.015,  # Metal floor grate (1.5 cm physical depth)
+    "castle_brick_02_red": 0.035,  # Exterior masonry brick (3.5 cm depth)
+    "mud_cracked_dry_03": 0.045,  # Dry cracked ground fissures (4.5 cm depth)
+    "cracked_dry_mud": 0.045,  # Dry cracked ground fissures (4.5 cm depth)
+    "floor_pattern_02": 0.025,  # Decorative stone floor tiles (2.5 cm depth)
+    "ribbed_corduroy": 0.008,  # Fabric corduroy micro-ribs (0.8 cm depth)
     "concrete_floor_worn_02": 0.005,  # Worn industrial concrete (0.5 cm depth)
 }
 
@@ -99,8 +102,8 @@ class MaterialDef:
     normal_strength: float = 1.0
     emissive_intensity: float = 0.0
     disp_depth: float = 0.030
-    friction: float = 0.80       # Surface friction coefficient for vehicle tires
-    restitution: float = 0.05    # Surface restitution (bounciness)
+    friction: float = 0.80  # Surface friction coefficient for vehicle tires
+    restitution: float = 0.05  # Surface restitution (bounciness)
     is_vehicle_chassis: bool = False
     is_vehicle_wheel: bool = False
     description: str = ""
@@ -378,7 +381,7 @@ class MaterialRegistry:
         # 17. Vehicle Chrome & Specular Reflectors (Matches asset 'car_chrome_trim')
         self.register_material(
             name="car_chrome_trim",
-            color=(0.0, 0.941, 1.0),       # Distinct Neon Cyan #00F0FF
+            color=(0.0, 0.941, 1.0),  # Distinct Neon Cyan #00F0FF
             roughness=0.12,
             metallic=0.90,
             ao=1.0,
@@ -402,7 +405,7 @@ class MaterialRegistry:
         # 19. Vehicle Body Paint Lacquer (Matches asset 'car_body_paint')
         self.register_material(
             name="car_body_paint",
-            color=(1.0, 0.0, 0.498),      # Distinct Hot Magenta #FF007F
+            color=(1.0, 0.0, 0.498),  # Distinct Hot Magenta #FF007F
             roughness=0.25,
             metallic=0.10,
             ao=1.0,
@@ -544,12 +547,12 @@ class MaterialRegistry:
                 if layer_idx < len(atlas.material_depths)
                 else DEFAULT_MATERIAL_DEPTHS.get(norm_name, 0.030)
             )
-            is_chassis = (norm_name == "car_body_paint")
-            is_wheel = (norm_name in ("car_alloy_rim", "car_tire_rubber"))
+            is_chassis = norm_name == "car_body_paint"
+            is_wheel = norm_name in ("car_alloy_rim", "car_tire_rubber")
             mat = self.get(norm_name)
             if mat is not None:
                 mat.layer_idx = layer_idx
-                mat.has_texture = (layer_idx > 0)
+                mat.has_texture = layer_idx > 0
                 mat.disp_depth = depth
                 mat.is_vehicle_chassis = is_chassis or mat.is_vehicle_chassis
                 mat.is_vehicle_wheel = is_wheel or mat.is_vehicle_wheel

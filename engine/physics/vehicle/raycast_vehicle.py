@@ -10,11 +10,13 @@ Implements a high-performance, zero-allocation 4-wheel raycast vehicle:
 """
 
 from __future__ import annotations
+
 import math
 from typing import TYPE_CHECKING
+
 import numpy as np
 
-from engine.physics.vehicle.vehicle_config import VehicleConfig, DriveType
+from engine.physics.vehicle.vehicle_config import DriveType, VehicleConfig
 
 if TYPE_CHECKING:
     from engine.core.ecs import EntityManager
@@ -343,7 +345,9 @@ class RaycastVehicle:
         elif self.current_gear == -1 and fwd_speed > -0.5 and self.throttle >= 0.0:
             self.current_gear = 1
 
-        curr_ratio = rev_ratio * final_drive if self.current_gear == -1 else gear_ratios[self.current_gear - 1] * final_drive
+        curr_ratio = (
+            rev_ratio * final_drive if self.current_gear == -1 else gear_ratios[self.current_gear - 1] * final_drive
+        )
 
         # Calculate wheel-based RPM
         num_wheels = len(self.config.wheels)
@@ -419,22 +423,13 @@ class RaycastVehicle:
             # offset: (ox, oy, oz) where oz is along -Z forward (+z in vehicle config is rear, -z is front)
             ox, oy, oz = w_cfg.offset
             self._wheel_attach_world[0] = (
-                self._chassis_pos[0]
-                + self._right_vec[0] * ox
-                + self._up_vec[0] * oy
-                - self._forward_vec[0] * oz
+                self._chassis_pos[0] + self._right_vec[0] * ox + self._up_vec[0] * oy - self._forward_vec[0] * oz
             )
             self._wheel_attach_world[1] = (
-                self._chassis_pos[1]
-                + self._right_vec[1] * ox
-                + self._up_vec[1] * oy
-                - self._forward_vec[1] * oz
+                self._chassis_pos[1] + self._right_vec[1] * ox + self._up_vec[1] * oy - self._forward_vec[1] * oz
             )
             self._wheel_attach_world[2] = (
-                self._chassis_pos[2]
-                + self._right_vec[2] * ox
-                + self._up_vec[2] * oy
-                - self._forward_vec[2] * oz
+                self._chassis_pos[2] + self._right_vec[2] * ox + self._up_vec[2] * oy - self._forward_vec[2] * oz
             )
 
             # Cast ray downwards starting directly from the suspension anchor
@@ -535,8 +530,12 @@ class RaycastVehicle:
 
                     bump_threshold = getattr(w_cfg, "bump_stop_threshold", 0.78) * w_cfg.max_compression
                     if w_state.compression > bump_threshold:
-                        excess = (w_state.compression - bump_threshold) / max(0.005, w_cfg.max_compression - bump_threshold)
-                        bump_mult = 1.0 + (getattr(w_cfg, "bump_stop_stiffness_mult", 3.5) - 1.0) * min(1.0, excess * excess)
+                        excess = (w_state.compression - bump_threshold) / max(
+                            0.005, w_cfg.max_compression - bump_threshold
+                        )
+                        bump_mult = 1.0 + (getattr(w_cfg, "bump_stop_stiffness_mult", 3.5) - 1.0) * min(
+                            1.0, excess * excess
+                        )
                         spring_force = w_cfg.spring_stiffness * bump_mult * w_state.compression
                     else:
                         spring_force = w_cfg.spring_stiffness * w_state.compression
@@ -749,7 +748,9 @@ class RaycastVehicle:
             w_state.longitudinal_slip = abs(slip_ratio)
             w_state.slip_ratio = slip_ratio
             w_state.slip_angle = slip_angle
-            w_state.skidding = (abs(v_lateral) > 2.0) or (self.handbrake and abs(v_forward) > 2.0) or (abs(slip_ratio) > 0.5)
+            w_state.skidding = (
+                (abs(v_lateral) > 2.0) or (self.handbrake and abs(v_forward) > 2.0) or (abs(slip_ratio) > 0.5)
+            )
 
             # 1. Compute Longitudinal Force (Powertrain Drive, Engine Braking, Foot Braking, Handbrake)
             f_long = 0.0
@@ -788,7 +789,9 @@ class RaycastVehicle:
                     if fwd_speed > -15.0:
                         f_long += self.throttle * self.config.reverse_torque * (1.0 / num_driven)
 
-            wheel_mass_share = self.config.chassis_mass * (fn * inv_total_fn if total_grounded_fn > 10.0 else (1.0 / num_wheels))
+            wheel_mass_share = self.config.chassis_mass * (
+                fn * inv_total_fn if total_grounded_fn > 10.0 else (1.0 / num_wheels)
+            )
             stop_clamp = abs(v_forward) * (wheel_mass_share / max(0.005, dt))
 
             # Resistance budget: aggregate engine braking, rolling resistance, foot brake, handbrake, auto-hold
@@ -797,7 +800,9 @@ class RaycastVehicle:
             # Foot Braking with realistic Front/Rear Brake Bias
             if self.brake_input > 0.01 and abs(v_forward) > 0.001:
                 bias_ratio = brake_bias_f if w_cfg.is_steerable else (1.0 - brake_bias_f)
-                f_resist += self.brake_input * self.config.brake_torque * (bias_ratio * 2.0 / num_wheels) * w_cfg.brake_ratio
+                f_resist += (
+                    self.brake_input * self.config.brake_torque * (bias_ratio * 2.0 / num_wheels) * w_cfg.brake_ratio
+                )
 
             # Handbrake on rear wheels
             if not w_cfg.is_steerable and self.handbrake and abs(v_forward) > 0.001:
@@ -847,7 +852,7 @@ class RaycastVehicle:
 
             # Small velocity deadzone to eliminate zero-speed oscillation
             if abs(v_lateral) < 0.08 and abs(v_forward) < 0.1:
-                f_lat *= (abs(v_lateral) / 0.08)
+                f_lat *= abs(v_lateral) / 0.08
 
             # 4. Counter-Steering Caster Aligning Torque from Pneumatic Trail
             # Naturally stabilizes wheels and helps driver counter-steer out of slides

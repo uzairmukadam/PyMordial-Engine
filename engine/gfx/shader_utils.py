@@ -11,9 +11,10 @@ Provides thread-safe caching and recursive #include expansion.
 """
 
 from __future__ import annotations
+
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 _SHADER_CACHE: dict[str, str] = {}
 _SHADER_DIR: Path | None = None

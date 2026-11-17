@@ -5,15 +5,17 @@ and designated Points of Interest for open-world games and AI pathfinding.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import heapq
 import math
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass(slots=True)
 class WaypointNode:
     """A spatial navigation node."""
+
     id: int
     position: tuple[float, float, float]
     tags: set[str] = field(default_factory=set)
@@ -22,21 +24,23 @@ class WaypointNode:
 @dataclass(slots=True)
 class WaypointEdge:
     """A directed navigation edge connecting two waypoint nodes."""
+
     target_id: int
     distance: float
     speed_limit: float = 50.0  # Speed limit in m/s (~110 mph)
-    lane_width: float = 3.5    # Width in meters
-    is_alley: bool = False     # Narrow evasion alleyway flag
+    lane_width: float = 3.5  # Width in meters
+    is_alley: bool = False  # Narrow evasion alleyway flag
 
 
 @dataclass(slots=True)
 class PointOfInterest:
     """A landmark or gameplay objective trigger area."""
+
     name: str
-    poi_type: str              # e.g. "safehouse", "respray", "bank", "warehouse", "dropoff"
+    poi_type: str  # e.g. "safehouse", "respray", "bank", "warehouse", "dropoff"
     position: tuple[float, float, float]
-    radius: float = 6.0        # Trigger radius in meters
-    heading_deg: float = 0.0   # Preferred vehicle arrival/departure heading
+    radius: float = 6.0  # Trigger radius in meters
+    heading_deg: float = 0.0  # Preferred vehicle arrival/departure heading
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -194,11 +198,7 @@ class WaypointGraph:
 
         def heuristic(nid: int) -> float:
             p = self._nodes[nid].position
-            return math.sqrt(
-                (p[0] - goal_pos[0]) ** 2
-                + (p[1] - goal_pos[1]) ** 2
-                + (p[2] - goal_pos[2]) ** 2
-            )
+            return math.sqrt((p[0] - goal_pos[0]) ** 2 + (p[1] - goal_pos[1]) ** 2 + (p[2] - goal_pos[2]) ** 2)
 
         # Priority queue: (f_score, current_node_id)
         open_set: list[tuple[float, int]] = [(heuristic(start_id), start_id)]

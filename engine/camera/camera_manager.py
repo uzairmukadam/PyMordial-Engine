@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from engine.camera.camera import VirtualCamera
-from engine.logging import log_info, LogChannel
+from engine.logging import LogChannel, log_info
 
 
 def _ease_in_out(t: float) -> float:

@@ -155,6 +155,7 @@ Modules declare identity and dependencies with a typed `ModuleManifest` exposed 
 ```python
 from engine.app.module_manifest import ModuleRole, build_manifest
 
+
 class MyModule(ProjectModule):
     MODULE_MANIFEST = build_manifest(
         "my_game.combat",
@@ -180,7 +181,7 @@ already-attached module plus all host-owned event subscriptions if any module fa
 ```python
 registry = ModuleRegistry()
 registry.register_instance(SpinnerModule())
-app.load_modules(registry)   # raises ModuleAttachError after a clean rollback
+app.load_modules(registry)  # raises ModuleAttachError after a clean rollback
 ```
 
 ### 6.3 Render extension graph (`engine.gfx.render_graph`, `render_feature`, `render_services`)
@@ -199,7 +200,7 @@ enabled by default. Projects configure or disable it declaratively:
 
 ```python
 ProjectConfig(
-    atmosphere_enabled=False,                        # flat-sky fallback
+    atmosphere_enabled=False,  # flat-sky fallback
     atmosphere_settings={"preset": "EARTH_SUNSET"},  # or configure
 )
 ```

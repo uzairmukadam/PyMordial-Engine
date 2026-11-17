@@ -11,10 +11,11 @@ through completely untouched.
 """
 
 from __future__ import annotations
-import numpy as np
-import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
+import moderngl
+import numpy as np
+
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 
 try:
     import OpenGL.GL as gl
@@ -26,7 +27,6 @@ from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 _load_shader = load_shader
-
 
 
 class SSDMPass(RenderPass):

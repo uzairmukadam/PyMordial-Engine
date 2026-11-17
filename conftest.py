@@ -1,7 +1,7 @@
 """Pytest root configuration ensuring zero GPU resource leaks and audio driver safety."""
 
-import os
 import gc
+import os
 
 # Ensure audio driver does not block or require real hardware in test environments
 os.environ["SDL_AUDIODRIVER"] = "dummy"

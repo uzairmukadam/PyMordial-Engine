@@ -5,9 +5,9 @@ from __future__ import annotations
 import math
 
 from _common import FlyCameraControls, add_box, create_app, create_parser
+
 from engine.camera import FreeFlyCamera
 from engine.core import WaterProperties
-
 
 ROOM_WIDTH = 8.5
 ROOM_LENGTH = 8.0

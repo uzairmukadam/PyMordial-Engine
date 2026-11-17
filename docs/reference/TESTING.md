@@ -48,6 +48,7 @@ For pure-GL probes that do not need the engine pipeline, use a standalone contex
 
 ```python
 import moderngl
+
 ctx = moderngl.create_standalone_context(require=450)
 ```
 
@@ -125,8 +126,7 @@ def lit_pixels(fbo, size=64):
 
 ```python
 @pytest.mark.parametrize("mesh_name", ["cube", "sphere", "capsule"])
-def test_indirect_matches_direct_draw(gl, mesh_name):
-    ...
+def test_indirect_matches_direct_draw(gl, mesh_name): ...
 ```
 
 **Keep each test under ~1 second.** If it needs longer, the resolution is probably too high.

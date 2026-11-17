@@ -1,8 +1,10 @@
 """Dual-Motor Gamepad Rumble and Haptics Controller for PyMordial Engine."""
 
 from __future__ import annotations
+
 import pygame
-from engine.logging import log_warn, LogChannel
+
+from engine.logging import LogChannel, log_warn
 
 
 class HapticsManager:

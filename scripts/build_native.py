@@ -5,7 +5,7 @@ into high-speed shared libraries (.dll on Windows, .so on Linux).
 """
 
 from __future__ import annotations
-import os
+
 import shutil
 import subprocess
 import sys
@@ -76,7 +76,7 @@ def build_pedestrian_accel() -> bool:
         ]
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
         print(f"[build_native] Successfully compiled: {out_dll} ({out_dll.stat().st_size} bytes)")
         return True
     except subprocess.CalledProcessError as err:
@@ -127,7 +127,7 @@ def build_vehicle_native() -> bool:
         ]
 
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
         print(f"[build_native] Successfully compiled: {out_dll} ({out_dll.stat().st_size} bytes)")
         return True
     except subprocess.CalledProcessError as err:

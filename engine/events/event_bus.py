@@ -1,11 +1,13 @@
 """High-Performance Centralized Event Bus for PyMordial Engine."""
 
 from __future__ import annotations
-from collections import deque
+
 import threading
+from collections import deque
 from typing import Any, Callable, TypeVar
+
 from engine.events.event import Event
-from engine.logging import log_error, LogChannel
+from engine.logging import LogChannel, log_error
 
 T = TypeVar("T", bound=Event)
 EventHandler = Callable[[Any], None]

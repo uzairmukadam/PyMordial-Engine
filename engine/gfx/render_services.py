@@ -18,7 +18,6 @@ import moderngl
 
 from engine.gfx.quality_presets import RenderConfig
 
-
 # Texture units reserved by the core deferred resolve pass. Features must not
 # bind to these units; they are listed here so a feature can detect a conflict
 # instead of silently corrupting the resolve.

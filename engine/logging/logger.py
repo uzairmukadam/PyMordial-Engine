@@ -1,13 +1,16 @@
 """Category-Based Structured Logger for PyMordial Engine."""
 
 from __future__ import annotations
-from datetime import datetime
+
 import time
-from engine.logging.sinks import LogLevel, LogEntry, LogSink, ConsoleSink, FileSink, RingBufferSink
+from datetime import datetime
+
+from engine.logging.sinks import ConsoleSink, FileSink, LogEntry, LogLevel, LogSink, RingBufferSink
 
 
 class LogChannel:
     """Pre-defined standard log channels."""
+
     CORE = "Core"
     WINDOW = "Window"
     GFX = "Gfx"

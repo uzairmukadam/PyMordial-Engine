@@ -1,15 +1,17 @@
 """Unit tests for PyMordial Engine Layered Input Contexts & Rebinding."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 from engine.input import (
-    InputManager,
+    ActionBinding,
     InputContext,
     InputContextStack,
-    ActionBinding,
+    InputManager,
     Key,
-    save_bindings_to_file,
     load_bindings_from_file,
+    save_bindings_to_file,
 )
 
 

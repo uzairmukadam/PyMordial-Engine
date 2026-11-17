@@ -3,8 +3,8 @@
 from engine.config.cvar import CVar, CVarFlags
 from engine.config.registry import (
     CVarRegistry,
-    get_cvar_registry,
     get_cvar,
+    get_cvar_registry,
     get_cvar_value,
     set_cvar_value,
 )

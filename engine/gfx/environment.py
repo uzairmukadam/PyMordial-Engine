@@ -34,9 +34,7 @@ class EnvironmentProvider(Protocol):
     def compute_sun_vector(self) -> tuple[float, float, float]:
         """Returns the normalized light direction (pointing from light into the scene)."""
 
-    def compute_lighting(self) -> tuple[
-        tuple[float, float, float], float, tuple[float, float, float], float
-    ]:
+    def compute_lighting(self) -> tuple[tuple[float, float, float], float, tuple[float, float, float], float]:
         """Returns ``(light_dir, lux, light_color, ambient_factor)``."""
 
     def render_sky(
@@ -123,9 +121,7 @@ class FlatEnvironment:
         tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
         tex.repeat_x = False
         tex.repeat_y = False
-        tex.write(
-            __import__("struct").pack("<4e", float(color[0]), float(color[1]), float(color[2]), 1.0)
-        )
+        tex.write(__import__("struct").pack("<4e", float(color[0]), float(color[1]), float(color[2]), 1.0))
         return tex
 
     def update(self, dt: float) -> None:
@@ -146,9 +142,7 @@ class FlatEnvironment:
     def compute_sun_vector(self) -> tuple[float, float, float]:
         return self.sun_direction
 
-    def compute_lighting(self) -> tuple[
-        tuple[float, float, float], float, tuple[float, float, float], float
-    ]:
+    def compute_lighting(self) -> tuple[tuple[float, float, float], float, tuple[float, float, float], float]:
         return (self.sun_direction, self.sun_lux, self.sun_color, self.ambient)
 
     def render_sky(

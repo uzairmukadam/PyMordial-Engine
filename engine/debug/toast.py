@@ -1,6 +1,7 @@
 """On-screen toast notification queue for PyMordial Engine debug messages."""
 
 from __future__ import annotations
+
 import time
 
 

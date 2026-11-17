@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from _common import CapsulePlayerControls, add_box, create_app, create_parser
+
 from engine.core import WaterProperties
 from engine.core.math_utils import quat_from_euler
 
-
-#LEVEL_PATH = Path(__file__).with_name("last_aqueduct_level.json")
+# LEVEL_PATH = Path(__file__).with_name("last_aqueduct_level.json")
 LEVEL_PATH = Path(__file__).with_name("quick_fort.json")
 
 
@@ -49,9 +49,7 @@ def build_level(app, level_path: Path = LEVEL_PATH) -> dict[str, Any]:
             )
 
     for prop in level["props"]:
-        rotation = quat_from_euler(
-            *(math.radians(float(angle)) for angle in prop.get("rotation_deg", (0.0, 0.0, 0.0)))
-        )
+        rotation = quat_from_euler(*(math.radians(float(angle)) for angle in prop.get("rotation_deg", (0.0, 0.0, 0.0))))
         entity = app.ecs.create_entity(
             shape=prop["shape"],
             position=tuple(prop["position"]),

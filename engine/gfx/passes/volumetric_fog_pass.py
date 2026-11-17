@@ -10,17 +10,19 @@ Implements a 3D frustum voxel (Froxel) atmospheric scattering volume:
 """
 
 from __future__ import annotations
+
 import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
 from engine.gfx.quality_presets import FROXEL_RESOLUTIONS
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 
 try:
     from OpenGL.GL import (
-        glMemoryBarrier,
         GL_SHADER_IMAGE_ACCESS_BARRIER_BIT,
         GL_TEXTURE_FETCH_BARRIER_BIT,
+        glMemoryBarrier,
     )
+
     _HAS_GL_BARRIER = True
 except Exception:
     _HAS_GL_BARRIER = False

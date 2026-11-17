@@ -46,16 +46,12 @@ class TestManifestValidation:
         assert any("Invalid module version" in e for e in report.errors)
 
     def test_unsupported_api_major_is_rejected(self) -> None:
-        report = validate_manifest(
-            ModuleManifest(id="good.id", api_version="99.0", entry="a.b:C")
-        )
+        report = validate_manifest(ModuleManifest(id="good.id", api_version="99.0", entry="a.b:C"))
         assert report.is_valid is False
         assert any("Unsupported api_version" in e for e in report.errors)
 
     def test_current_api_version_is_accepted(self) -> None:
-        report = validate_manifest(
-            ModuleManifest(id="good.id", api_version=MODULE_API_VERSION, entry="a.b:C")
-        )
+        report = validate_manifest(ModuleManifest(id="good.id", api_version=MODULE_API_VERSION, entry="a.b:C"))
         assert report.is_valid is True
 
     def test_missing_entry_is_rejected(self) -> None:

@@ -1,12 +1,14 @@
 """ModernGL 4.5 Core Context and Display Manager for PyMordial Engine."""
 
 from __future__ import annotations
+
 from typing import Optional
+
 import moderngl
 
-from engine.gfx.quality_presets import RenderConfig, get_quality_preset, GraphicsQuality
+from engine.events import WindowResizeEvent, subscribe_event
+from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
 from engine.window import Window, WindowConfig
-from engine.events import subscribe_event, WindowResizeEvent
 
 
 class RenderContext:
@@ -84,6 +86,7 @@ class RenderContext:
             self.depth_func_name = ">"
             try:
                 import ctypes
+
                 opengl32 = ctypes.windll.opengl32
                 wglGetProcAddress = opengl32.wglGetProcAddress
                 wglGetProcAddress.restype = ctypes.c_void_p
@@ -155,6 +158,7 @@ class RenderContext:
     def save_screenshot(self, filepath: str) -> None:
         """Reads backbuffer pixels and saves image to disk."""
         from PIL import Image
+
         fbo = self.ctx.screen
         if hasattr(self, "pipeline") and self.pipeline is not None:
             pp = getattr(self.pipeline, "post_process", None)
@@ -165,6 +169,7 @@ class RenderContext:
         raw = fbo.read(components=components, dtype="f1")
         try:
             from OpenGL import GL
+
             while GL.glGetError() != 0:
                 pass
         except Exception:

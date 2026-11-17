@@ -1,17 +1,19 @@
 """System monitoring, CPU/GPU profiling, and renderer resource diagnostics."""
 
 from __future__ import annotations
+
 import time
 from typing import TYPE_CHECKING, Any
+
 import numpy as np
 
 from engine.logging import log_warn
 
 if TYPE_CHECKING:
-    from engine.core.ecs import EntityManager
-    from engine.gfx.pipeline import RenderPipeline
-    from engine.gfx.mega_buffer import MegaBuffer
     from engine.assets.vfs import VFS
+    from engine.core.ecs import EntityManager
+    from engine.gfx.mega_buffer import MegaBuffer
+    from engine.gfx.pipeline import RenderPipeline
 
 
 class ProfileScope:
@@ -194,7 +196,9 @@ class SystemMonitor:
             self.avg_fps = 1000.0 / self.avg_frame_time_ms
             self.one_percent_low_fps = 1000.0 / max(self.p99_frame_time_ms, 0.001)
             self.point_one_percent_low_fps = 1000.0 / max(p99_9_time, 0.001)
-            self.over_budget_percent = float(np.count_nonzero(active_window > self.frame_budget_ms)) * 100.0 / active_count
+            self.over_budget_percent = (
+                float(np.count_nonzero(active_window > self.frame_budget_ms)) * 100.0 / active_count
+            )
             self.stutter_count = int(np.count_nonzero(active_window >= self.STUTTER_THRESHOLD_MS))
 
     @staticmethod
@@ -212,9 +216,9 @@ class SystemMonitor:
             return self._ordered_frame_times[:0]
         start = (self.frame_idx - count) % self.history_size
         first_count = min(count, self.history_size - start)
-        self._ordered_frame_times[:first_count] = self.frame_times_ms[start:start + first_count]
+        self._ordered_frame_times[:first_count] = self.frame_times_ms[start : start + first_count]
         if first_count < count:
-            self._ordered_frame_times[first_count:count] = self.frame_times_ms[:count - first_count]
+            self._ordered_frame_times[first_count:count] = self.frame_times_ms[: count - first_count]
         return self._ordered_frame_times[:count]
 
     def begin_gpu_frame(self) -> bool:
@@ -232,9 +236,7 @@ class SystemMonitor:
 
             gl = self._gpu_gl
             for index, query_id in enumerate(self._gpu_queries):
-                if self._gpu_pending[index] and gl.glGetQueryObjectiv(
-                    query_id, gl.GL_QUERY_RESULT_AVAILABLE
-                ):
+                if self._gpu_pending[index] and gl.glGetQueryObjectiv(query_id, gl.GL_QUERY_RESULT_AVAILABLE):
                     elapsed_ns = int(gl.glGetQueryObjectuiv(query_id, gl.GL_QUERY_RESULT))
                     self.gpu_frame_time_ms = elapsed_ns / 1_000_000.0
                     self._gpu_pending[index] = False
@@ -295,7 +297,7 @@ class SystemMonitor:
 
         triangles = 0
         for batcher in (pipeline.mdi, pipeline.tess_mdi):
-            commands = batcher.command_buffer[:batcher.command_count]
+            commands = batcher.command_buffer[: batcher.command_count]
             for command in commands:
                 triangles += int(command["count"]) * int(command["instance_count"]) // 3
         stats["triangles"] = triangles
@@ -324,9 +326,9 @@ class SystemMonitor:
         gbuffer_bytes = width * height * 36
         shadow_bytes = pipeline.csm.atlas_size**2 * 4
         spot_shadow_bytes = pipeline.spot_shadow_map.atlas_size**2 * 4
-        stats["tracked_gpu_mib"] = (
-            mesh_bytes + atlas_bytes + gbuffer_bytes + shadow_bytes + spot_shadow_bytes
-        ) / (1024.0 * 1024.0)
+        stats["tracked_gpu_mib"] = (mesh_bytes + atlas_bytes + gbuffer_bytes + shadow_bytes + spot_shadow_bytes) / (
+            1024.0 * 1024.0
+        )
 
     def get_resource_summary(
         self,

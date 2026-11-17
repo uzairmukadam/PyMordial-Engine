@@ -8,17 +8,17 @@ Motion blur lives in ``engine.gfx.passes.motion_blur_pass`` and runs after TAA.
 """
 
 from __future__ import annotations
+
 from typing import Any
+
 import moderngl
 
 from engine.gfx.render_graph import RenderPass
-
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_shader = load_shader
-
 
 
 class CameraOpticsPass(RenderPass):

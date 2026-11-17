@@ -10,15 +10,16 @@ Validates:
 """
 
 from __future__ import annotations
+
 import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
 from engine.gfx.frame_context import FrameContext
-from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
+from engine.gfx.passes.particle_pass import PARTICLE_DTYPE, ParticleMode, ParticleSystemPass
 from engine.gfx.pipeline import RenderPipeline
-from engine.gfx.passes.particle_pass import ParticleSystemPass, ParticleMode, PARTICLE_DTYPE
+from engine.gfx.quality_presets import GraphicsQuality, get_quality_preset
 
 
 @pytest.fixture(scope="module")

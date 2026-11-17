@@ -9,19 +9,19 @@ Coordinates:
 """
 
 from __future__ import annotations
+
 from typing import Any
+
 import moderngl
 import numpy as np
 
 from engine.core.ecs import ENTITY_SHAPES, EntityManager
 from engine.gfx.render_graph import RenderPass
-
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_shader = load_shader
-
 
 
 def _generate_water_grid(

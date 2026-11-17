@@ -1,17 +1,19 @@
 """Hardware-accelerated cinematic loading screen and background asset streaming controller."""
 
 from __future__ import annotations
-import math
-from typing import Callable, TYPE_CHECKING
-import pygame
-import moderngl
 
-from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+import math
+from typing import TYPE_CHECKING, Callable
+
+import moderngl
+import pygame
+
+from engine.events import WindowResizeEvent, subscribe_event, unsubscribe_event
 
 if TYPE_CHECKING:
+    from engine.core.async_loader import BackgroundAssetLoader
     from engine.gfx.context import RenderContext
     from engine.gfx.texture_atlas import TextureArrayAtlas
-    from engine.core.async_loader import BackgroundAssetLoader
 
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 

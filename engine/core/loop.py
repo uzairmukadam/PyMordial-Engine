@@ -5,14 +5,16 @@ alpha interpolation, and variable-rate render/UI phases with multi-domain TimeSy
 """
 
 from __future__ import annotations
+
 import time
 from typing import Callable, Optional
+
 import pygame
 
 from engine.core.ecs import EntityManager
-from engine.input import InputManager
-from engine.time import TimeSystem, FPSLimiter
 from engine.events import flush_events
+from engine.input import InputManager
+from engine.time import FPSLimiter, TimeSystem
 
 
 class EngineLoop:

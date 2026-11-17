@@ -1,7 +1,9 @@
 """Turntable Orbit Inspection Camera for PyMordial Engine."""
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 
 from engine.camera.camera import VirtualCamera

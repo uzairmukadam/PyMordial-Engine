@@ -1,9 +1,11 @@
 """Stable, scene-fitted cascaded shadow maps."""
 
 from __future__ import annotations
+
 import math
-import numpy as np
+
 import moderngl
+import numpy as np
 
 SPLIT_MODES = ("PSSM", "GEOMETRIC", "UNIFORM")
 
@@ -19,7 +21,7 @@ def _pssm_splits(near: float, far: float, count: int, blend: float) -> list[floa
     splits: list[float] = []
     for index in range(1, count + 1):
         fraction = index / count
-        logarithmic = near * log_ratio ** fraction
+        logarithmic = near * log_ratio**fraction
         uniform = near + (far - near) * fraction
         splits.append(blend * logarithmic + (1.0 - blend) * uniform)
     return splits
@@ -110,6 +112,7 @@ class CascadedShadowMap:
 
         # Phase 1: Per-Cascade Frustum Culling
         from engine.gfx.culling import FrustumCuller
+
         self.cullers = [FrustumCuller(max_entities=100_000) for _ in range(4)]
         self.cascade_visible_masks: list[np.ndarray | None] = [None] * 4
         self.cascade_draw_batches: list[list[tuple]] = [[] for _ in range(4)]
@@ -143,9 +146,7 @@ class CascadedShadowMap:
             ]
         self.cascade_rects = rects
         inv = 1.0 / float(max(size, 1))
-        self.cascade_rect_uv = [
-            (x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in rects
-        ]
+        self.cascade_rect_uv = [(x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in rects]
         # Refresh the pre-allocated upload buffer in place (no per-frame allocation).
         self.cascade_rect_uv_array[:] = np.asarray(self.cascade_rect_uv, dtype=np.float32)
 
@@ -198,9 +199,7 @@ class CascadedShadowMap:
             split_mode = "PSSM"
         self.split_mode = split_mode
         self.cascade_distance_scale = (
-            tuple(float(v) for v in cascade_distance_scale)
-            if cascade_distance_scale is not None
-            else None
+            tuple(float(v) for v in cascade_distance_scale) if cascade_distance_scale is not None else None
         )
 
         if count == 1:
@@ -292,10 +291,14 @@ class CascadedShadowMap:
         for cascade in range(count):
             split_far = self.split_distances[cascade]
             fit_near = max(near_clip, split_near - split_near * blend_fraction) if cascade > 0 else near_clip
-            fit_far = min(
-                self.max_distance,
-                split_far + split_far * blend_fraction,
-            ) if cascade < count - 1 else split_far
+            fit_far = (
+                min(
+                    self.max_distance,
+                    split_far + split_far * blend_fraction,
+                )
+                if cascade < count - 1
+                else split_far
+            )
             receiver_depth_min = math.inf
             receiver_depth_max = -math.inf
             for distance in (fit_near, fit_far):
@@ -305,9 +308,7 @@ class CascadedShadowMap:
                 for x_sign in (-1.0, 1.0):
                     for y_sign in (-1.0, 1.0):
                         corner = (
-                            slice_center
-                            + camera_right * (x_sign * half_width)
-                            + camera_up * (y_sign * half_height)
+                            slice_center + camera_right * (x_sign * half_width) + camera_up * (y_sign * half_height)
                         )
                         light_z = float(np.dot(sun, corner))
                         receiver_depth_min = min(receiver_depth_min, light_z)
@@ -315,8 +316,7 @@ class CascadedShadowMap:
 
             center_distance = (fit_near + fit_far) * 0.5
             radius = math.sqrt(
-                ((fit_far - fit_near) * 0.5) ** 2
-                + (fit_far * tan_half_fov_y) ** 2 * (1.0 + safe_aspect * safe_aspect)
+                ((fit_far - fit_near) * 0.5) ** 2 + (fit_far * tan_half_fov_y) ** 2 * (1.0 + safe_aspect * safe_aspect)
             )
             radius = max(math.ceil(radius * 1.025 * 16.0) / 16.0, 0.5)
             slice_center = camera_pos64 + forward * center_distance

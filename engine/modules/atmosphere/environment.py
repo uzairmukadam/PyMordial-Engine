@@ -60,9 +60,7 @@ class AtmosphereEnvironment:
         """Illuminated fraction of the moon: 0.0 at new moon, 1.0 at full moon."""
         return self.system.moon_phase
 
-    def compute_lighting(self) -> tuple[
-        tuple[float, float, float], float, tuple[float, float, float], float
-    ]:
+    def compute_lighting(self) -> tuple[tuple[float, float, float], float, tuple[float, float, float], float]:
         return self.system.compute_lighting()
 
     def apply_preset(self, preset_name: str) -> None:

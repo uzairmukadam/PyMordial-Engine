@@ -7,9 +7,11 @@ Optimized with vectorized precomputed unit templates for ~10x faster gizmo gener
 """
 
 from __future__ import annotations
+
 import math
-import numpy as np
+
 import moderngl
+import numpy as np
 
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
@@ -18,20 +20,32 @@ SHADER_DIR = get_shader_dir()
 
 
 def _build_unit_box_template() -> np.ndarray:
-    corners = np.array([
-        [-0.5, -0.5, -0.5],  # 0: ---
-        [ 0.5, -0.5, -0.5],  # 1: +--
-        [ 0.5,  0.5, -0.5],  # 2: ++-
-        [-0.5,  0.5, -0.5],  # 3: -+-
-        [-0.5, -0.5,  0.5],  # 4: --+
-        [ 0.5, -0.5,  0.5],  # 5: +-+
-        [ 0.5,  0.5,  0.5],  # 6: +++
-        [-0.5,  0.5,  0.5],  # 7: -++
-    ], dtype=np.float32)
+    corners = np.array(
+        [
+            [-0.5, -0.5, -0.5],  # 0: ---
+            [0.5, -0.5, -0.5],  # 1: +--
+            [0.5, 0.5, -0.5],  # 2: ++-
+            [-0.5, 0.5, -0.5],  # 3: -+-
+            [-0.5, -0.5, 0.5],  # 4: --+
+            [0.5, -0.5, 0.5],  # 5: +-+
+            [0.5, 0.5, 0.5],  # 6: +++
+            [-0.5, 0.5, 0.5],  # 7: -++
+        ],
+        dtype=np.float32,
+    )
     edges = [
-        (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom
-        (4, 5), (5, 6), (6, 7), (7, 4),  # Top
-        (0, 4), (1, 5), (2, 6), (3, 7),  # Struts
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),  # Bottom
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),  # Top
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),  # Struts
     ]
     verts = np.empty((24, 3), dtype=np.float32)
     for i, (i0, i1) in enumerate(edges):
@@ -82,13 +96,19 @@ def _build_unit_capsule_components(segments: int = 12) -> tuple[np.ndarray, np.n
         c0, s0 = math.cos(a0), math.sin(a0)
         c1, s1 = math.cos(a1), math.sin(a1)
         # Top dome: XY and YZ (offset +1 on y)
-        dome_lines.extend([
-            (c0, s0, 0.0, 1.0), (c1, s1, 0.0, 1.0),
-            (0.0, s0, c0, 1.0), (0.0, s1, c1, 1.0),
-            # Bot dome: XY and YZ (offset -1 on y)
-            (c0, -s0, 0.0, -1.0), (c1, -s1, 0.0, -1.0),
-            (0.0, -s0, c0, -1.0), (0.0, -s1, c1, -1.0),
-        ])
+        dome_lines.extend(
+            [
+                (c0, s0, 0.0, 1.0),
+                (c1, s1, 0.0, 1.0),
+                (0.0, s0, c0, 1.0),
+                (0.0, s1, c1, 1.0),
+                # Bot dome: XY and YZ (offset -1 on y)
+                (c0, -s0, 0.0, -1.0),
+                (c1, -s1, 0.0, -1.0),
+                (0.0, -s0, c0, -1.0),
+                (0.0, -s1, c1, -1.0),
+            ]
+        )
     return ring_t, strut_t, np.array(dome_lines, dtype=np.float32)
 
 
@@ -190,9 +210,16 @@ class DebugDraw:
         if duration > 0.0:
             self.persistent_lines.append(
                 [
-                    float(start[0]), float(start[1]), float(start[2]),
-                    float(end[0]), float(end[1]), float(end[2]),
-                    c[0], c[1], c[2], c[3],
+                    float(start[0]),
+                    float(start[1]),
+                    float(start[2]),
+                    float(end[0]),
+                    float(end[1]),
+                    float(end[2]),
+                    c[0],
+                    c[1],
+                    c[2],
+                    c[3],
                     duration,
                 ]
             )
@@ -245,15 +272,28 @@ class DebugDraw:
         hx, hy, hz = size[0] * 0.5, size[1] * 0.5, size[2] * 0.5
         cx, cy, cz = center[0], center[1], center[2]
         corners = [
-            (cx - hx, cy - hy, cz - hz), (cx + hx, cy - hy, cz - hz),
-            (cx + hx, cy + hy, cz - hz), (cx - hx, cy + hy, cz - hz),
-            (cx - hx, cy - hy, cz + hz), (cx + hx, cy - hy, cz + hz),
-            (cx + hx, cy + hy, cz + hz), (cx - hx, cy + hy, cz + hz),
+            (cx - hx, cy - hy, cz - hz),
+            (cx + hx, cy - hy, cz - hz),
+            (cx + hx, cy + hy, cz - hz),
+            (cx - hx, cy + hy, cz - hz),
+            (cx - hx, cy - hy, cz + hz),
+            (cx + hx, cy - hy, cz + hz),
+            (cx + hx, cy + hy, cz + hz),
+            (cx - hx, cy + hy, cz + hz),
         ]
         edges = [
-            (0, 1), (1, 2), (2, 3), (3, 0),
-            (4, 5), (5, 6), (6, 7), (7, 4),
-            (0, 4), (1, 5), (2, 6), (3, 7),
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 0),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 4),
+            (0, 4),
+            (1, 5),
+            (2, 6),
+            (3, 7),
         ]
         for i0, i1 in edges:
             self.draw_line(corners[i0], corners[i1], color=color, duration=duration)

@@ -47,9 +47,7 @@ class TestSunContinuity:
 
     @pytest.mark.parametrize("latitude", [0.0, 35.0, 60.0])
     def test_no_azimuth_discontinuity_over_full_day(self, latitude: float) -> None:
-        system = AtmosphereSystem(
-            AtmosphereConfig(time_of_day=0.0, latitude_deg=latitude, azimuth_deg=0.0)
-        )
+        system = AtmosphereSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=latitude, azimuth_deg=0.0))
         previous = _sun_sky_vector(system)
         worst_step = 0.0
         worst_time = 0.0
@@ -70,9 +68,7 @@ class TestSunContinuity:
 
     def test_azimuth_advances_monotonically_through_morning(self) -> None:
         """From sunrise to noon the sun must sweep steadily in one direction."""
-        system = AtmosphereSystem(
-            AtmosphereConfig(time_of_day=6.0, latitude_deg=35.0, azimuth_deg=0.0)
-        )
+        system = AtmosphereSystem(AtmosphereConfig(time_of_day=6.0, latitude_deg=35.0, azimuth_deg=0.0))
         azimuths: list[float] = []
         for index in range(0, 361):
             system.config.time_of_day = 6.0 + index * SAMPLE_STEP_HOURS
@@ -98,14 +94,10 @@ class TestSunContinuity:
         direction = 1.0 if total_sweep > 0.0 else -1.0
         for index in range(1, len(unwrapped)):
             step = unwrapped[index] - unwrapped[index - 1]
-            assert step * direction >= -1e-6, (
-                f"Azimuth reversed at sample {index} (step {step:.4f} deg)."
-            )
+            assert step * direction >= -1e-6, f"Azimuth reversed at sample {index} (step {step:.4f} deg)."
 
     def test_elevation_peaks_near_solar_noon(self) -> None:
-        system = AtmosphereSystem(
-            AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, azimuth_deg=0.0)
-        )
+        system = AtmosphereSystem(AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, azimuth_deg=0.0))
         noon_elevation = _sun_sky_vector(system)[1]
         for hour in (6.0, 9.0, 15.0, 18.0):
             system.config.time_of_day = hour
@@ -119,16 +111,10 @@ class TestSunContinuity:
             system.config.time_of_day = hour
             x, y, z = system.compute_sun_vector()
             length = math.sqrt(x * x + y * y + z * z)
-            assert length == pytest.approx(1.0, abs=1e-6), (
-                f"Sun vector at {hour:.0f}h has length {length:.6f}."
-            )
+            assert length == pytest.approx(1.0, abs=1e-6), f"Sun vector at {hour:.0f}h has length {length:.6f}."
 
     def test_noon_sun_is_overhead_at_equator(self) -> None:
         """At the equator on the equinox the noon sun is essentially at zenith."""
-        system = AtmosphereSystem(
-            AtmosphereConfig(time_of_day=12.0, latitude_deg=0.0, azimuth_deg=0.0)
-        )
+        system = AtmosphereSystem(AtmosphereConfig(time_of_day=12.0, latitude_deg=0.0, azimuth_deg=0.0))
         sky = _sun_sky_vector(system)
-        assert sky[1] == pytest.approx(1.0, abs=1e-3), (
-            f"Equatorial noon sun should be overhead, got y={sky[1]:.4f}."
-        )
+        assert sky[1] == pytest.approx(1.0, abs=1e-3), f"Equatorial noon sun should be overhead, got y={sky[1]:.4f}."

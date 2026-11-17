@@ -10,31 +10,32 @@ Validates:
 
 import tempfile
 from pathlib import Path
+
+import moderngl
 import numpy as np
 from PIL import Image
-import moderngl
 
+from engine.assets.cooker import (
+    cook_all_materials,
+    cook_material,
+    cook_mesh,
+)
 from engine.assets.mesh_format import (
-    PMMesh,
     VERTEX_STRIDE,
+    PMMesh,
     build_pm_mesh,
 )
+from engine.assets.resource_cache import ResourceCache
 from engine.assets.texture_format import (
+    PMTex,
     TextureFormat,
     cook_image_to_pm_tex,
-    PMTex,
 )
 from engine.assets.vfs import (
-    PakWriter,
-    PakReader,
     VFS,
+    PakReader,
+    PakWriter,
 )
-from engine.assets.cooker import (
-    cook_mesh,
-    cook_material,
-    cook_all_materials,
-)
-from engine.assets.resource_cache import ResourceCache
 from engine.gfx.mega_buffer import MegaBuffer
 from engine.gfx.texture_atlas import decode_material_folder
 
@@ -407,4 +408,3 @@ f 2/2/2 4/4/2 3/3/2
             assert count2 == 2
             mtime_after = (root_out / "mat_a" / "diff.pm_tex").stat().st_mtime
             assert mtime_before == mtime_after
-

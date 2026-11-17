@@ -6,13 +6,15 @@ thread-safe queues for GPU upload without locking the OS event loop.
 """
 
 from __future__ import annotations
+
 import concurrent.futures
 import os
-from pathlib import Path
 import queue
-from typing import Callable, Any
+from pathlib import Path
+from typing import Any, Callable
+
 from engine.gfx.texture_atlas import DecodedMaterialLayer, decode_material_folder
-from engine.logging import log_info, log_error
+from engine.logging import log_error, log_info
 
 
 class BackgroundAssetLoader:

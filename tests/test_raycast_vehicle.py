@@ -6,8 +6,8 @@ from engine.core.ecs import EntityManager
 from engine.physics.rapier_world import PhysicsManager
 from engine.physics.vehicle import (
     DriveType,
-    VehicleConfig,
     RaycastVehicle,
+    VehicleConfig,
 )
 
 

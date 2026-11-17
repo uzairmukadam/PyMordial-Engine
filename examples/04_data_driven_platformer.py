@@ -7,7 +7,6 @@ from pathlib import Path
 
 from _common import CapsulePlayerControls, add_box, create_app, create_parser
 
-
 LEVEL_PATH = Path(__file__).with_name("platformer_level.json")
 
 

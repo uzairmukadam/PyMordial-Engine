@@ -1,6 +1,7 @@
 """Console Variable (CVar) Implementation for PyMordial Engine."""
 
 from __future__ import annotations
+
 from enum import Flag, auto
 from typing import Any, Callable, Generic, TypeVar
 
@@ -9,11 +10,12 @@ T = TypeVar("T", int, float, bool, str)
 
 class CVarFlags(Flag):
     """Behavioral and persistence flags for Console Variables."""
+
     NONE = 0
-    ARCHIVE = auto()     # Serialized to disk in settings.toml
-    READ_ONLY = auto()   # Cannot be modified at runtime
-    CHEAT = auto()       # Requires cheat mode enabled
-    RUNTIME_ONLY = auto()# In-memory only, never saved
+    ARCHIVE = auto()  # Serialized to disk in settings.toml
+    READ_ONLY = auto()  # Cannot be modified at runtime
+    CHEAT = auto()  # Requires cheat mode enabled
+    RUNTIME_ONLY = auto()  # In-memory only, never saved
 
 
 class CVar(Generic[T]):

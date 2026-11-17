@@ -5,6 +5,7 @@ Conforms to PyMordial specifications and guidelines:
 """
 
 from __future__ import annotations
+
 from engine.physics.character_motor import (
     CharacterMotor,
     CharacterMotorConfig,

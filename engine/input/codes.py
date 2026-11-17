@@ -5,7 +5,9 @@ and engine code never need to directly import or couple to raw Pygame constants.
 """
 
 from __future__ import annotations
+
 from enum import IntEnum
+
 import pygame
 
 
@@ -109,31 +111,31 @@ class MouseButton(IntEnum):
 class GamepadButton(IntEnum):
     """Standardized SDL/XInput game controller buttons."""
 
-    A = 0               # Bottom Face Button (Cross on PlayStation)
-    B = 1               # Right Face Button (Circle on PlayStation)
-    X = 2               # Left Face Button (Square on PlayStation)
-    Y = 3               # Top Face Button (Triangle on PlayStation)
-    BACK = 4            # Select / View / Share
-    GUIDE = 5           # Xbox / PS Button
-    START = 6           # Menu / Options
-    LEFT_STICK = 7      # L3 (Stick press)
-    RIGHT_STICK = 8     # R3 (Stick press)
-    LEFT_BUMPER = 9     # LB / L1
-    RIGHT_BUMPER = 10   # RB / R1
-    DPAD_UP = 11        # Directional Pad Up
-    DPAD_DOWN = 12      # Directional Pad Down
-    DPAD_LEFT = 13      # Directional Pad Left
-    DPAD_RIGHT = 14     # Directional Pad Right
-    LEFT_TRIGGER = 15   # LT / L2 (Thresholded Trigger Button)
+    A = 0  # Bottom Face Button (Cross on PlayStation)
+    B = 1  # Right Face Button (Circle on PlayStation)
+    X = 2  # Left Face Button (Square on PlayStation)
+    Y = 3  # Top Face Button (Triangle on PlayStation)
+    BACK = 4  # Select / View / Share
+    GUIDE = 5  # Xbox / PS Button
+    START = 6  # Menu / Options
+    LEFT_STICK = 7  # L3 (Stick press)
+    RIGHT_STICK = 8  # R3 (Stick press)
+    LEFT_BUMPER = 9  # LB / L1
+    RIGHT_BUMPER = 10  # RB / R1
+    DPAD_UP = 11  # Directional Pad Up
+    DPAD_DOWN = 12  # Directional Pad Down
+    DPAD_LEFT = 13  # Directional Pad Left
+    DPAD_RIGHT = 14  # Directional Pad Right
+    LEFT_TRIGGER = 15  # LT / L2 (Thresholded Trigger Button)
     RIGHT_TRIGGER = 16  # RT / R2 (Thresholded Trigger Button)
 
 
 class GamepadAxis(IntEnum):
     """Standardized SDL/XInput game controller analog axes."""
 
-    LEFT_STICK_X = 0    # Left Stick Horizontal (-1.0 Left, +1.0 Right)
-    LEFT_STICK_Y = 1    # Left Stick Vertical (-1.0 Up, +1.0 Down)
-    RIGHT_STICK_X = 2   # Right Stick Horizontal (-1.0 Left, +1.0 Right)
-    RIGHT_STICK_Y = 3   # Right Stick Vertical (-1.0 Up, +1.0 Down)
-    LEFT_TRIGGER = 4    # Left Trigger LT / L2 (0.0 to 1.0 or -1.0 to 1.0)
-    RIGHT_TRIGGER = 5   # Right Trigger RT / R2 (0.0 to 1.0 or -1.0 to 1.0)
+    LEFT_STICK_X = 0  # Left Stick Horizontal (-1.0 Left, +1.0 Right)
+    LEFT_STICK_Y = 1  # Left Stick Vertical (-1.0 Up, +1.0 Down)
+    RIGHT_STICK_X = 2  # Right Stick Horizontal (-1.0 Left, +1.0 Right)
+    RIGHT_STICK_Y = 3  # Right Stick Vertical (-1.0 Up, +1.0 Down)
+    LEFT_TRIGGER = 4  # Left Trigger LT / L2 (0.0 to 1.0 or -1.0 to 1.0)
+    RIGHT_TRIGGER = 5  # Right Trigger RT / R2 (0.0 to 1.0 or -1.0 to 1.0)

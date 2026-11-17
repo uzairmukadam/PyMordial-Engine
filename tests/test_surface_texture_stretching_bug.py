@@ -9,15 +9,15 @@ import numpy as np
 
 from engine.core.ecs import EntityManager
 from engine.core.materials import (
-    DisplacementMode,
-    MAT_FLAG_HAS_TEXTURE,
-    MAT_FLAG_DISP_SHIFT,
     MAT_FLAG_DISP_MASK,
+    MAT_FLAG_DISP_SHIFT,
+    MAT_FLAG_HAS_TEXTURE,
     MAT_FLAG_VEHICLE_CHASSIS,
     MAT_FLAG_VEHICLE_WHEEL,
-    encode_mat_flags,
-    decode_mat_flags,
+    DisplacementMode,
     MaterialRegistry,
+    decode_mat_flags,
+    encode_mat_flags,
 )
 
 
@@ -176,11 +176,14 @@ def test_material_registry_sync_vehicle_material_classification():
 def test_gbuffer_shader_no_horizontal_banding():
     """Verifies that shaders/gbuffer.frag has no unbandlimited micro_grain and uses geometric UV derivatives."""
     from pathlib import Path
+
     shader_path = Path(__file__).resolve().parent.parent / "shaders" / "gbuffer.frag"
     code = shader_path.read_text(encoding="utf-8")
 
     assert "micro_grain" not in code, "Unbandlimited procedural micro_grain causes severe horizontal Moiré banding"
-    assert "dFdx(geometric_uv)" in code, "Mesh texture sampling must use geometric UV derivatives to eliminate POM step banding"
+    assert "dFdx(geometric_uv)" in code, (
+        "Mesh texture sampling must use geometric UV derivatives to eliminate POM step banding"
+    )
     assert "dFdy(geometric_uv)" in code
     assert "v_UV * v_UVScale" in code, "Brick and concrete UVs must scale with their world-space dimensions"
     assert "if (sun_dir_ts.z <= 0.0) return 1.0;" in code, "Back-facing POM shadow rays must not black out surfaces"

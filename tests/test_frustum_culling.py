@@ -1,11 +1,12 @@
 """Unit and Integration Tests for Phase 3: Frustum Culling & MDI Batch Filtering."""
 
 import math
+
 import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager
-from engine.core.math_utils import matrix_look_at, matrix_perspective, mat4_mul
+from engine.core.math_utils import mat4_mul, matrix_look_at, matrix_perspective
 from engine.gfx.culling import FrustumCuller
 
 
@@ -51,8 +52,8 @@ class TestFrustumPlanes:
 
         aabbs = np.zeros((4, 6), dtype=np.float32)
         # 0: In front of camera, well inside frustum
-        aabbs[0, 0:3] = [0.0, 0.0, 0.0]     # Center
-        aabbs[0, 3:6] = [1.0, 1.0, 1.0]     # Half extents
+        aabbs[0, 0:3] = [0.0, 0.0, 0.0]  # Center
+        aabbs[0, 3:6] = [1.0, 1.0, 1.0]  # Half extents
 
         # 1: Directly behind camera
         aabbs[1, 0:3] = [0.0, 0.0, 25.0]
@@ -68,9 +69,9 @@ class TestFrustumPlanes:
 
         mask = culler.cull_aabbs(aabbs, count=4)
         assert mask[0] is True or mask[0] == 1  # Inside
-        assert mask[1] is False or mask[1] == 0 # Behind
-        assert mask[2] is False or mask[2] == 0 # Left
-        assert mask[3] is False or mask[3] == 0 # Beyond Far
+        assert mask[1] is False or mask[1] == 0  # Behind
+        assert mask[2] is False or mask[2] == 0  # Left
+        assert mask[3] is False or mask[3] == 0  # Beyond Far
 
 
 class TestBatchFiltering:
@@ -183,4 +184,3 @@ class TestECSAABBIntegration:
         s_idx = ecs.pool.get_dense_index(s_id)
         assert pytest.approx(ecs.aabbs[s_idx, 0], abs=1e-4) == 0.0
         assert pytest.approx(ecs.aabbs[s_idx, 3], abs=1e-4) == 5.0
-

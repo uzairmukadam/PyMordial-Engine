@@ -9,22 +9,22 @@ Exposes:
 - save_bindings_to_file, load_bindings_from_file: Serialization
 """
 
-from engine.input.codes import (
-    Key,
-    MouseButton,
-    GamepadButton,
-    GamepadAxis,
-    DeviceType,
-)
 from engine.input.actions import (
     ActionBinding,
     AxisBinding,
     Vector2Binding,
 )
+from engine.input.codes import (
+    DeviceType,
+    GamepadAxis,
+    GamepadButton,
+    Key,
+    MouseButton,
+)
 from engine.input.context import InputContext, InputContextStack
 from engine.input.haptics import HapticsManager
-from engine.input.rebinding import save_bindings_to_file, load_bindings_from_file
 from engine.input.input_manager import InputManager
+from engine.input.rebinding import load_bindings_from_file, save_bindings_to_file
 
 __all__ = [
     "InputManager",

@@ -7,17 +7,23 @@ from engine.core.ecs import EntityManager
 from engine.debug.monitor import SystemMonitor
 from engine.gfx import (
     GraphicsQuality,
+    HudOverlay,
     RenderConfig,
-    get_quality_preset,
     RenderContext,
     RenderPipeline,
-    HudOverlay,
+    get_quality_preset,
 )
 
 
 class TestQualityPresets:
     def test_presets_exist_and_reversed_z_default(self):
-        for q in [GraphicsQuality.LOW, GraphicsQuality.MEDIUM, GraphicsQuality.HIGH, GraphicsQuality.ULTRA, GraphicsQuality.CINEMATIC]:
+        for q in [
+            GraphicsQuality.LOW,
+            GraphicsQuality.MEDIUM,
+            GraphicsQuality.HIGH,
+            GraphicsQuality.ULTRA,
+            GraphicsQuality.CINEMATIC,
+        ]:
             cfg = get_quality_preset(q)
             assert isinstance(cfg, RenderConfig)
             assert cfg.reverse_z is True
@@ -135,8 +141,9 @@ class TestRenderPipelineHeadless:
         hud.destroy()
 
     def test_matrix_scratchpad_in_place(self):
-        from engine.core.math_utils import matrix_look_at, matrix_perspective, mat4_mul, mat4_inv
         import math
+
+        from engine.core.math_utils import mat4_inv, mat4_mul, matrix_look_at, matrix_perspective
 
         eye = (0.0, 5.0, 10.0)
         target = (0.0, 0.0, 0.0)

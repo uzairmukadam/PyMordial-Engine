@@ -1,7 +1,7 @@
 """Unit tests for Phase 2: Per-Entity Material ID and MaterialRegistry System."""
 
-import pytest
 import numpy as np
+import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.material_registry import MaterialRegistry
@@ -236,14 +236,14 @@ def test_car_textured_materials_registered_and_distinct():
     registry = MaterialRegistry()
 
     expected_materials = {
-        "car_tire_rubber": (0.608, 0.318, 0.878),   # Vivid Purple #9B51E0
-        "car_alloy_rim": (0.949, 0.788, 0.298),     # Golden Yellow #F2C94C
-        "car_chrome_trim": (0.0, 0.941, 1.0),       # Neon Cyan #00F0FF
-        "car_interior": (0.153, 0.682, 0.376),      # Lime Green #27AE60
-        "car_body_paint": (1.0, 0.0, 0.498),        # Hot Magenta #FF007F
+        "car_tire_rubber": (0.608, 0.318, 0.878),  # Vivid Purple #9B51E0
+        "car_alloy_rim": (0.949, 0.788, 0.298),  # Golden Yellow #F2C94C
+        "car_chrome_trim": (0.0, 0.941, 1.0),  # Neon Cyan #00F0FF
+        "car_interior": (0.153, 0.682, 0.376),  # Lime Green #27AE60
+        "car_body_paint": (1.0, 0.0, 0.498),  # Hot Magenta #FF007F
         "car_window_glass": (0.184, 0.502, 0.929),  # Royal Blue #2F80ED
-        "car_taillight_red": (0.922, 0.341, 0.341), # Crimson Red #EB5757
-        "car_indicator_amber": (0.949, 0.600, 0.290), # Tangerine Orange #F2994A
+        "car_taillight_red": (0.922, 0.341, 0.341),  # Crimson Red #EB5757
+        "car_indicator_amber": (0.949, 0.600, 0.290),  # Tangerine Orange #F2994A
     }
 
     seen_colors = set()

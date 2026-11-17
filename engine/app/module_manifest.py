@@ -121,8 +121,7 @@ def validate_manifest(manifest: ModuleManifest) -> ValidationReport:
         report.errors.append("Module manifest is missing a required 'id'.")
     elif not _ID_PATTERN.match(manifest.id):
         report.errors.append(
-            f"Invalid module id '{manifest.id}': expected lowercase dotted segments "
-            f"(e.g. 'pymordial.atmosphere')."
+            f"Invalid module id '{manifest.id}': expected lowercase dotted segments (e.g. 'pymordial.atmosphere')."
         )
 
     # 2. Versions
@@ -146,17 +145,14 @@ def validate_manifest(manifest: ModuleManifest) -> ValidationReport:
     # 3. Role
     if not isinstance(manifest.role, ModuleRole):
         report.errors.append(
-            f"Invalid role {manifest.role!r} for '{manifest.id}': expected one of "
-            f"{[r.value for r in ModuleRole]}."
+            f"Invalid role {manifest.role!r} for '{manifest.id}': expected one of {[r.value for r in ModuleRole]}."
         )
 
     # 4. Entry point
     if not manifest.entry:
         report.errors.append(f"Module '{manifest.id}' is missing a required 'entry' (e.g. 'pkg.module:ClassName').")
     elif ":" not in manifest.entry:
-        report.errors.append(
-            f"Invalid entry '{manifest.entry}' for '{manifest.id}': expected 'module.path:ClassName'."
-        )
+        report.errors.append(f"Invalid entry '{manifest.entry}' for '{manifest.id}': expected 'module.path:ClassName'.")
     else:
         module_path, _, class_name = manifest.entry.partition(":")
         if not module_path or not class_name:
@@ -171,9 +167,7 @@ def validate_manifest(manifest: ModuleManifest) -> ValidationReport:
             report.errors.append(f"Module '{manifest.id}' declares a malformed dependency: {dep!r}.")
             continue
         if not _ID_PATTERN.match(dep.module_id):
-            report.errors.append(
-                f"Module '{manifest.id}' declares an invalid dependency id '{dep.module_id}'."
-            )
+            report.errors.append(f"Module '{manifest.id}' declares an invalid dependency id '{dep.module_id}'.")
         if dep.module_id == manifest.id:
             report.errors.append(f"Module '{manifest.id}' cannot depend on itself.")
         if dep.module_id in seen:

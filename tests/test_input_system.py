@@ -1,15 +1,16 @@
 """Unit tests for the dedicated AAA-Style Input System."""
 
 import pygame
+
 from engine.input import (
+    ActionBinding,
+    AxisBinding,
+    DeviceType,
+    GamepadAxis,
+    GamepadButton,
     InputManager,
     Key,
     MouseButton,
-    GamepadButton,
-    GamepadAxis,
-    DeviceType,
-    ActionBinding,
-    AxisBinding,
     Vector2Binding,
 )
 

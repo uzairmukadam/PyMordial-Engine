@@ -17,8 +17,8 @@ import pytest
 from engine.core.ecs import EntityManager
 from engine.debug.engine_tweaks import EngineTweaks
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.quality_presets import RenderConfig
 
 AA_MODES = ("OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
 

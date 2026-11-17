@@ -1,8 +1,8 @@
 """Unit tests for flat contiguous memory tables and EntityPool."""
 
 import numpy as np
-from engine.core import WaterProperties
 
+from engine.core import WaterProperties
 from engine.core.ecs import EntityManager
 from engine.core.entity_pool import EntityPool
 

@@ -6,12 +6,14 @@ asphalt, curbs, slopes, and curved terrain without geometry clipping, hovering, 
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
-import numpy as np
+
 import moderngl
+import numpy as np
 
 from engine.core.math_utils import trs_to_mat4
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 
 if TYPE_CHECKING:
     from engine.gfx.g_buffer import GBuffer
@@ -21,7 +23,6 @@ from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
 _load_shader = load_shader
-
 
 
 class DecalPass(RenderPass):

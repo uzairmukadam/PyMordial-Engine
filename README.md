@@ -206,6 +206,7 @@ projects/my_game/
 ```python
 from engine.app.config import ProjectConfig
 
+
 def get_project_config() -> ProjectConfig:
     return ProjectConfig(
         title="Neon Velocity",
@@ -225,6 +226,7 @@ def get_project_config() -> ProjectConfig:
 import pygame
 from engine.app.module import ProjectModule
 from engine.app.project_app import ProjectApp
+
 
 class NitroBoostModule(ProjectModule):
     def __init__(self) -> None:
@@ -251,12 +253,14 @@ from engine.world.default_world import DefaultWorldBuilder
 from projects.my_game.config import get_project_config
 from projects.my_game.modules.nitro import NitroBoostModule
 
+
 def main() -> None:
     config = get_project_config()
     app = ProjectApp(config)
     app.set_world_builder(DefaultWorldBuilder(size=250.0))
     app.add_module(NitroBoostModule())
     app.run()
+
 
 if __name__ == "__main__":
     main()

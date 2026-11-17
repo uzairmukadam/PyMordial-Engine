@@ -6,14 +6,15 @@ and surface-aware footstep cadence.
 """
 
 from __future__ import annotations
+
 import math
 
 from engine.core.ecs import EntityManager
-from engine.physics.rapier_world import PhysicsManager
-from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
-from engine.physics.props import InteractivePropManager, PropType
-from engine.physics.interaction import PhysicsGrabber
 from engine.gfx.mega_buffer import MeshAllocation
+from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
+from engine.physics.interaction import PhysicsGrabber
+from engine.physics.props import InteractivePropManager, PropType
+from engine.physics.rapier_world import PhysicsManager
 
 
 class TestInteractiveGameplayPhysics:

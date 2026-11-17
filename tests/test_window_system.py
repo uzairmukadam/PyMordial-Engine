@@ -1,8 +1,9 @@
 """Unit tests for PyMordial Engine Windowing Subsystem."""
 
 from __future__ import annotations
-from engine.window import Window, WindowConfig, WindowMode, VSyncMode
-from engine.events import subscribe_event, WindowResizeEvent
+
+from engine.events import WindowResizeEvent, subscribe_event
+from engine.window import VSyncMode, Window, WindowConfig, WindowMode
 
 
 def test_window_initialization_headless():
@@ -66,5 +67,3 @@ def test_window_set_mode_transitions():
     assert win.mode == WindowMode.WINDOWED
     assert win.width == 800
     assert win.height == 600
-
-

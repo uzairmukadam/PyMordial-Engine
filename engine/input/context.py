@@ -1,8 +1,9 @@
 """Layered Context-Based Input Management for PyMordial Engine."""
 
 from __future__ import annotations
+
 from engine.input.actions import ActionBinding, AxisBinding, Vector2Binding
-from engine.logging import log_info, LogChannel
+from engine.logging import LogChannel, log_info
 
 
 class InputContext:

@@ -81,9 +81,7 @@ class RenderFeatureRegistry:
         for feature in self._features:
             for capability in feature.requires:
                 if not services.has_capability(capability):
-                    report.errors.append(
-                        f"Render feature '{feature.name}' requires the '{capability}' GPU capability."
-                    )
+                    report.errors.append(f"Render feature '{feature.name}' requires the '{capability}' GPU capability.")
             if report.errors:
                 continue
 

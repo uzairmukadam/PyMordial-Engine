@@ -1,7 +1,9 @@
 """Unit tests for PyMordial Engine CVar & Configuration System."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 from engine.config import CVar, CVarRegistry
 
 

@@ -1,6 +1,7 @@
 """MRT G-Buffer Framebuffer with Reversed-Z Depth32F."""
 
 from __future__ import annotations
+
 import moderngl
 
 
@@ -66,33 +67,23 @@ class GBuffer:
 
     def _create_buffers(self) -> None:
         # RT0: Albedo (RGB) + Roughness (A) (RGBA16F - HDR Emissive Capable)
-        self.rt_albedo_roughness = self.ctx.texture(
-            (self.width, self.height), 4, dtype="f2"
-        )
+        self.rt_albedo_roughness = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.rt_albedo_roughness.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
         # RT1: Octahedral Normal (RG) + Metallic (B) + AO (A) (RGBA16F)
-        self.rt_normal_metallic = self.ctx.texture(
-            (self.width, self.height), 4, dtype="f2"
-        )
+        self.rt_normal_metallic = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.rt_normal_metallic.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
         # RT2: Velocity Vectors (RG16F)
-        self.rt_velocity = self.ctx.texture(
-            (self.width, self.height), 2, dtype="f2"
-        )
+        self.rt_velocity = self.ctx.texture((self.width, self.height), 2, dtype="f2")
         self.rt_velocity.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
         # RT3: Displacement Info (RGBA16F) -> RG=Mesh UV, B=TexLayerIndex, A=DisplacementMode
-        self.rt_displacement = self.ctx.texture(
-            (self.width, self.height), 4, dtype="f2"
-        )
+        self.rt_displacement = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.rt_displacement.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
         # RT4: Stable object identity used to reject same-surface GI self-hits.
-        self.rt_surface_id = self.ctx.texture(
-            (self.width, self.height), 1, dtype="f4"
-        )
+        self.rt_surface_id = self.ctx.texture((self.width, self.height), 1, dtype="f4")
         self.rt_surface_id.filter = (moderngl.NEAREST, moderngl.NEAREST)
         self.rt_surface_id.repeat_x = False
         self.rt_surface_id.repeat_y = False

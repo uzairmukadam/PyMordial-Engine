@@ -10,13 +10,15 @@ A focused, clean sandbox featuring:
 """
 
 from __future__ import annotations
+
 import argparse
 import math
 import random
 import sys
 from pathlib import Path
-import pygame
+
 import numpy as np
+import pygame
 from PIL import Image
 
 # Ensure project root is in sys.path
@@ -25,45 +27,45 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 # ruff: noqa: E402
+from engine.assets.mesh_format import PMMesh, build_pm_mesh
+from engine.audio import get_audio_engine
+from engine.camera import CameraManager, FreeFlyCamera
+from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
 from engine.core.ecs import EntityManager
 from engine.core.loop import EngineLoop
 from engine.core.water import WaterProperties
+from engine.debug import (
+    DebugMenu,
+    DebugToast,
+    EngineTweaks,
+    GameTweaks,
+    GBufferDebugMode,
+    SystemMonitor,
+)
+from engine.gfx import (
+    GraphicsQuality,
+    LoadingScreen,
+    RenderContext,
+    RenderPipeline,
+    get_quality_preset,
+)
+from engine.gfx.mega_buffer import MeshAllocation
+from engine.gfx.texture_atlas import (
+    DisplacementMode,
+    TextureArrayAtlas,
+    decode_material_folder,
+    encode_mat_flags,
+)
 from engine.input import (
+    GamepadButton,
     InputManager,
     Key,
     MouseButton,
-    GamepadButton,
 )
-from engine.physics.rapier_world import PhysicsManager
 from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
-from engine.physics.props import InteractivePropManager
 from engine.physics.interaction import PhysicsGrabber
-from engine.core.character_camera import CharacterCamera, CharacterCameraConfig
-from engine.camera import CameraManager, FreeFlyCamera
-from engine.assets.mesh_format import PMMesh, build_pm_mesh
-from engine.gfx import (
-    RenderContext,
-    RenderPipeline,
-    GraphicsQuality,
-    get_quality_preset,
-    LoadingScreen,
-)
-from engine.gfx.texture_atlas import (
-    DisplacementMode,
-    encode_mat_flags,
-    decode_material_folder,
-    TextureArrayAtlas,
-)
-from engine.gfx.mega_buffer import MeshAllocation
-from engine.debug import (
-    SystemMonitor,
-    EngineTweaks,
-    GBufferDebugMode,
-    GameTweaks,
-    DebugToast,
-    DebugMenu,
-)
-from engine.audio import get_audio_engine
+from engine.physics.props import InteractivePropManager
+from engine.physics.rapier_world import PhysicsManager
 from engine.window import VSyncMode
 
 
@@ -72,9 +74,9 @@ def make_tiled_plane_pm_mesh(size: float = 100.0, uv_tiles: float = 50.0) -> PMM
     half_s = size * 0.5
     pos = np.array(
         [
-            [-half_s, 0.0,  half_s],
-            [ half_s, 0.0,  half_s],
-            [ half_s, 0.0, -half_s],
+            [-half_s, 0.0, half_s],
+            [half_s, 0.0, half_s],
+            [half_s, 0.0, -half_s],
             [-half_s, 0.0, -half_s],
         ],
         dtype=np.float32,
@@ -90,10 +92,10 @@ def make_tiled_plane_pm_mesh(size: float = 100.0, uv_tiles: float = 50.0) -> PMM
     )
     uvs = np.array(
         [
-            [0.0,      0.0],
+            [0.0, 0.0],
             [uv_tiles, 0.0],
             [uv_tiles, uv_tiles],
-            [0.0,      uv_tiles],
+            [0.0, uv_tiles],
         ],
         dtype=np.float32,
     )
@@ -135,34 +137,80 @@ def main() -> None:
     parser.add_argument("--time-of-day", type=float, default=None, help="Initial time of day (0.0 to 24.0)")
     parser.add_argument("--day-speed", type=float, default=None, help="Day-night orbital speed multiplier")
     parser.add_argument("--pom-scale", type=float, default=1.0, help="POM height scale multiplier (default: 1.0)")
-    parser.add_argument("--camera-distance", type=float, default=5.0, help="Initial camera follow distance (default: 5.0)")
-    parser.add_argument("--camera-pitch", type=float, default=18.0, help="Initial camera pitch angle in degrees (default: 18.0)")
-    parser.add_argument("--camera-yaw", type=float, default=25.0, help="Initial camera yaw angle in degrees (default: 25.0)")
+    parser.add_argument(
+        "--camera-distance", type=float, default=5.0, help="Initial camera follow distance (default: 5.0)"
+    )
+    parser.add_argument(
+        "--camera-pitch", type=float, default=18.0, help="Initial camera pitch angle in degrees (default: 18.0)"
+    )
+    parser.add_argument(
+        "--camera-yaw", type=float, default=25.0, help="Initial camera yaw angle in degrees (default: 25.0)"
+    )
     parser.add_argument("--plane-tiles", type=float, default=50.0, help="Plane UV repetitions (default: 50.0)")
     parser.add_argument(
         "--debug-gbuffer",
         type=str,
         default="",
-        choices=["", "disabled", "albedo", "normals", "material", "depth", "shadow_atlas", "shadow_mask", "ao", "ssgi", "gi_total", "hiz"],
+        choices=[
+            "",
+            "disabled",
+            "albedo",
+            "normals",
+            "material",
+            "depth",
+            "shadow_atlas",
+            "shadow_mask",
+            "ao",
+            "ssgi",
+            "gi_total",
+            "hiz",
+        ],
         help="Initial G-Buffer debug inspection view",
     )
     parser.add_argument("--hiz-mip", type=int, default=0, help="Hi-Z mip level to visualize (0 to 10)")
     parser.add_argument("--wireframe", action="store_true", default=False, help="Enable polygon wireframe rendering")
-    parser.add_argument("--show-colliders", action="store_true", default=False, help="Enable 3D physics collider wireframes")
+    parser.add_argument(
+        "--show-colliders", action="store_true", default=False, help="Enable 3D physics collider wireframes"
+    )
     parser.add_argument("--show-sun-ray", action="store_true", default=False, help="Enable 3D sun ray visualization")
     parser.add_argument("--exposure", type=float, default=None, help="Camera exposure multiplier")
-    parser.add_argument("--tonemap", type=str, default=None, choices=["ACES", "AgX", "Reinhard"], help="Tonemapping operator")
-    parser.add_argument("--particles", action=argparse.BooleanOptionalAction, default=True, help="Enable volumetric particle system")
+    parser.add_argument(
+        "--tonemap", type=str, default=None, choices=["ACES", "AgX", "Reinhard"], help="Tonemapping operator"
+    )
+    parser.add_argument(
+        "--particles", action=argparse.BooleanOptionalAction, default=True, help="Enable volumetric particle system"
+    )
     parser.add_argument("--particle-count", type=int, default=16384, help="Particle count (1024 to 65536)")
-    parser.add_argument("--particle-mode", type=str, default="DUST_MOTES", choices=["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"], help="Particle VFX mode")
-    parser.add_argument("--dof", action=argparse.BooleanOptionalAction, default=True, help="Enable Bokeh Depth of Field")
+    parser.add_argument(
+        "--particle-mode",
+        type=str,
+        default="DUST_MOTES",
+        choices=["DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"],
+        help="Particle VFX mode",
+    )
+    parser.add_argument(
+        "--dof", action=argparse.BooleanOptionalAction, default=True, help="Enable Bokeh Depth of Field"
+    )
     parser.add_argument("--focus-dist", type=float, default=5.0, help="DoF focus distance in meters")
     parser.add_argument("--fstop", type=float, default=2.8, help="DoF aperture f-stop")
-    parser.add_argument("--motion-blur", action=argparse.BooleanOptionalAction, default=True, help="Enable Velocity Motion Blur")
-    parser.add_argument("--lens-flare", action=argparse.BooleanOptionalAction, default=True, help="Enable Anamorphic Lens Flare")
-    parser.add_argument("--chromatic-aberration", action=argparse.BooleanOptionalAction, default=True, help="Enable Chromatic Aberration")
-    parser.add_argument("--vignette", action=argparse.BooleanOptionalAction, default=True, help="Enable Physical Lens Vignette")
-    parser.add_argument("--film-grain", action=argparse.BooleanOptionalAction, default=True, help="Enable Filmic 35mm Grain")
+    parser.add_argument(
+        "--motion-blur", action=argparse.BooleanOptionalAction, default=True, help="Enable Velocity Motion Blur"
+    )
+    parser.add_argument(
+        "--lens-flare", action=argparse.BooleanOptionalAction, default=True, help="Enable Anamorphic Lens Flare"
+    )
+    parser.add_argument(
+        "--chromatic-aberration",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable Chromatic Aberration",
+    )
+    parser.add_argument(
+        "--vignette", action=argparse.BooleanOptionalAction, default=True, help="Enable Physical Lens Vignette"
+    )
+    parser.add_argument(
+        "--film-grain", action=argparse.BooleanOptionalAction, default=True, help="Enable Filmic 35mm Grain"
+    )
     parser.add_argument("--water-height", type=float, default=0.0, help="Water surface height in meters")
     parser.add_argument("--water-waves", type=float, default=0.15, help="Water wave amplitude in meters")
     parser.add_argument("--water-speed", type=float, default=1.0, help="Water wave speed multiplier")
@@ -224,7 +272,9 @@ def main() -> None:
         cooked_folder=cooked_mud_dir if cooked_mud_dir.is_dir() else None,
     )
     l_mud = pipeline.texture_atlas.upload_decoded_layer(decoded, rebuild_mipmaps=True)
-    print(f"Loaded 'mud_cracked_dry_03' into atlas layer {l_mud} with displacement depth {pipeline.texture_atlas.material_depths[l_mud]:.3f}m")
+    print(
+        f"Loaded 'mud_cracked_dry_03' into atlas layer {l_mud} with displacement depth {pipeline.texture_atlas.material_depths[l_mud]:.3f}m"
+    )
 
     # 4. Register Tiled Ground Mesh in MegaBuffer
     plane_size = 100.0
@@ -263,7 +313,9 @@ def main() -> None:
         water=water_properties,
     )
     physics.create_body(plane_id, body_type="fixed", position=(0.0, -0.5, 0.0))
-    physics.attach_box_collider(plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5, friction=0.80, restitution=0.05)
+    physics.attach_box_collider(
+        plane_id, half_x=plane_size * 0.5, half_y=0.5, half_z=plane_size * 0.5, friction=0.80, restitution=0.05
+    )
 
     d_plane = ecs.pool.get_dense_index(plane_id)
     ecs.material_data[d_plane, 6] = float(l_mud)
@@ -440,14 +492,28 @@ def main() -> None:
         toast.show(f"Quality Preset: {new_preset.value.upper()}", duration=2.5, color=(56, 189, 248))
 
     engine_tweaks.on_quality_changed(on_quality_changed)
-    engine_tweaks.on_vsync_changed(lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF))
+    engine_tweaks.on_vsync_changed(
+        lambda enabled: render_ctx.window.set_vsync(VSyncMode.ON if enabled else VSyncMode.OFF)
+    )
 
     # Game Tweaks
     game_tweaks.add_action("Character", "Reset to Origin", lambda: motor.teleport(char_start_pos))
-    game_tweaks.add_action("Camera", "Toggle Follow/Free (F10)", lambda: camera_mgr.switch_to("free" if camera_mgr.active_camera_name == "follow" else "follow"))
-    game_tweaks.add_action("Render", "Toggle Wireframe", lambda: setattr(engine_tweaks, "show_wireframe", not engine_tweaks.show_wireframe))
-    game_tweaks.add_action("Render", "Toggle Colliders", lambda: setattr(engine_tweaks, "show_physics_colliders", not engine_tweaks.show_physics_colliders))
-    game_tweaks.add_action("Render", "Toggle Sun Ray", lambda: setattr(engine_tweaks, "show_sun_ray", not engine_tweaks.show_sun_ray))
+    game_tweaks.add_action(
+        "Camera",
+        "Toggle Follow/Free (F10)",
+        lambda: camera_mgr.switch_to("free" if camera_mgr.active_camera_name == "follow" else "follow"),
+    )
+    game_tweaks.add_action(
+        "Render", "Toggle Wireframe", lambda: setattr(engine_tweaks, "show_wireframe", not engine_tweaks.show_wireframe)
+    )
+    game_tweaks.add_action(
+        "Render",
+        "Toggle Colliders",
+        lambda: setattr(engine_tweaks, "show_physics_colliders", not engine_tweaks.show_physics_colliders),
+    )
+    game_tweaks.add_action(
+        "Render", "Toggle Sun Ray", lambda: setattr(engine_tweaks, "show_sun_ray", not engine_tweaks.show_sun_ray)
+    )
     game_tweaks.add_watch("POM", "Height Scale", lambda: f"{engine_tweaks.pom_height_scale:.2f}x")
     game_tweaks.add_watch("Time", "Hour", lambda: f"{engine_tweaks.time_of_day:.2f} h")
     game_tweaks.add_watch("Sun", "Elevation", lambda: f"{engine_tweaks.sun_elevation_deg:.1f}°")
@@ -455,58 +521,90 @@ def main() -> None:
     game_tweaks.add_watch("G-Buffer", "Mode", lambda: engine_tweaks.gbuffer_debug.name)
     game_tweaks.add_watch("Wireframe", "Active", lambda: engine_tweaks.show_wireframe)
     game_tweaks.add_watch("VFX", "Particle Mode", lambda: engine_tweaks.particle_mode)
-    game_tweaks.add_watch("VFX", "Particles Active", lambda: f"{engine_tweaks.particle_count:,}" if engine_tweaks.particles_enabled else "OFF")
-    game_tweaks.add_watch("Optics", "DoF", lambda: f"{engine_tweaks.dof_focus_distance:.1f}m (f/{engine_tweaks.dof_aperture:.1f})" if engine_tweaks.dof_enabled else "OFF")
-    game_tweaks.add_watch("Optics", "Motion Blur", lambda: f"{engine_tweaks.motion_blur_intensity:.1f}x" if engine_tweaks.motion_blur_enabled else "OFF")
+    game_tweaks.add_watch(
+        "VFX",
+        "Particles Active",
+        lambda: f"{engine_tweaks.particle_count:,}" if engine_tweaks.particles_enabled else "OFF",
+    )
+    game_tweaks.add_watch(
+        "Optics",
+        "DoF",
+        lambda: (
+            f"{engine_tweaks.dof_focus_distance:.1f}m (f/{engine_tweaks.dof_aperture:.1f})"
+            if engine_tweaks.dof_enabled
+            else "OFF"
+        ),
+    )
+    game_tweaks.add_watch(
+        "Optics",
+        "Motion Blur",
+        lambda: f"{engine_tweaks.motion_blur_intensity:.1f}x" if engine_tweaks.motion_blur_enabled else "OFF",
+    )
     game_tweaks.add_watch("Optics", "Lens Flare", lambda: "ON" if engine_tweaks.lens_flare_enabled else "OFF")
     game_tweaks.add_watch("Water", "Height", lambda: f"{float(ecs.get_transform_proxy(water_id).position[1]):.2f}m")
     game_tweaks.add_watch("Water", "Wave Amp", lambda: f"{ecs.get_transform_proxy(water_id).water.wave_amplitude:.2f}m")
 
     # Physics & Interactive Props Game Tweaks
-    game_tweaks.add_action("Physics & Props", "Spawn Crate (Ahead)", lambda: (
-        prop_mgr.spawn_crate(
-            position=(
-                camera_pos[0] + scratch_fwd_vec[0] * 3.5,
-                max(1.0, camera_pos[1] + scratch_fwd_vec[1] * 3.5),
-                camera_pos[2] + scratch_fwd_vec[2] * 3.5,
-            ),
-            size=0.9,
-            health=40.0,
-        ),
-        toast.show("Spawned Dynamic Crate", duration=1.5, color=(74, 222, 128)),
-    ))
-    game_tweaks.add_action("Physics & Props", "Spawn Pyramid (3x3)", lambda: (
-        prop_mgr.spawn_pyramid(
-            base_center=(
-                char_world_pos[0] - math.sin(math.radians(cam.yaw_deg)) * 4.5,
-                0.45,
-                char_world_pos[2] - math.cos(math.radians(cam.yaw_deg)) * 4.5,
-            ),
-            rows=3,
-            box_size=0.8,
-        ),
-        toast.show("Spawned Crate Pyramid", duration=1.5, color=(74, 222, 128)),
-    ))
-    game_tweaks.add_action("Physics & Props", "Spawn 4 Spheres", lambda: (
-        [
-            prop_mgr.spawn_sphere(
+    game_tweaks.add_action(
+        "Physics & Props",
+        "Spawn Crate (Ahead)",
+        lambda: (
+            prop_mgr.spawn_crate(
                 position=(
-                    char_world_pos[0] + random.uniform(-2.0, 2.0),
-                    char_world_pos[1] + 2.5 + i * 0.8,
-                    char_world_pos[2] + random.uniform(2.5, 4.5),
+                    camera_pos[0] + scratch_fwd_vec[0] * 3.5,
+                    max(1.0, camera_pos[1] + scratch_fwd_vec[1] * 3.5),
+                    camera_pos[2] + scratch_fwd_vec[2] * 3.5,
                 ),
-                radius=random.uniform(0.35, 0.55),
-                color=(random.uniform(0.3, 0.95), random.uniform(0.3, 0.95), random.uniform(0.3, 0.95)),
-            )
-            for i in range(4)
-        ],
-        toast.show("Spawned 4 Tumbling Spheres", duration=1.5, color=(74, 222, 128)),
-    ))
-    game_tweaks.add_action("Physics & Props", "Clear All Props", lambda: (
-        grabber.release_held(),
-        prop_mgr.clear_all_props(),
-        toast.show("Cleared Dynamic Props", duration=1.5, color=(248, 113, 113)),
-    ))
+                size=0.9,
+                health=40.0,
+            ),
+            toast.show("Spawned Dynamic Crate", duration=1.5, color=(74, 222, 128)),
+        ),
+    )
+    game_tweaks.add_action(
+        "Physics & Props",
+        "Spawn Pyramid (3x3)",
+        lambda: (
+            prop_mgr.spawn_pyramid(
+                base_center=(
+                    char_world_pos[0] - math.sin(math.radians(cam.yaw_deg)) * 4.5,
+                    0.45,
+                    char_world_pos[2] - math.cos(math.radians(cam.yaw_deg)) * 4.5,
+                ),
+                rows=3,
+                box_size=0.8,
+            ),
+            toast.show("Spawned Crate Pyramid", duration=1.5, color=(74, 222, 128)),
+        ),
+    )
+    game_tweaks.add_action(
+        "Physics & Props",
+        "Spawn 4 Spheres",
+        lambda: (
+            [
+                prop_mgr.spawn_sphere(
+                    position=(
+                        char_world_pos[0] + random.uniform(-2.0, 2.0),
+                        char_world_pos[1] + 2.5 + i * 0.8,
+                        char_world_pos[2] + random.uniform(2.5, 4.5),
+                    ),
+                    radius=random.uniform(0.35, 0.55),
+                    color=(random.uniform(0.3, 0.95), random.uniform(0.3, 0.95), random.uniform(0.3, 0.95)),
+                )
+                for i in range(4)
+            ],
+            toast.show("Spawned 4 Tumbling Spheres", duration=1.5, color=(74, 222, 128)),
+        ),
+    )
+    game_tweaks.add_action(
+        "Physics & Props",
+        "Clear All Props",
+        lambda: (
+            grabber.release_held(),
+            prop_mgr.clear_all_props(),
+            toast.show("Cleared Dynamic Props", duration=1.5, color=(248, 113, 113)),
+        ),
+    )
     game_tweaks.add_float(
         "Physics & Props",
         "Gravity Y",
@@ -535,10 +633,16 @@ def main() -> None:
         on_changed=lambda val: setattr(grabber, "max_reach", val),
     )
     game_tweaks.add_watch("Physics & Props", "Props Active", lambda: f"{prop_mgr.active_props_count}")
-    game_tweaks.add_watch("Physics & Props", "Holding Prop", lambda: f"Entity {grabber.held_entity_id}" if grabber.is_holding else "None")
+    game_tweaks.add_watch(
+        "Physics & Props", "Holding Prop", lambda: f"Entity {grabber.held_entity_id}" if grabber.is_holding else "None"
+    )
     game_tweaks.add_watch("Physics & Props", "Last Event", lambda: prop_mgr.last_impact_info)
 
-    toast.show("POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, E Grab/Drop, L-Click Throw/Hit", duration=4.5, color=(56, 189, 248))
+    toast.show(
+        "POM Mud Plane Ready — WASD Move, Shift Sprint, Space Jump, E Grab/Drop, L-Click Throw/Hit",
+        duration=4.5,
+        color=(56, 189, 248),
+    )
 
     # Finalize Loading Screen & Fade Transition
     loading_screen.set_progress(1.0, status="Ready. Launching POM Mud Plane...")
@@ -738,13 +842,14 @@ def main() -> None:
                             punch_orig[1] + scratch_fwd_vec[1] * hit_dist,
                             punch_orig[2] + scratch_fwd_vec[2] * hit_dist,
                         )
-                        destroyed = prop_mgr.damage_prop(hit_id, damage=40.0, hit_point=hit_pt, hit_direction=scratch_fwd_vec)
+                        destroyed = prop_mgr.damage_prop(
+                            hit_id, damage=40.0, hit_point=hit_pt, hit_direction=scratch_fwd_vec
+                        )
                         if destroyed:
                             toast.show("Crate Shattered!", duration=1.5, color=(248, 113, 113))
                         else:
                             physics.apply_impulse(
-                                hit_id,
-                                (scratch_fwd_vec[0] * 8.0, scratch_fwd_vec[1] * 2.0, scratch_fwd_vec[2] * 8.0)
+                                hit_id, (scratch_fwd_vec[0] * 8.0, scratch_fwd_vec[1] * 2.0, scratch_fwd_vec[2] * 8.0)
                             )
                             toast.show("Hit Prop!", duration=1.0, color=(251, 191, 36))
 
@@ -939,7 +1044,9 @@ def main() -> None:
                 dt=dt,
                 forward_axis=move_fwd,
                 right_axis=move_strafe,
-                up_axis=1.0 if input_mgr.is_action_down("jump") else (-1.0 if input_mgr.is_action_down("sprint") else 0.0),
+                up_axis=1.0
+                if input_mgr.is_action_down("jump")
+                else (-1.0 if input_mgr.is_action_down("sprint") else 0.0),
                 boost=input_mgr.is_action_down("sprint"),
             )
 

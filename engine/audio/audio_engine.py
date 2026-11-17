@@ -1,16 +1,18 @@
 """Master Audio Engine for PyMordial Engine."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 import numpy as np
 import pygame
 
 from engine.audio.bus import AudioMixer
-from engine.audio.sound import SoundCue, ProceduralSoundSynthesizer
+from engine.audio.sound import ProceduralSoundSynthesizer, SoundCue
 from engine.audio.spatial import AudioListener
-from engine.audio.voice_pool import VoicePool, ActiveVoice
-from engine.events import subscribe_event, PlaySoundCueEvent
-from engine.logging import log_info, log_warn, LogChannel
+from engine.audio.voice_pool import ActiveVoice, VoicePool
+from engine.events import PlaySoundCueEvent, subscribe_event
+from engine.logging import LogChannel, log_info, log_warn
 
 
 class AudioEngine:
@@ -56,10 +58,14 @@ class AudioEngine:
         """Synthesizes and registers standard built-in sound effects."""
         try:
             footstep_snd = ProceduralSoundSynthesizer.create_footstep()
-            self.register_cue(SoundCue("footstep", footstep_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0))
+            self.register_cue(
+                SoundCue("footstep", footstep_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0)
+            )
 
             jump_snd = ProceduralSoundSynthesizer.create_jump()
-            self.register_cue(SoundCue("jump", jump_snd, bus_name="SFX", is_3d=True, min_distance=2.0, max_distance=40.0))
+            self.register_cue(
+                SoundCue("jump", jump_snd, bus_name="SFX", is_3d=True, min_distance=2.0, max_distance=40.0)
+            )
 
             click_snd = ProceduralSoundSynthesizer.create_ui_click()
             self.register_cue(SoundCue("click", click_snd, bus_name="UI", is_3d=False))
@@ -68,17 +74,37 @@ class AudioEngine:
             self.register_cue(SoundCue("ambient_wind", wind_snd, bus_name="Ambient", is_3d=False))
 
             wood_break_snd = ProceduralSoundSynthesizer.create_wood_break()
-            self.register_cue(SoundCue("wood_break", wood_break_snd, bus_name="SFX", is_3d=True, min_distance=2.0, max_distance=50.0))
+            self.register_cue(
+                SoundCue("wood_break", wood_break_snd, bus_name="SFX", is_3d=True, min_distance=2.0, max_distance=50.0)
+            )
 
             throw_snd = ProceduralSoundSynthesizer.create_throw_whoosh()
-            self.register_cue(SoundCue("throw", throw_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0))
+            self.register_cue(
+                SoundCue("throw", throw_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0)
+            )
 
             impact_snd = ProceduralSoundSynthesizer.create_impact()
-            self.register_cue(SoundCue("impact", impact_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=40.0))
+            self.register_cue(
+                SoundCue("impact", impact_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=40.0)
+            )
 
             water_splash_snd = ProceduralSoundSynthesizer.create_water_splash()
-            self.register_cue(SoundCue("water_splash", water_splash_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=45.0))
-            self.register_cue(SoundCue("footstep_water", water_splash_snd, bus_name="SFX", is_3d=True, min_distance=1.0, max_distance=30.0, base_volume=0.7))
+            self.register_cue(
+                SoundCue(
+                    "water_splash", water_splash_snd, bus_name="SFX", is_3d=True, min_distance=1.5, max_distance=45.0
+                )
+            )
+            self.register_cue(
+                SoundCue(
+                    "footstep_water",
+                    water_splash_snd,
+                    bus_name="SFX",
+                    is_3d=True,
+                    min_distance=1.0,
+                    max_distance=30.0,
+                    base_volume=0.7,
+                )
+            )
         except Exception as e:
             log_warn(LogChannel.AUDIO, f"Failed to register procedural cues: {e}")
 

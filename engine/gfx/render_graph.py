@@ -12,15 +12,17 @@ hardcoded pipeline can be described and validated without being rewritten.
 """
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterable
+
 import moderngl
 
 from engine.core.ecs import EntityManager
-from engine.gfx.quality_presets import RenderConfig
-from engine.gfx.frame_context import FrameContext
 from engine.debug.debug_draw import DebugDraw
+from engine.gfx.frame_context import FrameContext
+from engine.gfx.quality_presets import RenderConfig
 
 
 @dataclass
@@ -56,9 +58,7 @@ class RenderGraphReport:
 
     def raise_for_errors(self) -> None:
         if not self.is_valid or self.errors:
-            raise RenderGraphError(
-                "Render graph validation failed:\n" + "\n".join(f"  - {e}" for e in self.errors)
-            )
+            raise RenderGraphError("Render graph validation failed:\n" + "\n".join(f"  - {e}" for e in self.errors))
 
 
 class RenderGraphError(Exception):
@@ -174,9 +174,7 @@ class RenderGraph:
         for p in self.passes:
             for out in p.outputs:
                 if out in producers:
-                    report.errors.append(
-                        f"Resource '{out}' is produced by both '{producers[out]}' and '{p.name}'."
-                    )
+                    report.errors.append(f"Resource '{out}' is produced by both '{producers[out]}' and '{p.name}'.")
                 else:
                     producers[out] = p.name
 
@@ -242,9 +240,7 @@ class RenderGraph:
 
         if len(ordered) != len(self.passes):
             remaining = [n for n, d in indegree.items() if d > 0]
-            raise RenderGraphError(
-                "Render graph contains a cycle involving: " + ", ".join(sorted(remaining))
-            )
+            raise RenderGraphError("Render graph contains a cycle involving: " + ", ".join(sorted(remaining)))
 
         self._compiled = ordered
         return ordered

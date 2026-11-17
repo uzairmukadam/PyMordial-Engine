@@ -17,11 +17,10 @@ accumulates an already-blurred image.
 from __future__ import annotations
 
 import math
-from typing import Any
 
 import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import load_shader
 
 

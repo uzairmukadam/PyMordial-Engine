@@ -9,17 +9,18 @@ Usage:
 """
 
 from __future__ import annotations
+
 import argparse
 import os
-from pathlib import Path
+import shutil
 import subprocess
 import sys
-import shutil
+from pathlib import Path
 
 from engine.app.project_validator import (
-    validate_project_directory,
-    validate_project_config,
     resolve_project_path,
+    validate_project_config,
+    validate_project_directory,
 )
 
 
@@ -50,6 +51,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
             sys.path.insert(0, entry)
         try:
             import importlib.util
+
             spec = importlib.util.spec_from_file_location(f"{project_dir.name}_config", config_py)
             if spec and spec.loader:
                 mod = importlib.util.module_from_spec(spec)

@@ -5,7 +5,9 @@ between Game, Menu, Loading, and Paused states with deterministic lifecycle hook
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
+
 import pygame
 
 if TYPE_CHECKING:
@@ -18,11 +20,11 @@ class GameState:
     name: str = "GameState"
 
     # Execution policy flags
-    allow_fixed_update: bool = True    # When False, halts 60Hz physics/kinematic simulation
-    allow_variable_update: bool = True # When False, halts per-frame game module updates
-    allow_render: bool = True          # When False, skips 3D scene rendering
-    show_cursor: bool = False          # Automatically configures pygame.mouse.set_visible
-    grab_mouse: bool = False           # Automatically configures app.input_manager.set_mouse_grab
+    allow_fixed_update: bool = True  # When False, halts 60Hz physics/kinematic simulation
+    allow_variable_update: bool = True  # When False, halts per-frame game module updates
+    allow_render: bool = True  # When False, skips 3D scene rendering
+    show_cursor: bool = False  # Automatically configures pygame.mouse.set_visible
+    grab_mouse: bool = False  # Automatically configures app.input_manager.set_mouse_grab
 
     def on_enter(self, app: ProjectApp, prev_state: str | None = None, **kwargs: Any) -> None:
         """Called when this state becomes active (transitioned or pushed into)."""

@@ -1,10 +1,10 @@
 """Fast Approximate Anti-Aliasing (FXAA 3.11 Quality) Pass."""
 
 from __future__ import annotations
+
 import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
-
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()

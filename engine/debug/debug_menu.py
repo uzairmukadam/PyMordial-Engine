@@ -8,23 +8,26 @@ Provides independent, non-intrusive debug panels:
 """
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Callable
-import pygame
+
 import moderngl
+import pygame
 from imgui_bundle import imgui
+
 try:
     from imgui_bundle.python_backends.pygame_backend import PygameRenderer
 except (ImportError, ModuleNotFoundError):
     PygameRenderer = None
-from engine.logging import log_warn
-from engine.debug.monitor import SystemMonitor
 from engine.debug.engine_tweaks import EngineTweaks, GBufferDebugMode
 from engine.debug.game_tweaks import GameTweaks, TweakType
+from engine.debug.monitor import SystemMonitor
 from engine.debug.toast import DebugToast
-from engine.input.input_manager import InputManager
+from engine.events import WindowResizeEvent, subscribe_event, unsubscribe_event
 from engine.gfx.quality_presets import GraphicsQuality
-from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+from engine.input.input_manager import InputManager
+from engine.logging import log_warn
 
 try:
     import OpenGL.GL as gl
@@ -336,11 +339,15 @@ class DebugMenu:
             imgui.same_line()
             imgui.text_colored(fps_col, f"{fps:5.1f}")
             imgui.same_line()
-            imgui.text(f"Avg: {m.avg_fps:5.1f}  |  1%: {m.one_percent_low_fps:5.1f}  |  0.1%: {m.point_one_percent_low_fps:5.1f}")
+            imgui.text(
+                f"Avg: {m.avg_fps:5.1f}  |  1%: {m.one_percent_low_fps:5.1f}  |  0.1%: {m.point_one_percent_low_fps:5.1f}"
+            )
 
             gpu_ms = m.gpu_frame_time_ms
-            gpu_text = f"{gpu_ms:.2f} ms" if gpu_ms is not None else (
-                "unavailable" if m.gpu_timing_supported is False else "warming up"
+            gpu_text = (
+                f"{gpu_ms:.2f} ms"
+                if gpu_ms is not None
+                else ("unavailable" if m.gpu_timing_supported is False else "warming up")
             )
             imgui.text(
                 f"Frame: {m.avg_frame_time_ms:.2f} ms avg  |  P95: {m.p95_frame_time_ms:.2f}  "
@@ -372,7 +379,9 @@ class DebugMenu:
 
             imgui.separator()
             imgui.text("CPU Stage Timings (last / smoothed average / lifetime peak)")
-            if imgui.begin_table("Subsystems", 4, imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value):
+            if imgui.begin_table(
+                "Subsystems", 4, imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value
+            ):
                 imgui.table_setup_column("Stage")
                 imgui.table_setup_column("Last ms")
                 imgui.table_setup_column("Average ms")
@@ -391,7 +400,11 @@ class DebugMenu:
                     col = (
                         imgui.ImVec4(0.29, 0.87, 0.50, 1.0)
                         if ms_val <= 4.0
-                        else (imgui.ImVec4(0.98, 0.80, 0.18, 1.0) if ms_val <= 8.0 else imgui.ImVec4(0.94, 0.27, 0.27, 1.0))
+                        else (
+                            imgui.ImVec4(0.98, 0.80, 0.18, 1.0)
+                            if ms_val <= 8.0
+                            else imgui.ImVec4(0.94, 0.27, 0.27, 1.0)
+                        )
                     )
                     imgui.text_colored(col, f"{ms_val:.2f}")
                     imgui.table_next_column()
@@ -519,8 +532,9 @@ class DebugMenu:
                     if hiz_changed:
                         et.hiz_debug_mip = new_hiz_mip
 
-            if imgui.collapsing_header("Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value):
-
+            if imgui.collapsing_header(
+                "Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value
+            ):
                 # GI Mode (OFF, IBL, SSGI, RADIANCE_CASCADES)
                 gi_modes = ["OFF", "IBL", "SSGI", "RADIANCE_CASCADES"]
                 curr_gi_idx = gi_modes.index(et.gi_mode) if et.gi_mode in gi_modes else 3
@@ -541,17 +555,23 @@ class DebugMenu:
                         et.ssgi_rays = ssgi_ray_val
                         et.mark_custom()
 
-                    ssgi_dist_changed, ssgi_dist_val = imgui.slider_float("SSGI Distance", getattr(et, "ssgi_ray_distance", 3.0), 0.5, 8.0, "%.1fm")
+                    ssgi_dist_changed, ssgi_dist_val = imgui.slider_float(
+                        "SSGI Distance", getattr(et, "ssgi_ray_distance", 3.0), 0.5, 8.0, "%.1fm"
+                    )
                     if ssgi_dist_changed:
                         et.ssgi_ray_distance = ssgi_dist_val
                         et.mark_custom()
 
-                    ssgi_thick_changed, ssgi_thick_val = imgui.slider_float("SSGI Thickness", getattr(et, "ssgi_thickness", 0.35), 0.05, 1.0, "%.2fm")
+                    ssgi_thick_changed, ssgi_thick_val = imgui.slider_float(
+                        "SSGI Thickness", getattr(et, "ssgi_thickness", 0.35), 0.05, 1.0, "%.2fm"
+                    )
                     if ssgi_thick_changed:
                         et.ssgi_thickness = ssgi_thick_val
                         et.mark_custom()
 
-                    ssgi_in_changed, ssgi_in_val = imgui.slider_float("SSGI Intensity", et.ssgi_intensity, 0.1, 3.0, "%.2f")
+                    ssgi_in_changed, ssgi_in_val = imgui.slider_float(
+                        "SSGI Intensity", et.ssgi_intensity, 0.1, 3.0, "%.2f"
+                    )
                     if ssgi_in_changed:
                         et.ssgi_intensity = ssgi_in_val
                         et.mark_custom()
@@ -562,17 +582,23 @@ class DebugMenu:
                         et.rc_ray_count = rc_ray_count
                         et.mark_custom()
 
-                    rc_in_changed, rc_in_val = imgui.slider_float("RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f")
+                    rc_in_changed, rc_in_val = imgui.slider_float(
+                        "RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f"
+                    )
                     if rc_in_changed:
                         et.rc_intensity = rc_in_val
                         et.mark_custom()
 
-                    rc_c0_changed, rc_c0_val = imgui.slider_float("RC C0 Range", getattr(et, "rc_interval_c0", 0.40), 0.1, 1.0, "%.2fm")
+                    rc_c0_changed, rc_c0_val = imgui.slider_float(
+                        "RC C0 Range", getattr(et, "rc_interval_c0", 0.40), 0.1, 1.0, "%.2fm"
+                    )
                     if rc_c0_changed:
                         et.rc_interval_c0 = rc_c0_val
                         et.mark_custom()
 
-                    rc_c1_changed, rc_c1_val = imgui.slider_float("RC C1 Range", getattr(et, "rc_interval_c1", 2.50), 1.0, 6.0, "%.1fm")
+                    rc_c1_changed, rc_c1_val = imgui.slider_float(
+                        "RC C1 Range", getattr(et, "rc_interval_c1", 2.50), 1.0, 6.0, "%.1fm"
+                    )
                     if rc_c1_changed:
                         et.rc_interval_c1 = rc_c1_val
                         et.mark_custom()
@@ -592,12 +618,16 @@ class DebugMenu:
                         et.rc_steps_c1 = rc_steps_c1
                         et.mark_custom()
 
-                    rc_thickness_changed, rc_thickness = imgui.slider_float("RC Thickness", et.rc_thickness, 0.01, 1.0, "%.2fm")
+                    rc_thickness_changed, rc_thickness = imgui.slider_float(
+                        "RC Thickness", et.rc_thickness, 0.01, 1.0, "%.2fm"
+                    )
                     if rc_thickness_changed:
                         et.rc_thickness = rc_thickness
                         et.mark_custom()
 
-                    rc_blend_changed, rc_blend_val = imgui.slider_float("RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.96), 0.0, 0.98, "%.2f")
+                    rc_blend_changed, rc_blend_val = imgui.slider_float(
+                        "RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.96), 0.0, 0.98, "%.2f"
+                    )
                     if rc_blend_changed:
                         et.rc_temporal_blend = rc_blend_val
                         et.mark_custom()
@@ -630,7 +660,6 @@ class DebugMenu:
                         et.mark_custom()
 
             if imgui.collapsing_header("Image Quality, Reflections & Local Lights"):
-
                 # IBL
                 ibl_changed, ibl_val = imgui.checkbox("Image-Based Lighting (IBL)", et.ibl_enabled)
                 if ibl_changed:
@@ -651,17 +680,23 @@ class DebugMenu:
                         et.ssr_steps = ssr_st_val
                         et.mark_custom()
 
-                    ssr_tk_changed, ssr_tk_val = imgui.slider_float("SSR Thickness", et.ssr_thickness, 0.03, 0.65, "%.2fm")
+                    ssr_tk_changed, ssr_tk_val = imgui.slider_float(
+                        "SSR Thickness", et.ssr_thickness, 0.03, 0.65, "%.2fm"
+                    )
                     if ssr_tk_changed:
                         et.ssr_thickness = ssr_tk_val
                         et.mark_custom()
 
-                    ssr_mr_changed, ssr_mr_val = imgui.slider_float("SSR Max Roughness", et.ssr_max_roughness, 0.1, 1.0, "%.2f")
+                    ssr_mr_changed, ssr_mr_val = imgui.slider_float(
+                        "SSR Max Roughness", et.ssr_max_roughness, 0.1, 1.0, "%.2f"
+                    )
                     if ssr_mr_changed:
                         et.ssr_max_roughness = ssr_mr_val
                         et.mark_custom()
 
-                    ssr_dist_changed, ssr_dist_val = imgui.slider_float("SSR Max Distance", et.ssr_max_distance, 5.0, 100.0, "%.0f m")
+                    ssr_dist_changed, ssr_dist_val = imgui.slider_float(
+                        "SSR Max Distance", et.ssr_max_distance, 5.0, 100.0, "%.0f m"
+                    )
                     if ssr_dist_changed:
                         et.ssr_max_distance = ssr_dist_val
                         et.mark_custom()
@@ -676,52 +711,70 @@ class DebugMenu:
                 if aa_changed:
                     chosen_internal = aa_internal_modes[aa_idx]
                     et.aa_mode = chosen_internal
-                    et.taa_enabled = (chosen_internal == "TAA")
+                    et.taa_enabled = chosen_internal == "TAA"
                     et.mark_custom()
                     self.toast.show(f"Anti-Aliasing: {aa_modes[aa_idx]}", duration=1.5)
 
                 if et.aa_mode == "TAA" or getattr(et, "taa_enabled", False):
-                    taa_fb_c, taa_fb_v = imgui.slider_float("TAA Feedback", getattr(et, "taa_feedback", 0.95), 0.80, 0.98, "%.2f")
+                    taa_fb_c, taa_fb_v = imgui.slider_float(
+                        "TAA Feedback", getattr(et, "taa_feedback", 0.95), 0.80, 0.98, "%.2f"
+                    )
                     if taa_fb_c:
                         et.taa_feedback = taa_fb_v
                         et.mark_custom()
 
-                    taa_sh_c, taa_sh_v = imgui.slider_float("TAA Sharpness", getattr(et, "taa_sharpness", 0.35), 0.0, 1.0, "%.2f")
+                    taa_sh_c, taa_sh_v = imgui.slider_float(
+                        "TAA Sharpness", getattr(et, "taa_sharpness", 0.35), 0.0, 1.0, "%.2f"
+                    )
                     if taa_sh_c:
                         et.taa_sharpness = taa_sh_v
                         et.mark_custom()
 
-                    taa_gm_c, taa_gm_v = imgui.slider_float("TAA Variance Box (Gamma)", getattr(et, "taa_gamma", 1.25), 0.75, 2.50, "%.2f")
+                    taa_gm_c, taa_gm_v = imgui.slider_float(
+                        "TAA Variance Box (Gamma)", getattr(et, "taa_gamma", 1.25), 0.75, 2.50, "%.2f"
+                    )
                     if taa_gm_c:
                         et.taa_gamma = taa_gm_v
                         et.mark_custom()
 
-                    taa_maxfb_c, taa_maxfb_v = imgui.slider_float("TAA Max Feedback", getattr(et, "taa_max_feedback", 0.95), 0.80, 0.99, "%.2f")
+                    taa_maxfb_c, taa_maxfb_v = imgui.slider_float(
+                        "TAA Max Feedback", getattr(et, "taa_max_feedback", 0.95), 0.80, 0.99, "%.2f"
+                    )
                     if taa_maxfb_c:
                         et.taa_max_feedback = taa_maxfb_v
                         et.mark_custom()
 
-                    taa_minfb_c, taa_minfb_v = imgui.slider_float("TAA Min Feedback", getattr(et, "taa_min_feedback", 0.78), 0.50, 0.95, "%.2f")
+                    taa_minfb_c, taa_minfb_v = imgui.slider_float(
+                        "TAA Min Feedback", getattr(et, "taa_min_feedback", 0.78), 0.50, 0.95, "%.2f"
+                    )
                     if taa_minfb_c:
                         et.taa_min_feedback = taa_minfb_v
                         et.mark_custom()
 
-                    taa_vg_c, taa_vg_v = imgui.slider_float("TAA Variance Gamma", getattr(et, "taa_variance_gamma", 1.25), 0.75, 2.50, "%.2f")
+                    taa_vg_c, taa_vg_v = imgui.slider_float(
+                        "TAA Variance Gamma", getattr(et, "taa_variance_gamma", 1.25), 0.75, 2.50, "%.2f"
+                    )
                     if taa_vg_c:
                         et.taa_variance_gamma = taa_vg_v
                         et.mark_custom()
                 elif et.aa_mode == "FXAA":
-                    fxaa_subpixel_changed, fxaa_subpixel = imgui.slider_float("FXAA Subpixel Quality", et.fxaa_subpixel, 0.0, 1.0, "%.2f")
+                    fxaa_subpixel_changed, fxaa_subpixel = imgui.slider_float(
+                        "FXAA Subpixel Quality", et.fxaa_subpixel, 0.0, 1.0, "%.2f"
+                    )
                     if fxaa_subpixel_changed:
                         et.fxaa_subpixel = fxaa_subpixel
                         et.mark_custom()
 
-                    fxaa_threshold_changed, fxaa_threshold = imgui.slider_float("FXAA Edge Threshold", et.fxaa_edge_threshold, 0.01, 0.25, "%.3f")
+                    fxaa_threshold_changed, fxaa_threshold = imgui.slider_float(
+                        "FXAA Edge Threshold", et.fxaa_edge_threshold, 0.01, 0.25, "%.3f"
+                    )
                     if fxaa_threshold_changed:
                         et.fxaa_edge_threshold = fxaa_threshold
                         et.mark_custom()
                 elif et.aa_mode.startswith("SMAA"):
-                    smaa_threshold_changed, smaa_threshold = imgui.slider_float("SMAA Edge Threshold", et.smaa_threshold, 0.01, 0.2, "%.3f")
+                    smaa_threshold_changed, smaa_threshold = imgui.slider_float(
+                        "SMAA Edge Threshold", et.smaa_threshold, 0.01, 0.2, "%.3f"
+                    )
                     if smaa_threshold_changed:
                         et.smaa_threshold = smaa_threshold
                         et.mark_custom()
@@ -741,7 +794,9 @@ class DebugMenu:
                     self.toast.show(f"Spot Lights: {'ON' if sl_val else 'OFF'}", duration=1.5)
 
                 if getattr(et, "spot_lights_enabled", True):
-                    ssh_changed, ssh_val = imgui.checkbox("Spot Shadows (2x2 Perspective Atlas)", getattr(et, "spot_shadows_enabled", True))
+                    ssh_changed, ssh_val = imgui.checkbox(
+                        "Spot Shadows (2x2 Perspective Atlas)", getattr(et, "spot_shadows_enabled", True)
+                    )
                     if ssh_changed:
                         et.spot_shadows_enabled = ssh_val
                         et.mark_custom()
@@ -750,16 +805,33 @@ class DebugMenu:
                     spot_res_options = ["1024", "2048"]
                     spot_res_str = str(et.spot_shadow_resolution)
                     spot_res_idx = spot_res_options.index(spot_res_str) if spot_res_str in spot_res_options else 1
-                    spot_res_changed, spot_res_new_idx = imgui.combo("Spot Shadow Resolution", spot_res_idx, spot_res_options)
+                    spot_res_changed, spot_res_new_idx = imgui.combo(
+                        "Spot Shadow Resolution", spot_res_idx, spot_res_options
+                    )
                     if spot_res_changed:
                         et.spot_shadow_resolution = int(spot_res_options[spot_res_new_idx])
                         et.mark_custom()
 
             if imgui.collapsing_header("Environment: Atmosphere & Sun"):
-
                 # Atmosphere Presets
-                atmo_presets = ["EARTH_DAY", "EARTH_SUNSET", "EARTH_NIGHT", "ALIEN_CYAN_PURPLE", "ALIEN_CRIMSON_MARS", "SPACE", "CUSTOM"]
-                preset_labels = ["Earth Day (Noon)", "Earth Sunset / Golden Hour", "Earth Night / Starlight", "Alien: Cyan & Purple", "Alien: Crimson Mars", "Outer Space", "Custom"]
+                atmo_presets = [
+                    "EARTH_DAY",
+                    "EARTH_SUNSET",
+                    "EARTH_NIGHT",
+                    "ALIEN_CYAN_PURPLE",
+                    "ALIEN_CRIMSON_MARS",
+                    "SPACE",
+                    "CUSTOM",
+                ]
+                preset_labels = [
+                    "Earth Day (Noon)",
+                    "Earth Sunset / Golden Hour",
+                    "Earth Night / Starlight",
+                    "Alien: Cyan & Purple",
+                    "Alien: Crimson Mars",
+                    "Outer Space",
+                    "Custom",
+                ]
                 cur_p_name = getattr(et, "atmo_preset", "EARTH_DAY").upper()
                 cur_p_idx = atmo_presets.index(cur_p_name) if cur_p_name in atmo_presets else 6
                 ap_c, ap_idx = imgui.combo("Atmosphere Preset", cur_p_idx, preset_labels)
@@ -797,7 +869,9 @@ class DebugMenu:
                     et.time_of_day = min(tod_v, 23.999)
                     et.atmo_preset = "CUSTOM"
 
-                sun_intensity_changed, sun_intensity = imgui.slider_float("Sun Intensity", et.sun_lux, 0.0, 20.0, "%.2f")
+                sun_intensity_changed, sun_intensity = imgui.slider_float(
+                    "Sun Intensity", et.sun_lux, 0.0, 20.0, "%.2f"
+                )
                 if sun_intensity_changed:
                     et.sun_lux = sun_intensity
                     et.mark_custom()
@@ -819,7 +893,9 @@ class DebugMenu:
                         et.day_speed = 0.0
                         et.atmo_preset = "CUSTOM"
 
-                azimuth_c, azimuth_v = imgui.slider_float("Sun Orbit Azimuth", et.azimuth_deg, -180.0, 180.0, "%.1f deg")
+                azimuth_c, azimuth_v = imgui.slider_float(
+                    "Sun Orbit Azimuth", et.azimuth_deg, -180.0, 180.0, "%.1f deg"
+                )
                 if azimuth_c:
                     et.azimuth_deg = azimuth_v
                     et.atmo_preset = "CUSTOM"
@@ -851,9 +927,7 @@ class DebugMenu:
                 if moon_az_c:
                     et.moon_azimuth_offset_deg = moon_az_v
                     et.atmo_preset = "CUSTOM"
-                sky_exposure_c, sky_exposure_v = imgui.slider_float(
-                    "Sky Exposure", et.sky_exposure, 0.1, 4.0, "%.2f"
-                )
+                sky_exposure_c, sky_exposure_v = imgui.slider_float("Sky Exposure", et.sky_exposure, 0.1, 4.0, "%.2f")
                 if sky_exposure_c:
                     et.sky_exposure = sky_exposure_v
                     et.atmo_preset = "CUSTOM"
@@ -887,7 +961,9 @@ class DebugMenu:
                         et.mie_coeff = mie_v
                         et.atmo_preset = "CUSTOM"
 
-                    asymmetry_c, asymmetry_v = imgui.slider_float("Mie Forward Scattering", et.mie_asymmetry, 0.0, 0.95, "%.2f")
+                    asymmetry_c, asymmetry_v = imgui.slider_float(
+                        "Mie Forward Scattering", et.mie_asymmetry, 0.0, 0.95, "%.2f"
+                    )
                     if asymmetry_c:
                         et.mie_asymmetry = asymmetry_v
                         et.atmo_preset = "CUSTOM"
@@ -925,7 +1001,11 @@ class DebugMenu:
                             et.atmosphere_radius = et.planet_radius + 100000.0
                         et.atmo_preset = "CUSTOM"
                     atmo_height_c, atmo_height_v = imgui.slider_float(
-                        "Atmosphere Thickness (km)", (et.atmosphere_radius - et.planet_radius) / 1000.0, 1.0, 250.0, "%.1f km"
+                        "Atmosphere Thickness (km)",
+                        (et.atmosphere_radius - et.planet_radius) / 1000.0,
+                        1.0,
+                        250.0,
+                        "%.1f km",
                     )
                     if atmo_height_c:
                         et.atmosphere_radius = et.planet_radius + atmo_height_v * 1000.0
@@ -944,7 +1024,9 @@ class DebugMenu:
                         et.atmo_preset = "CUSTOM"
 
                     if et.sky_mode == "SPACE":
-                        nebula_c, nebula_v = imgui.slider_float("Nebula Intensity", et.nebula_intensity, 0.0, 2.0, "%.2f")
+                        nebula_c, nebula_v = imgui.slider_float(
+                            "Nebula Intensity", et.nebula_intensity, 0.0, 2.0, "%.2f"
+                        )
                         if nebula_c:
                             et.nebula_intensity = nebula_v
                             et.atmo_preset = "CUSTOM"
@@ -962,19 +1044,27 @@ class DebugMenu:
                             et.cloud_enabled = clouds_v
                             et.atmo_preset = "CUSTOM"
                         if et.cloud_enabled:
-                            coverage_c, coverage_v = imgui.slider_float("Cloud Coverage", et.cloud_coverage, 0.0, 1.0, "%.2f")
+                            coverage_c, coverage_v = imgui.slider_float(
+                                "Cloud Coverage", et.cloud_coverage, 0.0, 1.0, "%.2f"
+                            )
                             if coverage_c:
                                 et.cloud_coverage = coverage_v
                                 et.atmo_preset = "CUSTOM"
-                            opacity_c, opacity_v = imgui.slider_float("Cloud Opacity", et.cloud_opacity, 0.0, 1.0, "%.2f")
+                            opacity_c, opacity_v = imgui.slider_float(
+                                "Cloud Opacity", et.cloud_opacity, 0.0, 1.0, "%.2f"
+                            )
                             if opacity_c:
                                 et.cloud_opacity = opacity_v
                                 et.atmo_preset = "CUSTOM"
-                            altitude_c, altitude_v = imgui.slider_float("Cloud Deck Altitude (m)", et.cloud_altitude, 250.0, 12000.0, "%.0f")
+                            altitude_c, altitude_v = imgui.slider_float(
+                                "Cloud Deck Altitude (m)", et.cloud_altitude, 250.0, 12000.0, "%.0f"
+                            )
                             if altitude_c:
                                 et.cloud_altitude = altitude_v
                                 et.atmo_preset = "CUSTOM"
-                            scale_c, scale_v = imgui.slider_float("Cloud Size (m)", et.cloud_scale, 5000.0, 80000.0, "%.0f")
+                            scale_c, scale_v = imgui.slider_float(
+                                "Cloud Size (m)", et.cloud_scale, 5000.0, 80000.0, "%.0f"
+                            )
                             if scale_c:
                                 et.cloud_scale = scale_v
                                 et.atmo_preset = "CUSTOM"
@@ -990,11 +1080,15 @@ class DebugMenu:
                             if upper_opacity_c:
                                 et.cloud_secondary_opacity = upper_opacity_v
                                 et.atmo_preset = "CUSTOM"
-                            wind_x_c, wind_x_v = imgui.slider_float("Cloud Wind X (m/s)", et.cloud_wind_x, -100.0, 100.0, "%.1f")
+                            wind_x_c, wind_x_v = imgui.slider_float(
+                                "Cloud Wind X (m/s)", et.cloud_wind_x, -100.0, 100.0, "%.1f"
+                            )
                             if wind_x_c:
                                 et.cloud_wind_x = wind_x_v
                                 et.atmo_preset = "CUSTOM"
-                            wind_z_c, wind_z_v = imgui.slider_float("Cloud Wind Z (m/s)", et.cloud_wind_z, -100.0, 100.0, "%.1f")
+                            wind_z_c, wind_z_v = imgui.slider_float(
+                                "Cloud Wind Z (m/s)", et.cloud_wind_z, -100.0, 100.0, "%.1f"
+                            )
                             if wind_z_c:
                                 et.cloud_wind_z = wind_z_v
                                 et.atmo_preset = "CUSTOM"
@@ -1002,7 +1096,6 @@ class DebugMenu:
                     imgui.tree_pop()
 
             if imgui.collapsing_header("Environment: Volumetric Fog"):
-
                 fog_c, fog_v = imgui.checkbox("Froxel Volumetric Fog", et.volumetric_fog_enabled)
                 if fog_c:
                     et.volumetric_fog_enabled = fog_v
@@ -1010,7 +1103,13 @@ class DebugMenu:
                     self.toast.show(f"Volumetric Fog: {'ON' if fog_v else 'OFF'}", duration=1.5)
 
                 if et.volumetric_fog_enabled:
-                    res_names = ["LOW (80x45x32)", "MEDIUM (120x68x48)", "HIGH (160x90x64)", "ULTRA (200x112x80)", "CINEMATIC (240x135x96)"]
+                    res_names = [
+                        "LOW (80x45x32)",
+                        "MEDIUM (120x68x48)",
+                        "HIGH (160x90x64)",
+                        "ULTRA (200x112x80)",
+                        "CINEMATIC (240x135x96)",
+                    ]
                     res_keys = ["LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"]
                     cur_res_str = getattr(et, "fog_resolution", "HIGH").upper()
                     cur_res_idx = res_keys.index(cur_res_str) if cur_res_str in res_keys else 2
@@ -1060,7 +1159,6 @@ class DebugMenu:
                         self.toast.show(f"Fog Visualizer: {debug_modes[dbg_idx]}", duration=1.5)
 
             if imgui.collapsing_header("Camera: Lens & Motion Effects"):
-
                 # Depth of Field
                 dof_c, dof_v = imgui.checkbox("Bokeh Depth of Field", getattr(et, "dof_enabled", True))
                 if dof_c:
@@ -1110,7 +1208,9 @@ class DebugMenu:
                     self.toast.show(f"Motion Blur: {'ON' if mb_v else 'OFF'}", duration=1.5)
 
                 if getattr(et, "motion_blur_enabled", True):
-                    mbi_c, mbi_v = imgui.slider_float("Shutter Blur Intensity", et.motion_blur_intensity, 0.1, 3.0, "%.2fx")
+                    mbi_c, mbi_v = imgui.slider_float(
+                        "Shutter Blur Intensity", et.motion_blur_intensity, 0.1, 3.0, "%.2fx"
+                    )
                     if mbi_c:
                         et.motion_blur_intensity = mbi_v
                         et.mark_custom()
@@ -1120,7 +1220,9 @@ class DebugMenu:
                         et.motion_blur_samples = mbs_v
                         et.mark_custom()
 
-                    mbr_c, mbr_v = imgui.slider_float("Motion Blur Max Radius", et.motion_blur_max_radius, 1.0, 64.0, "%.0f px")
+                    mbr_c, mbr_v = imgui.slider_float(
+                        "Motion Blur Max Radius", et.motion_blur_max_radius, 1.0, 64.0, "%.0f px"
+                    )
                     if mbr_c:
                         et.motion_blur_max_radius = mbr_v
                         et.mark_custom()
@@ -1159,20 +1261,30 @@ class DebugMenu:
                             et.mark_custom()
 
                         sst_c, sst_v = imgui.slider_float(
-                            "Solar Starburst", float(getattr(et, "solar_flare_starburst_intensity", 0.6)), 0.0, 3.0, "%.2f"
+                            "Solar Starburst",
+                            float(getattr(et, "solar_flare_starburst_intensity", 0.6)),
+                            0.0,
+                            3.0,
+                            "%.2f",
                         )
                         if sst_c:
                             et.solar_flare_starburst_intensity = sst_v
                             et.mark_custom()
 
                         soc_c, soc_v = imgui.slider_float(
-                            "Solar Occlusion Fade", float(getattr(et, "solar_flare_occlusion_fade", 1.0)), 0.0, 1.0, "%.2f"
+                            "Solar Occlusion Fade",
+                            float(getattr(et, "solar_flare_occlusion_fade", 1.0)),
+                            0.0,
+                            1.0,
+                            "%.2f",
                         )
                         if soc_c:
                             et.solar_flare_occlusion_fade = soc_v
                             et.mark_custom()
 
-                    lfs_c, lfs_v = imgui.slider_float("Streak Intensity", et.lens_flare_streak_intensity, 0.0, 2.0, "%.2f")
+                    lfs_c, lfs_v = imgui.slider_float(
+                        "Streak Intensity", et.lens_flare_streak_intensity, 0.0, 2.0, "%.2f"
+                    )
                     if lfs_c:
                         et.lens_flare_streak_intensity = lfs_v
                         et.mark_custom()
@@ -1182,7 +1294,9 @@ class DebugMenu:
                         et.lens_flare_streak_width = lfw_v
                         et.mark_custom()
 
-                    lfg_c, lfg_v = imgui.slider_float("Ghost Reflections", et.lens_flare_ghost_intensity, 0.0, 1.5, "%.2f")
+                    lfg_c, lfg_v = imgui.slider_float(
+                        "Ghost Reflections", et.lens_flare_ghost_intensity, 0.0, 1.5, "%.2f"
+                    )
                     if lfg_c:
                         et.lens_flare_ghost_intensity = lfg_v
                         et.mark_custom()
@@ -1203,7 +1317,9 @@ class DebugMenu:
                     et.bloom_enabled = bl_v
                     et.mark_custom()
                 if getattr(et, "bloom_enabled", True):
-                    bli_c, bli_v = imgui.slider_float("Bloom Intensity", getattr(et, "bloom_intensity", 0.045), 0.0, 0.20, "%.3f")
+                    bli_c, bli_v = imgui.slider_float(
+                        "Bloom Intensity", getattr(et, "bloom_intensity", 0.045), 0.0, 0.20, "%.3f"
+                    )
                     if bli_c:
                         et.bloom_intensity = bli_v
                         et.mark_custom()
@@ -1214,7 +1330,9 @@ class DebugMenu:
                     et.chromatic_aberration_enabled = ca_v
                     et.mark_custom()
                 if getattr(et, "chromatic_aberration_enabled", True):
-                    cai_c, cai_v = imgui.slider_float("Spectral Fringing", et.chromatic_aberration_intensity, 0.0, 0.02, "%.4f")
+                    cai_c, cai_v = imgui.slider_float(
+                        "Spectral Fringing", et.chromatic_aberration_intensity, 0.0, 0.02, "%.4f"
+                    )
                     if cai_c:
                         et.chromatic_aberration_intensity = cai_v
                         et.mark_custom()
@@ -1234,7 +1352,9 @@ class DebugMenu:
                         et.vignette_roundness = vigr_v
                         et.mark_custom()
 
-                    vigs_c, vigs_v = imgui.slider_float("Vignette Smoothness", et.vignette_smoothness, 0.05, 1.0, "%.2f")
+                    vigs_c, vigs_v = imgui.slider_float(
+                        "Vignette Smoothness", et.vignette_smoothness, 0.05, 1.0, "%.2f"
+                    )
                     if vigs_c:
                         et.vignette_smoothness = vigs_v
                         et.mark_custom()
@@ -1276,11 +1396,15 @@ class DebugMenu:
                     if pss_c:
                         et.pom_self_shadow = pss_v
                         et.mark_custom()
-                    dnr_c, dnr_v = imgui.slider_float("POM Shadow Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m")
+                    dnr_c, dnr_v = imgui.slider_float(
+                        "POM Shadow Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m"
+                    )
                     if dnr_c:
                         et.disp_near_radius = dnr_v
                         et.mark_custom()
-                    dmr_c, dmr_v = imgui.slider_float("POM Max Cutoff Radius (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m")
+                    dmr_c, dmr_v = imgui.slider_float(
+                        "POM Max Cutoff Radius (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m"
+                    )
                     if dmr_c:
                         et.disp_mid_radius = dmr_v
                         et.mark_custom()
@@ -1305,15 +1429,22 @@ class DebugMenu:
                     cull_ent = getattr(pipe, "stats_culled_entities", 0)
                     vis_cmd = getattr(pipe, "stats_visible_commands", 0)
                     cull_cmd = getattr(pipe, "stats_culled_commands", 0)
-                    imgui.text_colored(imgui.ImVec4(0.4, 0.9, 0.4, 1.0), f"  Entities: {vis_ent} Visible | {cull_ent} Culled")
-                    imgui.text_colored(imgui.ImVec4(0.4, 0.8, 1.0, 1.0), f"  Commands: {vis_cmd} Visible | {cull_cmd} Culled")
+                    imgui.text_colored(
+                        imgui.ImVec4(0.4, 0.9, 0.4, 1.0), f"  Entities: {vis_ent} Visible | {cull_ent} Culled"
+                    )
+                    imgui.text_colored(
+                        imgui.ImVec4(0.4, 0.8, 1.0, 1.0), f"  Commands: {vis_cmd} Visible | {cull_cmd} Culled"
+                    )
 
                 ecs_ref = getattr(self.app, "ecs", None) if self.app is not None else None
                 if ecs_ref is not None and getattr(ecs_ref, "static_count", 0) > 0:
                     s_cnt = ecs_ref.static_count
                     d_cnt = max(0, ecs_ref.active_count - s_cnt)
                     saved_kb = (s_cnt * 96) / 1024.0
-                    imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.3, 1.0), f"  Static: {s_cnt} | Dynamic: {d_cnt} (Saved: {saved_kb:.1f} KB/frame)")
+                    imgui.text_colored(
+                        imgui.ImVec4(1.0, 0.8, 0.3, 1.0),
+                        f"  Static: {s_cnt} | Dynamic: {d_cnt} (Saved: {saved_kb:.1f} KB/frame)",
+                    )
 
                 # Hardware Tessellation
                 tess_c, tess_v = imgui.checkbox("Hardware GPU Tessellation", et.tess_enabled)
@@ -1321,11 +1452,15 @@ class DebugMenu:
                     et.tess_enabled = tess_v
                     et.mark_custom()
                 if et.tess_enabled:
-                    dnr_c, dnr_v = imgui.slider_float("Near Quality Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m")
+                    dnr_c, dnr_v = imgui.slider_float(
+                        "Near Quality Radius (m)", et.disp_near_radius, 10.0, 300.0, "%.1f m"
+                    )
                     if dnr_c:
                         et.disp_near_radius = dnr_v
                         et.mark_custom()
-                    dmr_c, dmr_v = imgui.slider_float("Mid Radius Cutoff (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m")
+                    dmr_c, dmr_v = imgui.slider_float(
+                        "Mid Radius Cutoff (m)", et.disp_mid_radius, 30.0, 500.0, "%.1f m"
+                    )
                     if dmr_c:
                         et.disp_mid_radius = dmr_v
                         et.mark_custom()
@@ -1337,7 +1472,9 @@ class DebugMenu:
                     if tml_c:
                         et.tess_med_level = tml_v
                         et.mark_custom()
-                    tds_c, tds_v = imgui.slider_float("Disp Depth Multiplier", et.tess_displacement_scale, 0.1, 3.0, "%.2fx")
+                    tds_c, tds_v = imgui.slider_float(
+                        "Disp Depth Multiplier", et.tess_displacement_scale, 0.1, 3.0, "%.2fx"
+                    )
                     if tds_c:
                         et.tess_displacement_scale = tds_v
                         et.mark_custom()
@@ -1354,7 +1491,6 @@ class DebugMenu:
                         et.mark_custom()
 
             if imgui.collapsing_header("Shadows: Cascades & Filtering"):
-
                 # 1. Shadow Map Resolution (1024, 2048, 4096)
                 res_options = ["1024", "2048", "4096"]
                 curr_res_str = str(et.shadow_resolution)
@@ -1393,24 +1529,32 @@ class DebugMenu:
                     et.mark_custom()
 
                 # 4b. Shadow Normal Bias
-                nb_changed, nb_val = imgui.slider_float("Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f")
+                nb_changed, nb_val = imgui.slider_float(
+                    "Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f"
+                )
                 if nb_changed:
                     et.shadow_normal_bias = nb_val
                     et.mark_custom()
 
                 # 4c. Shadow Alignment Sliders (Manual Offset Adjustment)
-                off_x_changed, off_x_val = imgui.slider_float("Shadow Align X", et.shadow_offset_x, -0.050, 0.050, "%.4f")
+                off_x_changed, off_x_val = imgui.slider_float(
+                    "Shadow Align X", et.shadow_offset_x, -0.050, 0.050, "%.4f"
+                )
                 if off_x_changed:
                     et.shadow_offset_x = off_x_val
                     et.mark_custom()
 
-                off_y_changed, off_y_val = imgui.slider_float("Shadow Align Y", et.shadow_offset_y, -0.050, 0.050, "%.4f")
+                off_y_changed, off_y_val = imgui.slider_float(
+                    "Shadow Align Y", et.shadow_offset_y, -0.050, 0.050, "%.4f"
+                )
                 if off_y_changed:
                     et.shadow_offset_y = off_y_val
                     et.mark_custom()
 
                 # 5. Shadow Draw Distance Slider
-                sd_changed, sd_val = imgui.slider_float("Shadow Draw Distance", et.shadow_distance, 50.0, 2000.0, "%.0f m")
+                sd_changed, sd_val = imgui.slider_float(
+                    "Shadow Draw Distance", et.shadow_distance, 50.0, 2000.0, "%.0f m"
+                )
                 if sd_changed:
                     et.shadow_distance = sd_val
                     et.mark_custom()
@@ -1424,7 +1568,9 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"Shadow Cascades: {et.csm_cascades}", duration=2.0)
 
-                split_changed, split_value = imgui.slider_float("Cascade Split Distribution", et.csm_split_lambda, 0.0, 1.0, "%.2f")
+                split_changed, split_value = imgui.slider_float(
+                    "Cascade Split Distribution", et.csm_split_lambda, 0.0, 1.0, "%.2f"
+                )
                 if split_changed:
                     et.csm_split_lambda = split_value
                     et.mark_custom()
@@ -1438,7 +1584,9 @@ class DebugMenu:
                     self.toast.show(f"Cascade Split Mode: {et.csm_split_mode}", duration=2.0)
 
                 # 5c. CSM Texel Stabilization (Shimmer Elimination)
-                csm_stab_changed, csm_stab_val = imgui.checkbox("CSM Texel Stabilization", getattr(et, "csm_stabilization", True))
+                csm_stab_changed, csm_stab_val = imgui.checkbox(
+                    "CSM Texel Stabilization", getattr(et, "csm_stabilization", True)
+                )
                 if csm_stab_changed:
                     et.csm_stabilization = csm_stab_val
                     et.mark_custom()
@@ -1454,7 +1602,6 @@ class DebugMenu:
                     self.toast.show(f"Non-Uniform Cascade Atlas: {'ON' if csm_nu_val else 'OFF'}", duration=1.5)
 
             if imgui.collapsing_header("Diagnostics: Render Views"):
-
                 # Mesh Wireframe
                 wire_changed, wire_val = imgui.checkbox("Mesh Wireframe", et.show_wireframe)
                 if wire_changed:

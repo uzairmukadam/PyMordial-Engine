@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+
 import pygame
 
 from engine.app.config import ProjectConfig

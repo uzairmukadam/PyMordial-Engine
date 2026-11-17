@@ -1,11 +1,11 @@
 """PyMordial Engine Windowing Subsystem Package."""
 
 from engine.window.window import (
+    DisplayMonitor,
+    VSyncMode,
     Window,
     WindowConfig,
     WindowMode,
-    VSyncMode,
-    DisplayMonitor,
 )
 
 __all__ = [

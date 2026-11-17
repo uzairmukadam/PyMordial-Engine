@@ -5,35 +5,35 @@ Rapier3D physics, and PyGame-CE. Designed for zero-allocation runtime performanc
 and clean isolation between core engine infrastructure and project-specific gameplay logic.
 """
 
-from engine.app.project_app import ProjectApp
 from engine.app.config import ProjectConfig
 from engine.app.module import ProjectModule
-from engine.window.window import WindowMode, VSyncMode
-from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
-from engine.gfx.context import RenderContext
-from engine.gfx.pipeline import RenderPipeline
-from engine.core.ecs import ENTITY_SHAPES, EntityManager
+from engine.app.project_app import ProjectApp
+from engine.audio import AudioEngine, SoundCue, get_audio_engine
 from engine.camera.camera import VirtualCamera
 from engine.camera.follow_camera import FollowCamera, FollowCameraConfig
-from engine.camera.free_camera import FreeFlyCamera, FreeCamera
-from engine.physics.rapier_world import PhysicsManager
-from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
-from engine.physics.character_controller import KinematicCharacterMotor
-from engine.audio import AudioEngine, get_audio_engine, SoundCue
-from engine.input import InputManager
+from engine.camera.free_camera import FreeCamera, FreeFlyCamera
+from engine.core.ecs import ENTITY_SHAPES, EntityManager
 from engine.core.state import GameState, GameStateManager
+from engine.gfx.context import RenderContext
+from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
+from engine.input import InputManager
+from engine.physics.character_controller import KinematicCharacterMotor
+from engine.physics.character_motor import CharacterMotor, CharacterMotorConfig
+from engine.physics.rapier_world import PhysicsManager
 from engine.ui import (
-    UIManager,
-    UIScreen,
-    UITheme,
-    UIStyle,
     UIButton,
-    UIPanel,
-    UILabel,
-    UISlider,
-    UISegmentGroup,
     UIImage,
+    UILabel,
+    UIManager,
+    UIPanel,
+    UIScreen,
+    UISegmentGroup,
+    UISlider,
+    UIStyle,
+    UITheme,
 )
+from engine.window.window import VSyncMode, WindowMode
 
 __version__ = "0.1.0a1"
 
@@ -77,3 +77,4 @@ __all__ = [
     "UISegmentGroup",
     "UIImage",
 ]
+

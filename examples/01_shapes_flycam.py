@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from _common import FlyCameraControls, add_box, create_app, create_parser
+
 from engine.camera import FreeFlyCamera
 from engine.core import WaterProperties
 

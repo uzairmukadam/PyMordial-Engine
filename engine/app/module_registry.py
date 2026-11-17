@@ -118,9 +118,7 @@ class ModuleRegistry:
             manifest_report = validate_manifest(record.manifest)
             report.errors.extend(manifest_report.errors)
             if record.manifest.id != module_id:
-                report.errors.append(
-                    f"Module registered as '{module_id}' declares manifest id '{record.manifest.id}'."
-                )
+                report.errors.append(f"Module registered as '{module_id}' declares manifest id '{record.manifest.id}'.")
 
         for module_id, record in sorted(self._records.items()):
             for dep in record.dependencies:
@@ -128,13 +126,10 @@ class ModuleRegistry:
                     continue
                 if dep.optional:
                     report.warnings.append(
-                        f"Module '{module_id}' declares optional dependency '{dep.module_id}' "
-                        f"which is not registered."
+                        f"Module '{module_id}' declares optional dependency '{dep.module_id}' which is not registered."
                     )
                 else:
-                    report.errors.append(
-                        f"Module '{module_id}' requires '{dep.module_id}' which is not registered."
-                    )
+                    report.errors.append(f"Module '{module_id}' requires '{dep.module_id}' which is not registered.")
 
         report.is_valid = len(report.errors) == 0
         return report

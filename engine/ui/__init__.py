@@ -3,19 +3,19 @@
 Provides GPU-accelerated 2D UI rendering, widgets, themes, and screens.
 """
 
-from engine.ui.shaders import UI_VERT_GLSL, UI_FRAG_GLSL
-from engine.ui.theme import UIStyle, UITheme
-from engine.ui.renderer import UIRenderer
 from engine.ui.elements import (
-    UIElement,
-    UIPanel,
-    UILabel,
     UIButton,
-    UISlider,
-    UISegmentGroup,
+    UIElement,
     UIImage,
+    UILabel,
+    UIPanel,
+    UISegmentGroup,
+    UISlider,
 )
-from engine.ui.manager import UIScreen, UIManager
+from engine.ui.manager import UIManager, UIScreen
+from engine.ui.renderer import UIRenderer
+from engine.ui.shaders import UI_FRAG_GLSL, UI_VERT_GLSL
+from engine.ui.theme import UIStyle, UITheme
 
 __all__ = [
     "UI_VERT_GLSL",

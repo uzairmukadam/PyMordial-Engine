@@ -5,22 +5,24 @@ physics state, and material parameters, mirroring directly into OpenGL SSBOs.
 """
 
 from __future__ import annotations
+
 from dataclasses import replace
 from typing import Any
+
 import numpy as np
 
 from engine.core.entity_pool import EntityPool
+from engine.core.materials import (
+    MAT_FLAG_VEHICLE_CHASSIS,
+    MAT_FLAG_VEHICLE_WHEEL,
+    DisplacementMode,
+    MaterialRegistry,
+    decode_mat_flags,
+    encode_mat_flags,
+)
 from engine.core.math_utils import (
     batch_nlerp_and_compose_mat4,
     trs_to_mat4,
-)
-from engine.core.materials import (
-    DisplacementMode,
-    encode_mat_flags,
-    decode_mat_flags,
-    MaterialRegistry,
-    MAT_FLAG_VEHICLE_CHASSIS,
-    MAT_FLAG_VEHICLE_WHEEL,
 )
 from engine.core.water import WaterProperties
 
@@ -342,7 +344,11 @@ class EntityManager:
             raise ValueError("water must be a WaterProperties instance and requires shape='water'.")
         if dimensions is not None:
             dimensions_array = np.asarray(dimensions, dtype=np.float32)
-            if dimensions_array.shape != (3,) or not np.all(np.isfinite(dimensions_array)) or np.any(dimensions_array < 0.0):
+            if (
+                dimensions_array.shape != (3,)
+                or not np.all(np.isfinite(dimensions_array))
+                or np.any(dimensions_array < 0.0)
+            ):
                 raise ValueError("Entity dimensions must be three finite non-negative values.")
 
         entity_id = self.pool.allocate()
@@ -387,9 +393,17 @@ class EntityManager:
         emissive_mult = 1.0 + max(0.0, float(emissive_val))
 
         if color is not None:
-            self.material_data[dense_idx, 0:3] = (color[0] * emissive_mult, color[1] * emissive_mult, color[2] * emissive_mult)
+            self.material_data[dense_idx, 0:3] = (
+                color[0] * emissive_mult,
+                color[1] * emissive_mult,
+                color[2] * emissive_mult,
+            )
         elif mat_def is not None:
-            self.material_data[dense_idx, 0:3] = (mat_def.color[0] * emissive_mult, mat_def.color[1] * emissive_mult, mat_def.color[2] * emissive_mult)
+            self.material_data[dense_idx, 0:3] = (
+                mat_def.color[0] * emissive_mult,
+                mat_def.color[1] * emissive_mult,
+                mat_def.color[2] * emissive_mult,
+            )
         else:
             self.material_data[dense_idx, 0:3] = 1.0 * emissive_mult
 
@@ -420,13 +434,13 @@ class EntityManager:
         # Layer Index & Texture Usage
         if layer_idx is not None:
             resolved_layer = int(layer_idx)
-            has_tex = (resolved_layer > 0)
+            has_tex = resolved_layer > 0
         elif mat_def is not None:
             resolved_layer = mat_def.layer_idx
             has_tex = mat_def.has_texture and (resolved_layer > 0)
         elif isinstance(material_id, int):
             resolved_layer = int(material_id)
-            has_tex = (resolved_layer > 0)
+            has_tex = resolved_layer > 0
         else:
             resolved_layer = 0
             has_tex = False
@@ -530,9 +544,7 @@ class EntityManager:
             if shape_index == batch_shape and is_explicit == batch_explicit:
                 continue
             if batch_explicit and batch_shape >= 0 and batch_shape != _SHAPE_TO_INDEX["water"]:
-                explicit_batches.append(
-                    (ENTITY_SHAPES[batch_shape], dense_idx - batch_start, batch_start, False, True)
-                )
+                explicit_batches.append((ENTITY_SHAPES[batch_shape], dense_idx - batch_start, batch_start, False, True))
             batch_shape = shape_index
             batch_start = dense_idx
             batch_explicit = is_explicit
@@ -594,9 +606,17 @@ class EntityManager:
         emissive_mult = 1.0 + max(0.0, float(emissive_val)) if emissive_val is not None else 1.0
 
         if color is not None:
-            self.material_data[dense_idx, 0:3] = (color[0] * emissive_mult, color[1] * emissive_mult, color[2] * emissive_mult)
+            self.material_data[dense_idx, 0:3] = (
+                color[0] * emissive_mult,
+                color[1] * emissive_mult,
+                color[2] * emissive_mult,
+            )
         elif mat_def is not None:
-            self.material_data[dense_idx, 0:3] = (mat_def.color[0] * emissive_mult, mat_def.color[1] * emissive_mult, mat_def.color[2] * emissive_mult)
+            self.material_data[dense_idx, 0:3] = (
+                mat_def.color[0] * emissive_mult,
+                mat_def.color[1] * emissive_mult,
+                mat_def.color[2] * emissive_mult,
+            )
         elif emissive_val is not None:
             self.material_data[dense_idx, 0:3] *= emissive_mult
 
@@ -621,16 +641,16 @@ class EntityManager:
         # 5. Layer Index & Texture Flags
         if layer_idx is not None:
             resolved_layer = int(layer_idx)
-            has_tex = (resolved_layer > 0)
+            has_tex = resolved_layer > 0
         elif mat_def is not None:
             resolved_layer = mat_def.layer_idx
             has_tex = mat_def.has_texture and (resolved_layer > 0)
         elif isinstance(material_id, int):
             resolved_layer = int(material_id)
-            has_tex = (resolved_layer > 0)
+            has_tex = resolved_layer > 0
         else:
             resolved_layer = int(self.material_data[dense_idx, 6])
-            has_tex = (resolved_layer > 0)
+            has_tex = resolved_layer > 0
 
         # 6. Displacement Mode
         curr_raw = int(self.material_data[dense_idx, 7])
@@ -872,8 +892,7 @@ class EntityManager:
             "shape_ids": self.shape_ids.copy(),
             "shape_explicit": self.shape_explicit.copy(),
             "water_properties": [
-                None if properties is None else replace(properties)
-                for properties in self.water_properties
+                None if properties is None else replace(properties) for properties in self.water_properties
             ],
             "aabbs": self.aabbs.copy(),
             "is_static": self.is_static.copy(),

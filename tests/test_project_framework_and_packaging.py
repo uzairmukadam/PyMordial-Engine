@@ -1,6 +1,7 @@
 """Unit and Integration tests for Project Framework, World Builders, Modules, and Dual-Target Packager."""
 
 from pathlib import Path
+
 import numpy as np
 
 from engine.app.config import ProjectConfig
@@ -12,8 +13,8 @@ from engine.app.project_validator import (
     validate_project_config,
     validate_project_directory,
 )
-from engine.world.default_world import DefaultWorldBuilder, make_tiled_plane_pm_mesh
 from engine.tools.packager import PackagingConfig, ProjectPackager
+from engine.world.default_world import DefaultWorldBuilder, make_tiled_plane_pm_mesh
 
 
 class DummyModule(ProjectModule):
@@ -214,4 +215,3 @@ def test_resolve_project_path_handles_absolute_and_relative(tmp_path: Path):
 
     missing = resolve_project_path("definitely_not_a_real_project")
     assert not missing.exists()
-

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from engine.gfx.passes.taa_pass import _halton, TAAPass
+from engine.gfx.passes.taa_pass import TAAPass, _halton
 
 
 def rgb_to_ycocg(r: float, g: float, b: float) -> tuple[float, float, float]:
@@ -86,15 +86,18 @@ class TestHaltonJitterSequence:
 class TestColorSpaceTransforms:
     """Verifies invertible orthogonal YCoCg transforms and tonemapping."""
 
-    @pytest.mark.parametrize("r, g, b", [
-        (0.0, 0.0, 0.0),
-        (1.0, 1.0, 1.0),
-        (0.85, 0.12, 0.05),
-        (0.1, 0.75, 0.35),
-        (0.12, 0.45, 0.88),
-        (12.5, 45.0, 8.2),   # HDR values
-        (0.001, 0.002, 0.005), # Deep shadows
-    ])
+    @pytest.mark.parametrize(
+        "r, g, b",
+        [
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+            (0.85, 0.12, 0.05),
+            (0.1, 0.75, 0.35),
+            (0.12, 0.45, 0.88),
+            (12.5, 45.0, 8.2),  # HDR values
+            (0.001, 0.002, 0.005),  # Deep shadows
+        ],
+    )
     def test_ycocg_roundtrip_precision(self, r, g, b):
         y, co, cg = rgb_to_ycocg(r, g, b)
         r_out, g_out, b_out = ycocg_to_rgb(y, co, cg)
@@ -103,12 +106,15 @@ class TestColorSpaceTransforms:
         assert pytest.approx(g_out, abs=1e-5) == g
         assert pytest.approx(b_out, abs=1e-5) == b
 
-    @pytest.mark.parametrize("y, co, cg", [
-        (0.0, 0.0, 0.0),
-        (0.5, 0.1, -0.05),
-        (2.0, 0.3, -0.1),
-        (15.0, 0.8, -0.4),
-    ])
+    @pytest.mark.parametrize(
+        "y, co, cg",
+        [
+            (0.0, 0.0, 0.0),
+            (0.5, 0.1, -0.05),
+            (2.0, 0.3, -0.1),
+            (15.0, 0.8, -0.4),
+        ],
+    )
     def test_tonemap_untonemap_roundtrip(self, y, co, cg):
         ty, tco, tcg = tonemap_ycocg(y, co, cg)
         # Tonemapped Y must be strictly in [0, 1)

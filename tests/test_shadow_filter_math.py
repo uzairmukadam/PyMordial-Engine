@@ -11,8 +11,6 @@ import math
 import re
 from pathlib import Path
 
-import pytest
-
 SHADER_DIR = Path(__file__).resolve().parent.parent / "shaders"
 RESOLVE_SHADER = SHADER_DIR / "deferred_resolve.frag"
 
@@ -51,10 +49,7 @@ class TestPenumbraPhysics:
         )
 
         # Any literal multiplier applied to the uniform must stay near 1.0.
-        literals = [
-            float(value)
-            for value in re.findall(r"(?<![\w.])(\d+\.\d+|\d+)(?![\w.])", expression)
-        ]
+        literals = [float(value) for value in re.findall(r"(?<![\w.])(\d+\.\d+|\d+)(?![\w.])", expression)]
         for literal in literals:
             assert literal <= MAX_SPREAD_RATIO, (
                 f"sun_spread multiplies the solar radius by {literal}, which is far "
@@ -100,8 +95,7 @@ class TestPenumbraPhysics:
 
         expression = match.group(1)
         assert "2.0 / full_size" not in expression, (
-            f"cascade_texel_size is '{expression.strip()}', which is 2x too large. "
-            "Use 1.0 / full_size."
+            f"cascade_texel_size is '{expression.strip()}', which is 2x too large. Use 1.0 / full_size."
         )
         assert "1.0 / full_size" in expression, (
             f"cascade_texel_size should be 1.0 / full_size, got '{expression.strip()}'."
@@ -113,11 +107,7 @@ class TestPenumbraPhysics:
         calls = re.findall(r"VogelDiskSample\(([^;]*?)\)", source)
         assert calls, "No VogelDiskSample calls found."
 
-        rotated = [
-            call
-            for call in calls
-            if "InterleavedGradientNoise" in call or "IGN" in call or "phi" in call
-        ]
+        rotated = [call for call in calls if "InterleavedGradientNoise" in call or "IGN" in call or "phi" in call]
         assert rotated, (
             "Every VogelDiskSample call passes a constant phase, so the sampling "
             "pattern is identical per pixel and bands. Rotate it with per-pixel noise."
@@ -146,10 +136,7 @@ class TestCascadeSplitQuality:
 
         # Texel density is inversely proportional to slice span for a fixed map
         # size, so a large span ratio between neighbours is a visible quality step.
-        ratios = [
-            spans[index + 1] / max(spans[index], 1e-6)
-            for index in range(len(spans) - 1)
-        ]
+        ratios = [spans[index + 1] / max(spans[index], 1e-6) for index in range(len(spans) - 1)]
         worst = max(ratios)
         assert worst <= 2.5, (
             f"Adjacent cascade span ratio reaches {worst:.2f}x, so texel density drops "

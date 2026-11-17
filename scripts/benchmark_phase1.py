@@ -26,21 +26,21 @@ def benchmark():
     for _ in range(steps):
         physics.step_simulation(1.0 / 60.0)
     t_physics = time.perf_counter() - t0
-    print(f"Physics 500 steps: {t_physics*1000:.2f} ms ({t_physics/steps*1000:.3f} ms/step)")
+    print(f"Physics 500 steps: {t_physics * 1000:.2f} ms ({t_physics / steps * 1000:.3f} ms/step)")
 
     # 2. Benchmark Physics -> ECS Sync
     t0 = time.perf_counter()
     for _ in range(steps):
         physics.sync_to_ecs(ecs)
     t_sync = time.perf_counter() - t0
-    print(f"Physics -> ECS Sync 500 runs: {t_sync*1000:.2f} ms ({t_sync/steps*1000:.3f} ms/sync)")
+    print(f"Physics -> ECS Sync 500 runs: {t_sync * 1000:.2f} ms ({t_sync / steps * 1000:.3f} ms/sync)")
 
     # 3. Benchmark ECS Sub-frame NLERP Interpolation
     t0 = time.perf_counter()
     for _ in range(steps):
         ecs.interpolate_render_transforms(0.5)
     t_interp = time.perf_counter() - t0
-    print(f"ECS NLERP Interpolation 500 runs: {t_interp*1000:.2f} ms ({t_interp/steps*1000:.3f} ms/interp)")
+    print(f"ECS NLERP Interpolation 500 runs: {t_interp * 1000:.2f} ms ({t_interp / steps * 1000:.3f} ms/interp)")
 
     # 4. Benchmark Full Engine Loop Step
     loop = EngineLoop(ecs=ecs, fixed_dt=1.0 / 60.0)
@@ -52,7 +52,9 @@ def benchmark():
         loop.step_frame(1.0 / 60.0)
     t_loop = time.perf_counter() - t0
     effective_fps = frame_count / t_loop
-    print(f"Full Loop {frame_count} frames: {t_loop*1000:.2f} ms ({t_loop/frame_count*1000:.3f} ms/frame -> {effective_fps:.1f} FPS for 1,000 entities!)")
+    print(
+        f"Full Loop {frame_count} frames: {t_loop * 1000:.2f} ms ({t_loop / frame_count * 1000:.3f} ms/frame -> {effective_fps:.1f} FPS for 1,000 entities!)"
+    )
 
 
 if __name__ == "__main__":

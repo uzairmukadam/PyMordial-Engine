@@ -1,7 +1,9 @@
 """Abstract Virtual Camera Base for PyMordial Engine."""
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 
 from engine.core.math_utils import matrix_look_at, matrix_perspective
@@ -102,4 +104,3 @@ class VirtualCamera:
     def update(self, dt: float) -> None:
         """Per-frame update hook for camera controllers."""
         pass
-

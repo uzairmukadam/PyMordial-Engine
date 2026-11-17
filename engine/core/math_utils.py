@@ -10,7 +10,9 @@ Includes zero-allocation vectorized routines operating directly on C-contiguous 
 """
 
 from __future__ import annotations
+
 import math
+
 import numpy as np
 
 
@@ -119,10 +121,22 @@ def trs_to_mat4(
     # col 3: [tx, ty, tz, 1]
     mat = np.array(
         [
-            r[0, 0] * sx, r[1, 0] * sx, r[2, 0] * sx, 0.0,
-            r[0, 1] * sy, r[1, 1] * sy, r[2, 1] * sy, 0.0,
-            r[0, 2] * sz, r[1, 2] * sz, r[2, 2] * sz, 0.0,
-            tx, ty, tz, 1.0,
+            r[0, 0] * sx,
+            r[1, 0] * sx,
+            r[2, 0] * sx,
+            0.0,
+            r[0, 1] * sy,
+            r[1, 1] * sy,
+            r[2, 1] * sy,
+            0.0,
+            r[0, 2] * sz,
+            r[1, 2] * sz,
+            r[2, 2] * sz,
+            0.0,
+            tx,
+            ty,
+            tz,
+            1.0,
         ],
         dtype=np.float32,
     )

@@ -104,24 +104,18 @@ class TestCascadeAtlasRects:
 
     @pytest.mark.parametrize("atlas_size", (1024, 2048, 4096))
     def test_uniform_rects_match_legacy_2x2(self, headless_ctx: RenderContext, atlas_size: int) -> None:
-        csm = CascadedShadowMap(
-            headless_ctx.ctx, atlas_size=atlas_size, cascade_count=4, nonuniform_atlas=False
-        )
+        csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=atlas_size, cascade_count=4, nonuniform_atlas=False)
         try:
             assert csm.cascade_rects == _legacy_rects(atlas_size)
             inv = 1.0 / float(atlas_size)
-            expected_uv = [
-                (x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in _legacy_rects(atlas_size)
-            ]
+            expected_uv = [(x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in _legacy_rects(atlas_size)]
             for actual, expected in zip(csm.cascade_rect_uv, expected_uv):
                 assert actual == pytest.approx(expected)
         finally:
             csm.destroy()
 
     def test_nonuniform_rects_favour_near_cascades(self, headless_ctx: RenderContext) -> None:
-        csm = CascadedShadowMap(
-            headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True
-        )
+        csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True)
         try:
             widths = [rect[2] for rect in csm.cascade_rects]
             assert widths[0] > widths[2], "Near cascade must get more texels than a far one."
@@ -133,9 +127,7 @@ class TestCascadeAtlasRects:
             csm.destroy()
 
     def test_nonuniform_rects_stay_inside_atlas(self, headless_ctx: RenderContext) -> None:
-        csm = CascadedShadowMap(
-            headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True
-        )
+        csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True)
         try:
             for x, y, w, h in csm.cascade_rects:
                 assert x >= 0 and y >= 0
@@ -145,9 +137,7 @@ class TestCascadeAtlasRects:
             csm.destroy()
 
     def test_begin_cascade_uses_per_cascade_rect(self, headless_ctx: RenderContext) -> None:
-        csm = CascadedShadowMap(
-            headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True
-        )
+        csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True)
         try:
             for index, rect in enumerate(csm.cascade_rects):
                 csm.begin_cascade(index)
@@ -179,9 +169,7 @@ class TestCascadeTexelDensity:
     """Adjacent cascades must not differ wildly in texel density."""
 
     @pytest.mark.parametrize("nonuniform", (False, True))
-    def test_adjacent_texel_density_ratio_bounded(
-        self, headless_ctx: RenderContext, nonuniform: bool
-    ) -> None:
+    def test_adjacent_texel_density_ratio_bounded(self, headless_ctx: RenderContext, nonuniform: bool) -> None:
         csm = CascadedShadowMap(
             headless_ctx.ctx,
             atlas_size=4096,
@@ -198,14 +186,8 @@ class TestCascadeTexelDensity:
                 previous = split
 
             # Texels per world unit for each cascade: rect size / slice span.
-            densities = [
-                csm.cascade_rects[index][2] / max(spans[index], 1e-6)
-                for index in range(len(spans))
-            ]
-            ratios = [
-                densities[index] / max(densities[index + 1], 1e-9)
-                for index in range(len(densities) - 1)
-            ]
+            densities = [csm.cascade_rects[index][2] / max(spans[index], 1e-6) for index in range(len(spans))]
+            ratios = [densities[index] / max(densities[index + 1], 1e-9) for index in range(len(densities) - 1)]
             worst = max(ratios)
             assert worst <= MAX_SPAN_RATIO, (
                 f"Adjacent cascade texel-density ratio reaches {worst:.2f}x "
@@ -216,9 +198,7 @@ class TestCascadeTexelDensity:
 
     def test_nonuniform_improves_near_cascade_density(self, headless_ctx: RenderContext) -> None:
         uniform = CascadedShadowMap(headless_ctx.ctx, atlas_size=4096, cascade_count=4)
-        nonuniform = CascadedShadowMap(
-            headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True
-        )
+        nonuniform = CascadedShadowMap(headless_ctx.ctx, atlas_size=4096, cascade_count=4, nonuniform_atlas=True)
         try:
             # Near cascades keep their texels while far cascades shrink, so the
             # near/far texel ratio improves without growing the atlas.

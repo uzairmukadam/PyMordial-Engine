@@ -35,8 +35,14 @@ class TestReferenceProject:
 
     def test_project_runs_headless(self) -> None:
         result = _run(
-            "-m", "engine.tools.project", "run",
-            "--project", "reference_game", "--headless", "--frames", "3",
+            "-m",
+            "engine.tools.project",
+            "run",
+            "--project",
+            "reference_game",
+            "--headless",
+            "--frames",
+            "3",
         )
         assert result.returncode == 0, result.stdout + result.stderr
 

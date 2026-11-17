@@ -5,32 +5,34 @@ G-Buffer inspection modes, visual 3D wireframes, and shadow parameters.
 """
 
 from __future__ import annotations
+
 import json
-from pathlib import Path
 from enum import IntEnum
+from pathlib import Path
 from typing import Any, Callable
-from engine.gfx.quality_presets import GraphicsQuality, GIMode
+
+from engine.gfx.quality_presets import GIMode, GraphicsQuality
 from engine.logging import log_error
 
 
 class GBufferDebugMode(IntEnum):
     """G-Buffer target debug visualization modes."""
 
-    DISABLED = 0       # Standard deferred Cook-Torrance PBR resolve
-    ALBEDO = 1         # RT0: Base Color RGB
-    NORMALS = 2        # RT1: World-space Normals (mapped to [0, 1])
-    MATERIAL = 3       # RT2: Roughness, Metallic & Material parameters
-    DEPTH = 4          # RT3: Reversed-Z depth
-    SHADOW_ATLAS = 5   # Cascaded Shadow Maps depth atlas
-    SHADOW_MASK = 6    # Direct Cascaded Shadow Map occlusion mask
-    AO = 7             # Ambient Occlusion (SSAO / GTAO) mask
-    SSGI = 8           # Screen-Space Global Illumination indirect diffuse
-    GI_TOTAL = 10      # Consolidated Total Indirect Diffuse
-    HIZ = 11           # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
-    SPOT_LIGHTS = 12   # Accumulated dynamic spot-light contribution
+    DISABLED = 0  # Standard deferred Cook-Torrance PBR resolve
+    ALBEDO = 1  # RT0: Base Color RGB
+    NORMALS = 2  # RT1: World-space Normals (mapped to [0, 1])
+    MATERIAL = 3  # RT2: Roughness, Metallic & Material parameters
+    DEPTH = 4  # RT3: Reversed-Z depth
+    SHADOW_ATLAS = 5  # Cascaded Shadow Maps depth atlas
+    SHADOW_MASK = 6  # Direct Cascaded Shadow Map occlusion mask
+    AO = 7  # Ambient Occlusion (SSAO / GTAO) mask
+    SSGI = 8  # Screen-Space Global Illumination indirect diffuse
+    GI_TOTAL = 10  # Consolidated Total Indirect Diffuse
+    HIZ = 11  # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
+    SPOT_LIGHTS = 12  # Accumulated dynamic spot-light contribution
     RADIANCE_CASCADES = 13  # Radiance Cascades indirect diffuse
-    CASCADE_INDEX = 14      # Selected CSM cascade index (false colour)
-    CASCADE_COVERAGE = 15   # Per-cascade coverage / border fade
+    CASCADE_INDEX = 14  # Selected CSM cascade index (false colour)
+    CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
 
 
 class EngineTweaks:
@@ -340,7 +342,7 @@ class EngineTweaks:
 
         # Physical Atmosphere & Day-Night Cycle
         self.time_of_day = 12.0
-        self.day_speed = 0.0          # 0.0 = manual / paused
+        self.day_speed = 0.0  # 0.0 = manual / paused
         self.azimuth_deg = 45.0
         self.latitude_deg = 35.0
         self.declination_deg = 0.0
@@ -350,10 +352,10 @@ class EngineTweaks:
         self.sky_exposure = 1.0
         self.sky_saturation = 1.0
         self.atmo_preset = "EARTH_DAY"
-        self.rayleigh_r = 5.802       # m^-1 * 1e6
+        self.rayleigh_r = 5.802  # m^-1 * 1e6
         self.rayleigh_g = 13.558
         self.rayleigh_b = 33.100
-        self.mie_coeff = 3.996        # m^-1 * 1e6
+        self.mie_coeff = 3.996  # m^-1 * 1e6
         self.mie_asymmetry = 0.80
         self.turbidity = 1.0
         self.star_intensity = 1.0
@@ -442,6 +444,7 @@ class EngineTweaks:
     def apply_atmo_preset(self, preset_name: str) -> None:
         """Applies a named planet atmosphere preset to tweak fields."""
         from engine.modules.atmosphere.config import ATMOSPHERE_PRESETS
+
         preset = ATMOSPHERE_PRESETS.get(preset_name.upper())
         if preset is not None:
             self.atmo_preset = preset_name.upper()
@@ -511,6 +514,7 @@ class EngineTweaks:
                 rather than resetting them to hardware tier defaults.
         """
         from engine.gfx.quality_presets import QUALITY_PRESETS
+
         self.quality_preset = preset
         if preset != GraphicsQuality.CUSTOM and preset in QUALITY_PRESETS:
             cfg = QUALITY_PRESETS[preset]
@@ -681,7 +685,7 @@ class EngineTweaks:
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.ssr_max_distance = float(self.ssr_max_distance)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
-            p_cfg.taa_enabled = (p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False)))
+            p_cfg.taa_enabled = p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False))
             p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
             p_cfg.taa_sharpness = float(getattr(self, "taa_sharpness", 0.35))
             p_cfg.taa_gamma = float(getattr(self, "taa_gamma", 1.25))
@@ -854,53 +858,137 @@ class EngineTweaks:
 
     sync_to_pipeline = apply_to_pipeline
 
-    CREATIVE_OPTICS_PROPERTIES = frozenset({
-        "dof_enabled",
-        "motion_blur_enabled",
-        "lens_flare_enabled",
-        "chromatic_aberration_enabled",
-        "vignette_enabled",
-        "film_grain_enabled",
-    })
+    CREATIVE_OPTICS_PROPERTIES = frozenset(
+        {
+            "dof_enabled",
+            "motion_blur_enabled",
+            "lens_flare_enabled",
+            "chromatic_aberration_enabled",
+            "vignette_enabled",
+            "film_grain_enabled",
+        }
+    )
 
     def sync_from_config(self, cfg: Any, preserve_creative_optics: bool = False) -> None:
         """Copies graphics properties from a RenderConfig instance."""
         if cfg is None:
             return
         for prop in (
-            "tonemap_mode", "exposure", "bloom_enabled", "bloom_intensity",
-            "chromatic_aberration_enabled", "chromatic_aberration_intensity",
-            "vignette_enabled", "vignette_intensity", "vignette_roundness", "vignette_smoothness",
-            "film_grain_enabled", "film_grain_intensity",
-            "dof_enabled", "dof_focus_distance", "dof_focal_length", "dof_aperture",
-            "dof_bokeh_shape", "dof_anamorphic_ratio", "dof_max_coc",
-            "motion_blur_enabled", "motion_blur_samples", "motion_blur_intensity", "motion_blur_max_radius",
-            "lens_flare_enabled", "lens_flare_mode", "lens_flare_threshold", "lens_flare_streak_intensity",
-            "lens_flare_streak_width", "lens_flare_ghost_intensity", "lens_flare_halo_intensity",
+            "tonemap_mode",
+            "exposure",
+            "bloom_enabled",
+            "bloom_intensity",
+            "chromatic_aberration_enabled",
+            "chromatic_aberration_intensity",
+            "vignette_enabled",
+            "vignette_intensity",
+            "vignette_roundness",
+            "vignette_smoothness",
+            "film_grain_enabled",
+            "film_grain_intensity",
+            "dof_enabled",
+            "dof_focus_distance",
+            "dof_focal_length",
+            "dof_aperture",
+            "dof_bokeh_shape",
+            "dof_anamorphic_ratio",
+            "dof_max_coc",
+            "motion_blur_enabled",
+            "motion_blur_samples",
+            "motion_blur_intensity",
+            "motion_blur_max_radius",
+            "lens_flare_enabled",
+            "lens_flare_mode",
+            "lens_flare_threshold",
+            "lens_flare_streak_intensity",
+            "lens_flare_streak_width",
+            "lens_flare_ghost_intensity",
+            "lens_flare_halo_intensity",
             "lens_flare_tint",
-            "solar_flare_blade_count", "solar_flare_bloom_intensity",
-            "solar_flare_starburst_intensity", "solar_flare_occlusion_fade",
-            "gi_mode", "ssgi_steps", "ssgi_rays", "ssgi_thickness", "ssgi_ray_distance",
+            "solar_flare_blade_count",
+            "solar_flare_bloom_intensity",
+            "solar_flare_starburst_intensity",
+            "solar_flare_occlusion_fade",
+            "gi_mode",
+            "ssgi_steps",
+            "ssgi_rays",
+            "ssgi_thickness",
+            "ssgi_ray_distance",
             "ssgi_intensity",
-            "rc_ray_count", "rc_intensity", "rc_interval_c0", "rc_interval_c1", "rc_interval_c2",
-            "rc_steps_c0", "rc_steps_c1", "rc_thickness", "rc_temporal_blend",
-            "ao_mode", "ao_intensity", "ao_radius", "ao_resolution_scale",
-            "ibl_enabled", "ssr_enabled", "ssr_steps", "ssr_thickness", "ssr_max_roughness",
-            "ssr_max_distance", "fxaa_subpixel", "fxaa_edge_threshold", "smaa_threshold",
+            "rc_ray_count",
+            "rc_intensity",
+            "rc_interval_c0",
+            "rc_interval_c1",
+            "rc_interval_c2",
+            "rc_steps_c0",
+            "rc_steps_c1",
+            "rc_thickness",
+            "rc_temporal_blend",
+            "ao_mode",
+            "ao_intensity",
+            "ao_radius",
+            "ao_resolution_scale",
+            "ibl_enabled",
+            "ssr_enabled",
+            "ssr_steps",
+            "ssr_thickness",
+            "ssr_max_roughness",
+            "ssr_max_distance",
+            "fxaa_subpixel",
+            "fxaa_edge_threshold",
+            "smaa_threshold",
             "spot_shadow_resolution",
-            "aa_mode", "taa_enabled", "taa_feedback", "taa_sharpness", "taa_gamma",
-            "taa_max_feedback", "taa_min_feedback", "taa_variance_gamma",
-            "shadow_mode", "shadow_softness", "sun_angular_radius", "shadow_bias", "shadow_normal_bias",
-            "shadow_distance", "csm_split_lambda", "csm_split_mode", "csm_cascade_distance_scale",
-            "csm_cascades", "shadow_resolution",
-            "pcf_samples", "csm_stabilization", "csm_nonuniform_atlas",
-            "pom_enabled", "pom_min_samples", "pom_max_samples", "pom_height_scale", "pom_self_shadow",
-            "disp_near_radius", "disp_mid_radius", "tess_enabled", "tess_max_level",
-            "tess_med_level", "tess_displacement_scale", "frustum_cull_enabled", "hiz_cull_enabled",
-            "ssdm_enabled", "ssdm_scale",
-            "volumetric_fog_enabled", "fog_resolution", "fog_point_lights", "fog_density",
-            "fog_height_falloff", "fog_anisotropy", "fog_distance", "fog_ambient", "fog_debug_mode",
-            "particles_enabled", "particle_count", "particle_mode", "particle_size", "particle_turbulence",
+            "aa_mode",
+            "taa_enabled",
+            "taa_feedback",
+            "taa_sharpness",
+            "taa_gamma",
+            "taa_max_feedback",
+            "taa_min_feedback",
+            "taa_variance_gamma",
+            "shadow_mode",
+            "shadow_softness",
+            "sun_angular_radius",
+            "shadow_bias",
+            "shadow_normal_bias",
+            "shadow_distance",
+            "csm_split_lambda",
+            "csm_split_mode",
+            "csm_cascade_distance_scale",
+            "csm_cascades",
+            "shadow_resolution",
+            "pcf_samples",
+            "csm_stabilization",
+            "csm_nonuniform_atlas",
+            "pom_enabled",
+            "pom_min_samples",
+            "pom_max_samples",
+            "pom_height_scale",
+            "pom_self_shadow",
+            "disp_near_radius",
+            "disp_mid_radius",
+            "tess_enabled",
+            "tess_max_level",
+            "tess_med_level",
+            "tess_displacement_scale",
+            "frustum_cull_enabled",
+            "hiz_cull_enabled",
+            "ssdm_enabled",
+            "ssdm_scale",
+            "volumetric_fog_enabled",
+            "fog_resolution",
+            "fog_point_lights",
+            "fog_density",
+            "fog_height_falloff",
+            "fog_anisotropy",
+            "fog_distance",
+            "fog_ambient",
+            "fog_debug_mode",
+            "particles_enabled",
+            "particle_count",
+            "particle_mode",
+            "particle_size",
+            "particle_turbulence",
         ):
             if preserve_creative_optics and prop in self.CREATIVE_OPTICS_PROPERTIES:
                 continue
@@ -985,7 +1073,9 @@ class EngineTweaks:
     def to_dict(self) -> dict[str, Any]:
         """Serializes current graphics configuration into a JSON-compatible dictionary."""
         return {
-            "quality_preset": self.quality_preset.value if hasattr(self.quality_preset, "value") else str(self.quality_preset),
+            "quality_preset": self.quality_preset.value
+            if hasattr(self.quality_preset, "value")
+            else str(self.quality_preset),
             "show_wireframe": bool(self.show_wireframe),
             "vsync_enabled": bool(self.vsync_enabled),
             "tonemap_mode": str(self.tonemap_mode),

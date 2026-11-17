@@ -11,16 +11,17 @@ Verifies:
 """
 
 import math
+
+import moderngl
 import numpy as np
 import pytest
-import moderngl
 
-from engine.core.ecs import EntityManager
 from engine.core import WaterProperties
+from engine.core.ecs import EntityManager
 from engine.gfx.passes.water_pass import WaterPass, _generate_water_grid
 from engine.gfx.quality_presets import (
-    RenderConfig,
     GraphicsQuality,
+    RenderConfig,
     get_quality_preset,
 )
 
@@ -176,9 +177,9 @@ def test_water_properties_are_per_entity():
 
 def test_pipeline_water_integration():
     """Validates full RenderPipeline integration of WaterPass (Pass 7.65)."""
+    from engine.core.ecs import EntityManager
     from engine.gfx.context import RenderContext
     from engine.gfx.pipeline import RenderPipeline
-    from engine.core.ecs import EntityManager
 
     render_ctx = RenderContext(width=160, height=120, title="Test", hidden=True)
     cfg = get_quality_preset(GraphicsQuality.HIGH)

@@ -24,13 +24,14 @@ PyMordial Engine can target **desktop OpenGL 4.5+** and **OpenGL ES 3.0+**
 ```python
 from engine.app.config import ProjectConfig, RenderConfig
 
+
 def get_project_config() -> ProjectConfig:
     return ProjectConfig(
         title="My Game",
         width=1280,
         height=720,
         # ----- Android opt-in -----
-        enable_android=True,               # <-- enable Android packaging
+        enable_android=True,  # <-- enable Android packaging
         render_config=RenderConfig(
             # mobile-friendly defaults (override as needed)
             max_shadow_cascades=2,
@@ -89,11 +90,11 @@ Developers can manually override any of these defaults through `RenderConfig`.
 
 ```python
 class RenderConfig:
-    max_shadow_cascades: int = 2               # 1-2 cascades are safe on most phones
-    shadow_map_resolution: int = 1024           # 1024 px square per cascade
-    enable_multi_draw: bool = False             # Use simple draw loop when EXT_multi_draw_indirect missing
-    gi_mode: str = "OFF"                      # Options: OFF, IBL, SSGI, RADIANCE_CASCADES – disabled by default
-    enable_ssr: bool = False                   # Turn on only on high-end devices
+    max_shadow_cascades: int = 2  # 1-2 cascades are safe on most phones
+    shadow_map_resolution: int = 1024  # 1024 px square per cascade
+    enable_multi_draw: bool = False  # Use simple draw loop when EXT_multi_draw_indirect missing
+    gi_mode: str = "OFF"  # Options: OFF, IBL, SSGI, RADIANCE_CASCADES – disabled by default
+    enable_ssr: bool = False  # Turn on only on high-end devices
     # existing fields (e.g., enable_taa, quality_preset) remain unchanged
 ```
 

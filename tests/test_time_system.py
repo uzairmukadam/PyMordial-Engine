@@ -1,8 +1,10 @@
 """Unit tests for PyMordial Engine Multi-Domain Time & Clock System."""
 
 from __future__ import annotations
+
 import time
-from engine.time import TimeSystem, Stopwatch, Cooldown
+
+from engine.time import Cooldown, Stopwatch, TimeSystem
 
 
 def test_time_domains_and_dilation():

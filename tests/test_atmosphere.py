@@ -3,12 +3,13 @@
 import math
 
 import pytest
+
+from engine.debug.engine_tweaks import EngineTweaks
 from engine.gfx.atmosphere import (
+    ATMOSPHERE_PRESETS,
     AtmosphereConfig,
     AtmosphereSystem,
-    ATMOSPHERE_PRESETS,
 )
-from engine.debug.engine_tweaks import EngineTweaks
 from engine.modules.atmosphere.global_light import GlobalLightSystem
 
 
@@ -99,9 +100,7 @@ def test_moon_has_independent_orbital_plane() -> None:
     """The moon must not simply retrace the sun's arc."""
     from engine.modules.atmosphere.global_light import GlobalLightSystem
 
-    base = AtmosphereConfig(
-        time_of_day=12.0, latitude_deg=35.0, declination_deg=0.0, azimuth_deg=45.0
-    )
+    base = AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, declination_deg=0.0, azimuth_deg=45.0)
     default = GlobalLightSystem(base)
     default_dot = sum(a * b for a, b in zip(default.sun_dir, default.moon_dir))
 
@@ -120,8 +119,7 @@ def test_moon_has_independent_orbital_plane() -> None:
     # must visibly separate the two paths.
     assert default_dot < -0.99
     assert offset_dot > default_dot + 0.2, (
-        f"Moon declination/azimuth offsets did not change its path "
-        f"(dot {default_dot:.3f} -> {offset_dot:.3f})."
+        f"Moon declination/azimuth offsets did not change its path (dot {default_dot:.3f} -> {offset_dot:.3f})."
     )
 
 
@@ -129,15 +127,9 @@ def test_moon_declination_changes_elevation() -> None:
     """A lunar declination offset must move the moon off the solar arc."""
     from engine.modules.atmosphere.global_light import GlobalLightSystem
 
-    flat = GlobalLightSystem(
-        AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_declination_deg=0.0)
-    )
-    tilted = GlobalLightSystem(
-        AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_declination_deg=25.0)
-    )
-    assert abs(tilted.moon_dir[1] - flat.moon_dir[1]) > 0.05, (
-        "Moon elevation did not respond to moon_declination_deg."
-    )
+    flat = GlobalLightSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_declination_deg=0.0))
+    tilted = GlobalLightSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_declination_deg=25.0))
+    assert abs(tilted.moon_dir[1] - flat.moon_dir[1]) > 0.05, "Moon elevation did not respond to moon_declination_deg."
 
 
 def test_engine_tweaks_preset_integration() -> None:
@@ -167,9 +159,7 @@ def _dot(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
 
 def test_moon_is_not_antipodal_when_orbit_offset_differs() -> None:
     """The moon must follow its own hour angle, not mirror the sun."""
-    system = AtmosphereSystem(
-        AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=6.0)
-    )
+    system = AtmosphereSystem(AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=6.0))
     sun_dir = system.compute_sun_vector()
     moon_dir = system.compute_moon_vector()
     # Antipodal would give a dot product of exactly -1.
@@ -185,27 +175,19 @@ def test_moon_is_not_antipodal_when_orbit_offset_differs() -> None:
 
 
 def test_moon_phase_is_new_at_conjunction_and_full_at_opposition() -> None:
-    conjunction = AtmosphereSystem(
-        AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=0.0)
-    )
+    conjunction = AtmosphereSystem(AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=0.0))
     assert conjunction.moon_phase == pytest.approx(0.0, abs=1e-6)
 
-    opposition = AtmosphereSystem(
-        AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0)
-    )
+    opposition = AtmosphereSystem(AtmosphereConfig(time_of_day=12.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0))
     assert opposition.moon_phase == pytest.approx(1.0, abs=1e-6)
 
 
 def test_moon_phase_modulates_moon_intensity() -> None:
     """A new moon must contribute no direct light; a full moon its full intensity."""
-    new_moon = AtmosphereSystem(
-        AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=0.0)
-    )
+    new_moon = AtmosphereSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=0.0))
     assert new_moon.lights.moon_lux == pytest.approx(0.0, abs=1e-6)
 
-    full_moon = AtmosphereSystem(
-        AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0)
-    )
+    full_moon = AtmosphereSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0))
     assert full_moon.lights.moon_lux == pytest.approx(full_moon.config.moon_intensity, rel=1e-6)
 
 
@@ -233,9 +215,7 @@ def test_global_light_primary_picks_sun_above_horizon() -> None:
 
 
 def test_global_light_primary_picks_moon_when_sun_is_below_horizon() -> None:
-    lights = GlobalLightSystem(
-        AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0)
-    )
+    lights = GlobalLightSystem(AtmosphereConfig(time_of_day=0.0, latitude_deg=35.0, moon_orbit_offset_hours=12.0))
     lights.refresh()
     assert lights.sun_dir[1] > 0.0  # sun below the horizon
     assert lights.moon_dir[1] < 0.0  # full moon above the horizon

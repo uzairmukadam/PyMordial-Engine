@@ -1,20 +1,22 @@
 """Unit and integration tests for BackgroundAssetLoader and LoadingScreen."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
+import moderngl
 import numpy as np
 import pytest
 from PIL import Image
-import moderngl
 
+from engine.core.async_loader import BackgroundAssetLoader
+from engine.events import WindowResizeEvent, publish_event
+from engine.gfx.loading_screen import LoadingScreen
 from engine.gfx.texture_atlas import (
     DecodedMaterialLayer,
-    decode_material_folder,
     TextureArrayAtlas,
+    decode_material_folder,
 )
-from engine.core.async_loader import BackgroundAssetLoader
-from engine.gfx.loading_screen import LoadingScreen
-from engine.events import publish_event, WindowResizeEvent
 
 
 @pytest.fixture
@@ -74,6 +76,7 @@ class TestAsyncLoaderAndLoadingScreen:
 
         # Wait briefly for worker thread to complete decode
         import time
+
         for _ in range(50):
             layer = loader.poll_material_layer()
             if layer is not None:
@@ -210,10 +213,9 @@ class TestAsyncLoaderAndLoadingScreen:
         scale = max(0.70, min(1.8, h / 1080.0))
         margin_x = int(56.0 * scale)
         margin_y = int(56.0 * scale)
-        corner_region = arr[margin_y - 10:margin_y + 10, (w - margin_x) - 10:(w - margin_x) + 10, :3]
+        corner_region = arr[margin_y - 10 : margin_y + 10, (w - margin_x) - 10 : (w - margin_x) + 10, :3]
         assert np.max(corner_region) > 0, "Expected animated loading icon in bottom-right corner"
 
         fbo.release()
         tex.release()
         screen.destroy()
-

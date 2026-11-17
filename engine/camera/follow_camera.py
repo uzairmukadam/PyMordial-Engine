@@ -1,8 +1,10 @@
 """Third-Person Collision-Aware Follow Camera for PyMordial Engine."""
 
 from __future__ import annotations
-from dataclasses import dataclass
+
 import math
+from dataclasses import dataclass
+
 import numpy as np
 
 from engine.camera.camera import VirtualCamera
@@ -12,16 +14,17 @@ from engine.physics.rapier_world import PhysicsManager
 @dataclass(slots=True)
 class FollowCameraConfig:
     """Tuning parameters for the third-person follow camera."""
-    distance: float = 3.8           # Default camera follow distance in meters
-    min_distance: float = 1.0       # Minimum pull-in distance in meters
-    max_distance: float = 20.0      # Maximum zoomed out distance in meters
-    target_offset_y: float = 0.65   # Height offset above character origin in meters (head/shoulder level)
-    camera_radius: float = 0.20     # Margin from obstacles to avoid clipping in meters
-    yaw_sensitivity: float = 0.20   # Mouse drag yaw sensitivity
-    pitch_sensitivity: float = 0.18 # Mouse drag pitch sensitivity
-    min_pitch_deg: float = -20.0    # Lowest downward pitch angle (allows looking up at sky)
-    max_pitch_deg: float = 65.0     # Highest upward pitch angle (overhead angle)
-    zoom_speed: float = 12.0        # Smoothing rate when zooming out
+
+    distance: float = 3.8  # Default camera follow distance in meters
+    min_distance: float = 1.0  # Minimum pull-in distance in meters
+    max_distance: float = 20.0  # Maximum zoomed out distance in meters
+    target_offset_y: float = 0.65  # Height offset above character origin in meters (head/shoulder level)
+    camera_radius: float = 0.20  # Margin from obstacles to avoid clipping in meters
+    yaw_sensitivity: float = 0.20  # Mouse drag yaw sensitivity
+    pitch_sensitivity: float = 0.18  # Mouse drag pitch sensitivity
+    min_pitch_deg: float = -20.0  # Lowest downward pitch angle (allows looking up at sky)
+    max_pitch_deg: float = 65.0  # Highest upward pitch angle (overhead angle)
+    zoom_speed: float = 12.0  # Smoothing rate when zooming out
 
 
 class FollowCamera(VirtualCamera):

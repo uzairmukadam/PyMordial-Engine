@@ -1,6 +1,7 @@
 """AAA-Style Graphics Quality Presets and Tunable Render Settings for PyMordial Engine."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass, replace
 from enum import Enum
 
@@ -36,36 +37,36 @@ class RenderConfig:
 
     # Shadow Settings
     shadow_resolution: int = 4096  # CSM Atlas size (1024, 2048, 4096)
-    shadow_mode: str = "PCSS"      # "HARD", "PCF", "PCSS", "PCSS_ULTRA"
-    shadow_softness: float = 1.2   # Penumbra scale & PCF radius (0.2 to 3.0)
+    shadow_mode: str = "PCSS"  # "HARD", "PCF", "PCSS", "PCSS_ULTRA"
+    shadow_softness: float = 1.2  # Penumbra scale & PCF radius (0.2 to 3.0)
     sun_angular_radius: float = 0.00465  # Physical solar angular radius (rad, ~0.266 deg)
-    shadow_bias: float = 0.0015    # Base world-space depth bias (meters)
+    shadow_bias: float = 0.0015  # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
     # Slope-scaled bias clamp: bias = clamp(base * (1 + slope * scale), base * min, base * max)
     shadow_bias_slope_scale: float = 2.0
     shadow_bias_min_scale: float = 0.5
     shadow_bias_max_scale: float = 6.0
-    shadow_offset_x: float = 0.0   # Light-space alignment offset X (delta from calibrated base)
-    shadow_offset_y: float = 0.0   # Light-space alignment offset Y (delta from calibrated base)
-    csm_cascades: int = 4          # Number of shadow cascades (1 to 4)
-    pcf_samples: int = 24          # Vogel PCF taps (8 to 32)
-    shadow_distance: float = 500.0 # Maximum shadow distance in meters (improved from 150.0m)
-    csm_split_lambda: float = 0.85 # Practical Split Scheme (PSSM) log-linear blend factor
-    csm_split_mode: str = "PSSM"   # Cascade split distribution: "PSSM", "GEOMETRIC", "UNIFORM"
-    csm_stabilization: bool = True # Subpixel texel snapping to eliminate shadow shimmering during camera movement
-    csm_nonuniform_atlas: bool = False # Per-cascade atlas rects (near cascades get more texels)
+    shadow_offset_x: float = 0.0  # Light-space alignment offset X (delta from calibrated base)
+    shadow_offset_y: float = 0.0  # Light-space alignment offset Y (delta from calibrated base)
+    csm_cascades: int = 4  # Number of shadow cascades (1 to 4)
+    pcf_samples: int = 24  # Vogel PCF taps (8 to 32)
+    shadow_distance: float = 500.0  # Maximum shadow distance in meters (improved from 150.0m)
+    csm_split_lambda: float = 0.85  # Practical Split Scheme (PSSM) log-linear blend factor
+    csm_split_mode: str = "PSSM"  # Cascade split distribution: "PSSM", "GEOMETRIC", "UNIFORM"
+    csm_stabilization: bool = True  # Subpixel texel snapping to eliminate shadow shimmering during camera movement
+    csm_nonuniform_atlas: bool = False  # Per-cascade atlas rects (near cascades get more texels)
     # Per-cascade far-distance multipliers (cascade 0..3). 1.0 = use the split as-is.
     csm_cascade_distance_scale: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
 
     # Depth Precision & GPU Culling
-    reverse_z: bool = True         # Reversed-Z 32F floating-point depth buffer
-    hiz_cull_enabled: bool = False # GPU-Driven Hi-Z Occlusion Culling
+    reverse_z: bool = True  # Reversed-Z 32F floating-point depth buffer
+    hiz_cull_enabled: bool = False  # GPU-Driven Hi-Z Occlusion Culling
     frustum_cull_enabled: bool = True  # CPU vectorized frustum culling of draw batches
-    hiz_debug_mip: int = 0         # Hi-Z debug visualization mip level (0 = off)
-    max_entities: int = 100_000    # GPU entity capacity for SSBOs and culling scratch
+    hiz_debug_mip: int = 0  # Hi-Z debug visualization mip level (0 = off)
+    max_entities: int = 100_000  # GPU entity capacity for SSBOs and culling scratch
 
     # Ambient Occlusion (GTAO / SSAO)
-    ao_mode: str = "GTAO"          # "OFF", "SSAO", "GTAO"
+    ao_mode: str = "GTAO"  # "OFF", "SSAO", "GTAO"
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
     ao_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
@@ -94,7 +95,7 @@ class RenderConfig:
     ibl_enabled: bool = True
     ssr_enabled: bool = True
     ssr_resolution_scale: float = 0.5
-    ssr_mode: str = "HIZ"          # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
+    ssr_mode: str = "HIZ"  # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
     ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.12
@@ -121,103 +122,104 @@ class RenderConfig:
     spot_shadows_enabled: bool = True
     spot_shadow_resolution: int = 2048  # Atlas size (1024 or 2048)
     spot_light_radius: float = 35.0
-    spot_cone_angle: float = 32.0       # Outer cone angle in degrees
+    spot_cone_angle: float = 32.0  # Outer cone angle in degrees
     spot_shadow_bias: float = 0.0015
-    sun_intensity: float = 4.0          # Sun lux intensity
+    sun_intensity: float = 4.0  # Sun lux intensity
     ambient_factor: float = 0.04
 
     # Post-Processing & Atmosphere
     bloom_enabled: bool = True
-    bloom_iterations: int = 5      # Dual-filter pyramid mip passes (3 to 6)
+    bloom_iterations: int = 5  # Dual-filter pyramid mip passes (3 to 6)
     bloom_threshold: float = 1.0
     bloom_intensity: float = 0.12
-    tonemap_mode: str = "ACES"     # "ACES", "AgX", "Reinhard"
+    tonemap_mode: str = "ACES"  # "ACES", "AgX", "Reinhard"
     exposure: float = 1.0
 
     volumetric_fog_enabled: bool = True
-    fog_resolution: str = "HIGH"    # "LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"
-    fog_point_lights: bool = True   # Volumetric local point light scattering
+    fog_resolution: str = "HIGH"  # "LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"
+    fog_point_lights: bool = True  # Volumetric local point light scattering
     fog_density: float = 0.005
     fog_height_falloff: float = 0.10
     fog_anisotropy: float = 0.65
     fog_distance: float = 400.0
     fog_ambient: float = 0.35
-    fog_debug_mode: int = 0         # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
+    fog_debug_mode: int = 0  # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
     # Debug Visualization
-    debug_gbuffer: int = 0         # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage
-    wireframe: bool = False        # ModernGL polygon line rasterization mode
+    debug_gbuffer: int = 0  # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage
+    wireframe: bool = False  # ModernGL polygon line rasterization mode
 
     # Phase 6: Parallax Occlusion Mapping (POM)
     pom_enabled: bool = True
-    pom_min_samples: int = 8       # Min raymarch steps (glancing)
-    pom_max_samples: int = 64      # Max raymarch steps (head-on)
+    pom_min_samples: int = 8  # Min raymarch steps (glancing)
+    pom_max_samples: int = 64  # Max raymarch steps (head-on)
     pom_height_scale: float = 1.0  # Multiplier for per-material POM depth
-    pom_self_shadow: bool = True   # Enable self-shadowing from sun direction
+    pom_self_shadow: bool = True  # Enable self-shadowing from sun direction
 
     # Phase 6: Screen-Space Displacement Mapping (SSDM)
     ssdm_enabled: bool = True
-    ssdm_scale: float = 1.0        # Multiplier for per-material SSDM depth
+    ssdm_scale: float = 1.0  # Multiplier for per-material SSDM depth
     ssdm_max_distance: float = 30.0  # Camera distance fade-out
 
     # Phase 6: Camera Radius-Based Micro-Geometry & Hardware Tessellation
-    disp_near_radius: float = 120.0       # Near radius for highest quality tessellation & POM self-shadowing
-    disp_mid_radius: float = 300.0        # Medium radius boundary & POM/SSDM cutoff
+    disp_near_radius: float = 120.0  # Near radius for highest quality tessellation & POM self-shadowing
+    disp_mid_radius: float = 300.0  # Medium radius boundary & POM/SSDM cutoff
     tess_enabled: bool = True
-    tess_max_level: float = 24.0          # Max hardware tessellation subdivision level (near radius)
-    tess_med_level: float = 8.0           # Medium quality tessellation level (mid radius)
+    tess_max_level: float = 24.0  # Max hardware tessellation subdivision level (near radius)
+    tess_med_level: float = 8.0  # Medium quality tessellation level (mid radius)
     tess_displacement_scale: float = 1.0  # Multiplier for per-material tessellation displacement depth
 
     # Phase 2: Optional legacy camera-centered particle field; local effects use app.particles emitters.
     particles_enabled: bool = False
-    particle_count: int = 0               # Legacy camera-centered field; local emitters allocate on demand
-    particle_mode: str = "OFF"            # "DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"
-    particle_size: float = 1.0            # Multiplier for particle radius
-    particle_turbulence: float = 0.85     # Curl noise turbulence strength
+    particle_count: int = 0  # Legacy camera-centered field; local emitters allocate on demand
+    particle_mode: str = "OFF"  # "DUST_MOTES", "EMBERS", "FIREFLIES", "OFF"
+    particle_size: float = 1.0  # Multiplier for particle radius
+    particle_turbulence: float = 0.85  # Curl noise turbulence strength
 
     # Phase 3: Cinematic Camera Optics & Lens Effects
     # Bokeh Depth of Field
     dof_enabled: bool = False
-    dof_focus_distance: float = 5.0      # Focus plane distance in meters
-    dof_focal_length: float = 50.0       # Lens focal length in mm
-    dof_aperture: float = 2.8            # Aperture f-stop (e.g. 1.4, 2.8, 5.6)
-    dof_bokeh_shape: str = "CIRCULAR"    # "CIRCULAR", "HEXAGONAL", "ANAMORPHIC"
-    dof_anamorphic_ratio: float = 1.0    # Horizontal anamorphic squeeze ratio (1.0 to 2.0)
-    dof_max_coc: float = 24.0            # Max blur radius in pixels
+    dof_focus_distance: float = 5.0  # Focus plane distance in meters
+    dof_focal_length: float = 50.0  # Lens focal length in mm
+    dof_aperture: float = 2.8  # Aperture f-stop (e.g. 1.4, 2.8, 5.6)
+    dof_bokeh_shape: str = "CIRCULAR"  # "CIRCULAR", "HEXAGONAL", "ANAMORPHIC"
+    dof_anamorphic_ratio: float = 1.0  # Horizontal anamorphic squeeze ratio (1.0 to 2.0)
+    dof_max_coc: float = 24.0  # Max blur radius in pixels
 
     # Velocity Motion Blur
     motion_blur_enabled: bool = False
-    motion_blur_samples: int = 12        # Directional blur taps (4 to 32)
-    motion_blur_intensity: float = 1.5   # Shutter angle / blur strength scale
-    motion_blur_max_radius: float = 48.0 # Max blur vector in pixels
-    motion_blur_tile_size: int = 16      # Tile footprint (px) for the tile-max reduction
-    motion_blur_max_samples: int = 32    # Upper bound on gather taps per pixel
+    motion_blur_samples: int = 12  # Directional blur taps (4 to 32)
+    motion_blur_intensity: float = 1.5  # Shutter angle / blur strength scale
+    motion_blur_max_radius: float = 48.0  # Max blur vector in pixels
+    motion_blur_tile_size: int = 16  # Tile footprint (px) for the tile-max reduction
+    motion_blur_max_samples: int = 32  # Upper bound on gather taps per pixel
 
     # Anamorphic Lens Flare & Ghost Reflections
     lens_flare_enabled: bool = True
     lens_flare_mode: str = "ANAMORPHIC"  # "OFF", "ANAMORPHIC", "SOLAR"
-    lens_flare_threshold: float = 1.8    # Luminance cutoff for specular streaks
+    lens_flare_threshold: float = 1.8  # Luminance cutoff for specular streaks
     lens_flare_streak_intensity: float = 0.6
-    lens_flare_streak_width: float = 32.0 # Horizontal spread in pixels
+    lens_flare_streak_width: float = 32.0  # Horizontal spread in pixels
     lens_flare_ghost_intensity: float = 0.0
     lens_flare_halo_intensity: float = 0.25
-    lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0) # Anamorphic blue/cyan
+    lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0)  # Anamorphic blue/cyan
 
     # Solar Flare (lens_flare_mode == "SOLAR")
-    solar_flare_blade_count: int = 6          # Aperture blades -> diffraction spike count
+    solar_flare_blade_count: int = 6  # Aperture blades -> diffraction spike count
     solar_flare_bloom_intensity: float = 1.0  # Sun disc bloom weight
     solar_flare_starburst_intensity: float = 0.6  # Diffraction spike weight
-    solar_flare_occlusion_fade: float = 1.0   # 0 = ignore geometry, 1 = full depth occlusion
+    solar_flare_occlusion_fade: float = 1.0  # 0 = ignore geometry, 1 = full depth occlusion
 
     # Optical Lens Imperfections
     chromatic_aberration_enabled: bool = True
-    chromatic_aberration_intensity: float = 0.005 # Radial spectral separation
+    chromatic_aberration_intensity: float = 0.005  # Radial spectral separation
     vignette_enabled: bool = True
     vignette_intensity: float = 0.35
     vignette_roundness: float = 0.85
     vignette_smoothness: float = 0.50
     film_grain_enabled: bool = True
     film_grain_intensity: float = 0.03
+
 
 QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),

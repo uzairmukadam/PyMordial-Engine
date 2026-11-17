@@ -5,12 +5,14 @@ images, and cached font textures using ModernGL.
 """
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
-import numpy as np
+
 import moderngl
+import numpy as np
 import pygame
 
-from engine.ui.shaders import UI_VERT_GLSL, UI_FRAG_GLSL
+from engine.ui.shaders import UI_FRAG_GLSL, UI_VERT_GLSL
 from engine.ui.theme import UIStyle
 
 if TYPE_CHECKING:
@@ -49,7 +51,9 @@ class UIRenderer:
     # 20..23: in_Params [corner_radius, border_width, tex_mode, glow_radius]
     FLOATS_PER_QUAD = 24
 
-    def __init__(self, ctx: moderngl.Context, screen_width: int = 1280, screen_height: int = 720, max_quads: int = 2048) -> None:
+    def __init__(
+        self, ctx: moderngl.Context, screen_width: int = 1280, screen_height: int = 720, max_quads: int = 2048
+    ) -> None:
         self.ctx = ctx
         self.screen_width = screen_width
         self.screen_height = screen_height

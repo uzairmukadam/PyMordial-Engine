@@ -148,48 +148,30 @@ class SolarFlarePass(RenderPass):
         if self._u_screen_size is not None:
             self._u_screen_size.value = (float(fw), float(fh))
         if self._u_sun_angular_radius is not None:
-            self._u_sun_angular_radius.value = float(
-                getattr(config, "sun_angular_radius", 0.00465)
-            )
+            self._u_sun_angular_radius.value = float(getattr(config, "sun_angular_radius", 0.00465))
         if self._u_sun_on_screen is not None:
             self._u_sun_on_screen.value = 1.0 if sun_on_screen else 0.0
         if self._u_flare_threshold is not None:
-            self._u_flare_threshold.value = float(
-                getattr(config, "lens_flare_threshold", 1.8)
-            )
+            self._u_flare_threshold.value = float(getattr(config, "lens_flare_threshold", 1.8))
         if self._u_flare_tint is not None:
             tint = getattr(config, "lens_flare_tint", (0.25, 0.65, 1.0))
             self._u_flare_tint.value = (float(tint[0]), float(tint[1]), float(tint[2]))
         if self._u_blade_count is not None:
             self._u_blade_count.value = int(getattr(config, "solar_flare_blade_count", 6))
         if self._u_bloom_intensity is not None:
-            self._u_bloom_intensity.value = float(
-                getattr(config, "solar_flare_bloom_intensity", 1.0)
-            )
+            self._u_bloom_intensity.value = float(getattr(config, "solar_flare_bloom_intensity", 1.0))
         if self._u_starburst_intensity is not None:
-            self._u_starburst_intensity.value = float(
-                getattr(config, "solar_flare_starburst_intensity", 0.6)
-            )
+            self._u_starburst_intensity.value = float(getattr(config, "solar_flare_starburst_intensity", 0.6))
         if self._u_streak_intensity is not None:
-            self._u_streak_intensity.value = float(
-                getattr(config, "lens_flare_streak_intensity", 0.6)
-            )
+            self._u_streak_intensity.value = float(getattr(config, "lens_flare_streak_intensity", 0.6))
         if self._u_streak_width is not None:
-            self._u_streak_width.value = float(
-                getattr(config, "lens_flare_streak_width", 32.0)
-            )
+            self._u_streak_width.value = float(getattr(config, "lens_flare_streak_width", 32.0))
         if self._u_ghost_intensity is not None:
-            self._u_ghost_intensity.value = float(
-                getattr(config, "lens_flare_ghost_intensity", 0.35)
-            )
+            self._u_ghost_intensity.value = float(getattr(config, "lens_flare_ghost_intensity", 0.35))
         if self._u_halo_intensity is not None:
-            self._u_halo_intensity.value = float(
-                getattr(config, "lens_flare_halo_intensity", 0.25)
-            )
+            self._u_halo_intensity.value = float(getattr(config, "lens_flare_halo_intensity", 0.25))
         if self._u_occlusion_fade is not None:
-            self._u_occlusion_fade.value = float(
-                getattr(config, "solar_flare_occlusion_fade", 1.0)
-            )
+            self._u_occlusion_fade.value = float(getattr(config, "solar_flare_occlusion_fade", 1.0))
 
         self.vao.render(moderngl.TRIANGLES, vertices=3)
         return self.flare_texture

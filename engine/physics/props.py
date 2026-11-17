@@ -6,11 +6,13 @@ character velocity impulse transfer (shoving/kicking), and MDI batch rendering s
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
-from enum import Enum
+
 import math
 import random
+from dataclasses import dataclass
+from enum import Enum
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 from engine.core.ecs import EntityManager
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
 
 class PropType(str, Enum):
     """Semantic category of physics prop."""
+
     CRATE = "crate"
     SPHERE = "sphere"
     BARREL = "barrel"
@@ -35,9 +38,10 @@ class PropType(str, Enum):
 @dataclass(slots=True)
 class PropInstance:
     """Tracks state and lifecycle of an active dynamic prop."""
+
     entity_id: int
     prop_type: PropType
-    shape_name: str           # "cube", "sphere", "capsule"
+    shape_name: str  # "cube", "sphere", "capsule"
     scale: tuple[float, float, float]
     is_destructible: bool = True
     health: float = 40.0
@@ -184,7 +188,9 @@ class InteractivePropManager:
         )
 
         self.physics.create_body(ent_id, body_type="dynamic", position=position)
-        self.physics.attach_capsule_collider(ent_id, half_height, radius, density=density, friction=0.65, restitution=0.15)
+        self.physics.attach_capsule_collider(
+            ent_id, half_height, radius, density=density, friction=0.65, restitution=0.15
+        )
         self.physics.set_damping(ent_id, linear=1.0, angular=1.2)
 
         prop = PropInstance(
@@ -253,9 +259,7 @@ class InteractivePropManager:
             metallic=0.1,
         )
         self.physics.create_body(ent_id, body_type="dynamic", position=position)
-        self.physics.attach_cone_collider(
-            ent_id, half_height, radius, density=density, friction=0.75, restitution=0.20
-        )
+        self.physics.attach_cone_collider(ent_id, half_height, radius, density=density, friction=0.75, restitution=0.20)
         self.physics.set_damping(ent_id, linear=0.9, angular=1.2)
         prop = PropInstance(
             entity_id=ent_id,
@@ -288,9 +292,7 @@ class InteractivePropManager:
             metallic=0.2,
         )
         self.physics.create_body(ent_id, body_type=body_type, position=position)
-        self.physics.attach_plane_collider(
-            ent_id, half_x, half_z, thickness=thickness, friction=0.80, restitution=0.05
-        )
+        self.physics.attach_plane_collider(ent_id, half_x, half_z, thickness=thickness, friction=0.80, restitution=0.05)
         prop = PropInstance(
             entity_id=ent_id,
             prop_type=PropType.PLANE,
@@ -407,7 +409,9 @@ class InteractivePropManager:
             )
 
             self.physics.create_body(debris_id, body_type="dynamic", position=(ox, oy, oz))
-            self.physics.attach_box_collider(debris_id, frag_half, frag_half, frag_half, density=65.0, friction=0.75, restitution=0.15)
+            self.physics.attach_box_collider(
+                debris_id, frag_half, frag_half, frag_half, density=65.0, friction=0.75, restitution=0.15
+            )
             self.physics.set_damping(debris_id, linear=1.5, angular=2.0)
 
             # Radial explosion impulse biased along hit direction

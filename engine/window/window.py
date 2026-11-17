@@ -5,23 +5,26 @@ resolution changes, VSync toggling, DPI/monitor queries, and lifecycle event dis
 """
 
 from __future__ import annotations
+
+import sys
 from dataclasses import dataclass
 from enum import IntEnum
-import sys
+
 import pygame
 
 from engine.events import (
-    publish_event,
-    WindowResizeEvent,
-    WindowModeChangedEvent,
-    WindowFocusEvent,
     WindowCloseEvent,
+    WindowFocusEvent,
+    WindowModeChangedEvent,
+    WindowResizeEvent,
+    publish_event,
 )
-from engine.logging import log_info, LogChannel
+from engine.logging import LogChannel, log_info
 
 
 class WindowMode(IntEnum):
     """Supported display modes."""
+
     WINDOWED = 0
     BORDERLESS_FULLSCREEN = 1
     EXCLUSIVE_FULLSCREEN = 2
@@ -29,6 +32,7 @@ class WindowMode(IntEnum):
 
 class VSyncMode(IntEnum):
     """VSync synchronization modes."""
+
     OFF = 0
     ON = 1
     ADAPTIVE = -1
@@ -37,6 +41,7 @@ class VSyncMode(IntEnum):
 @dataclass(slots=True)
 class DisplayMonitor:
     """Metadata representing a connected physical display monitor."""
+
     index: int
     name: str
     width: int
@@ -48,6 +53,7 @@ class DisplayMonitor:
 @dataclass(slots=True)
 class WindowConfig:
     """Configuration blueprint for window initialization."""
+
     width: int = 1280
     height: int = 720
     title: str = "PyMordial Engine 3D"
@@ -95,10 +101,12 @@ class Window:
         # Enable Per-Monitor DPI Awareness on Windows to prevent DWM scaling distortion
         try:
             import ctypes
+
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except Exception:
             try:
                 import ctypes
+
                 ctypes.windll.user32.SetProcessDPIAware()
             except Exception:
                 pass
@@ -207,7 +215,9 @@ class Window:
         if not self.is_headless:
             pygame.display.set_caption(self.title)
 
-        log_info(LogChannel.WINDOW, f"Display mode switched: {old_mode.name} -> {mode.name} ({self.width}x{self.height})")
+        log_info(
+            LogChannel.WINDOW, f"Display mode switched: {old_mode.name} -> {mode.name} ({self.width}x{self.height})"
+        )
         publish_event(WindowModeChangedEvent(mode=int(mode), width=self.width, height=self.height))
         publish_event(WindowResizeEvent(width=self.width, height=self.height))
 
@@ -246,6 +256,7 @@ class Window:
         if sys.platform.startswith("win") and not self.is_headless:
             try:
                 import ctypes
+
                 lib = ctypes.WinDLL("opengl32.dll")
                 wgl = lib.wglGetProcAddress
                 wgl.restype = ctypes.c_void_p
@@ -268,12 +279,14 @@ class Window:
     def set_cursor_visible(self, visible: bool) -> None:
         """Shows or hides the system mouse cursor."""
         import os
+
         if not self.is_headless and not os.environ.get("PYTEST_CURRENT_TEST"):
             pygame.mouse.set_visible(visible)
 
     def set_cursor_grab(self, grabbed: bool) -> None:
         """Locks the mouse cursor to the window bounds (relative mode)."""
         import os
+
         if not self.is_headless and not os.environ.get("PYTEST_CURRENT_TEST"):
             pygame.event.set_grab(grabbed)
 

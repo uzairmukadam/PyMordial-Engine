@@ -6,11 +6,11 @@ and geometric aliasing without color shifting or temporal wobbling.
 """
 
 from __future__ import annotations
-import numpy as np
+
 import moderngl
+import numpy as np
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
-
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import get_shader_dir, load_shader
 
 SHADER_DIR = get_shader_dir()
@@ -32,10 +32,7 @@ class TAAPass(RenderPass):
     """Sub-pixel jittering and temporal reprojection accumulation pass."""
 
     # Precomputed 8-phase Halton(2, 3) normalized offsets (-0.5 .. +0.5 pixels)
-    HALTON_8 = tuple(
-        (_halton(i + 1, 2) - 0.5, _halton(i + 1, 3) - 0.5)
-        for i in range(8)
-    )
+    HALTON_8 = tuple((_halton(i + 1, 2) - 0.5, _halton(i + 1, 3) - 0.5) for i in range(8))
 
     def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
         super().__init__(name="TAAPass", enabled=True)
@@ -133,7 +130,7 @@ class TAAPass(RenderPass):
         g_buffer = context.resources.get("g_buffer")
 
         aa_mode = getattr(context.config, "aa_mode", "OFF")
-        taa_active = (aa_mode == "TAA" or getattr(context.config, "taa_enabled", False))
+        taa_active = aa_mode == "TAA" or getattr(context.config, "taa_enabled", False)
 
         if not taa_active or current_tex is None or g_buffer is None:
             context.resources["taa_output"] = current_tex

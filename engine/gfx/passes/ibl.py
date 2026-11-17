@@ -6,7 +6,7 @@ import math
 
 import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import load_shader
 
 

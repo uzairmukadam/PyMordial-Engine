@@ -4,24 +4,26 @@ from __future__ import annotations
 
 import importlib
 import json
-import numpy as np
-import pygame
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from examples._common import FlyCameraControls
+import numpy as np
+import pygame
+
 from engine.camera import FreeFlyCamera
+from engine.gfx.mega_buffer import MegaBuffer
 from engine.input import InputManager
 from engine.input.codes import GamepadButton
-from engine.gfx.mega_buffer import MegaBuffer
 from engine.ui import UIManager
+from examples._common import FlyCameraControls
 
 
 def test_flycam_controls_look_speed_and_reset() -> None:
     camera = FreeFlyCamera(position=(0.0, 2.0, 10.0), yaw_deg=-90.0, pitch_deg=0.0)
     controls = FlyCameraControls(camera)
+
     class InputManager:
         is_mouse_grabbed = False
 
@@ -216,11 +218,7 @@ def test_last_aqueduct_demo_has_detailed_traversal_and_art_direction() -> None:
     assert {prop["shape"] for prop in level["props"]} >= {"cube", "cylinder", "cone", "sphere"}
     assert all(len(platform["position"]) == len(platform["size"]) == 3 for platform in level["platforms"])
     assert all(max(prop["size"]) <= 3.0 for prop in level["props"] if prop["shape"] == "sphere")
-    assert all(
-        prop["position"][1] - prop["size"][1] * 0.5 >= 0.0
-        for prop in level["props"]
-        if prop["shape"] == "cone"
-    )
+    assert all(prop["position"][1] - prop["size"][1] * 0.5 >= 0.0 for prop in level["props"] if prop["shape"] == "cone")
     assert all(ramp["rotation_deg"][0] > 0.0 for ramp in level["ramps"])
 
 

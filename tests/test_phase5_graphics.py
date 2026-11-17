@@ -9,18 +9,18 @@ import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
+from engine.gfx.frame_context import FrameContext
+from engine.gfx.passes.clustered_lights import ClusteredLightingPass
+from engine.gfx.passes.ibl import IBLPass
+from engine.gfx.passes.taa_pass import _halton
+from engine.gfx.pipeline import RenderPipeline
 from engine.gfx.quality_presets import (
-    GraphicsQuality,
     GIMode,
+    GraphicsQuality,
     RenderConfig,
     get_quality_preset,
 )
-from engine.gfx.render_graph import RenderGraph, RenderPass, RenderGraphContext
-from engine.gfx.frame_context import FrameContext
-from engine.gfx.passes.ibl import IBLPass
-from engine.gfx.passes.clustered_lights import ClusteredLightingPass
-from engine.gfx.passes.taa_pass import _halton
-from engine.gfx.pipeline import RenderPipeline
+from engine.gfx.render_graph import RenderGraph, RenderGraphContext, RenderPass
 
 
 @pytest.fixture(scope="module")
@@ -405,7 +405,13 @@ class TestShadows:
         high = get_quality_preset(GraphicsQuality.HIGH)
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-        assert low.shadow_distance < med.shadow_distance < high.shadow_distance < ultra.shadow_distance < cinematic.shadow_distance
+        assert (
+            low.shadow_distance
+            < med.shadow_distance
+            < high.shadow_distance
+            < ultra.shadow_distance
+            < cinematic.shadow_distance
+        )
 
         pipeline.destroy()
 

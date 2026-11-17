@@ -1,10 +1,12 @@
 """Global Console Variable (CVar) Registry & TOML Configuration Engine."""
 
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any
+
 from engine.config.cvar import CVar, CVarFlags
-from engine.logging import log_info, log_warn, LogChannel
+from engine.logging import LogChannel, log_info, log_warn
 
 
 class CVarRegistry:
@@ -50,7 +52,9 @@ class CVarRegistry:
         """Initializes core AAA engine variables."""
         # Graphics & Display
         self.register(CVar("r_vsync", 1, "VSync mode: 0=Off, 1=On (FIFO), -1=Adaptive", min_val=-1, max_val=1))
-        self.register(CVar("r_fullscreen", 0, "Display mode: 0=Windowed, 1=Borderless, 2=Exclusive", min_val=0, max_val=2))
+        self.register(
+            CVar("r_fullscreen", 0, "Display mode: 0=Windowed, 1=Borderless, 2=Exclusive", min_val=0, max_val=2)
+        )
         self.register(CVar("r_width", 1280, "Window width in pixels", min_val=640, max_val=7680))
         self.register(CVar("r_height", 720, "Window height in pixels", min_val=480, max_val=4320))
         self.register(CVar("r_fov", 75.0, "Vertical field of view in degrees", min_val=30.0, max_val=120.0))
@@ -69,8 +73,18 @@ class CVarRegistry:
         self.register(CVar("r_motion_blur", False, "Velocity motion blur toggle"))
 
         # Time & Simulation
-        self.register(CVar("t_timescale", 1.0, "Global time dilation factor (0.1 = slow-mo, 1.0 = normal)", min_val=0.0, max_val=10.0))
-        self.register(CVar("t_max_dt", 0.20, "Maximum frame time accumulator clamp in seconds", min_val=0.05, max_val=1.0))
+        self.register(
+            CVar(
+                "t_timescale",
+                1.0,
+                "Global time dilation factor (0.1 = slow-mo, 1.0 = normal)",
+                min_val=0.0,
+                max_val=10.0,
+            )
+        )
+        self.register(
+            CVar("t_max_dt", 0.20, "Maximum frame time accumulator clamp in seconds", min_val=0.05, max_val=1.0)
+        )
         self.register(CVar("t_max_fps", 0, "Frame rate limiter target (0 = unlimited)", min_val=0, max_val=360))
 
         # Audio
@@ -82,9 +96,13 @@ class CVarRegistry:
         self.register(CVar("snd_spatial_enabled", True, "3D spatial audio listener calculations toggle"))
 
         # Input
-        self.register(CVar("in_mouse_sensitivity", 0.25, "Hardware mouse orbit look sensitivity", min_val=0.01, max_val=5.0))
+        self.register(
+            CVar("in_mouse_sensitivity", 0.25, "Hardware mouse orbit look sensitivity", min_val=0.01, max_val=5.0)
+        )
         self.register(CVar("in_invert_y", False, "Invert camera vertical pitch input"))
-        self.register(CVar("in_stick_deadzone", 0.15, "Gamepad analog stick circular deadzone", min_val=0.0, max_val=0.9))
+        self.register(
+            CVar("in_stick_deadzone", 0.15, "Gamepad analog stick circular deadzone", min_val=0.0, max_val=0.9)
+        )
 
     def save_to_file(self, filepath: str | Path = "config/engine_settings.toml") -> bool:
         """Serializes all ARCHIVE CVars to a readable TOML configuration file."""
@@ -103,9 +121,9 @@ class CVarRegistry:
         snd_vars = [c for c in self._cvars.values() if c.name.startswith("snd_") and (CVarFlags.ARCHIVE in c.flags)]
         in_vars = [c for c in self._cvars.values() if c.name.startswith("in_") and (CVarFlags.ARCHIVE in c.flags)]
         other_vars = [
-            c for c in self._cvars.values()
-            if not any(c.name.startswith(p) for p in ("r_", "t_", "snd_", "in_"))
-            and (CVarFlags.ARCHIVE in c.flags)
+            c
+            for c in self._cvars.values()
+            if not any(c.name.startswith(p) for p in ("r_", "t_", "snd_", "in_")) and (CVarFlags.ARCHIVE in c.flags)
         ]
 
         def format_val(val: Any) -> str:

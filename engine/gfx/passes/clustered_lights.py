@@ -6,17 +6,20 @@ Also manages shadow-casting slot assignments (up to 4 active perspective shadow 
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
-import math
-import numpy as np
-import moderngl
 
-from engine.gfx.render_graph import RenderPass, RenderGraphContext
+import math
+from dataclasses import dataclass
+
+import moderngl
+import numpy as np
+
+from engine.gfx.render_graph import RenderGraphContext, RenderPass
 
 
 @dataclass
 class PointLight:
     """Dynamic local point light definition."""
+
     x: float
     y: float
     z: float
@@ -30,6 +33,7 @@ class PointLight:
 @dataclass
 class SpotLight:
     """Dynamic local spot light definition."""
+
     x: float
     y: float
     z: float
@@ -37,25 +41,25 @@ class SpotLight:
     dir_x: float
     dir_y: float
     dir_z: float
-    inner_cone_angle: float   # In radians
+    inner_cone_angle: float  # In radians
     r: float
     g: float
     b: float
     intensity: float
-    outer_cone_angle: float   # In radians
+    outer_cone_angle: float  # In radians
     cast_shadow: bool = False
     shadow_bias: float = 0.0015
-    shadow_index: int = -1    # Assigned dynamically during pass execution (0..3 or -1)
+    shadow_index: int = -1  # Assigned dynamically during pass execution (0..3 or -1)
 
 
 class ClusteredLightingPass(RenderPass):
     """Manages active point lights and spot lights and uploads them to GPU SSBO 3."""
 
     POINT_LIGHT_MAX = 256
-    POINT_STRIDE_FLOATS = 8     # 2 x vec4 = 32 bytes
+    POINT_STRIDE_FLOATS = 8  # 2 x vec4 = 32 bytes
     POINT_STRIDE_BYTES = 32
     SPOT_OFFSET_BYTES = 256 * 32  # 8192 bytes
-    SPOT_STRIDE_FLOATS = 16    # 4 x vec4 = 64 bytes
+    SPOT_STRIDE_FLOATS = 16  # 4 x vec4 = 64 bytes
     SPOT_STRIDE_BYTES = 64
 
     def __init__(self, ctx: moderngl.Context, max_lights: int = 256, max_spot_lights: int = 64) -> None:

@@ -1,8 +1,10 @@
 """High-Precision Multi-Domain Time & Clock System for PyMordial Engine."""
 
 from __future__ import annotations
+
 import time
-from engine.events import publish_event, TimeScaleChangedEvent
+
+from engine.events import TimeScaleChangedEvent, publish_event
 
 
 class TimeSystem:

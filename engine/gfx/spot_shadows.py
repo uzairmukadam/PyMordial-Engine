@@ -5,11 +5,13 @@ with single-frustum perspective projection for high-performance localized contac
 """
 
 from __future__ import annotations
-import math
-import numpy as np
-import moderngl
 
-from engine.core.math_utils import matrix_look_at, mat4_mul
+import math
+
+import moderngl
+import numpy as np
+
+from engine.core.math_utils import mat4_mul, matrix_look_at
 
 
 class SpotLightShadowMap:
@@ -104,7 +106,7 @@ class SpotLightShadowMap:
 
         proj = self._proj_scratch
         proj.fill(0.0)
-        proj[0] = f      # aspect ratio = 1.0
+        proj[0] = f  # aspect ratio = 1.0
         proj[5] = f
         proj[10] = -far / (far - near)
         proj[11] = -1.0

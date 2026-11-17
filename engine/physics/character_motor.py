@@ -10,9 +10,11 @@ Implements responsive 60 Hz character physics:
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+
 import math
+from dataclasses import dataclass
 from typing import Callable
+
 import numpy as np
 
 from engine.core.ecs import EntityManager
@@ -23,18 +25,18 @@ from engine.physics.rapier_world import PhysicsManager
 class CharacterMotorConfig:
     """Tuning parameters for character kinematics and movement feel."""
 
-    walk_speed: float = 6.0          # Normal walking speed in m/s
-    run_speed: float = 11.0          # Sprinting speed in m/s
-    jump_force: float = 7.5          # Initial vertical velocity upon jump in m/s
-    gravity: float = -20.0           # Downward acceleration in m/s^2 (punchy feel)
-    acceleration: float = 40.0       # Ground acceleration in m/s^2
-    air_acceleration: float = 15.0   # Airborne acceleration in m/s^2
-    deceleration: float = 45.0       # Ground friction / deceleration in m/s^2
-    capsule_half_height: float = 0.5 # Cylinder half-height in meters
-    capsule_radius: float = 0.4      # Hemisphere cap radius in meters
-    max_slope_deg: float = 45.0      # Maximum climbable slope angle in degrees
-    step_height: float = 0.3         # Maximum vertical stair step / curb height in meters
-    snap_to_ground: float = 0.25     # Ground snapping probe distance in meters
+    walk_speed: float = 6.0  # Normal walking speed in m/s
+    run_speed: float = 11.0  # Sprinting speed in m/s
+    jump_force: float = 7.5  # Initial vertical velocity upon jump in m/s
+    gravity: float = -20.0  # Downward acceleration in m/s^2 (punchy feel)
+    acceleration: float = 40.0  # Ground acceleration in m/s^2
+    air_acceleration: float = 15.0  # Airborne acceleration in m/s^2
+    deceleration: float = 45.0  # Ground friction / deceleration in m/s^2
+    capsule_half_height: float = 0.5  # Cylinder half-height in meters
+    capsule_radius: float = 0.4  # Hemisphere cap radius in meters
+    max_slope_deg: float = 45.0  # Maximum climbable slope angle in degrees
+    step_height: float = 0.3  # Maximum vertical stair step / curb height in meters
+    snap_to_ground: float = 0.25  # Ground snapping probe distance in meters
 
 
 class CharacterMotorState:
@@ -335,5 +337,3 @@ class CharacterMotor:
                     feet_y = pos_y - cfg.capsule_half_height - cfg.capsule_radius
                     in_water = feet_y <= (self.water_height + 0.1)
                     self.on_footstep((pos_x, feet_y, pos_z), in_water)
-
-

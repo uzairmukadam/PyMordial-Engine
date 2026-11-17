@@ -1,7 +1,9 @@
 """Sound Cue Models and Procedural Waveform Synthesizer for PyMordial Engine."""
 
 from __future__ import annotations
+
 from dataclasses import dataclass
+
 import numpy as np
 import pygame
 
@@ -11,6 +13,7 @@ from engine.audio.spatial import AttenuationModel
 @dataclass(slots=True)
 class SoundCue:
     """Configured audio asset with playback properties."""
+
     name: str
     sound: pygame.mixer.Sound | None = None
     bus_name: str = "SFX"
@@ -191,4 +194,3 @@ class ProceduralSoundSynthesizer:
         samples = (np.clip(wave, -1.0, 1.0) * 32767).astype(np.int16)
         stereo = np.column_stack((samples, samples))
         return pygame.mixer.Sound(buffer=stereo.tobytes())
-

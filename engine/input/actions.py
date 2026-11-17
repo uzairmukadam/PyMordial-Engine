@@ -5,8 +5,10 @@ hardware inputs (Keyboard keys, Mouse buttons, and Gamepad sticks/buttons).
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from engine.input.codes import Key, MouseButton, GamepadButton
+
+from engine.input.codes import GamepadButton, Key, MouseButton
 
 
 @dataclass(slots=True)

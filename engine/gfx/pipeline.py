@@ -5,52 +5,54 @@ Image-Based Lighting (IBL), GTAO, SSGI, Clustered Local Lighting, SSR, TAA, and 
 """
 
 from __future__ import annotations
-from pathlib import Path
-import math
-from typing import Callable
-import numpy as np
-import moderngl
 
+import math
+from pathlib import Path
+from typing import Callable
+
+import moderngl
+import numpy as np
+
+from engine.assets.resource_cache import ResourceCache
 from engine.core.ecs import EntityManager
-from engine.core.math_utils import matrix_perspective, matrix_look_at, mat4_mul, mat4_inv
+from engine.core.math_utils import mat4_inv, mat4_mul, matrix_look_at, matrix_perspective
+from engine.debug.debug_draw import DebugDraw
+from engine.events import WindowResizeEvent, subscribe_event, unsubscribe_event
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import RenderConfig
-from engine.gfx.frame_context import FrameContext
-from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
-from engine.gfx.mdi import MultiDrawIndirect
-from engine.gfx.g_buffer import GBuffer
-from engine.gfx.shadow_csm import CascadedShadowMap
-from engine.gfx.spot_shadows import SpotLightShadowMap
 from engine.gfx.culling import FrustumCuller
-from engine.gfx.post_process import PostProcessPipeline
-from engine.gfx.render_graph import RenderGraphContext, RenderGraph, RenderPass
-from engine.gfx.render_feature import RenderFeature, RenderFeatureRegistry
-from engine.gfx.render_services import RenderServices
-from engine.gfx.passes.ibl import IBLPass
+from engine.gfx.environment import create_default_environment
+from engine.gfx.frame_context import FrameContext
+from engine.gfx.g_buffer import GBuffer
+from engine.gfx.material_registry import MaterialRegistry
+from engine.gfx.mdi import MultiDrawIndirect
+from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
 from engine.gfx.passes.ao_pass import AmbientOcclusionPass
-from engine.gfx.passes.ssgi_pass import SSGIPass
-from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
+from engine.gfx.passes.bloom_pass import BloomPass
+from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
+from engine.gfx.passes.decal_pass import DecalPass
+from engine.gfx.passes.fxaa_pass import FXAAPass
+from engine.gfx.passes.hiz_pass import HiZPass
+from engine.gfx.passes.ibl import IBLPass
+from engine.gfx.passes.motion_blur_pass import MotionBlurPass
+from engine.gfx.passes.particle_pass import ParticleSystemPass
+from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
+from engine.gfx.passes.smaa_pass import SMAAPass
+from engine.gfx.passes.solar_flare_pass import SolarFlarePass
+from engine.gfx.passes.ssdm_pass import SSDMPass
+from engine.gfx.passes.ssgi_pass import SSGIPass
 from engine.gfx.passes.ssr_pass import SSRPass
 from engine.gfx.passes.taa_pass import TAAPass
-from engine.gfx.passes.fxaa_pass import FXAAPass
-from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
-from engine.gfx.texture_atlas import TextureArrayAtlas
-from engine.gfx.material_registry import MaterialRegistry
-from engine.gfx.passes.ssdm_pass import SSDMPass
-from engine.gfx.passes.particle_pass import ParticleSystemPass
-from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
-from engine.gfx.passes.solar_flare_pass import SolarFlarePass
-from engine.gfx.passes.motion_blur_pass import MotionBlurPass
-from engine.gfx.passes.bloom_pass import BloomPass
-from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.water_pass import WaterPass
-from engine.gfx.passes.hiz_pass import HiZPass
-from engine.gfx.environment import create_default_environment
-from engine.assets.resource_cache import ResourceCache
-from engine.debug.debug_draw import DebugDraw
-from engine.events import subscribe_event, unsubscribe_event, WindowResizeEvent
+from engine.gfx.post_process import PostProcessPipeline
+from engine.gfx.quality_presets import RenderConfig
+from engine.gfx.render_feature import RenderFeature, RenderFeatureRegistry
+from engine.gfx.render_graph import RenderGraph, RenderGraphContext, RenderPass
+from engine.gfx.render_services import RenderServices
+from engine.gfx.shadow_csm import CascadedShadowMap
+from engine.gfx.spot_shadows import SpotLightShadowMap
+from engine.gfx.texture_atlas import TextureArrayAtlas
 
 try:
     import OpenGL.GL as gl
@@ -63,7 +65,6 @@ from engine.gfx.shader_utils import get_shader_dir, load_shader
 SHADER_DIR = get_shader_dir()
 ROOT_DIR = SHADER_DIR.parent
 _load_shader = load_shader
-
 
 
 class _BuiltinPass(RenderPass):
@@ -950,11 +951,7 @@ class RenderPipeline:
         # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
         # Phase 4: Static / Dynamic Entity Upload Optimization
         s_count = ecs.static_count
-        valid_partition = (
-            s_count > 0
-            and s_count <= active_count
-            and not np.any(~ecs.is_static[:s_count])
-        )
+        valid_partition = s_count > 0 and s_count <= active_count and not np.any(~ecs.is_static[:s_count])
         if valid_partition:
             if ecs.is_static_dirty:
                 self.ssbo_transforms.write(ecs.get_static_transforms_view().tobytes(), offset=0)
@@ -1050,7 +1047,7 @@ class RenderPipeline:
         atmo_dir, atmo_lux, atmo_col, atmo_ambient = env.compute_lighting()
         env_config = getattr(env, "config", None)
         day_speed = float(getattr(env_config, "day_speed", 0.0)) if env_config is not None else 0.0
-        is_custom_sun = (sun_dir != (0.35, -0.85, 0.40) and day_speed == 0.0)
+        is_custom_sun = sun_dir != (0.35, -0.85, 0.40) and day_speed == 0.0
         true_sun_dir = sun_dir if is_custom_sun else atmo_sun_dir
         active_sun_dir = sun_dir if is_custom_sun else atmo_dir
         active_sun_lux = sun_lux if (sun_lux != 4.0 and is_custom_sun) else atmo_lux
@@ -1124,11 +1121,7 @@ class RenderPipeline:
                 casc_mdi = self.cascade_shadow_mdis[c_idx]
                 for item in culled_cascades[c_idx]:
                     mesh_item, count, base_inst = item[0], item[1], item[2]
-                    alloc = (
-                        self.mega_buffer.allocations[mesh_item]
-                        if isinstance(mesh_item, str)
-                        else mesh_item
-                    )
+                    alloc = self.mega_buffer.allocations[mesh_item] if isinstance(mesh_item, str) else mesh_item
                     casc_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
                     shadow_commands += 1
             self.stats_shadow_commands = shadow_commands
@@ -1139,13 +1132,8 @@ class RenderPipeline:
             if getattr(self.config, "spot_shadows_enabled", True):
                 for item in caster_batches:
                     mesh_item, count, base_inst = item[0], item[1], item[2]
-                    alloc = (
-                        self.mega_buffer.allocations[mesh_item]
-                        if isinstance(mesh_item, str)
-                        else mesh_item
-                    )
+                    alloc = self.mega_buffer.allocations[mesh_item] if isinstance(mesh_item, str) else mesh_item
                     self.shadow_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
-
 
         # Phase 3: Culling for Camera MDI Draw Calls (Vectorized CPU Frustum + GPU Hi-Z Occlusion)
         frustum_cull_active = getattr(self.config, "frustum_cull_enabled", True)
@@ -1184,11 +1172,7 @@ class RenderPipeline:
                 is_tess = item[3] if len(item) >= 4 else False
 
                 if count > 0:
-                    alloc = (
-                        self.mega_buffer.allocations[mesh_item]
-                        if isinstance(mesh_item, str)
-                        else mesh_item
-                    )
+                    alloc = self.mega_buffer.allocations[mesh_item] if isinstance(mesh_item, str) else mesh_item
                     if is_tess:
                         self.tess_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
                     else:
@@ -1298,19 +1282,27 @@ class RenderPipeline:
         if self._u_gbuffer_car_chrome_layer is not None:
             self._u_gbuffer_car_chrome_layer.value = float(self.texture_atlas.name_to_layer.get("car_chrome_trim", 3))
         if self._u_gbuffer_car_taillight_layer is not None:
-            self._u_gbuffer_car_taillight_layer.value = float(self.texture_atlas.name_to_layer.get("car_taillight_red", 6))
+            self._u_gbuffer_car_taillight_layer.value = float(
+                self.texture_atlas.name_to_layer.get("car_taillight_red", 6)
+            )
         if self._u_gbuffer_car_indicator_layer is not None:
-            self._u_gbuffer_car_indicator_layer.value = float(self.texture_atlas.name_to_layer.get("car_indicator_amber", 4))
+            self._u_gbuffer_car_indicator_layer.value = float(
+                self.texture_atlas.name_to_layer.get("car_indicator_amber", 4)
+            )
         if self._u_gbuffer_car_interior_layer is not None:
             self._u_gbuffer_car_interior_layer.value = float(self.texture_atlas.name_to_layer.get("car_interior", 5))
         if self._u_gbuffer_brick_wall_layer is not None:
             self._u_gbuffer_brick_wall_layer.value = float(self.texture_atlas.name_to_layer.get("brick_wall", 0))
         if self._u_gbuffer_concrete_floor_layer is not None:
-            self._u_gbuffer_concrete_floor_layer.value = float(self.texture_atlas.name_to_layer.get("concrete_floor", 0))
+            self._u_gbuffer_concrete_floor_layer.value = float(
+                self.texture_atlas.name_to_layer.get("concrete_floor", 0)
+            )
         if self._u_gbuffer_tess_brick_wall_layer is not None:
             self._u_gbuffer_tess_brick_wall_layer.value = float(self.texture_atlas.name_to_layer.get("brick_wall", 0))
         if self._u_gbuffer_tess_concrete_floor_layer is not None:
-            self._u_gbuffer_tess_concrete_floor_layer.value = float(self.texture_atlas.name_to_layer.get("concrete_floor", 0))
+            self._u_gbuffer_tess_concrete_floor_layer.value = float(
+                self.texture_atlas.name_to_layer.get("concrete_floor", 0)
+            )
         self.texture_atlas.upload_depths(self.gbuffer_prog)
 
         is_wireframe = getattr(self.config, "wireframe", False)
@@ -1373,7 +1365,9 @@ class RenderPipeline:
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
         # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs Radiance Cascades) ----
-        ctx.resources["scene_color"] = getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
+        ctx.resources["scene_color"] = (
+            getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
+        )
         ctx.resources["sky_view_lut"] = env.sky_view_lut
         if self.config.gi_mode == "RADIANCE_CASCADES":
             ctx.resources["prev_view"] = self._prev_view_mat
@@ -1404,8 +1398,8 @@ class RenderPipeline:
         self.ctx.disable(moderngl.BLEND)
 
         # Bind all required texture units
-        self.g_buffer.bind_textures(base_unit=0)     # 0: AlbedoRough, 1: NormalMetal, 2: Depth
-        self.csm.depth_texture.use(location=3)      # 3: ShadowAtlas
+        self.g_buffer.bind_textures(base_unit=0)  # 0: AlbedoRough, 1: NormalMetal, 2: Depth
+        self.csm.depth_texture.use(location=3)  # 3: ShadowAtlas
 
         ao_tex = ctx.resources.get("ao_texture", self.ao_pass.white_fallback)
         ao_tex.use(location=4)
@@ -1431,9 +1425,7 @@ class RenderPipeline:
         if self._u_pcf_samples is not None:
             self._u_pcf_samples.value = self.config.pcf_samples
         if self._u_shadow_mode is not None:
-            mode_val = {"HARD": 0, "PCF": 1, "PCSS": 2, "PCSS_ULTRA": 3}.get(
-                str(self.config.shadow_mode).upper(), 2
-            )
+            mode_val = {"HARD": 0, "PCF": 1, "PCSS": 2, "PCSS_ULTRA": 3}.get(str(self.config.shadow_mode).upper(), 2)
             self._u_shadow_mode.value = mode_val
         if self._u_shadow_softness is not None:
             self._u_shadow_softness.value = float(self.config.shadow_softness)
@@ -1574,7 +1566,7 @@ class RenderPipeline:
 
         # ---- PASS 7.9: Temporal Anti-Aliasing (TAA in linear HDR space before Tonemapping) ----
         aa_mode = getattr(self.config, "aa_mode", "OFF")
-        taa_active = (aa_mode == "TAA" or getattr(self.config, "taa_enabled", False))
+        taa_active = aa_mode == "TAA" or getattr(self.config, "taa_enabled", False)
         if taa_active:
             ctx.resources["hdr_color"] = self.post_process.hdr_fbo.color_attachments[0]
             ctx.resources["g_buffer"] = self.g_buffer
