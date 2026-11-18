@@ -1579,13 +1579,54 @@ class DebugMenu:
                     et.shadow_distance = distances[3]
                     et.mark_custom()
 
-                # 4. Shadow Depth Bias
+                # 4. Shadow Filtering. PCF is limited to the near cascades; the
+                # far cascade keeps the hard path because its texels already
+                # span several screen pixels.
+                filter_modes = ["HARD", "PCF"]
+                curr_filter = str(getattr(et, "shadow_filter_mode", "PCF")).upper()
+                f_idx = filter_modes.index(curr_filter) if curr_filter in filter_modes else 1
+                f_changed, new_f_idx = imgui.combo("Shadow Filter", f_idx, filter_modes)
+                if f_changed and new_f_idx != f_idx:
+                    et.shadow_filter_mode = filter_modes[new_f_idx]
+                    et.mark_custom()
+                    self.toast.show(f"Shadow Filter: {et.shadow_filter_mode}", duration=1.5)
+
+                if str(getattr(et, "shadow_filter_mode", "PCF")).upper() == "PCF":
+                    lim_changed, lim_val = imgui.slider_int(
+                        "PCF Cascade Limit", int(getattr(et, "pcf_cascade_limit", 3)), 1, 4
+                    )
+                    if lim_changed:
+                        et.pcf_cascade_limit = lim_val
+                        et.mark_custom()
+
+                    pcf_s_changed, pcf_s_val = imgui.slider_int(
+                        "PCF Samples", int(getattr(et, "pcf_samples", 16)), 4, 64
+                    )
+                    if pcf_s_changed:
+                        et.pcf_samples = pcf_s_val
+                        et.mark_custom()
+
+                    pcf_r_changed, pcf_r_val = imgui.slider_float(
+                        "PCF Radius", float(getattr(et, "pcf_radius", 1.5)), 0.5, 6.0, "%.2f texels"
+                    )
+                    if pcf_r_changed:
+                        et.pcf_radius = pcf_r_val
+                        et.mark_custom()
+
+                    pcf_f_changed, pcf_f_val = imgui.slider_float(
+                        "PCF Falloff", float(getattr(et, "pcf_falloff", 2.0)), 0.25, 6.0, "%.2f"
+                    )
+                    if pcf_f_changed:
+                        et.pcf_falloff = pcf_f_val
+                        et.mark_custom()
+
+                # 5. Shadow Depth Bias
                 bias_changed, bias_val = imgui.slider_float("Shadow Depth Bias", et.shadow_bias, 0.0000, 0.0050, "%.5f")
                 if bias_changed:
                     et.shadow_bias = bias_val
                     et.mark_custom()
 
-                # 5. Shadow Normal Bias
+                # 6. Shadow Normal Bias
                 nb_changed, nb_val = imgui.slider_float(
                     "Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f"
                 )

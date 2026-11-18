@@ -365,6 +365,45 @@ float SampleHardShadow(ShadowCascade c) {
     return sum * 0.25;
 }
 
+// PCF: a Vogel disk of comparison taps with a radial weight.
+//
+// The radius is authored in cascade texels, but it is floored at the screen
+// footprint. A filter narrower than one screen pixel still stair-steps no
+// matter how many taps it takes, because the texel grid underneath stays
+// visible; the floor is what makes the tap budget actually buy smoothness.
+//
+// ``u_PCFFalloff`` shapes the kernel: 1.0 is a linear cone (crisp centre, wide
+// soft skirt), 2.0 is a smooth bell, and higher values tighten the penumbra
+// toward the centre tap.
+float SamplePCFShadow(ShadowCascade c) {
+    int taps = clamp(u_PCFSamples, 4, 64);
+    float radius_texels = max(u_PCFRadius, c.screen_texels * 0.5);
+    float radius = radius_texels * c.texel_uv;
+    float falloff = max(u_PCFFalloff, 0.25);
+    float phi = ShadowTapPhase(c.uv, c.cascade_texels);
+
+    float sum = 0.0;
+    float weight_sum = 0.0;
+    for (int i = 0; i < taps; ++i) {
+        // Normalised squared radius: 0 at the centre, 1 at the rim.
+        float r2 = (float(i) + 0.5) / float(taps);
+        float w = pow(1.0 - r2, falloff);
+        sum += ShadowCmpTap(c, c.uv + VogelDiskSample(i, taps, phi) * radius) * w;
+        weight_sum += w;
+    }
+    return sum / max(weight_sum, 1e-5);
+}
+
+// Dispatches one cascade through the active filter. PCF is limited to the near
+// cascades: the far cascade's texels already span several screen pixels, so
+// filtering it would cost taps without adding visible detail.
+float SampleCascadeShadow(int cascade, ShadowCascade c) {
+    if (u_ShadowFilterMode == 1 && cascade < u_PCFCascadeLimit) {
+        return SamplePCFShadow(c);
+    }
+    return SampleHardShadow(c);
+}
+
 // Cascaded shadow evaluation with overlapped, validity-aware split blending.
 // ``out_cascade`` / ``out_coverage`` feed the cascade debug visualizations.
 float CalculateCSMShadow(
@@ -402,7 +441,7 @@ float CalculateCSMShadow(
     vec3 world_dy = dFdy(world_pos);
 
     ShadowCascade c0 = SetupCascade(cascade, world_pos, N, slope, world_dx, world_dy);
-    float shadow = c0.in_bounds ? SampleHardShadow(c0) : 1.0;
+    float shadow = c0.in_bounds ? SampleCascadeShadow(cascade, c0) : 1.0;
     bool in_bounds = c0.in_bounds;
     out_coverage = in_bounds ? (1.0 - c0.edge_fade) : 0.0;
 
@@ -415,7 +454,7 @@ float CalculateCSMShadow(
         for (int next = cascade + 1; next < u_CascadeCount; ++next) {
             ShadowCascade cn = SetupCascade(next, world_pos, N, slope, world_dx, world_dy);
             if (cn.in_bounds) {
-                shadow = SampleHardShadow(cn);
+                shadow = SampleCascadeShadow(next, cn);
                 in_bounds = true;
                 out_cascade = next;
                 out_coverage = 1.0 - cn.edge_fade;
@@ -445,7 +484,7 @@ float CalculateCSMShadow(
     if (has_next && blend_t > 0.0) {
         ShadowCascade c2 = SetupCascade(cascade + 1, world_pos, N, slope, world_dx, world_dy);
         if (c2.in_bounds) {
-            float next_shadow = SampleHardShadow(c2);
+            float next_shadow = SampleCascadeShadow(cascade + 1, c2);
             shadow = mix(shadow, next_shadow, blend_t);
         }
     } else if (!has_next) {

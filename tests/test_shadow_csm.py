@@ -54,17 +54,16 @@ def _legacy_rects(atlas_size: int) -> list[tuple[int, int, int, int]]:
     ]
 
 
-class TestFilterModesAreGone:
-    """The rework removed PCF/PCSS entirely; nothing may reintroduce them."""
+class TestRemovedShadowMachinery:
+    """PCSS and its supporting knobs stay gone; PCF is a separate, simpler tier."""
 
-    def test_config_has_no_filter_mode_fields(self) -> None:
+    def test_config_has_no_pcss_fields(self) -> None:
         cfg = RenderConfig()
         for removed in (
             "shadow_mode",
             "shadow_softness",
             "sun_angular_radius",
             "shadow_penumbra_scale",
-            "pcf_samples",
             "shadow_offset_x",
             "shadow_offset_y",
             "csm_split_mode",
@@ -74,12 +73,13 @@ class TestFilterModesAreGone:
             assert not hasattr(cfg, removed), f"RenderConfig.{removed} should have been removed."
 
     @pytest.mark.parametrize("quality", ALL_PRESETS)
-    def test_presets_have_no_filter_mode_fields(self, quality: GraphicsQuality) -> None:
+    def test_presets_have_no_pcss_fields(self, quality: GraphicsQuality) -> None:
         preset = get_quality_preset(quality)
         assert not hasattr(preset, "shadow_mode")
-        assert not hasattr(preset, "pcf_samples")
+        assert not hasattr(preset, "shadow_softness")
+        assert not hasattr(preset, "shadow_penumbra_scale")
 
-    def test_shader_has_no_filter_mode_uniforms(self) -> None:
+    def test_shader_has_no_pcss_uniforms(self) -> None:
         source = _resolve_source()
         for removed in (
             "u_ShadowMode",
@@ -87,16 +87,14 @@ class TestFilterModesAreGone:
             "u_SunAngularRadius",
             "u_ShadowPenumbraScale",
             "u_ShadowOffset",
-            "u_PCF_Samples",
-            "SamplePCFShadow",
             "SamplePCSSShadow",
             "POISSON_DISK",
         ):
             assert removed not in source, f"{removed} should have been removed from the resolve shader."
 
-    def test_engine_tweaks_has_no_filter_mode_fields(self) -> None:
+    def test_engine_tweaks_has_no_pcss_fields(self) -> None:
         tweaks = EngineTweaks()
-        for removed in ("shadow_mode", "shadow_softness", "pcf_samples", "csm_split_mode"):
+        for removed in ("shadow_mode", "shadow_softness", "csm_split_mode"):
             assert not hasattr(tweaks, removed), f"EngineTweaks.{removed} should have been removed."
 
 
@@ -106,7 +104,7 @@ class TestHardShadowPath:
     def test_shader_has_a_single_hard_filter(self) -> None:
         source = _resolve_source()
         assert "float SampleHardShadow(" in source
-        assert "SampleHardShadow(c0)" in source
+        assert "SampleCascadeShadow(cascade, c0)" in source
 
     def test_hard_filter_uses_the_comparison_sampler(self) -> None:
         source = _resolve_source()
@@ -149,6 +147,109 @@ class TestHardShadowPath:
         source = _resolve_source()
         assert "ShadowTapPhase" in source
         assert "u_ShadowFrameIndex" not in source
+
+
+class TestPCFFiltering:
+    """PCF is a near-cascade quality tier layered on the hard path."""
+
+    def test_config_exposes_pcf_parameters(self) -> None:
+        cfg = RenderConfig()
+        assert cfg.shadow_filter_mode in ("HARD", "PCF")
+        assert 1 <= cfg.pcf_cascade_limit <= 4
+        assert 4 <= cfg.pcf_samples <= 64
+        assert cfg.pcf_radius > 0.0
+        assert cfg.pcf_falloff > 0.0
+
+    def test_shader_declares_pcf_uniforms(self) -> None:
+        source = _resolve_source()
+        for uniform in (
+            "u_ShadowFilterMode",
+            "u_PCFCascadeLimit",
+            "u_PCFSamples",
+            "u_PCFRadius",
+            "u_PCFFalloff",
+        ):
+            assert uniform in source, f"{uniform} must be declared in the resolve shader."
+
+    def test_pcf_is_limited_to_near_cascades(self) -> None:
+        """The dispatcher must gate PCF on the cascade index."""
+        source = _resolve_source()
+        start = source.index("float SampleCascadeShadow(")
+        end = source.index("float CalculateCSMShadow(", start)
+        body = source[start:end]
+        assert "u_ShadowFilterMode == 1" in body, "PCF must be gated on the filter mode."
+        assert "cascade < u_PCFCascadeLimit" in body, (
+            "PCF must be limited to cascades below u_PCFCascadeLimit so the far "
+            "cascade keeps the hard path."
+        )
+
+    def test_pcf_radius_is_floored_at_the_screen_footprint(self) -> None:
+        """A filter narrower than a screen pixel still stair-steps."""
+        source = _resolve_source()
+        start = source.index("float SamplePCFShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "screen_texels" in body, (
+            "PCF must floor its radius at the screen footprint, otherwise the "
+            "penumbra is thinner than a pixel and the edge stair-steps."
+        )
+
+    def test_pcf_tap_count_is_clamped(self) -> None:
+        source = _resolve_source()
+        start = source.index("float SamplePCFShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "clamp(u_PCFSamples" in body, "The tap count must be clamped to a safe range."
+
+    def test_pcf_falloff_shapes_the_kernel(self) -> None:
+        source = _resolve_source()
+        start = source.index("float SamplePCFShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "u_PCFFalloff" in body, "The falloff exponent must shape the radial weight."
+
+    def test_all_cascade_samples_use_the_dispatcher(self) -> None:
+        """Every cascade sample must route through the dispatcher, not hard-only."""
+        source = _resolve_source()
+        start = source.index("float CalculateCSMShadow(")
+        body = source[start:]
+        assert "SampleCascadeShadow(cascade, c0)" in body
+        assert "SampleCascadeShadow(next, cn)" in body
+        assert "SampleCascadeShadow(cascade + 1, c2)" in body
+        # No direct hard-only calls may remain in the cascade evaluation.
+        assert "SampleHardShadow(c0)" not in body
+        assert "SampleHardShadow(cn)" not in body
+        assert "SampleHardShadow(c2)" not in body
+
+    def test_presets_scale_pcf_quality(self) -> None:
+        low = get_quality_preset(GraphicsQuality.LOW)
+        cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
+        assert low.shadow_filter_mode == "HARD"
+        assert cinematic.shadow_filter_mode == "PCF"
+        assert low.pcf_samples < cinematic.pcf_samples
+        assert low.pcf_radius < cinematic.pcf_radius
+
+    def test_engine_tweaks_round_trips_pcf_parameters(self) -> None:
+        tweaks = EngineTweaks()
+        tweaks.shadow_filter_mode = "PCF"
+        tweaks.pcf_cascade_limit = 2
+        tweaks.pcf_samples = 32
+        tweaks.pcf_radius = 2.5
+        tweaks.pcf_falloff = 1.5
+        data = tweaks.to_dict()
+        assert data["shadow_filter_mode"] == "PCF"
+        assert data["pcf_cascade_limit"] == 2
+        assert data["pcf_samples"] == 32
+        assert data["pcf_radius"] == 2.5
+        assert data["pcf_falloff"] == 1.5
+
+        restored = EngineTweaks()
+        restored.from_dict(data)
+        assert restored.shadow_filter_mode == "PCF"
+        assert restored.pcf_cascade_limit == 2
+        assert restored.pcf_samples == 32
+        assert restored.pcf_radius == 2.5
+        assert restored.pcf_falloff == 1.5
 
 
 class TestExplicitCascadeDistances:

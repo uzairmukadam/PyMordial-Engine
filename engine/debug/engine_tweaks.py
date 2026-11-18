@@ -58,6 +58,11 @@ class EngineTweaks:
         "csm_split_lambda",
         "csm_cascade_distances",
         "csm_cascades",
+        "shadow_filter_mode",
+        "pcf_cascade_limit",
+        "pcf_samples",
+        "pcf_radius",
+        "pcf_falloff",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
@@ -272,6 +277,11 @@ class EngineTweaks:
         # tightest near-field slice; cascade 3 reaches the far plane.
         self.csm_cascade_distances = (20.0, 60.0, 160.0, 500.0)
         self.csm_cascades = 4
+        self.shadow_filter_mode = "PCF"
+        self.pcf_cascade_limit = 3
+        self.pcf_samples = 16
+        self.pcf_radius = 1.5
+        self.pcf_falloff = 2.0
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
@@ -708,6 +718,11 @@ class EngineTweaks:
             p_cfg.csm_cascade_distances = tuple(float(v) for v in self.csm_cascade_distances)
             p_cfg.csm_cascades = int(self.csm_cascades)
             p_cfg.shadow_resolution = int(self.shadow_resolution)
+            p_cfg.shadow_filter_mode = str(self.shadow_filter_mode)
+            p_cfg.pcf_cascade_limit = int(self.pcf_cascade_limit)
+            p_cfg.pcf_samples = int(self.pcf_samples)
+            p_cfg.pcf_radius = float(self.pcf_radius)
+            p_cfg.pcf_falloff = float(self.pcf_falloff)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
                 if self.shadow_resolution != pipeline.csm.atlas_size:
@@ -942,6 +957,11 @@ class EngineTweaks:
             "csm_cascade_distances",
             "csm_cascades",
             "shadow_resolution",
+            "shadow_filter_mode",
+            "pcf_cascade_limit",
+            "pcf_samples",
+            "pcf_radius",
+            "pcf_falloff",
             "pom_enabled",
             "pom_min_samples",
             "pom_max_samples",
@@ -1142,6 +1162,11 @@ class EngineTweaks:
             "csm_cascade_distances": [float(v) for v in self.csm_cascade_distances],
             "csm_cascades": int(self.csm_cascades),
             "shadow_resolution": int(self.shadow_resolution),
+            "shadow_filter_mode": str(self.shadow_filter_mode),
+            "pcf_cascade_limit": int(self.pcf_cascade_limit),
+            "pcf_samples": int(self.pcf_samples),
+            "pcf_radius": float(self.pcf_radius),
+            "pcf_falloff": float(self.pcf_falloff),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
             "fog_resolution": str(self.fog_resolution),
             "fog_point_lights": bool(self.fog_point_lights),

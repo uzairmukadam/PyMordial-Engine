@@ -158,6 +158,11 @@ class RenderPipeline:
         "_u_shadow_bias_slope",
         "_u_shadow_bias_min",
         "_u_shadow_bias_max",
+        "_u_shadow_filter_mode",
+        "_u_pcf_cascade_limit",
+        "_u_pcf_samples",
+        "_u_pcf_radius",
+        "_u_pcf_falloff",
         "_u_cascade_atlas_rect",        "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
@@ -475,6 +480,11 @@ class RenderPipeline:
         self._u_shadow_bias_slope = self.resolve_prog.get("u_ShadowBiasSlopeScale", None)
         self._u_shadow_bias_min = self.resolve_prog.get("u_ShadowBiasMinScale", None)
         self._u_shadow_bias_max = self.resolve_prog.get("u_ShadowBiasMaxScale", None)
+        self._u_shadow_filter_mode = self.resolve_prog.get("u_ShadowFilterMode", None)
+        self._u_pcf_cascade_limit = self.resolve_prog.get("u_PCFCascadeLimit", None)
+        self._u_pcf_samples = self.resolve_prog.get("u_PCFSamples", None)
+        self._u_pcf_radius = self.resolve_prog.get("u_PCFRadius", None)
+        self._u_pcf_falloff = self.resolve_prog.get("u_PCFFalloff", None)
         self._u_cascade_atlas_rect = self.resolve_prog.get("u_CascadeAtlasRect", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
@@ -1495,6 +1505,17 @@ class RenderPipeline:
             self._u_shadow_bias_min.value = float(getattr(self.config, "shadow_bias_min_scale", 0.5))
         if self._u_shadow_bias_max is not None:
             self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
+        if self._u_shadow_filter_mode is not None:
+            mode = str(getattr(self.config, "shadow_filter_mode", "PCF")).upper()
+            self._u_shadow_filter_mode.value = 1 if mode == "PCF" else 0
+        if self._u_pcf_cascade_limit is not None:
+            self._u_pcf_cascade_limit.value = int(getattr(self.config, "pcf_cascade_limit", 3))
+        if self._u_pcf_samples is not None:
+            self._u_pcf_samples.value = int(getattr(self.config, "pcf_samples", 16))
+        if self._u_pcf_radius is not None:
+            self._u_pcf_radius.value = float(getattr(self.config, "pcf_radius", 1.5))
+        if self._u_pcf_falloff is not None:
+            self._u_pcf_falloff.value = float(getattr(self.config, "pcf_falloff", 2.0))
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_cascade_atlas_rect is not None:

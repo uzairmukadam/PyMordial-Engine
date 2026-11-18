@@ -51,6 +51,14 @@ class RenderConfig:
     # directly. ``None`` falls back to PSSM splits derived from shadow_distance.
     csm_cascade_distances: tuple[float, float, float, float] | None = None
 
+    # PCF filtering. Applied only to the near cascades; the far cascade keeps
+    # the hard path because its texels already span several screen pixels.
+    shadow_filter_mode: str = "PCF"  # "HARD" or "PCF"
+    pcf_cascade_limit: int = 3  # cascades with index < this use PCF
+    pcf_samples: int = 16  # Vogel disk taps (4 to 64)
+    pcf_radius: float = 1.5  # filter radius in cascade texels
+    pcf_falloff: float = 2.0  # radial weight exponent (1 = cone, 2 = bell)
+
     # Depth Precision & GPU Culling
     reverse_z: bool = True  # Reversed-Z 32F floating-point depth buffer
     hiz_cull_enabled: bool = False  # GPU-Driven Hi-Z Occlusion Culling
@@ -225,6 +233,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=2,
         shadow_distance=120.0,
         csm_cascade_distances=(12.0, 45.0, 80.0, 120.0),
+        shadow_filter_mode="HARD",
         ao_mode="SSAO",
         gi_mode="OFF",
         rc_ray_count=8,
@@ -263,6 +272,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=3,
         shadow_distance=250.0,
         csm_cascade_distances=(14.0, 45.0, 110.0, 250.0),
+        shadow_filter_mode="PCF",
+        pcf_samples=8,
+        pcf_radius=1.0,
+        pcf_falloff=2.0,
         ao_mode="GTAO",
         gi_mode="SSGI",
         ssgi_steps=8,
@@ -307,6 +320,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=500.0,
         csm_cascade_distances=(20.0, 60.0, 160.0, 500.0),
+        shadow_filter_mode="PCF",
+        pcf_samples=16,
+        pcf_radius=1.5,
+        pcf_falloff=2.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=16,
@@ -358,6 +375,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=800.0,
         csm_cascade_distances=(25.0, 80.0, 250.0, 800.0),
+        shadow_filter_mode="PCF",
+        pcf_samples=24,
+        pcf_radius=1.75,
+        pcf_falloff=2.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=24,
@@ -409,6 +430,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=1200.0,
         csm_cascade_distances=(30.0, 110.0, 380.0, 1200.0),
+        shadow_filter_mode="PCF",
+        pcf_samples=32,
+        pcf_radius=2.0,
+        pcf_falloff=2.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=32,
