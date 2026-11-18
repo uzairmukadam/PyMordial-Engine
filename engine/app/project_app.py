@@ -53,6 +53,7 @@ class ProjectApp:
         "state_manager",
         "engine_loop",
         "world_builder",
+        "map_manager",
         "is_running",
         "system_monitor",
         "engine_tweaks",
@@ -119,6 +120,10 @@ class ProjectApp:
         self.ui: UIManager = UIManager(self.render_ctx.ctx, self.config.width, self.config.height)
         self.ui.attach_app(self)
         self.state_manager: GameStateManager = GameStateManager(app=self)
+
+        from engine.world.mapping.map_manager import MapManager
+
+        self.map_manager: MapManager = MapManager(self)
 
         # 6. Central Sacred Debug Subsystem (F1, F2, F3)
         self.system_monitor = None
@@ -240,6 +245,8 @@ class ProjectApp:
 
         self.world_builder = builder
         self.world_builder.build_world(self)
+        if hasattr(builder, "sector_instance") and builder.sector_instance is not None:
+            self.map_manager.register_sector(builder.sector_instance)
 
     @property
     def waypoint_graph(self) -> Any:
@@ -284,6 +291,9 @@ class ProjectApp:
                     return
                 c_state.on_fixed_update(self, dt)
 
+            # 0. Update MapManager (kinematic platforms, levers, trigger evaluation, streaming)
+            self.map_manager.on_fixed_update(dt)
+
             # 1. Update active modules on fixed simulation tick
             for m in self._modules:
                 if m.enabled:
@@ -327,11 +337,13 @@ class ProjectApp:
             if monitor is not None:
                 monitor.record_stage("Camera Update", (time.perf_counter_ns() - camera_start) / 1000.0)
 
-            # Synchronize 3D audio listener with active camera
+            # Synchronize 3D audio listener and map observer with active camera
             audio_ui_start = time.perf_counter_ns() if monitor is not None else 0
             cam = self.camera_manager.active_camera
-            if cam is not None and self.audio is not None:
-                self.audio.update(dt, cam.position, cam.forward)
+            if cam is not None:
+                self.map_manager.set_observer_position(cam.position)
+                if self.audio is not None:
+                    self.audio.update(dt, cam.position, cam.forward)
 
             if self.ui is not None:
                 self.ui.update(dt)

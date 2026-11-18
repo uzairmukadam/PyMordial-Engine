@@ -77,6 +77,15 @@ uniform float u_ShadowNormalBias = 0.0010; // Normal offset bias scale
 uniform float u_ShadowBiasSlopeScale = 2.0; // Slope multiplier for the base bias
 uniform float u_ShadowBiasMinScale = 0.5;   // Lower clamp, as a multiple of the base bias
 uniform float u_ShadowBiasMaxScale = 6.0;   // Upper clamp, as a multiple of the base bias
+
+// PCF filtering. Only the near cascades are filtered: the far cascade keeps the
+// hard path because its texels are already several screen pixels wide, so a
+// wider filter there would cost taps without adding visible detail.
+uniform int u_ShadowFilterMode = 0;   // 0 = HARD everywhere, 1 = PCF on near cascades
+uniform int u_PCFCascadeLimit = 3;    // cascades with index < this use PCF
+uniform int u_PCFSamples = 16;        // Vogel disk taps (4 to 64)
+uniform float u_PCFRadius = 1.5;      // filter radius in cascade texels
+uniform float u_PCFFalloff = 2.0;     // radial weight exponent (1 = linear cone, 2 = smooth bell)
 // Per-cascade atlas rect: xy = atlas UV offset, zw = atlas UV scale.
 uniform vec4 u_CascadeAtlasRect[4] = vec4[4](
     vec4(0.0, 0.0, 0.5, 0.5),
