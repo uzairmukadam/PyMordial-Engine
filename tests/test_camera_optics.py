@@ -45,7 +45,7 @@ def test_camera_optics_pass_init_and_resize(render_ctx: RenderContext):
     assert optics.optics_texture is not None
     assert optics.optics_texture.size == (w, h)
     assert optics.flare_texture is not None
-    assert optics.flare_texture.size == (w // 2, h // 2)
+    assert optics.flare_texture.size == (w, h)
 
     # Test resizing
     new_w, new_h = 160, 120
@@ -53,6 +53,10 @@ def test_camera_optics_pass_init_and_resize(render_ctx: RenderContext):
     assert optics.width == new_w
     assert optics.height == new_h
     assert optics.optics_texture.size == (new_w, new_h)
+    assert optics.flare_texture.size == (new_w, new_h)
+
+    # Explicit downscale still honoured
+    optics.resize(new_w, new_h, 0.5)
     assert optics.flare_texture.size == (new_w // 2, new_h // 2)
 
     optics.destroy()
@@ -138,7 +142,7 @@ def test_anamorphic_lens_flare_generation(render_ctx: RenderContext):
 
     flare_out = optics.render_flare(hdr_tex, cfg)
     assert flare_out is not None
-    assert flare_out.size == (w // 2, h // 2)
+    assert flare_out.size == (w, h)
 
     optics.destroy()
     hdr_fbo.release()
@@ -197,7 +201,8 @@ def test_hdr_bloom_extracts_and_spreads_highlights(render_ctx: RenderContext):
     post = PostProcessPipeline(ctx, width, height, config, post_frag, quad_vert)
     try:
         bloom_texture = bloom.render(scene, threshold=1.0, iterations=5)
-        bloom_pixels = np.frombuffer(bloom_texture.read(), dtype=np.float16).reshape(64, 64, 4)
+        bw, bh = bloom_texture.size
+        bloom_pixels = np.frombuffer(bloom_texture.read(), dtype=np.float16).reshape(bh, bw, 4)
         assert float(np.max(bloom_pixels[..., :3])) > 0.01
         assert int(np.count_nonzero(bloom_pixels[..., :3] > 1e-3)) > 1
 

@@ -54,6 +54,7 @@ class EngineTweaks:
         "shadow_mode",
         "shadow_softness",
         "sun_angular_radius",
+        "shadow_penumbra_scale",
         "shadow_bias",
         "shadow_normal_bias",
         "shadow_offset_x",
@@ -76,6 +77,7 @@ class EngineTweaks:
         "ssgi_thickness",
         "ssgi_ray_distance",
         "ssgi_intensity",
+        "ssgi_resolution_scale",
         "rc_ray_count",
         "rc_intensity",
         "rc_interval_c0",
@@ -85,12 +87,14 @@ class EngineTweaks:
         "rc_steps_c1",
         "rc_thickness",
         "rc_temporal_blend",
+        "rc_resolution_scale",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
         "ssr_thickness",
         "ssr_max_roughness",
         "ssr_max_distance",
+        "ssr_resolution_scale",
         "fxaa_subpixel",
         "fxaa_edge_threshold",
         "smaa_threshold",
@@ -208,6 +212,7 @@ class EngineTweaks:
         "lens_flare_ghost_intensity",
         "lens_flare_halo_intensity",
         "lens_flare_tint",
+        "lens_flare_resolution_scale",
         "solar_flare_blade_count",
         "solar_flare_bloom_intensity",
         "solar_flare_starburst_intensity",
@@ -271,6 +276,7 @@ class EngineTweaks:
         self.shadow_mode = "PCSS"
         self.shadow_softness = 1.2
         self.sun_angular_radius = 0.00465
+        self.shadow_penumbra_scale = 4.0
         self.shadow_bias = 0.0015
         self.shadow_normal_bias = 0.0010
         self.shadow_offset_x = 0.0
@@ -295,6 +301,7 @@ class EngineTweaks:
         self.ssgi_thickness = 0.35
         self.ssgi_ray_distance = 3.0
         self.ssgi_intensity = 1.5
+        self.ssgi_resolution_scale = 1.0
         self.rc_ray_count = 16
         self.rc_intensity = 1.0
         self.rc_interval_c0 = 0.40
@@ -304,12 +311,14 @@ class EngineTweaks:
         self.rc_steps_c1 = 12
         self.rc_thickness = 0.15
         self.rc_temporal_blend = 0.96
+        self.rc_resolution_scale = 1.0
         self.ibl_enabled = True
         self.ssr_enabled = True
         self.ssr_steps = 64
         self.ssr_thickness = 0.10
         self.ssr_max_roughness = 0.65
         self.ssr_max_distance = 30.0
+        self.ssr_resolution_scale = 1.0
         self.fxaa_subpixel = 0.75
         self.fxaa_edge_threshold = 0.125
         self.smaa_threshold = 0.08
@@ -421,6 +430,7 @@ class EngineTweaks:
         self.lens_flare_ghost_intensity = 0.35
         self.lens_flare_halo_intensity = 0.25
         self.lens_flare_tint = (0.25, 0.65, 1.0)
+        self.lens_flare_resolution_scale = 1.0
         self.solar_flare_blade_count = 6
         self.solar_flare_bloom_intensity = 1.0
         self.solar_flare_starburst_intensity = 0.6
@@ -652,6 +662,7 @@ class EngineTweaks:
             p_cfg.lens_flare_ghost_intensity = float(self.lens_flare_ghost_intensity)
             p_cfg.lens_flare_halo_intensity = float(self.lens_flare_halo_intensity)
             p_cfg.lens_flare_tint = tuple(float(c) for c in self.lens_flare_tint)
+            p_cfg.lens_flare_resolution_scale = float(self.lens_flare_resolution_scale)
             p_cfg.solar_flare_blade_count = int(self.solar_flare_blade_count)
             p_cfg.solar_flare_bloom_intensity = float(self.solar_flare_bloom_intensity)
             p_cfg.solar_flare_starburst_intensity = float(self.solar_flare_starburst_intensity)
@@ -664,6 +675,7 @@ class EngineTweaks:
             p_cfg.ssgi_thickness = float(self.ssgi_thickness)
             p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
             p_cfg.ssgi_intensity = float(self.ssgi_intensity)
+            p_cfg.ssgi_resolution_scale = float(self.ssgi_resolution_scale)
             p_cfg.rc_ray_count = int(self.rc_ray_count)
             p_cfg.rc_intensity = float(self.rc_intensity)
             p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
@@ -673,6 +685,7 @@ class EngineTweaks:
             p_cfg.rc_steps_c1 = int(self.rc_steps_c1)
             p_cfg.rc_thickness = float(self.rc_thickness)
             p_cfg.rc_temporal_blend = float(self.rc_temporal_blend)
+            p_cfg.rc_resolution_scale = float(self.rc_resolution_scale)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
@@ -684,6 +697,7 @@ class EngineTweaks:
             p_cfg.ssr_thickness = float(self.ssr_thickness)
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.ssr_max_distance = float(self.ssr_max_distance)
+            p_cfg.ssr_resolution_scale = float(self.ssr_resolution_scale)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
             p_cfg.taa_enabled = p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False))
             p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
@@ -707,6 +721,7 @@ class EngineTweaks:
             p_cfg.shadow_mode = self.shadow_mode
             p_cfg.shadow_softness = float(self.shadow_softness)
             p_cfg.sun_angular_radius = float(self.sun_angular_radius)
+            p_cfg.shadow_penumbra_scale = float(self.shadow_penumbra_scale)
             p_cfg.shadow_bias = float(self.shadow_bias)
             p_cfg.shadow_normal_bias = float(self.shadow_normal_bias)
             p_cfg.shadow_distance = float(self.shadow_distance)
@@ -905,6 +920,7 @@ class EngineTweaks:
             "lens_flare_ghost_intensity",
             "lens_flare_halo_intensity",
             "lens_flare_tint",
+            "lens_flare_resolution_scale",
             "solar_flare_blade_count",
             "solar_flare_bloom_intensity",
             "solar_flare_starburst_intensity",
@@ -915,6 +931,7 @@ class EngineTweaks:
             "ssgi_thickness",
             "ssgi_ray_distance",
             "ssgi_intensity",
+            "ssgi_resolution_scale",
             "rc_ray_count",
             "rc_intensity",
             "rc_interval_c0",
@@ -924,6 +941,7 @@ class EngineTweaks:
             "rc_steps_c1",
             "rc_thickness",
             "rc_temporal_blend",
+            "rc_resolution_scale",
             "ao_mode",
             "ao_intensity",
             "ao_radius",
@@ -934,6 +952,7 @@ class EngineTweaks:
             "ssr_thickness",
             "ssr_max_roughness",
             "ssr_max_distance",
+            "ssr_resolution_scale",
             "fxaa_subpixel",
             "fxaa_edge_threshold",
             "smaa_threshold",
@@ -949,6 +968,7 @@ class EngineTweaks:
             "shadow_mode",
             "shadow_softness",
             "sun_angular_radius",
+            "shadow_penumbra_scale",
             "shadow_bias",
             "shadow_normal_bias",
             "shadow_distance",
@@ -1109,6 +1129,7 @@ class EngineTweaks:
             "lens_flare_ghost_intensity": float(self.lens_flare_ghost_intensity),
             "lens_flare_halo_intensity": float(self.lens_flare_halo_intensity),
             "lens_flare_tint": [float(c) for c in self.lens_flare_tint],
+            "lens_flare_resolution_scale": float(self.lens_flare_resolution_scale),
             "solar_flare_blade_count": int(self.solar_flare_blade_count),
             "solar_flare_bloom_intensity": float(self.solar_flare_bloom_intensity),
             "solar_flare_starburst_intensity": float(self.solar_flare_starburst_intensity),
@@ -1119,6 +1140,7 @@ class EngineTweaks:
             "ssgi_thickness": float(self.ssgi_thickness),
             "ssgi_ray_distance": float(self.ssgi_ray_distance),
             "ssgi_intensity": float(self.ssgi_intensity),
+            "ssgi_resolution_scale": float(self.ssgi_resolution_scale),
             "rc_ray_count": int(self.rc_ray_count),
             "rc_intensity": float(self.rc_intensity),
             "rc_interval_c0": float(self.rc_interval_c0),
@@ -1128,6 +1150,7 @@ class EngineTweaks:
             "rc_steps_c1": int(self.rc_steps_c1),
             "rc_thickness": float(self.rc_thickness),
             "rc_temporal_blend": float(self.rc_temporal_blend),
+            "rc_resolution_scale": float(self.rc_resolution_scale),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),
@@ -1138,6 +1161,7 @@ class EngineTweaks:
             "ssr_thickness": float(self.ssr_thickness),
             "ssr_max_roughness": float(self.ssr_max_roughness),
             "ssr_max_distance": float(self.ssr_max_distance),
+            "ssr_resolution_scale": float(self.ssr_resolution_scale),
             "fxaa_subpixel": float(self.fxaa_subpixel),
             "fxaa_edge_threshold": float(self.fxaa_edge_threshold),
             "smaa_threshold": float(self.smaa_threshold),
@@ -1152,6 +1176,7 @@ class EngineTweaks:
             "shadow_mode": str(self.shadow_mode),
             "shadow_softness": float(self.shadow_softness),
             "sun_angular_radius": float(self.sun_angular_radius),
+            "shadow_penumbra_scale": float(self.shadow_penumbra_scale),
             "shadow_bias": float(self.shadow_bias),
             "shadow_normal_bias": float(self.shadow_normal_bias),
             "shadow_distance": float(self.shadow_distance),

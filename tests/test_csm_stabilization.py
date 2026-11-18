@@ -14,7 +14,7 @@ import pytest
 from engine.debug.engine_tweaks import EngineTweaks
 from engine.gfx.context import RenderContext
 from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
-from engine.gfx.shadow_csm import CascadedShadowMap
+from engine.gfx.shadow_csm import MAX_SPAN_RATIO, CascadedShadowMap
 
 
 def _max_span_ratio(splits: tuple[float, ...], near: float = 0.1) -> float:
@@ -113,7 +113,14 @@ class TestCSMStabilization:
         logarithmic = csm.split_distances
         assert all(logarithmic[i] < logarithmic[i + 1] for i in range(3))
         assert logarithmic[-1] == pytest.approx(600.0)
-        assert _max_span_ratio(logarithmic) <= 2.5
+        # The guard must not override the requested lambda. A cap below the
+        # natural PSSM ratio silently flattens the cascades and destroys near
+        # field texel density, so assert against the constant rather than a
+        # literal that can drift out of sync with it.
+        assert _max_span_ratio(logarithmic) <= MAX_SPAN_RATIO
+        # The near cascade must stay genuinely near-field: a 600m shadow distance
+        # with lambda 0.85 puts cascade 0 at ~23m, not at a flattened ~90m.
+        assert logarithmic[0] < 40.0
 
         csm.update_splits(600.0, cascade_count=4, lambda_val=0.0)
         uniform = csm.split_distances

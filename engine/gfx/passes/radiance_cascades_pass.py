@@ -22,6 +22,7 @@ class RadianceCascadesPass(RenderPass):
         "ctx",
         "width",
         "height",
+        "resolution_scale",
         "raw_rc_tex",
         "tex_a",
         "tex_b",
@@ -47,14 +48,21 @@ class RadianceCascadesPass(RenderPass):
         "_target_res_tuple",
     )
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="RadianceCascadesPass", enabled=True)
         self.ctx = ctx
-        self.width = max(width // 2, 1)
-        self.height = max(height // 2, 1)
+        self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
+        self.width = max(int(round(width * self.resolution_scale)), 1)
+        self.height = max(int(round(height * self.resolution_scale)), 1)
         self._target_res_tuple = (float(self.width), float(self.height))
 
-        # 1. Half-resolution RGBA16F intermediate textures
+        # 1. RGBA16F intermediate textures at the configured render scale
         self.raw_rc_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.raw_rc_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.raw_rc_tex.repeat_x = False
@@ -101,12 +109,14 @@ class RadianceCascadesPass(RenderPass):
 
         self._first_frame = True
 
-    def resize(self, width: int, height: int) -> None:
-        new_w = max(width // 2, 1)
-        new_h = max(height // 2, 1)
-        if new_w == self.width and new_h == self.height:
+    def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
+        new_scale = self.resolution_scale if resolution_scale is None else min(max(float(resolution_scale), 0.25), 1.0)
+        new_w = max(int(round(width * new_scale)), 1)
+        new_h = max(int(round(height * new_scale)), 1)
+        if new_w == self.width and new_h == self.height and new_scale == self.resolution_scale:
             return
 
+        self.resolution_scale = new_scale
         self.width = new_w
         self.height = new_h
         self._target_res_tuple = (float(self.width), float(self.height))

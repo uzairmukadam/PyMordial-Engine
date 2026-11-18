@@ -576,6 +576,17 @@ class DebugMenu:
                         et.ssgi_intensity = ssgi_in_val
                         et.mark_custom()
 
+                    ssgi_res_changed, ssgi_res_val = imgui.slider_float(
+                        "SSGI Resolution Scale",
+                        float(getattr(et, "ssgi_resolution_scale", 1.0)),
+                        0.25,
+                        1.0,
+                        "%.2f",
+                    )
+                    if ssgi_res_changed:
+                        et.ssgi_resolution_scale = ssgi_res_val
+                        et.mark_custom()
+
                 if et.gi_mode == "RADIANCE_CASCADES":
                     rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
                     if rc_ray_count_changed:
@@ -630,6 +641,17 @@ class DebugMenu:
                     )
                     if rc_blend_changed:
                         et.rc_temporal_blend = rc_blend_val
+                        et.mark_custom()
+
+                    rc_res_changed, rc_res_val = imgui.slider_float(
+                        "RC Resolution Scale",
+                        float(getattr(et, "rc_resolution_scale", 1.0)),
+                        0.25,
+                        1.0,
+                        "%.2f",
+                    )
+                    if rc_res_changed:
+                        et.rc_resolution_scale = rc_res_val
                         et.mark_custom()
 
                 # AO Mode (OFF, SSAO, GTAO)
@@ -699,6 +721,17 @@ class DebugMenu:
                     )
                     if ssr_dist_changed:
                         et.ssr_max_distance = ssr_dist_val
+                        et.mark_custom()
+
+                    ssr_res_changed, ssr_res_val = imgui.slider_float(
+                        "SSR Resolution Scale",
+                        float(getattr(et, "ssr_resolution_scale", 1.0)),
+                        0.25,
+                        1.0,
+                        "%.2f",
+                    )
+                    if ssr_res_changed:
+                        et.ssr_resolution_scale = ssr_res_val
                         et.mark_custom()
 
                 # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
@@ -1311,6 +1344,17 @@ class DebugMenu:
                         et.lens_flare_tint = tuple(lftint_v)
                         et.mark_custom()
 
+                    lfr_c, lfr_v = imgui.slider_float(
+                        "Flare Resolution Scale",
+                        float(getattr(et, "lens_flare_resolution_scale", 1.0)),
+                        0.25,
+                        1.0,
+                        "%.2f",
+                    )
+                    if lfr_c:
+                        et.lens_flare_resolution_scale = lfr_v
+                        et.mark_custom()
+
                 # HDR Bloom
                 bl_c, bl_v = imgui.checkbox("HDR Bloom", getattr(et, "bloom_enabled", True))
                 if bl_c:
@@ -1520,6 +1564,17 @@ class DebugMenu:
                     pcf_changed, pcf_val = imgui.slider_int("Shadow Filter Samples", et.pcf_samples, 4, 64)
                     if pcf_changed:
                         et.pcf_samples = pcf_val
+                        et.mark_custom()
+
+                # 3b. PCSS penumbra widening. 1.0 is the physical solar size, which
+                # is sub-texel at practical cascade densities; 2-5x is the usual
+                # artistic range for readable contact hardening.
+                if et.shadow_mode in ("PCSS", "PCSS_ULTRA"):
+                    pen_changed, pen_val = imgui.slider_float(
+                        "PCSS Penumbra Scale", et.shadow_penumbra_scale, 1.0, 12.0, "%.1fx"
+                    )
+                    if pen_changed:
+                        et.shadow_penumbra_scale = pen_val
                         et.mark_custom()
 
                 # 4. Shadow Depth Bias

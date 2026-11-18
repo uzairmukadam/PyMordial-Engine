@@ -42,13 +42,17 @@ class TestSolarFlarePassLifecycle:
     def test_init_resize_destroy(self, render_ctx: RenderContext) -> None:
         flare = SolarFlarePass(render_ctx.ctx, 160, 120)
         try:
-            assert flare.flare_texture.size == (80, 60)
-            flare.resize(320, 240)
+            # Full resolution by default
             assert flare.flare_texture.size == (160, 120)
+            flare.resize(320, 240)
+            assert flare.flare_texture.size == (320, 240)
             # A no-op resize must not reallocate.
             before = flare.flare_texture.glo
             flare.resize(320, 240)
             assert flare.flare_texture.glo == before
+            # Explicit downscale still honoured
+            flare.resize(320, 240, 0.5)
+            assert flare.flare_texture.size == (160, 120)
         finally:
             flare.destroy()
 

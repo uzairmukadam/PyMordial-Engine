@@ -40,6 +40,7 @@ class RenderConfig:
     shadow_mode: str = "PCSS"  # "HARD", "PCF", "PCSS", "PCSS_ULTRA"
     shadow_softness: float = 1.2  # Penumbra scale & PCF radius (0.2 to 3.0)
     sun_angular_radius: float = 0.00465  # Physical solar angular radius (rad, ~0.266 deg)
+    shadow_penumbra_scale: float = 4.0  # Artistic widening of the light source for readable PCSS penumbrae
     shadow_bias: float = 0.0015  # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
     # Slope-scaled bias clamp: bias = clamp(base * (1 + slope * scale), base * min, base * max)
@@ -78,6 +79,7 @@ class RenderConfig:
     ssgi_ray_distance: float = 3.0
     ssgi_thickness: float = 0.35
     ssgi_intensity: float = 1.5
+    ssgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
     rc_cascades: int = 3
@@ -90,11 +92,12 @@ class RenderConfig:
     rc_thickness: float = 0.15
     rc_intensity: float = 1.0
     rc_temporal_blend: float = 0.96
+    rc_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
     ssr_enabled: bool = True
-    ssr_resolution_scale: float = 0.5
+    ssr_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
     ssr_mode: str = "HIZ"  # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
     ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
@@ -203,6 +206,7 @@ class RenderConfig:
     lens_flare_ghost_intensity: float = 0.0
     lens_flare_halo_intensity: float = 0.25
     lens_flare_tint: tuple[float, float, float] = (0.25, 0.65, 1.0)  # Anamorphic blue/cyan
+    lens_flare_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
 
     # Solar Flare (lens_flare_mode == "SOLAR")
     solar_flare_blade_count: int = 6  # Aperture blades -> diffraction spike count
@@ -274,9 +278,12 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ao_mode="GTAO",
         gi_mode="SSGI",
         ssgi_steps=8,
+        ssgi_resolution_scale=1.0,
         rc_ray_count=12,
+        rc_resolution_scale=1.0,
         ibl_enabled=True,
         ssr_enabled=False,
+        ssr_resolution_scale=1.0,
         aa_mode="TAA",
         taa_enabled=True,
         clustered_lights_enabled=True,
@@ -317,7 +324,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=16,
+        rc_resolution_scale=1.0,
         ssgi_steps=12,
+        ssgi_resolution_scale=1.0,
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_resolution_scale=1.0,
@@ -368,7 +377,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=24,
+        rc_resolution_scale=1.0,
         ssgi_steps=16,
+        ssgi_resolution_scale=1.0,
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_resolution_scale=1.0,
@@ -419,7 +430,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=32,
+        rc_resolution_scale=1.0,
         ssgi_steps=24,
+        ssgi_resolution_scale=1.0,
         ibl_enabled=True,
         ssr_enabled=True,
         ssr_resolution_scale=1.0,

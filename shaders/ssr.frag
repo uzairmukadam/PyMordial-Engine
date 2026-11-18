@@ -35,6 +35,10 @@ uniform float u_SSR_Thickness = 0.40;
 uniform float u_SSR_MaxRoughness = 0.65;
 uniform int u_SSR_Mode = 1;          // 0 = LINEAR march, 1 = Hi-Z accelerated march
 uniform int u_HiZMipCount = 1;       // Number of valid mip levels in u_HiZTexture
+// Resolution of the SSR target itself. Pixel-space ray math must use this rather
+// than the full viewport size, otherwise a downscaled SSR target mis-measures
+// ray lengths in pixels.
+uniform vec2 u_TargetResolution = vec2(1.0);
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -88,7 +92,7 @@ bool MarchHiZ(
     if (clip_end.w <= 1e-5) return false;
     vec2 uv_end = (clip_end.xy / clip_end.w) * 0.5 + 0.5;
 
-    vec2 screen_delta = (uv_end - uv_start) * u_ScreenSize_Jitter.xy;
+    vec2 screen_delta = (uv_end - uv_start) * u_TargetResolution;
     float screen_len = length(screen_delta);
     if (screen_len < 1.0) return false;
 

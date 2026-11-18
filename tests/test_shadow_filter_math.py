@@ -38,13 +38,13 @@ class TestPenumbraPhysics:
 
     def test_penumbra_spread_matches_physical_sun_size(self) -> None:
         source = _read_resolve_shader()
-        match = re.search(r"float\s+sun_spread\s*=\s*([^;]+);", source)
-        assert match is not None, "Could not locate the sun_spread definition in the PCSS path."
+        match = re.search(r"float\s+penumbra_world\s*=\s*([^;]+);", source)
+        assert match is not None, "Could not locate the penumbra_world definition in the PCSS path."
 
         expression = match.group(1)
         # The spread must be derived from the uniform, not a bare literal.
         assert "u_SunAngularRadius" in expression, (
-            f"sun_spread is '{expression.strip()}', which ignores the physical solar "
+            f"penumbra_world is '{expression.strip()}', which ignores the physical solar "
             "angular radius. Drive it from u_SunAngularRadius."
         )
 
@@ -52,33 +52,35 @@ class TestPenumbraPhysics:
         literals = [float(value) for value in re.findall(r"(?<![\w.])(\d+\.\d+|\d+)(?![\w.])", expression)]
         for literal in literals:
             assert literal <= MAX_SPREAD_RATIO, (
-                f"sun_spread multiplies the solar radius by {literal}, which is far "
+                f"penumbra_world multiplies the solar radius by {literal}, which is far "
                 f"wider than the physical {SUN_ANGULAR_RADIUS_RAD:.5f} rad."
             )
 
     def test_blocker_search_radius_is_bounded_in_world_space(self) -> None:
         """A fixed atlas-UV clamp makes distant cascades collapse into blobs."""
         source = _read_resolve_shader()
-        match = re.search(r"float\s+search_radius\s*=\s*clamp\((.*?)\);", source, re.DOTALL)
+        match = re.search(r"float\s+search_radius\s*=\s*([^;]+);", source)
         assert match is not None, "Could not locate the PCSS blocker search radius."
 
         body = match.group(1)
-        assert "world_texel_size" in body or "inv_rad" in body, (
-            "The blocker search radius must be expressed in world units so it scales "
+        # The radius must be a texel count scaled by the cascade's texel size, so
+        # it tracks cascade texel density instead of a fixed atlas fraction.
+        assert "texel_uv" in body or "world_texel" in body, (
+            "The blocker search radius must be expressed in cascade texels so it scales "
             "with cascade texel density instead of clamping to a fixed atlas fraction."
         )
 
     def test_filter_sample_count_scales_with_radius(self) -> None:
         """A fixed tap count over a large radius under-samples and bands."""
         source = _read_resolve_shader()
-        assert "filter_samples" in source
-        match = re.search(r"int\s+filter_samples\s*=\s*([^;]+);", source)
+        assert "ShadowTapCount" in source
+        match = re.search(r"int\s+taps\s*=\s*ShadowTapCount\(([^;]+)\);", source)
         assert match is not None, "Could not locate the PCSS filter sample count."
 
         expression = match.group(1)
-        assert "filter_radius" in expression or "radius" in expression, (
-            f"filter_samples is '{expression.strip()}'. It must scale with the filter "
-            "radius so taps-per-texel stays high enough to avoid banding."
+        assert "radius_texels" in expression, (
+            f"taps is '{expression.strip()}'. It must scale with the filter radius so "
+            "taps-per-texel stays high enough to avoid banding."
         )
 
     def test_cascade_texel_size_is_not_doubled(self) -> None:
@@ -90,15 +92,15 @@ class TestPenumbraPhysics:
         look blurry and banded.
         """
         source = _read_resolve_shader()
-        match = re.search(r"vec2\s+cascade_texel_size\s*=\s*([^;]+);", source)
-        assert match is not None, "Could not locate cascade_texel_size."
+        match = re.search(r"c\.texel_uv\s*=\s*([^;]+);", source)
+        assert match is not None, "Could not locate the per-cascade texel size."
 
         expression = match.group(1)
         assert "2.0 / full_size" not in expression, (
-            f"cascade_texel_size is '{expression.strip()}', which is 2x too large. Use 1.0 / full_size."
+            f"texel_uv is '{expression.strip()}', which is 2x too large. Use 1.0 / full_size."
         )
-        assert "1.0 / full_size" in expression, (
-            f"cascade_texel_size should be 1.0 / full_size, got '{expression.strip()}'."
+        assert "1.0 / max(full_size.x" in expression or "1.0 / full_size" in expression, (
+            f"texel_uv should be 1.0 / full_size, got '{expression.strip()}'."
         )
 
     def test_vogel_disk_is_rotated_per_pixel(self) -> None:
@@ -118,7 +120,7 @@ class TestCascadeSplitQuality:
     """Adjacent cascades must not differ wildly in texel density."""
 
     def test_split_texel_density_ratio_is_bounded(self) -> None:
-        from engine.gfx.shadow_csm import CascadedShadowMap
+        from engine.gfx.shadow_csm import MAX_SPAN_RATIO, CascadedShadowMap
 
         csm = CascadedShadowMap.__new__(CascadedShadowMap)
         csm.cascade_count = 4
@@ -136,10 +138,18 @@ class TestCascadeSplitQuality:
 
         # Texel density is inversely proportional to slice span for a fixed map
         # size, so a large span ratio between neighbours is a visible quality step.
+        # The bound is the module's own guard, not a literal: a cap below the
+        # natural PSSM ratio would silently flatten the cascades and destroy the
+        # near-field texel density that makes contact shadows crisp.
         ratios = [spans[index + 1] / max(spans[index], 1e-6) for index in range(len(spans) - 1)]
         worst = max(ratios)
-        assert worst <= 2.5, (
+        assert worst <= MAX_SPAN_RATIO, (
             f"Adjacent cascade span ratio reaches {worst:.2f}x, so texel density drops "
             f"in visible steps. Spans: {[round(s, 1) for s in spans]}. "
             "Equalize the geometric spacing."
+        )
+        # The near cascade must remain genuinely near-field.
+        assert splits[0] < 40.0, (
+            f"Cascade 0 reaches {splits[0]:.1f}m at a 500m shadow distance, which wastes "
+            "near-field texel density. The split guard is overriding the requested lambda."
         )

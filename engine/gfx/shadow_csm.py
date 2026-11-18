@@ -9,10 +9,22 @@ import numpy as np
 
 SPLIT_MODES = ("PSSM", "GEOMETRIC", "UNIFORM")
 
-# Hard ceiling on the world-space span ratio between neighbouring cascades.
-# Texel density is inversely proportional to slice span for a fixed map size, so
-# a larger ratio shows up as a visible quality step at the cascade boundary.
-MAX_SPAN_RATIO = 2.5
+# Safety bound on the world-space span ratio between neighbouring cascades.
+#
+# This is a guard against pathological configurations (a huge shadow distance
+# with a near-logarithmic lambda), NOT a quality target. It must sit above the
+# natural PSSM ratio, otherwise the bisection below silently overrides the
+# user's lambda and flattens the cascades towards uniform spacing. That is
+# exactly what happened at 2.5: cascade 0 grew from 19m to 78m at a 500m shadow
+# distance, wasting 4x the near-field texel density and making every contact
+# shadow blocky. The natural ratio is ~4.7 at 120m and ~7.3 at 1200m.
+MAX_SPAN_RATIO = 8.0
+
+# How far past the slice's bounding sphere a caster may extend the depth slab,
+# as a multiple of the slice radius. Large ground planes overlap every cascade
+# in XY, so without a bound they stretch the slab to kilometres and destroy
+# depth precision. A caster beyond this reach cannot cast into the slice.
+MAX_CASTER_REACH = 2.0
 
 
 def _pssm_splits(near: float, far: float, count: int, blend: float) -> list[float]:
@@ -51,10 +63,12 @@ class CascadedShadowMap:
         "atlas_size",
         "cascade_count",
         "max_distance",
+        "max_caster_reach",
         "split_lambda",
         "split_mode",
         "cascade_distance_scale",
         "depth_texture",
+        "compare_sampler",
         "fbo",
         "split_distances",
         "light_matrices",
@@ -82,12 +96,14 @@ class CascadedShadowMap:
         self.atlas_size = atlas_size
         self.cascade_count = cascade_count
         self.max_distance = float(max_distance)
+        self.max_caster_reach = MAX_CASTER_REACH
         self.split_lambda = float(split_lambda)
         self.split_mode = str(split_mode).upper()
         self.nonuniform_atlas = bool(nonuniform_atlas)
 
         # Depth texture atlas and framebuffer
         self.depth_texture = None  # type: ignore[assignment]
+        self.compare_sampler = None  # type: ignore[assignment]
         self.fbo = None  # type: ignore[assignment]
         self._create_atlas()
 
@@ -299,21 +315,6 @@ class CascadedShadowMap:
                 if cascade < count - 1
                 else split_far
             )
-            receiver_depth_min = math.inf
-            receiver_depth_max = -math.inf
-            for distance in (fit_near, fit_far):
-                half_height = distance * tan_half_fov_y
-                half_width = half_height * safe_aspect
-                slice_center = camera_pos64 + forward * distance
-                for x_sign in (-1.0, 1.0):
-                    for y_sign in (-1.0, 1.0):
-                        corner = (
-                            slice_center + camera_right * (x_sign * half_width) + camera_up * (y_sign * half_height)
-                        )
-                        light_z = float(np.dot(sun, corner))
-                        receiver_depth_min = min(receiver_depth_min, light_z)
-                        receiver_depth_max = max(receiver_depth_max, light_z)
-
             center_distance = (fit_near + fit_far) * 0.5
             radius = math.sqrt(
                 ((fit_far - fit_near) * 0.5) ** 2 + (fit_far * tan_half_fov_y) ** 2 * (1.0 + safe_aspect * safe_aspect)
@@ -330,9 +331,28 @@ class CascadedShadowMap:
                 center_x = math.floor(center_x / texel_world + 0.5) * texel_world
                 center_y = math.floor(center_y / texel_world + 0.5) * texel_world
 
-            depth_pad = max(10.0, (receiver_depth_max - receiver_depth_min) * 0.05)
-            depth_min = receiver_depth_min - depth_pad
-            depth_max = receiver_depth_max + depth_pad
+            # Depth range from the slice's bounding sphere, not from the eight
+            # frustum corners projected onto the light axis.
+            #
+            # Projecting the corners makes the range depend on camera yaw: the
+            # same slice measured 59.6m at yaw 0 and 67.8m at yaw 60, a 34% swing.
+            # That re-scales the depth precision every time the camera turns, so
+            # the shadow visibly shifts and re-quantises as you look around. The
+            # bounding sphere is rotation-invariant, so the depth range is a
+            # constant for a given slice and the cascade is fully camera-stable.
+            sphere_center_z = float(np.dot(sun, slice_center))
+            # Quantise the slab origin. ``slice_center`` slides continuously with
+            # the camera, so an unsnapped ``sphere_center_z`` re-scales the depth
+            # encoding every frame and the shadow edge creeps as you move. Pitch
+            # is the worst case because it swings the slice along the light axis
+            # fastest. Snapping to a quantum proportional to the slice radius
+            # makes the slab piecewise-constant: it only steps when the camera
+            # has moved a meaningful fraction of a cascade, so the encoding is
+            # stable across ordinary motion.
+            depth_quantum = max(radius * 2.0 / 512.0, 1e-3)
+            sphere_center_z = math.floor(sphere_center_z / depth_quantum) * depth_quantum
+            depth_min = sphere_center_z - radius
+            depth_max = sphere_center_z + radius
 
             if caster_centers is not None and caster_extents is not None:
                 cx = caster_centers @ light_right
@@ -341,17 +361,35 @@ class CascadedShadowMap:
                 ex = caster_extents @ np.abs(light_right)
                 ey = caster_extents @ np.abs(light_up)
                 ez = caster_extents @ np.abs(sun)
+                # Casters are selected against a slightly expanded XY footprint so
+                # a caster that grazes the border does not pop in and out as the
+                # camera turns. The expansion is a fixed fraction of the cascade
+                # radius, so it is itself rotation-invariant.
+                margin = radius * 0.05
                 overlaps_xy = (
-                    (cx + ex >= center_x - radius)
-                    & (cx - ex <= center_x + radius)
-                    & (cy + ey >= center_y - radius)
-                    & (cy - ey <= center_y + radius)
-                    & (cz - ez <= receiver_depth_max + depth_pad)
-                    & (cz + ez >= receiver_depth_min - self.max_distance)
+                    (cx + ex >= center_x - radius - margin)
+                    & (cx - ex <= center_x + radius + margin)
+                    & (cy + ey >= center_y - radius - margin)
+                    & (cy - ey <= center_y + radius + margin)
+                    & (cz - ez <= depth_max + radius)
+                    & (cz + ez >= depth_min - self.max_distance)
                 )
                 if np.any(overlaps_xy):
-                    depth_min = min(depth_min, float(np.min((cz - ez)[overlaps_xy])) - depth_pad)
+                    depth_min = min(depth_min, float(np.min((cz - ez)[overlaps_xy])))
                     depth_max = max(depth_max, float(np.max((cz + ez)[overlaps_xy])))
+
+            # Bound how far a caster may stretch the depth slab. A ground plane
+            # authored as a 10km quad overlaps every cascade in XY, and without
+            # this clamp it drags the slab to ~17km for a 60m shadow distance.
+            # That collapses the usable depth precision and makes the bias
+            # meaningless. A caster further than a few slice radii along the
+            # light axis cannot reach into this slice anyway: its shadow is
+            # offset by height * tan(sun_elevation), which is already outside
+            # the cascade footprint. Clamping is therefore lossless in practice
+            # and keeps the slab proportional to the slice.
+            reach = radius * self.max_caster_reach
+            depth_min = max(depth_min, sphere_center_z - radius - reach)
+            depth_max = min(depth_max, sphere_center_z + radius + reach)
 
             depth_range = max(depth_max - depth_min, 1.0)
             matrix = self.light_matrices[cascade].reshape((4, 4), order="F")
@@ -386,6 +424,17 @@ class CascadedShadowMap:
         self.depth_texture.repeat_x = False
         self.depth_texture.repeat_y = False
         self.fbo = self.ctx.framebuffer(depth_attachment=self.depth_texture)
+        # Hardware depth-comparison view of the same texture. A tap through this
+        # sampler returns a bilinear-filtered 2x2 PCF result, so one fetch does
+        # the work of four manual fetches. The raw texture stays available for
+        # the blocker search, which needs the stored depth rather than a compare.
+        self.compare_sampler = self.ctx.sampler(
+            texture=self.depth_texture,
+            compare_func="<=",
+            filter=(moderngl.LINEAR, moderngl.LINEAR),
+            repeat_x=False,
+            repeat_y=False,
+        )
 
     def resize_atlas(self, new_size: int) -> None:
         """Dynamically resizes shadow atlas if resolution changed."""
@@ -427,6 +476,9 @@ class CascadedShadowMap:
         return self.cascade_draw_batches
 
     def destroy(self) -> None:
+        if self.compare_sampler is not None:
+            self.compare_sampler.release()
+            self.compare_sampler = None
         if self.fbo is not None:
             self.fbo.release()
             self.fbo = None

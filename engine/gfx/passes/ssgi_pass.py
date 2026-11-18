@@ -18,13 +18,20 @@ SHADER_DIR = get_shader_dir()
 class SSGIPass(RenderPass):
     """Computes screen-space indirect diffuse bounces and bilateral reconstruction."""
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="SSGIPass", enabled=True)
         self.ctx = ctx
-        self.width = max(width // 2, 1)
-        self.height = max(height // 2, 1)
+        self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
+        self.width = max(int(round(width * self.resolution_scale)), 1)
+        self.height = max(int(round(height * self.resolution_scale)), 1)
 
-        # Half-resolution RGBA16F ping-pong buffers
+        # RGBA16F ping-pong buffers at the configured render scale
         self.raw_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.raw_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.raw_ssgi_tex.repeat_x = False
@@ -63,12 +70,14 @@ class SSGIPass(RenderPass):
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
 
-    def resize(self, width: int, height: int) -> None:
-        new_w = max(width // 2, 1)
-        new_h = max(height // 2, 1)
-        if new_w == self.width and new_h == self.height:
+    def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
+        new_scale = self.resolution_scale if resolution_scale is None else min(max(float(resolution_scale), 0.25), 1.0)
+        new_w = max(int(round(width * new_scale)), 1)
+        new_h = max(int(round(height * new_scale)), 1)
+        if new_w == self.width and new_h == self.height and new_scale == self.resolution_scale:
             return
 
+        self.resolution_scale = new_scale
         self.width = new_w
         self.height = new_h
 

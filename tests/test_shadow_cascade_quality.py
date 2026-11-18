@@ -79,8 +79,8 @@ class TestPCSSUltraMode:
 
     def test_ultra_keeps_physical_penumbra(self) -> None:
         source = RESOLVE_SHADER.read_text(encoding="utf-8")
-        ultra_start = source.index("u_ShadowMode == 3")
-        ultra_end = source.index("MODE 2:", ultra_start)
+        ultra_start = source.index("float SamplePCSSShadow(")
+        ultra_end = source.index("float SampleCascadeShadow(", ultra_start)
         ultra_body = source[ultra_start:ultra_end]
         assert "u_SunAngularRadius" in ultra_body, (
             "PCSS_ULTRA must derive its penumbra from the physical solar angular radius."
@@ -88,12 +88,15 @@ class TestPCSSUltraMode:
 
     def test_ultra_has_separable_blocker_and_filter_passes(self) -> None:
         source = RESOLVE_SHADER.read_text(encoding="utf-8")
-        ultra_start = source.index("u_ShadowMode == 3")
-        ultra_end = source.index("MODE 2:", ultra_start)
+        ultra_start = source.index("float SamplePCSSShadow(")
+        ultra_end = source.index("float SampleCascadeShadow(", ultra_start)
         ultra_body = source[ultra_start:ultra_end]
-        assert "search_radius_u" in ultra_body, "PCSS_ULTRA needs a coarse blocker search pass."
-        assert "filter_radius_u" in ultra_body, "PCSS_ULTRA needs a tight filter pass."
-        assert "cascade_budget" in ultra_body, "PCSS_ULTRA needs a per-cascade tap budget."
+        assert "search_radius" in ultra_body, "PCSS_ULTRA needs a coarse blocker search pass."
+        assert "filter_radius" in ultra_body, "PCSS_ULTRA needs a tight filter pass."
+        assert "ShadowTapCount" in ultra_body, "PCSS_ULTRA needs a radius-scaled tap budget."
+        # The ultra flag must widen the search and raise the tap budget, otherwise
+        # PCSS_ULTRA is just PCSS with a different name.
+        assert "ultra ?" in ultra_body, "PCSS_ULTRA must actually differ from PCSS."
 
 
 class TestCascadeAtlasRects:

@@ -30,11 +30,18 @@ class CameraOpticsPass(RenderPass):
         "ANAMORPHIC": 2,
     }
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        flare_resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="CameraOpticsPass", enabled=True)
         self.ctx = ctx
         self.width = max(1, width)
         self.height = max(1, height)
+        self.flare_resolution_scale = min(max(float(flare_resolution_scale), 0.25), 1.0)
 
         # 1. Compile Shaders
         quad_vert = _load_shader("fullscreen_quad.vert")
@@ -92,9 +99,10 @@ class CameraOpticsPass(RenderPass):
         self.optics_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.optics_fbo = self.ctx.framebuffer(color_attachments=[self.optics_texture])
 
-        # Flare HDR16F Texture (downsampled to half-res for performance and wide streak reach)
-        flare_w = max(1, self.width // 2)
-        flare_h = max(1, self.height // 2)
+        # Flare HDR16F Texture (rendered at the configured flare scale; full res
+        # by default so wide streaks keep their sub-pixel detail)
+        flare_w = max(1, int(round(self.width * self.flare_resolution_scale)))
+        flare_h = max(1, int(round(self.height * self.flare_resolution_scale)))
         self.flare_texture = self.ctx.texture((flare_w, flare_h), 4, dtype="f2")
         self.flare_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.flare_fbo = self.ctx.framebuffer(color_attachments=[self.flare_texture])
@@ -114,15 +122,21 @@ class CameraOpticsPass(RenderPass):
             self.flare_texture.release()
             self.flare_texture = None
 
-    def resize(self, new_width: int, new_height: int) -> None:
+    def resize(self, new_width: int, new_height: int, flare_resolution_scale: float | None = None) -> None:
         """Resizes optics and flare framebuffers."""
         if new_width <= 0 or new_height <= 0:
             return
-        if new_width == self.width and new_height == self.height:
+        new_scale = (
+            self.flare_resolution_scale
+            if flare_resolution_scale is None
+            else min(max(float(flare_resolution_scale), 0.25), 1.0)
+        )
+        if new_width == self.width and new_height == self.height and new_scale == self.flare_resolution_scale:
             return
         self._destroy_buffers()
         self.width = new_width
         self.height = new_height
+        self.flare_resolution_scale = new_scale
         self._create_buffers()
 
     def render_optics(

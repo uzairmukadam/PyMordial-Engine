@@ -141,12 +141,95 @@ class TestGTAOAndBilateralBlur:
         finally:
             pipeline.destroy()
 
+    def test_screen_space_effects_default_to_full_resolution(self, render_ctx: RenderContext):
+        """Every screen-space effect renders at full resolution unless downscaled."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            assert pipeline.ao_pass.raw_ao_tex.size == (320, 240)
+            assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
+            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
+            assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
+            assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
+            assert pipeline.bloom_pass.downsample_textures[0].size == (320, 240)
+        finally:
+            pipeline.destroy()
+
+    def test_effect_resolution_scales_are_honoured(self, render_ctx: RenderContext):
+        """Each effect honours its own resolution scale through apply_config."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssgi_resolution_scale = 0.5
+            pipeline.config.rc_resolution_scale = 0.5
+            pipeline.config.ssr_resolution_scale = 0.5
+            pipeline.config.lens_flare_resolution_scale = 0.5
+            pipeline.apply_config(pipeline.config)
+
+            assert pipeline.ssgi_pass.raw_ssgi_tex.size == (160, 120)
+            assert pipeline.rc_pass.raw_rc_tex.size == (160, 120)
+            assert pipeline.ssr_pass.raw_ssr_tex.size == (160, 120)
+            assert pipeline.camera_optics_pass.flare_texture.size == (160, 120)
+            assert pipeline.solar_flare_pass.flare_texture.size == (160, 120)
+
+            pipeline.config.ssgi_resolution_scale = 1.0
+            pipeline.config.rc_resolution_scale = 1.0
+            pipeline.config.ssr_resolution_scale = 1.0
+            pipeline.config.lens_flare_resolution_scale = 1.0
+            pipeline.apply_config(pipeline.config)
+
+            assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
+            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
+            assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
+            assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
+        finally:
+            pipeline.destroy()
+
+    def test_effect_resolution_scales_survive_window_resize(self, render_ctx: RenderContext):
+        """A window resize must re-derive every effect target from its own scale."""
+        pipeline = RenderPipeline(render_ctx)
+        cfg = pipeline.config
+        saved = (
+            cfg.ssgi_resolution_scale,
+            cfg.rc_resolution_scale,
+            cfg.ssr_resolution_scale,
+            cfg.lens_flare_resolution_scale,
+        )
+        try:
+            cfg.ssgi_resolution_scale = 0.5
+            cfg.rc_resolution_scale = 0.5
+            cfg.ssr_resolution_scale = 0.5
+            cfg.lens_flare_resolution_scale = 0.5
+            pipeline.apply_config(cfg)
+
+            pipeline.resize(640, 480)
+
+            assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
+            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
+            assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
+            assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
+            assert pipeline.bloom_pass.downsample_textures[0].size == (640, 480)
+        finally:
+            pipeline.destroy()
+            # The context and its RenderConfig are module-scoped; restore both so
+            # later tests see the defaults they assert on.
+            (
+                cfg.ssgi_resolution_scale,
+                cfg.rc_resolution_scale,
+                cfg.ssr_resolution_scale,
+                cfg.lens_flare_resolution_scale,
+            ) = saved
+            render_ctx.resize(320, 240)
+
 
 class TestSSGIGlobalIllumination:
     def test_ssgi_pass_execution(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
 
-        assert pipeline.ssgi_pass.raw_ssgi_tex.size == (160, 120)
+        # SSGI defaults to full resolution so its screen-space ray math matches
+        # the viewport (a half-res target silently shrank the effect).
+        assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
 
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(
@@ -166,7 +249,7 @@ class TestSSGIGlobalIllumination:
         )
 
         data = pipeline.ssgi_pass.raw_ssgi_tex.read()
-        assert len(data) == 160 * 120 * 4 * 2  # RGBA16F
+        assert len(data) == 320 * 240 * 4 * 2  # RGBA16F
 
         pipeline.destroy()
 
@@ -194,7 +277,7 @@ class TestSSGIGlobalIllumination:
 
         # Verify SSGI texture has data
         ssgi_data = pipeline.ssgi_pass.raw_ssgi_tex.read()
-        assert len(ssgi_data) == 160 * 120 * 4 * 2
+        assert len(ssgi_data) == 320 * 240 * 4 * 2
 
         # Verify debug buffer modes 8, 10 render without error
         for debug_mode in (8, 10):

@@ -27,6 +27,7 @@ class SolarFlarePass(RenderPass):
         "ctx",
         "width",
         "height",
+        "resolution_scale",
         "prog",
         "vao",
         "flare_texture",
@@ -48,11 +49,18 @@ class SolarFlarePass(RenderPass):
         "_sun_pos_scratch",
     )
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="SolarFlarePass", enabled=True)
         self.ctx = ctx
         self.width = max(1, width)
         self.height = max(1, height)
+        self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
 
         quad_vert = load_shader("fullscreen_quad.vert")
         flare_frag = load_shader("solar_flare.frag")
@@ -88,8 +96,8 @@ class SolarFlarePass(RenderPass):
         self._create_buffers()
 
     def _create_buffers(self) -> None:
-        flare_w = max(1, self.width // 2)
-        flare_h = max(1, self.height // 2)
+        flare_w = max(1, int(round(self.width * self.resolution_scale)))
+        flare_h = max(1, int(round(self.height * self.resolution_scale)))
         self.flare_texture = self.ctx.texture((flare_w, flare_h), 4, dtype="f2")
         self.flare_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.flare_texture.repeat_x = False
@@ -104,14 +112,16 @@ class SolarFlarePass(RenderPass):
             self.flare_texture.release()
             self.flare_texture = None
 
-    def resize(self, width: int, height: int) -> None:
+    def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
         if width <= 0 or height <= 0:
             return
-        if width == self.width and height == self.height:
+        new_scale = self.resolution_scale if resolution_scale is None else min(max(float(resolution_scale), 0.25), 1.0)
+        if width == self.width and height == self.height and new_scale == self.resolution_scale:
             return
         self._destroy_buffers()
         self.width = width
         self.height = height
+        self.resolution_scale = new_scale
         self._create_buffers()
 
     def render(

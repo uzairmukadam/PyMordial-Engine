@@ -157,14 +157,14 @@ class RenderPipeline:
         "_u_shadow_mode",
         "_u_shadow_softness",
         "_u_sun_angular_radius",
+        "_u_shadow_penumbra_scale",
         "_u_shadow_bias",
         "_u_shadow_normal_bias",
         "_u_shadow_bias_slope",
         "_u_shadow_bias_min",
         "_u_shadow_bias_max",
         "_u_shadow_offset",
-        "_u_cascade_atlas_rect",
-        "_u_cascade_count",
+        "_u_cascade_atlas_rect",        "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
         "_u_gbuffer_prev_vp",
@@ -299,9 +299,24 @@ class RenderPipeline:
 
         # 6. Initialize Phase 5 High-End Graphics Passes
         self.ibl_pass = IBLPass(self.ctx)
-        self.ao_pass = AmbientOcclusionPass(self.ctx, w, h)
-        self.ssgi_pass = SSGIPass(self.ctx, w, h)
-        self.rc_pass = RadianceCascadesPass(self.ctx, w, h)
+        self.ao_pass = AmbientOcclusionPass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "ao_resolution_scale", 1.0),
+        )
+        self.ssgi_pass = SSGIPass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "ssgi_resolution_scale", 1.0),
+        )
+        self.rc_pass = RadianceCascadesPass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "rc_resolution_scale", 1.0),
+        )
         self.lights_pass = ClusteredLightingPass(
             self.ctx,
             max_lights=self.config.max_point_lights,
@@ -315,7 +330,7 @@ class RenderPipeline:
             self.ctx,
             w,
             h,
-            resolution_scale=getattr(self.config, "ssr_resolution_scale", 0.5),
+            resolution_scale=getattr(self.config, "ssr_resolution_scale", 1.0),
         )
         self.taa_pass = TAAPass(self.ctx, w, h)
         self.fxaa_pass = FXAAPass(self.ctx, w, h)
@@ -461,6 +476,7 @@ class RenderPipeline:
         self._u_shadow_mode = self.resolve_prog.get("u_ShadowMode", None)
         self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
         self._u_sun_angular_radius = self.resolve_prog.get("u_SunAngularRadius", None)
+        self._u_shadow_penumbra_scale = self.resolve_prog.get("u_ShadowPenumbraScale", None)
         self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
         self._u_shadow_normal_bias = self.resolve_prog.get("u_ShadowNormalBias", None)
         self._u_shadow_bias_slope = self.resolve_prog.get("u_ShadowBiasSlopeScale", None)
@@ -561,9 +577,19 @@ class RenderPipeline:
         )
 
         # 8.6. Cinematic Camera Optics & Lens Effects (Phase 3)
-        self.camera_optics_pass = CameraOpticsPass(self.ctx, w, h)
+        self.camera_optics_pass = CameraOpticsPass(
+            self.ctx,
+            w,
+            h,
+            flare_resolution_scale=getattr(self.config, "lens_flare_resolution_scale", 1.0),
+        )
         # 8.6b. Sun-anchored physically-based solar flare (lens_flare_mode == "SOLAR")
-        self.solar_flare_pass = SolarFlarePass(self.ctx, w, h)
+        self.solar_flare_pass = SolarFlarePass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "lens_flare_resolution_scale", 1.0),
+        )
         # 8.6c. Velocity-buffer motion blur (executes after TAA)
         self.motion_blur_pass = MotionBlurPass(self.ctx, w, h)
 
@@ -816,7 +842,31 @@ class RenderPipeline:
             self.ssr_pass.resize(
                 self.ctx_wrapper.width,
                 self.ctx_wrapper.height,
-                getattr(new_config, "ssr_resolution_scale", 0.5),
+                getattr(new_config, "ssr_resolution_scale", 1.0),
+            )
+        if self.ssgi_pass is not None:
+            self.ssgi_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "ssgi_resolution_scale", 1.0),
+            )
+        if self.rc_pass is not None:
+            self.rc_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "rc_resolution_scale", 1.0),
+            )
+        if self.camera_optics_pass is not None:
+            self.camera_optics_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "lens_flare_resolution_scale", 1.0),
+            )
+        if self.solar_flare_pass is not None:
+            self.solar_flare_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "lens_flare_resolution_scale", 1.0),
             )
         if self.volumetric_fog_pass is not None:
             self.volumetric_fog_pass.enabled = getattr(new_config, "volumetric_fog_enabled", True)
@@ -834,19 +884,35 @@ class RenderPipeline:
         self.decal_pass.resize(width, height)
         self.hiz_pass.resize(width, height)
         self.ao_pass.resize(width, height)
-        self.ssgi_pass.resize(width, height)
-        self.rc_pass.resize(width, height)
+        self.ssgi_pass.resize(
+            width,
+            height,
+            getattr(self.config, "ssgi_resolution_scale", 1.0),
+        )
+        self.rc_pass.resize(
+            width,
+            height,
+            getattr(self.config, "rc_resolution_scale", 1.0),
+        )
         self.ssr_pass.resize(
             width,
             height,
-            getattr(self.config, "ssr_resolution_scale", 0.5),
+            getattr(self.config, "ssr_resolution_scale", 1.0),
         )
         self.taa_pass.resize(width, height)
         self.fxaa_pass.resize(width, height)
         self.smaa_pass.resize(width, height)
         self.volumetric_fog_pass.resize(width, height)
-        self.camera_optics_pass.resize(width, height)
-        self.solar_flare_pass.resize(width, height)
+        self.camera_optics_pass.resize(
+            width,
+            height,
+            getattr(self.config, "lens_flare_resolution_scale", 1.0),
+        )
+        self.solar_flare_pass.resize(
+            width,
+            height,
+            getattr(self.config, "lens_flare_resolution_scale", 1.0),
+        )
         self.motion_blur_pass.resize(width, height)
         self.bloom_pass.resize(width, height)
         self.water_pass.resize(width, height)
@@ -1195,6 +1261,11 @@ class RenderPipeline:
         self.ctx.depth_func = "<"
         self.ctx.enable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.CULL_FACE)
+        # Push shadow casters away from the light by a depth-dependent amount.
+        # This removes most self-shadow acne at the source, which lets the
+        # receiver-side bias stay small enough that shadows stay welded to their
+        # casters instead of peter-panning.
+        self.ctx.polygon_offset = (1.5, 2.0)
 
         # Bind PBR texture array atlases to units 10..13 (essential for csm_tess_prog displacement sampling)
         self.texture_atlas.bind(10, 11, 12, 13)
@@ -1232,6 +1303,7 @@ class RenderPipeline:
             self.ctx.depth_func = "<"
             self.ctx.enable(moderngl.DEPTH_TEST)
             self.ctx.disable(moderngl.CULL_FACE)
+            self.ctx.polygon_offset = (1.5, 2.0)
             for idx, spot in enumerate(shadow_spots[:4]):
                 vp = self.spot_shadow_map.compute_spot_matrix(
                     (spot.x, spot.y, spot.z),
@@ -1250,6 +1322,8 @@ class RenderPipeline:
         self.ctx.viewport = (0, 0, w, h)
         self.ctx.depth_func = ">" if self.config.reverse_z else "<"
         self.ctx.enable(moderngl.CULL_FACE)
+        # Shadow passes above used a polygon offset; the G-Buffer must not.
+        self.ctx.polygon_offset = (0.0, 0.0)
 
         # Bind PBR texture array atlases to units 10..13
         self.texture_atlas.bind(10, 11, 12, 13)
@@ -1399,7 +1473,11 @@ class RenderPipeline:
 
         # Bind all required texture units
         self.g_buffer.bind_textures(base_unit=0)  # 0: AlbedoRough, 1: NormalMetal, 2: Depth
-        self.csm.depth_texture.use(location=3)  # 3: ShadowAtlas
+        self.csm.depth_texture.use(location=3)  # 3: ShadowAtlas (raw depth)
+        # 9: ShadowAtlas through a hardware depth-comparison sampler. Same
+        # texture, different sampler state, so the filter gets bilinear PCF for
+        # free while the blocker search keeps raw depth access.
+        self.csm.compare_sampler.use(location=9)
 
         ao_tex = ctx.resources.get("ao_texture", self.ao_pass.white_fallback)
         ao_tex.use(location=4)
@@ -1415,6 +1493,7 @@ class RenderPipeline:
 
         env.bind_luts(10, 11)
         self.spot_shadow_map.depth_texture.use(location=12)
+        self.spot_shadow_map.compare_sampler.use(location=16)
         self.ibl_pass.irradiance_tex.use(location=13)
         self.hiz_pass.hiz_texture.use(location=14)
 
@@ -1431,6 +1510,8 @@ class RenderPipeline:
             self._u_shadow_softness.value = float(self.config.shadow_softness)
         if self._u_sun_angular_radius is not None:
             self._u_sun_angular_radius.value = float(getattr(self.config, "sun_angular_radius", 0.00465))
+        if self._u_shadow_penumbra_scale is not None:
+            self._u_shadow_penumbra_scale.value = float(getattr(self.config, "shadow_penumbra_scale", 4.0))
         if self._u_shadow_bias is not None:
             self._u_shadow_bias.value = float(self.config.shadow_bias)
         if self._u_shadow_normal_bias is not None:

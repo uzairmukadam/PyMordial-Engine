@@ -15,6 +15,7 @@ class BloomPass(RenderPass):
         "ctx",
         "width",
         "height",
+        "resolution_scale",
         "downsample_prog",
         "upsample_prog",
         "downsample_vao",
@@ -28,11 +29,18 @@ class BloomPass(RenderPass):
 
     MAX_LEVELS = 6
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="BloomPass", enabled=True)
         self.ctx = ctx
         self.width = width
         self.height = height
+        self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         vertex_shader = load_shader("fullscreen_quad.vert")
         self.downsample_prog = self.ctx.program(
             vertex_shader=vertex_shader,
@@ -56,9 +64,11 @@ class BloomPass(RenderPass):
 
     def _create_buffers(self) -> None:
         self._destroy_buffers()
+        base_w = max(1, int(round(self.width * self.resolution_scale)))
+        base_h = max(1, int(round(self.height * self.resolution_scale)))
         for level in range(self.MAX_LEVELS):
-            level_width = max(1, self.width >> (level + 1))
-            level_height = max(1, self.height >> (level + 1))
+            level_width = max(1, base_w >> level)
+            level_height = max(1, base_h >> level)
             texture = self.ctx.texture((level_width, level_height), 4, dtype="f2")
             texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
             self.downsample_textures.append(texture)
@@ -83,11 +93,15 @@ class BloomPass(RenderPass):
         self.upsample_fbos.clear()
         self.upsample_textures.clear()
 
-    def resize(self, width: int, height: int) -> None:
-        if width <= 0 or height <= 0 or (width == self.width and height == self.height):
+    def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
+        new_scale = self.resolution_scale if resolution_scale is None else min(max(float(resolution_scale), 0.25), 1.0)
+        if width <= 0 or height <= 0:
+            return
+        if width == self.width and height == self.height and new_scale == self.resolution_scale:
             return
         self.width = width
         self.height = height
+        self.resolution_scale = new_scale
         self._create_buffers()
 
     def render(
@@ -96,7 +110,7 @@ class BloomPass(RenderPass):
         threshold: float,
         iterations: int,
     ) -> moderngl.Texture:
-        """Returns a half-resolution HDR texture containing the blurred highlights."""
+        """Returns the full-resolution HDR texture containing the blurred highlights."""
         level_count = max(1, min(self.MAX_LEVELS, int(iterations)))
         self.ctx.disable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.BLEND)

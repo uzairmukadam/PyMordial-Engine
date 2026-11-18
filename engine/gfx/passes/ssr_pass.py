@@ -64,6 +64,8 @@ class SSRPass(RenderPass):
         self._u_max_rough = self.prog.get("u_SSR_MaxRoughness", None)
         self._u_mode = self.prog.get("u_SSR_Mode", None)
         self._u_hiz_mips = self.prog.get("u_HiZMipCount", None)
+        self._u_target_res = self.prog.get("u_TargetResolution", None)
+        self._target_res_tuple = (float(self.width), float(self.height))
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
@@ -84,6 +86,7 @@ class SSRPass(RenderPass):
         self.resolution_scale = new_scale
         self.width = new_w
         self.height = new_h
+        self._target_res_tuple = (float(self.width), float(self.height))
 
         self.raw_fbo.release()
         self.blur_fbo.release()
@@ -155,6 +158,8 @@ class SSRPass(RenderPass):
             self._u_mode.value = 1 if mode == "HIZ" else 0
         if self._u_hiz_mips is not None:
             self._u_hiz_mips.value = hiz_mips
+        if self._u_target_res is not None:
+            self._u_target_res.value = self._target_res_tuple
         self.vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo

@@ -29,16 +29,22 @@ class TestRadianceCascadesPass:
         ctx = render_ctx.ctx
         rc_pass = RadianceCascadesPass(ctx, width=320, height=240)
 
-        # Half resolution (160x120)
-        assert rc_pass.width == 160
-        assert rc_pass.height == 120
-        assert rc_pass.raw_rc_tex.size == (160, 120)
-        assert rc_pass.tex_a.size == (160, 120)
-        assert rc_pass.tex_b.size == (160, 120)
+        # Full resolution by default
+        assert rc_pass.width == 320
+        assert rc_pass.height == 240
+        assert rc_pass.raw_rc_tex.size == (320, 240)
+        assert rc_pass.tex_a.size == (320, 240)
+        assert rc_pass.tex_b.size == (320, 240)
         assert rc_pass.raw_rc_tex.dtype == "f2"
 
         # Resize test
         rc_pass.resize(640, 480)
+        assert rc_pass.width == 640
+        assert rc_pass.height == 480
+        assert rc_pass.raw_rc_tex.size == (640, 480)
+
+        # Explicit downscale still honoured
+        rc_pass.resize(640, 480, 0.5)
         assert rc_pass.width == 320
         assert rc_pass.height == 240
         assert rc_pass.raw_rc_tex.size == (320, 240)
@@ -81,8 +87,8 @@ class TestRadianceCascadesPass:
         assert pipeline.rc_pass._u_rm_ray_count.value == 12
         rc_tex = pipeline.rc_pass._current_history
         data = rc_tex.read()
-        assert len(data) == 160 * 120 * 4 * 2  # RGBA16F (2 bytes per component)
-        pixel_array = np.frombuffer(data, dtype=np.float16).reshape(120, 160, 4)
+        assert len(data) == 320 * 240 * 4 * 2  # RGBA16F (2 bytes per component)
+        pixel_array = np.frombuffer(data, dtype=np.float16).reshape(240, 320, 4)
         assert np.any(pixel_array > 0.0)
         # The red object must tint nearby diffuse bounce instead of only contributing emissive light.
         assert pixel_array[..., 0].mean() > pixel_array[..., 1].mean() * 1.5
@@ -92,7 +98,7 @@ class TestRadianceCascadesPass:
 
         raw_frames = [
             np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
-            .reshape(120, 160, 4)[..., :3]
+            .reshape(240, 320, 4)[..., :3]
             .astype(np.float32)
         ]
         filtered_frames = [pixel_array[..., :3].astype(np.float32)]
@@ -115,12 +121,12 @@ class TestRadianceCascadesPass:
             )
             raw_frames.append(
                 np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
-                .reshape(120, 160, 4)[..., :3]
+                .reshape(240, 320, 4)[..., :3]
                 .astype(np.float32)
             )
             filtered_frames.append(
                 np.frombuffer(pipeline.rc_pass._current_history.read(), dtype=np.float16)
-                .reshape(120, 160, 4)[..., :3]
+                .reshape(240, 320, 4)[..., :3]
                 .astype(np.float32)
             )
 

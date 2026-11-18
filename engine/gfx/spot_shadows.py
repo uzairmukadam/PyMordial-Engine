@@ -21,6 +21,7 @@ class SpotLightShadowMap:
         "ctx",
         "atlas_size",
         "depth_texture",
+        "compare_sampler",
         "fbo",
         "spot_matrices",
         "_proj_scratch",
@@ -32,6 +33,7 @@ class SpotLightShadowMap:
         self.atlas_size = atlas_size
 
         self.depth_texture: moderngl.Texture | None = None
+        self.compare_sampler: moderngl.Sampler | None = None
         self.fbo: moderngl.Framebuffer | None = None
         self._create_atlas()
 
@@ -46,6 +48,15 @@ class SpotLightShadowMap:
         self.depth_texture.repeat_x = False
         self.depth_texture.repeat_y = False
         self.fbo = self.ctx.framebuffer(depth_attachment=self.depth_texture)
+        # Hardware depth-comparison view, so one tap resolves a bilinear 2x2 PCF
+        # footprint instead of a single nearest texel.
+        self.compare_sampler = self.ctx.sampler(
+            texture=self.depth_texture,
+            compare_func="<=",
+            filter=(moderngl.LINEAR, moderngl.LINEAR),
+            repeat_x=False,
+            repeat_y=False,
+        )
 
     def resize_atlas(self, new_size: int) -> None:
         """Dynamically resizes shadow atlas if resolution changed."""
@@ -119,6 +130,9 @@ class SpotLightShadowMap:
         return out_mat
 
     def destroy(self) -> None:
+        if self.compare_sampler is not None:
+            self.compare_sampler.release()
+            self.compare_sampler = None
         if self.depth_texture is not None:
             self.depth_texture.release()
             self.depth_texture = None

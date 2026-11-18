@@ -18,14 +18,20 @@ SHADER_DIR = get_shader_dir()
 class AmbientOcclusionPass(RenderPass):
     """Computes SSAO or GTAO and applies bilateral edge-preserving blur."""
 
-    def __init__(self, ctx: moderngl.Context, width: int, height: int) -> None:
+    def __init__(
+        self,
+        ctx: moderngl.Context,
+        width: int,
+        height: int,
+        resolution_scale: float = 1.0,
+    ) -> None:
         super().__init__(name="AmbientOcclusionPass", enabled=True)
         self.ctx = ctx
-        self.resolution_scale = 1.0
+        self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
 
-        # 1. Half-resolution R8 raw AO target; the shared BlurPass owns the ping-pong pair
+        # 1. R8 raw AO target; the shared BlurPass owns the ping-pong pair
         self.raw_ao_tex = self.ctx.texture((self.width, self.height), 1, dtype="f1")
         self.raw_ao_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.raw_ao_tex.repeat_x = False
