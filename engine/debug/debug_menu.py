@@ -1534,87 +1534,18 @@ class DebugMenu:
                         et.ssdm_scale = sc_v
                         et.mark_custom()
 
-            if imgui.collapsing_header("Shadows: Cascades & Filtering"):
-                # 1. Shadow Map Resolution (1024, 2048, 4096)
-                res_options = ["1024", "2048", "4096"]
+            if imgui.collapsing_header("Shadows: Cascades", imgui.TreeNodeFlags_.default_open.value):
+                # 1. Shadow Map Resolution (1024, 2048, 4096, 8192)
+                res_options = ["1024", "2048", "4096", "8192"]
                 curr_res_str = str(et.shadow_resolution)
-                res_idx = res_options.index(curr_res_str) if curr_res_str in res_options else 1
+                res_idx = res_options.index(curr_res_str) if curr_res_str in res_options else 3
                 res_changed, new_res_idx = imgui.combo("Shadow Resolution", res_idx, res_options)
                 if res_changed and new_res_idx != res_idx:
                     et.shadow_resolution = int(res_options[new_res_idx])
                     et.mark_custom()
                     self.toast.show(f"Shadow Resolution: {et.shadow_resolution}x{et.shadow_resolution}", duration=2.0)
 
-                # 2. Shadow Mode (HARD, PCF, PCSS, PCSS_ULTRA)
-                shadow_modes = ["HARD", "PCF", "PCSS", "PCSS_ULTRA"]
-                s_idx = shadow_modes.index(et.shadow_mode) if et.shadow_mode in shadow_modes else 2
-                sm_changed, new_sm_idx = imgui.combo("Shadow Mode", s_idx, shadow_modes)
-                if sm_changed and new_sm_idx != s_idx:
-                    et.shadow_mode = shadow_modes[new_sm_idx]
-                    et.mark_custom()
-                    self.toast.show(f"Shadow Mode: {et.shadow_mode}", duration=2.0)
-
-                # 3. Shadow Softness (PCF / PCSS / PCSS_ULTRA)
-                if et.shadow_mode in ("PCF", "PCSS", "PCSS_ULTRA"):
-                    soft_changed, soft_val = imgui.slider_float("Shadow Softness", et.shadow_softness, 0.2, 3.0, "%.2f")
-                    if soft_changed:
-                        et.shadow_softness = soft_val
-                        et.mark_custom()
-
-                    pcf_changed, pcf_val = imgui.slider_int("Shadow Filter Samples", et.pcf_samples, 4, 64)
-                    if pcf_changed:
-                        et.pcf_samples = pcf_val
-                        et.mark_custom()
-
-                # 3b. PCSS penumbra widening. 1.0 is the physical solar size, which
-                # is sub-texel at practical cascade densities; 2-5x is the usual
-                # artistic range for readable contact hardening.
-                if et.shadow_mode in ("PCSS", "PCSS_ULTRA"):
-                    pen_changed, pen_val = imgui.slider_float(
-                        "PCSS Penumbra Scale", et.shadow_penumbra_scale, 1.0, 12.0, "%.1fx"
-                    )
-                    if pen_changed:
-                        et.shadow_penumbra_scale = pen_val
-                        et.mark_custom()
-
-                # 4. Shadow Depth Bias
-                bias_changed, bias_val = imgui.slider_float("Shadow Depth Bias", et.shadow_bias, 0.0000, 0.0050, "%.5f")
-                if bias_changed:
-                    et.shadow_bias = bias_val
-                    et.mark_custom()
-
-                # 4b. Shadow Normal Bias
-                nb_changed, nb_val = imgui.slider_float(
-                    "Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f"
-                )
-                if nb_changed:
-                    et.shadow_normal_bias = nb_val
-                    et.mark_custom()
-
-                # 4c. Shadow Alignment Sliders (Manual Offset Adjustment)
-                off_x_changed, off_x_val = imgui.slider_float(
-                    "Shadow Align X", et.shadow_offset_x, -0.050, 0.050, "%.4f"
-                )
-                if off_x_changed:
-                    et.shadow_offset_x = off_x_val
-                    et.mark_custom()
-
-                off_y_changed, off_y_val = imgui.slider_float(
-                    "Shadow Align Y", et.shadow_offset_y, -0.050, 0.050, "%.4f"
-                )
-                if off_y_changed:
-                    et.shadow_offset_y = off_y_val
-                    et.mark_custom()
-
-                # 5. Shadow Draw Distance Slider
-                sd_changed, sd_val = imgui.slider_float(
-                    "Shadow Draw Distance", et.shadow_distance, 50.0, 2000.0, "%.0f m"
-                )
-                if sd_changed:
-                    et.shadow_distance = sd_val
-                    et.mark_custom()
-
-                # 5b. Shadow Cascades (1 to 4)
+                # 2. Shadow Cascades (1 to 4)
                 casc_options = ["1 Cascade", "2 Cascades", "3 Cascades", "4 Cascades"]
                 curr_casc_idx = max(0, min(3, et.csm_cascades - 1))
                 casc_changed, new_casc_idx = imgui.combo("Shadow Cascades", curr_casc_idx, casc_options)
@@ -1623,38 +1554,44 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"Shadow Cascades: {et.csm_cascades}", duration=2.0)
 
-                split_changed, split_value = imgui.slider_float(
-                    "Cascade Split Distribution", et.csm_split_lambda, 0.0, 1.0, "%.2f"
-                )
-                if split_changed:
-                    et.csm_split_lambda = split_value
+                # 3. Per-cascade far distance. Cascade 0 is the tightest
+                # near-field slice; each subsequent cascade reaches further out.
+                # The sliders are clamped to stay strictly increasing so the
+                # cascade selection in the shader remains valid.
+                imgui.text_disabled("Cascade Far Distances")
+                distances = list(et.csm_cascade_distances)
+                changed = False
+                for index in range(4):
+                    lower = 1.0 if index == 0 else distances[index - 1] + 1.0
+                    upper = 4000.0 if index == 3 else max(lower + 1.0, distances[index + 1] - 1.0)
+                    c_changed, c_val = imgui.slider_float(
+                        f"Cascade {index} End", distances[index], lower, upper, "%.0f m"
+                    )
+                    if c_changed:
+                        distances[index] = c_val
+                        changed = True
+                if changed:
+                    # Re-establish strict ordering after any edit.
+                    for index in range(1, 4):
+                        if distances[index] <= distances[index - 1]:
+                            distances[index] = distances[index - 1] + 1.0
+                    et.csm_cascade_distances = tuple(distances)
+                    et.shadow_distance = distances[3]
                     et.mark_custom()
 
-                split_modes = ["PSSM", "GEOMETRIC", "UNIFORM"]
-                curr_mode_idx = split_modes.index(et.csm_split_mode) if et.csm_split_mode in split_modes else 0
-                mode_changed, new_mode_idx = imgui.combo("Cascade Split Mode", curr_mode_idx, split_modes)
-                if mode_changed and new_mode_idx != curr_mode_idx:
-                    et.csm_split_mode = split_modes[new_mode_idx]
+                # 4. Shadow Depth Bias
+                bias_changed, bias_val = imgui.slider_float("Shadow Depth Bias", et.shadow_bias, 0.0000, 0.0050, "%.5f")
+                if bias_changed:
+                    et.shadow_bias = bias_val
                     et.mark_custom()
-                    self.toast.show(f"Cascade Split Mode: {et.csm_split_mode}", duration=2.0)
 
-                # 5c. CSM Texel Stabilization (Shimmer Elimination)
-                csm_stab_changed, csm_stab_val = imgui.checkbox(
-                    "CSM Texel Stabilization", getattr(et, "csm_stabilization", True)
+                # 5. Shadow Normal Bias
+                nb_changed, nb_val = imgui.slider_float(
+                    "Shadow Normal Bias", et.shadow_normal_bias, 0.0000, 0.0050, "%.5f"
                 )
-                if csm_stab_changed:
-                    et.csm_stabilization = csm_stab_val
+                if nb_changed:
+                    et.shadow_normal_bias = nb_val
                     et.mark_custom()
-                    self.toast.show(f"CSM Stabilization: {'ON' if csm_stab_val else 'OFF'}", duration=1.5)
-
-                # 5d. Per-Cascade Atlas Allocation (near cascades get more texels)
-                csm_nu_changed, csm_nu_val = imgui.checkbox(
-                    "Non-Uniform Cascade Atlas", getattr(et, "csm_nonuniform_atlas", False)
-                )
-                if csm_nu_changed:
-                    et.csm_nonuniform_atlas = csm_nu_val
-                    et.mark_custom()
-                    self.toast.show(f"Non-Uniform Cascade Atlas: {'ON' if csm_nu_val else 'OFF'}", duration=1.5)
 
             if imgui.collapsing_header("Diagnostics: Render Views"):
                 # Mesh Wireframe

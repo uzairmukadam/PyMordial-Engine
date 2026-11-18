@@ -35,29 +35,21 @@ FROXEL_RESOLUTIONS: dict[str, tuple[int, int, int]] = {
 class RenderConfig:
     """Configurable graphics and shader parameters for AAA quality and player scaling."""
 
-    # Shadow Settings
-    shadow_resolution: int = 4096  # CSM Atlas size (1024, 2048, 4096)
-    shadow_mode: str = "PCSS"  # "HARD", "PCF", "PCSS", "PCSS_ULTRA"
-    shadow_softness: float = 1.2  # Penumbra scale & PCF radius (0.2 to 3.0)
-    sun_angular_radius: float = 0.00465  # Physical solar angular radius (rad, ~0.266 deg)
-    shadow_penumbra_scale: float = 4.0  # Artistic widening of the light source for readable PCSS penumbrae
+    # Shadow Settings (hard-shadow cascaded shadow maps)
+    shadow_resolution: int = 8192  # CSM Atlas size (1024, 2048, 4096, 8192)
     shadow_bias: float = 0.0015  # Base world-space depth bias (meters)
     shadow_normal_bias: float = 0.0010  # Base normal offset bias scale
     # Slope-scaled bias clamp: bias = clamp(base * (1 + slope * scale), base * min, base * max)
     shadow_bias_slope_scale: float = 2.0
     shadow_bias_min_scale: float = 0.5
     shadow_bias_max_scale: float = 6.0
-    shadow_offset_x: float = 0.0  # Light-space alignment offset X (delta from calibrated base)
-    shadow_offset_y: float = 0.0  # Light-space alignment offset Y (delta from calibrated base)
     csm_cascades: int = 4  # Number of shadow cascades (1 to 4)
-    pcf_samples: int = 24  # Vogel PCF taps (8 to 32)
-    shadow_distance: float = 500.0  # Maximum shadow distance in meters (improved from 150.0m)
+    shadow_distance: float = 500.0  # Far plane of the last cascade (meters)
     csm_split_lambda: float = 0.85  # Practical Split Scheme (PSSM) log-linear blend factor
-    csm_split_mode: str = "PSSM"  # Cascade split distribution: "PSSM", "GEOMETRIC", "UNIFORM"
-    csm_stabilization: bool = True  # Subpixel texel snapping to eliminate shadow shimmering during camera movement
-    csm_nonuniform_atlas: bool = False  # Per-cascade atlas rects (near cascades get more texels)
-    # Per-cascade far-distance multipliers (cascade 0..3). 1.0 = use the split as-is.
-    csm_cascade_distance_scale: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
+    # Explicit far distance of each cascade in meters. When set, these override
+    # the PSSM distribution entirely, so each cascade's reach is authored
+    # directly. ``None`` falls back to PSSM splits derived from shadow_distance.
+    csm_cascade_distances: tuple[float, float, float, float] | None = None
 
     # Depth Precision & GPU Culling
     reverse_z: bool = True  # Reversed-Z 32F floating-point depth buffer
@@ -229,12 +221,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     GraphicsQuality.CUSTOM: RenderConfig(),
     GraphicsQuality.LOW: RenderConfig(
         shadow_resolution=1024,
-        shadow_mode="PCF",
-        shadow_softness=0.8,
         shadow_bias=0.0020,
         csm_cascades=2,
-        pcf_samples=4,
         shadow_distance=120.0,
+        csm_cascade_distances=(12.0, 45.0, 80.0, 120.0),
         ao_mode="SSAO",
         gi_mode="OFF",
         rc_ray_count=8,
@@ -269,12 +259,10 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
         shadow_resolution=2048,
-        shadow_mode="PCF",
-        shadow_softness=1.0,
         shadow_bias=0.0018,
         csm_cascades=3,
-        pcf_samples=16,
         shadow_distance=250.0,
+        csm_cascade_distances=(14.0, 45.0, 110.0, 250.0),
         ao_mode="GTAO",
         gi_mode="SSGI",
         ssgi_steps=8,
@@ -314,13 +302,11 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.HIGH: RenderConfig(
-        shadow_resolution=4096,
-        shadow_mode="PCSS",
-        shadow_softness=1.2,
+        shadow_resolution=8192,
         shadow_bias=0.0015,
         csm_cascades=4,
-        pcf_samples=24,
         shadow_distance=500.0,
+        csm_cascade_distances=(20.0, 60.0, 160.0, 500.0),
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=16,
@@ -367,13 +353,11 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.ULTRA: RenderConfig(
-        shadow_resolution=4096,
-        shadow_mode="PCSS",
-        shadow_softness=1.2,
+        shadow_resolution=8192,
         shadow_bias=0.0015,
         csm_cascades=4,
-        pcf_samples=32,
         shadow_distance=800.0,
+        csm_cascade_distances=(25.0, 80.0, 250.0, 800.0),
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=24,
@@ -420,13 +404,11 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
-        shadow_resolution=4096,
-        shadow_mode="PCSS",
-        shadow_softness=1.4,
+        shadow_resolution=8192,
         shadow_bias=0.0012,
         csm_cascades=4,
-        pcf_samples=32,
         shadow_distance=1200.0,
+        csm_cascade_distances=(30.0, 110.0, 380.0, 1200.0),
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=32,

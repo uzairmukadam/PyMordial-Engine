@@ -137,8 +137,17 @@ vec3 EvaluateVolumetricMedium(VolumetricMedium medium, vec3 sunRadiance, float c
 
 #ifndef VOLUMETRICS_NO_CSM
 
+#include "shaders/common/shadows.glsl"
+
 uniform int u_CascadeCount = 4;
 layout (binding = 1) uniform sampler2D u_ShadowAtlas;
+// Per-cascade atlas rect: xy = atlas UV offset, zw = atlas UV scale.
+uniform vec4 u_CascadeAtlasRect[4] = vec4[4](
+    vec4(0.0, 0.0, 0.5, 0.5),
+    vec4(0.5, 0.0, 0.5, 0.5),
+    vec4(0.0, 0.5, 0.5, 0.5),
+    vec4(0.5, 0.5, 0.5, 0.5)
+);
 
 // Sample a single cascade shadow map with 4-tap bilinear PCF and soft border feathering.
 float SampleSingleCascadeShadow(int cascade, vec3 worldPos) {
@@ -147,8 +156,6 @@ float SampleSingleCascadeShadow(int cascade, vec3 worldPos) {
 
     // Remap NDC XY [-1, 1] to UV [0, 1]; Z is already in [0, 1] under GL_ZERO_TO_ONE
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
-    const vec2 CALIBRATED_SHADOW_OFFSET = vec2(0.0002, 0.0002);
-    projCoords.xy += CALIBRATED_SHADOW_OFFSET;
 
     // Bounds check: if outside light near/far clip range, voxel is unshadowed
     if (projCoords.z < 0.0 || projCoords.z > 1.0) {
@@ -162,12 +169,12 @@ float SampleSingleCascadeShadow(int cascade, vec3 worldPos) {
         return 1.0; // Outside XY cascade bounds
     }
 
-    vec2 atlasOffset = vec2(float(cascade % 2) * 0.5, float(cascade / 2) * 0.5);
-    vec2 uv = projCoords.xy * 0.5 + atlasOffset;
-    vec2 uvMin = atlasOffset + vec2(0.0005);
-    vec2 uvMax = atlasOffset + vec2(0.4995);
+    vec4 rect = u_CascadeAtlasRect[cascade];
+    vec2 uv = ShadowAtlasUv(projCoords.xy, rect);
+    vec2 uvMin = ShadowAtlasUvMin(rect, 0.001);
+    vec2 uvMax = ShadowAtlasUvMax(rect, 0.001);
 
-    // 4-Tap Bilinear PCF filtering inside the cascade quadrant
+    // 4-Tap Bilinear PCF filtering inside the cascade rect
     vec2 fullSize = vec2(textureSize(u_ShadowAtlas, 0));
     vec2 texelSize = 1.0 / fullSize;
     vec2 pos = uv * fullSize - 0.5;

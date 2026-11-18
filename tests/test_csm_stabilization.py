@@ -13,7 +13,7 @@ import pytest
 
 from engine.debug.engine_tweaks import EngineTweaks
 from engine.gfx.context import RenderContext
-from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_quality_preset
+from engine.gfx.quality_presets import RenderConfig
 from engine.gfx.shadow_csm import MAX_SPAN_RATIO, CascadedShadowMap
 
 
@@ -41,23 +41,13 @@ def headless_ctx():
 class TestCSMStabilization:
     """Tests subpixel texel snapping and cascade stability."""
 
-    def test_csm_stabilization_defaults(self, headless_ctx: RenderContext):
-        """Verifies default stabilization flags in config and CascadedShadowMap."""
+    def test_texel_snapping_is_always_on(self, headless_ctx: RenderContext):
+        """Texel snapping is unconditional now that the toggle is gone."""
         cfg = RenderConfig()
-        assert cfg.csm_stabilization is True
-
-        for quality in [
-            GraphicsQuality.LOW,
-            GraphicsQuality.MEDIUM,
-            GraphicsQuality.HIGH,
-            GraphicsQuality.ULTRA,
-            GraphicsQuality.CINEMATIC,
-        ]:
-            preset = get_quality_preset(quality)
-            assert preset.csm_stabilization is True
+        assert not hasattr(cfg, "csm_stabilization")
 
         csm = CascadedShadowMap(headless_ctx.ctx, atlas_size=2048, cascade_count=4)
-        assert csm.stabilize_cascades is True
+        assert not hasattr(csm, "stabilize_cascades")
         csm.destroy()
 
     def test_csm_subpixel_camera_translation_invariant(self, headless_ctx: RenderContext):
@@ -72,34 +62,28 @@ class TestCSMStabilization:
         quad_size = csm.atlas_size // 2
 
         for c in range(4):
-            raw = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, stabilize=False)[c]
-            raw_matrix = raw.reshape((4, 4), order="F")
-            radius = 1.0 / float(np.linalg.norm(raw_matrix[0, :3]))
-            raw_center_x = -float(raw_matrix[0, 3]) * radius
-
-            initial = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, stabilize=True)[c]
-            matrix = initial.reshape((4, 4), order="F")
+            matrix = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir)[c].reshape((4, 4), order="F")
             light_right = matrix[0, :3] / np.linalg.norm(matrix[0, :3])
+            radius = 1.0 / float(np.linalg.norm(matrix[0, :3]))
             texel_size_world = (2.0 * radius) / float(quad_size)
-            snapped_center_x = -float(matrix[0, 3]) * radius
-            cam_pos_centered = cam_pos + light_right * (snapped_center_x - raw_center_x)
 
-            m_base = csm.compute_cascade_matrices(cam_pos_centered, cam_fwd, sun_dir, stabilize=True)[c].copy()
+            m_base = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir)[c].copy()
 
-            # Shift by 15% of this cascade's texel size
-            cam_pos_subpixel = cam_pos_centered + light_right * (0.15 * texel_size_world)
-            m_shifted = csm.compute_cascade_matrices(cam_pos_subpixel, cam_fwd, sun_dir, stabilize=True)[c]
-
+            # A shift far below one texel must not move the matrix at all. This
+            # is the property that removes shimmer: the light-space centre is
+            # quantised, so sub-texel camera motion is invisible to the map.
+            cam_pos_subpixel = cam_pos + light_right * (texel_size_world * 1e-3)
+            m_shifted = csm.compute_cascade_matrices(cam_pos_subpixel, cam_fwd, sun_dir)[c]
             np.testing.assert_array_almost_equal(
                 m_base,
                 m_shifted,
                 decimal=5,
-                err_msg=f"Cascade {c} matrix drifted under sub-texel translation with stabilization enabled!",
+                err_msg=f"Cascade {c} matrix drifted under a sub-texel translation!",
             )
 
-            # Verify that crossing a full texel boundary steps by an exact integer multiple of NDC texel size
-            cam_pos_next_bin = cam_pos_centered + light_right * (1.0 * texel_size_world)
-            m_next = csm.compute_cascade_matrices(cam_pos_next_bin, cam_fwd, sun_dir, stabilize=True)[c]
+            # Crossing a full texel must step by exactly one NDC texel.
+            cam_pos_next_bin = cam_pos + light_right * texel_size_world
+            m_next = csm.compute_cascade_matrices(cam_pos_next_bin, cam_fwd, sun_dir)[c]
             ndc_step = abs(m_next[12] - m_base[12])
             expected_ndc_step = 2.0 / float(quad_size)
             assert math.isclose(ndc_step, expected_ndc_step, abs_tol=1e-5), (
@@ -127,16 +111,6 @@ class TestCSMStabilization:
         assert uniform == pytest.approx((150.075, 300.05, 450.025, 600.0))
         assert uniform != logarithmic
         assert _max_span_ratio(uniform) == pytest.approx(1.0)
-
-        csm.update_splits(600.0, cascade_count=4, lambda_val=0.85, mode="UNIFORM")
-        assert csm.split_distances == pytest.approx((150.075, 300.05, 450.025, 600.0))
-        assert csm.split_mode == "UNIFORM"
-
-        csm.update_splits(600.0, cascade_count=4, lambda_val=0.85, mode="GEOMETRIC")
-        geometric = csm.split_distances
-        assert geometric[-1] == pytest.approx(600.0)
-        assert all(geometric[i] < geometric[i + 1] for i in range(3))
-        assert _max_span_ratio(geometric) == pytest.approx(6000.0**0.25, rel=1e-6)
         csm.destroy()
 
     def test_cascade_depth_fit_includes_upstream_casters_only_in_footprint(self, headless_ctx: RenderContext):
@@ -212,10 +186,8 @@ class TestCSMStabilization:
         forward_b = np.array([0.75, 0.25, -0.61], dtype=np.float32)
         forward_b /= np.linalg.norm(forward_b)
 
-        matrices_a = [
-            matrix.copy() for matrix in csm.compute_cascade_matrices(cam_pos, forward_a, sun_dir, stabilize=False)
-        ]
-        matrices_b = csm.compute_cascade_matrices(cam_pos, forward_b, sun_dir, stabilize=False)
+        matrices_a = [matrix.copy() for matrix in csm.compute_cascade_matrices(cam_pos, forward_a, sun_dir)]
+        matrices_b = csm.compute_cascade_matrices(cam_pos, forward_b, sun_dir)
         for cascade in range(csm.cascade_count):
             radius_a = 1.0 / np.linalg.norm(matrices_a[cascade].reshape((4, 4), order="F")[0, :3])
             radius_b = 1.0 / np.linalg.norm(matrices_b[cascade].reshape((4, 4), order="F")[0, :3])
@@ -231,16 +203,20 @@ class TestCSMStabilization:
         sun_dir = np.array([0.5, 0.8, 0.3], dtype=np.float32)
         sun_dir /= np.linalg.norm(sun_dir)
 
-        m_base = [m.copy() for m in csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, stabilize=False)]
+        m_base = [m.copy() for m in csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir)]
 
         # Small translation (0.05m)
         cam_pos_shift = cam_pos + np.array([0.05, 0.0, 0.0], dtype=np.float32)
-        m_shifted = csm.compute_cascade_matrices(cam_pos_shift, cam_fwd, sun_dir, stabilize=False)
+        m_shifted = csm.compute_cascade_matrices(cam_pos_shift, cam_fwd, sun_dir)
 
-        # Without stabilization, the light view translation changes immediately
+        # Texel snapping quantises the light-space centre, so a 5cm shift must
+        # not move the matrix at all: that is exactly what removes shimmer.
         for c in range(4):
-            assert not np.allclose(m_base[c], m_shifted[c], atol=1e-5), (
-                f"Cascade {c} matrix should have drifted when stabilization was disabled"
+            np.testing.assert_array_almost_equal(
+                m_base[c],
+                m_shifted[c],
+                decimal=5,
+                err_msg=f"Cascade {c} matrix drifted under a sub-texel translation",
             )
 
         csm.destroy()
@@ -253,7 +229,7 @@ class TestCSMStabilization:
         sun_dir = np.array([0.4, 0.7, 0.2], dtype=np.float32)
         input_vectors = (cam_pos.copy(), cam_fwd.copy(), sun_dir.copy())
 
-        matrices = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir, stabilize=True)
+        matrices = csm.compute_cascade_matrices(cam_pos, cam_fwd, sun_dir)
         assert len(matrices) == 4
         np.testing.assert_array_equal(cam_pos, input_vectors[0])
         np.testing.assert_array_equal(cam_fwd, input_vectors[1])
@@ -269,15 +245,15 @@ class TestCSMStabilization:
 
         csm.destroy()
 
-    def test_engine_tweaks_csm_stabilization_sync(self):
-        """Verifies that EngineTweaks syncs and serializes csm_stabilization correctly."""
+    def test_engine_tweaks_csm_cascade_distance_sync(self):
+        """Verifies that EngineTweaks syncs and serializes the cascade distance."""
         tweaks = EngineTweaks()
-        assert tweaks.csm_stabilization is True
+        assert tweaks.shadow_distance == 500.0
 
-        tweaks.csm_stabilization = False
+        tweaks.shadow_distance = 900.0
         d = tweaks.to_dict()
-        assert d["csm_stabilization"] is False
+        assert d["shadow_distance"] == 900.0
 
         new_tweaks = EngineTweaks()
         new_tweaks.from_dict(d)
-        assert new_tweaks.csm_stabilization is False
+        assert new_tweaks.shadow_distance == 900.0

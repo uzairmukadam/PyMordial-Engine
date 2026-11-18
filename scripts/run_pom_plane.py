@@ -454,8 +454,6 @@ def main() -> None:
         cfg.wireframe = engine_tweaks.show_wireframe
         pipeline.apply_config(cfg)
         engine_tweaks.shadow_resolution = cfg.shadow_resolution
-        engine_tweaks.shadow_mode = cfg.shadow_mode
-        engine_tweaks.shadow_softness = cfg.shadow_softness
         engine_tweaks.shadow_bias = cfg.shadow_bias
         engine_tweaks.shadow_distance = cfg.shadow_distance
         engine_tweaks.csm_cascades = cfg.csm_cascades
@@ -888,19 +886,21 @@ def main() -> None:
         if engine_tweaks.shadow_resolution != pipeline.csm.atlas_size:
             pipeline.csm.resize_atlas(engine_tweaks.shadow_resolution)
         if (
-            engine_tweaks.shadow_distance != pipeline.csm.max_distance
-            or engine_tweaks.csm_cascades != pipeline.csm.cascade_count
+            engine_tweaks.csm_cascades != pipeline.csm.cascade_count
+            or tuple(engine_tweaks.csm_cascade_distances) != pipeline.csm.cascade_distances
         ):
-            pipeline.csm.update_splits(engine_tweaks.shadow_distance, engine_tweaks.csm_cascades)
+            pipeline.csm.update_splits(
+                engine_tweaks.shadow_distance,
+                engine_tweaks.csm_cascades,
+                engine_tweaks.csm_split_lambda,
+                tuple(engine_tweaks.csm_cascade_distances),
+            )
         pipeline.config.shadow_resolution = engine_tweaks.shadow_resolution
         pipeline.config.shadow_distance = engine_tweaks.shadow_distance
         pipeline.config.csm_cascades = engine_tweaks.csm_cascades
-        pipeline.config.shadow_mode = engine_tweaks.shadow_mode
-        pipeline.config.shadow_softness = engine_tweaks.shadow_softness
+        pipeline.config.csm_cascade_distances = tuple(engine_tweaks.csm_cascade_distances)
         pipeline.config.shadow_bias = engine_tweaks.shadow_bias
         pipeline.config.shadow_normal_bias = engine_tweaks.shadow_normal_bias
-        pipeline.config.shadow_offset_x = engine_tweaks.shadow_offset_x
-        pipeline.config.shadow_offset_y = engine_tweaks.shadow_offset_y
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)

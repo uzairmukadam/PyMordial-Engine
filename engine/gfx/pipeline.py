@@ -153,17 +153,11 @@ class RenderPipeline:
         "_mie_beta_tuple",
         "_prev_mie_beta",
         "_csm_cascade_idx_uniform",
-        "_u_pcf_samples",
-        "_u_shadow_mode",
-        "_u_shadow_softness",
-        "_u_sun_angular_radius",
-        "_u_shadow_penumbra_scale",
         "_u_shadow_bias",
         "_u_shadow_normal_bias",
         "_u_shadow_bias_slope",
         "_u_shadow_bias_min",
         "_u_shadow_bias_max",
-        "_u_shadow_offset",
         "_u_cascade_atlas_rect",        "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
@@ -285,8 +279,12 @@ class RenderPipeline:
             cascade_count=self.config.csm_cascades,
             max_distance=self.config.shadow_distance,
             split_lambda=getattr(self.config, "csm_split_lambda", 0.85),
-            split_mode=getattr(self.config, "csm_split_mode", "PSSM"),
-            nonuniform_atlas=getattr(self.config, "csm_nonuniform_atlas", False),
+        )
+        self.csm.update_splits(
+            self.config.shadow_distance,
+            self.config.csm_cascades,
+            getattr(self.config, "csm_split_lambda", 0.85),
+            getattr(self.config, "csm_cascade_distances", None),
         )
 
         # 5. Initialize SSBO 1 (Transforms) & SSBO 2 (Materials)
@@ -472,17 +470,11 @@ class RenderPipeline:
         # Pre-cache mesh uniforms
         self._csm_cascade_idx_uniform = self.csm_prog.get("u_CascadeIndex", None)
 
-        self._u_pcf_samples = self.resolve_prog.get("u_PCF_Samples", None)
-        self._u_shadow_mode = self.resolve_prog.get("u_ShadowMode", None)
-        self._u_shadow_softness = self.resolve_prog.get("u_ShadowSoftness", None)
-        self._u_sun_angular_radius = self.resolve_prog.get("u_SunAngularRadius", None)
-        self._u_shadow_penumbra_scale = self.resolve_prog.get("u_ShadowPenumbraScale", None)
         self._u_shadow_bias = self.resolve_prog.get("u_ShadowBias", None)
         self._u_shadow_normal_bias = self.resolve_prog.get("u_ShadowNormalBias", None)
         self._u_shadow_bias_slope = self.resolve_prog.get("u_ShadowBiasSlopeScale", None)
         self._u_shadow_bias_min = self.resolve_prog.get("u_ShadowBiasMinScale", None)
         self._u_shadow_bias_max = self.resolve_prog.get("u_ShadowBiasMaxScale", None)
-        self._u_shadow_offset = self.resolve_prog.get("u_ShadowOffset", None)
         self._u_cascade_atlas_rect = self.resolve_prog.get("u_CascadeAtlasRect", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
@@ -807,14 +799,12 @@ class RenderPipeline:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
         self.csm.resize_atlas(new_config.shadow_resolution)
-        self.csm.set_nonuniform_atlas(getattr(new_config, "csm_nonuniform_atlas", False))
         self.spot_shadow_map.resize_atlas(getattr(new_config, "spot_shadow_resolution", 2048))
         self.csm.update_splits(
             new_config.shadow_distance,
             new_config.csm_cascades,
             getattr(new_config, "csm_split_lambda", 0.85),
-            getattr(new_config, "csm_split_mode", "PSSM"),
-            getattr(new_config, "csm_cascade_distance_scale", None),
+            getattr(new_config, "csm_cascade_distances", None),
         )
         self.post_process.config = new_config
         self.ctx_wrapper.config = new_config
@@ -1043,25 +1033,20 @@ class RenderPipeline:
 
         matrix_look_at(camera_pos, camera_target, up=(0.0, 1.0, 0.0), out=self._view_mat)
 
-        # Synchronize CSM splits with active shadow distance and cascade count
-        cascade_scale = getattr(self.config, "csm_cascade_distance_scale", None)
+        # Synchronize CSM splits with the active cascade distances and count.
+        cascade_distances = getattr(self.config, "csm_cascade_distances", None)
         if (
-            self.csm.max_distance != self.config.shadow_distance
-            or self.csm.cascade_count != self.config.csm_cascades
+            self.csm.cascade_count != self.config.csm_cascades
             or self.csm.split_lambda != getattr(self.config, "csm_split_lambda", 0.85)
-            or self.csm.split_mode != getattr(self.config, "csm_split_mode", "PSSM")
-            or self.csm.cascade_distance_scale != cascade_scale
+            or self.csm.cascade_distances != cascade_distances
+            or (cascade_distances is None and self.csm.max_distance != self.config.shadow_distance)
         ):
             self.csm.update_splits(
                 self.config.shadow_distance,
                 self.config.csm_cascades,
                 getattr(self.config, "csm_split_lambda", 0.85),
-                getattr(self.config, "csm_split_mode", "PSSM"),
-                cascade_scale,
+                cascade_distances,
             )
-        # Keep the per-cascade atlas allocation in sync with the live config.
-        if self.csm.nonuniform_atlas != bool(getattr(self.config, "csm_nonuniform_atlas", False)):
-            self.csm.set_nonuniform_atlas(getattr(self.config, "csm_nonuniform_atlas", False))
 
         matrix_perspective(
             math.radians(fovy_deg),
@@ -1128,7 +1113,6 @@ class RenderPipeline:
             self._cam_pos,
             self._cam_fwd,
             self._sun_v,
-            stabilize=getattr(self.config, "csm_stabilization", True),
             fovy_deg=fovy_deg,
             aspect=aspect,
             aabbs=ecs.get_active_aabbs_view(),
@@ -1501,17 +1485,6 @@ class RenderPipeline:
         rc_tex.use(location=15)
 
         # Set resolve uniforms
-        if self._u_pcf_samples is not None:
-            self._u_pcf_samples.value = self.config.pcf_samples
-        if self._u_shadow_mode is not None:
-            mode_val = {"HARD": 0, "PCF": 1, "PCSS": 2, "PCSS_ULTRA": 3}.get(str(self.config.shadow_mode).upper(), 2)
-            self._u_shadow_mode.value = mode_val
-        if self._u_shadow_softness is not None:
-            self._u_shadow_softness.value = float(self.config.shadow_softness)
-        if self._u_sun_angular_radius is not None:
-            self._u_sun_angular_radius.value = float(getattr(self.config, "sun_angular_radius", 0.00465))
-        if self._u_shadow_penumbra_scale is not None:
-            self._u_shadow_penumbra_scale.value = float(getattr(self.config, "shadow_penumbra_scale", 4.0))
         if self._u_shadow_bias is not None:
             self._u_shadow_bias.value = float(self.config.shadow_bias)
         if self._u_shadow_normal_bias is not None:
@@ -1522,11 +1495,6 @@ class RenderPipeline:
             self._u_shadow_bias_min.value = float(getattr(self.config, "shadow_bias_min_scale", 0.5))
         if self._u_shadow_bias_max is not None:
             self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
-        if self._u_shadow_offset is not None:
-            self._u_shadow_offset.value = (
-                float(getattr(self.config, "shadow_offset_x", 0.0)),
-                float(getattr(self.config, "shadow_offset_y", 0.0)),
-            )
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_cascade_atlas_rect is not None:

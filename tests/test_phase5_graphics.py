@@ -439,32 +439,48 @@ class TestQualityPresetsAndGIMode:
 
 
 class TestShadows:
-    def test_shadow_modes_and_parameters_in_presets(self):
+    def test_shadow_parameters_in_presets(self):
         low = get_quality_preset(GraphicsQuality.LOW)
-        assert low.shadow_mode == "PCF"
         assert low.shadow_resolution == 1024
         assert low.shadow_distance == 120.0
+        assert low.csm_cascades == 2
 
         med = get_quality_preset(GraphicsQuality.MEDIUM)
-        assert med.shadow_mode == "PCF"
         assert med.shadow_resolution == 2048
         assert med.shadow_distance == 250.0
+        assert med.csm_cascades == 3
 
         high = get_quality_preset(GraphicsQuality.HIGH)
-        assert high.shadow_mode == "PCSS"
-        assert high.shadow_softness == 1.2
         assert high.shadow_bias == 0.0015
-        assert high.shadow_resolution == 4096
+        assert high.shadow_resolution == 8192
         assert high.shadow_distance == 500.0
-        assert high.pcf_samples == 24
+        assert high.csm_cascades == 4
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
-        assert ultra.shadow_mode == "PCSS"
-        assert ultra.shadow_resolution == 4096
+        assert ultra.shadow_resolution == 8192
         assert ultra.shadow_distance == 800.0
 
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
         assert cinematic.shadow_distance == 1200.0
+
+    def test_presets_author_explicit_cascade_distances(self):
+        """Each preset must give every cascade an increasing far distance."""
+        for quality in (
+            GraphicsQuality.LOW,
+            GraphicsQuality.MEDIUM,
+            GraphicsQuality.HIGH,
+            GraphicsQuality.ULTRA,
+            GraphicsQuality.CINEMATIC,
+        ):
+            preset = get_quality_preset(quality)
+            distances = preset.csm_cascade_distances
+            assert distances is not None, f"{quality.value} must author cascade distances."
+            assert len(distances) == 4
+            assert all(distances[i] < distances[i + 1] for i in range(3)), (
+                f"{quality.value} cascade distances are not increasing: {distances}"
+            )
+            # The last cascade must reach the preset's shadow distance.
+            assert distances[3] == preset.shadow_distance
 
     def test_shadow_distance_parameterization_and_dynamic_splits(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
@@ -498,7 +514,7 @@ class TestShadows:
 
         pipeline.destroy()
 
-    def test_pipeline_shadow_modes_render_execution(self, render_ctx: RenderContext):
+    def test_pipeline_hard_shadow_render_execution(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         ecs = EntityManager(max_entities=10)
         ecs.create_entity(
@@ -509,9 +525,8 @@ class TestShadows:
             metallic=0.1,
         )
 
-        for mode in ("HARD", "PCF", "PCSS"):
-            pipeline.config.shadow_mode = mode
-            pipeline.config.shadow_softness = 1.5
+        for distance in (120.0, 500.0, 1200.0):
+            pipeline.config.shadow_distance = distance
             pipeline.config.shadow_bias = 0.002
             pipeline.render_frame(
                 ecs=ecs,
@@ -524,10 +539,8 @@ class TestShadows:
             data = pipeline.post_process.final_texture.read()
             assert len(data) == 320 * 240 * 4
 
-        # Test shadow alignment offset and normal bias controls
+        # Normal bias remains tunable
         pipeline.config.shadow_normal_bias = 0.0025
-        pipeline.config.shadow_offset_x = 0.015
-        pipeline.config.shadow_offset_y = -0.010
         pipeline.render_frame(
             ecs=ecs,
             camera_pos=(0.0, 2.0, 5.0),

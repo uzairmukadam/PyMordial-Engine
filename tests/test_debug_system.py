@@ -87,15 +87,19 @@ class TestDebugSystem:
         assert GBufferDebugMode.RADIANCE_CASCADES == 13
 
         # Shadow properties
-        assert tweaks.shadow_resolution in (1024, 2048, 4096)
-        assert tweaks.shadow_mode in ("HARD", "PCF", "PCSS")
-        assert tweaks.shadow_softness > 0.0
+        assert tweaks.shadow_resolution in (1024, 2048, 4096, 8192)
         assert tweaks.shadow_bias > 0.0
+        assert tweaks.shadow_distance > 0.0
+        assert 1 <= tweaks.csm_cascades <= 4
+        assert len(tweaks.csm_cascade_distances) == 4
+        assert all(
+            tweaks.csm_cascade_distances[i] < tweaks.csm_cascade_distances[i + 1] for i in range(3)
+        )
 
-        tweaks.shadow_mode = "HARD"
         tweaks.shadow_resolution = 1024
-        assert tweaks.shadow_mode == "HARD"
+        tweaks.shadow_distance = 750.0
         assert tweaks.shadow_resolution == 1024
+        assert tweaks.shadow_distance == 750.0
 
     def test_creative_camera_optics_independent_of_quality_presets(self):
         """Validates that player artistic preferences (motion blur, lens flare, DoF, vignette, chromatic aberration, grain)
@@ -127,7 +131,7 @@ class TestDebugSystem:
 
         # Switch preset to ULTRA
         tweaks.set_quality_preset(GraphicsQuality.ULTRA)
-        assert tweaks.shadow_resolution == 4096
+        assert tweaks.shadow_resolution == 8192
         assert tweaks.particles_enabled is False
 
         # Still preserved
@@ -329,7 +333,7 @@ class TestDebugSystem:
         tweaks.fxaa_edge_threshold = 0.08
         tweaks.smaa_threshold = 0.06
         tweaks.csm_split_lambda = 0.72
-        tweaks.pcf_samples = 48
+        tweaks.shadow_distance = 640.0
         tweaks.apply_to_pipeline(pipeline)
 
         assert pipeline.config.chromatic_aberration_enabled is False
@@ -357,7 +361,7 @@ class TestDebugSystem:
         assert pipeline.config.fxaa_edge_threshold == 0.08
         assert pipeline.config.smaa_threshold == 0.06
         assert pipeline.config.csm_split_lambda == 0.72
-        assert pipeline.config.pcf_samples == 48
+        assert pipeline.config.shadow_distance == 640.0
         assert not hasattr(pipeline.config, "water_wave_amplitude")
         assert pipeline.atmosphere.config.sun_intensity == tweaks.sun_lux
         assert pipeline.atmosphere.config.sky_mode == "SPACE"

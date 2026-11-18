@@ -33,6 +33,7 @@ class GBufferDebugMode(IntEnum):
     RADIANCE_CASCADES = 13  # Radiance Cascades indirect diffuse
     CASCADE_INDEX = 14  # Selected CSM cascade index (false colour)
     CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
+    CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
 
 
 class EngineTweaks:
@@ -51,22 +52,12 @@ class EngineTweaks:
         "sun_elevation_deg",
         "sun_lux",
         "shadow_resolution",
-        "shadow_mode",
-        "shadow_softness",
-        "sun_angular_radius",
-        "shadow_penumbra_scale",
         "shadow_bias",
         "shadow_normal_bias",
-        "shadow_offset_x",
-        "shadow_offset_y",
         "shadow_distance",
         "csm_split_lambda",
-        "csm_split_mode",
-        "csm_cascade_distance_scale",
+        "csm_cascade_distances",
         "csm_cascades",
-        "csm_stabilization",
-        "csm_nonuniform_atlas",
-        "pcf_samples",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
@@ -271,24 +262,16 @@ class EngineTweaks:
         self.ssdm_enabled = True
         self.ssdm_scale = 1.0
 
-        # Shadow Settings (Default: 4096 Atlas, PCSS, zero delta offset)
-        self.shadow_resolution = 4096
-        self.shadow_mode = "PCSS"
-        self.shadow_softness = 1.2
-        self.sun_angular_radius = 0.00465
-        self.shadow_penumbra_scale = 4.0
+        # Shadow Settings (Default: 8192 Atlas, hard shadows)
+        self.shadow_resolution = 8192
         self.shadow_bias = 0.0015
         self.shadow_normal_bias = 0.0010
-        self.shadow_offset_x = 0.0
-        self.shadow_offset_y = 0.0
         self.shadow_distance = 500.0
         self.csm_split_lambda = 0.85
-        self.csm_split_mode = "PSSM"
-        self.csm_cascade_distance_scale = (1.0, 1.0, 1.0, 1.0)
+        # Explicit far distance of each cascade in meters. Cascade 0 is the
+        # tightest near-field slice; cascade 3 reaches the far plane.
+        self.csm_cascade_distances = (20.0, 60.0, 160.0, 500.0)
         self.csm_cascades = 4
-        self.csm_stabilization = True
-        self.csm_nonuniform_atlas = False
-        self.pcf_samples = 24
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
@@ -718,40 +701,27 @@ class EngineTweaks:
             p_cfg.spot_shadow_bias = float(self.spot_shadow_bias)
 
             # 5. Shadows & CSM
-            p_cfg.shadow_mode = self.shadow_mode
-            p_cfg.shadow_softness = float(self.shadow_softness)
-            p_cfg.sun_angular_radius = float(self.sun_angular_radius)
-            p_cfg.shadow_penumbra_scale = float(self.shadow_penumbra_scale)
             p_cfg.shadow_bias = float(self.shadow_bias)
             p_cfg.shadow_normal_bias = float(self.shadow_normal_bias)
             p_cfg.shadow_distance = float(self.shadow_distance)
             p_cfg.csm_split_lambda = float(self.csm_split_lambda)
-            p_cfg.csm_split_mode = str(self.csm_split_mode)
-            p_cfg.csm_cascade_distance_scale = tuple(float(v) for v in self.csm_cascade_distance_scale)
+            p_cfg.csm_cascade_distances = tuple(float(v) for v in self.csm_cascade_distances)
             p_cfg.csm_cascades = int(self.csm_cascades)
             p_cfg.shadow_resolution = int(self.shadow_resolution)
-            p_cfg.pcf_samples = int(self.pcf_samples)
-            p_cfg.csm_stabilization = bool(self.csm_stabilization)
-            p_cfg.csm_nonuniform_atlas = bool(self.csm_nonuniform_atlas)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
                 if self.shadow_resolution != pipeline.csm.atlas_size:
                     pipeline.csm.resize_atlas(self.shadow_resolution)
-                if self.csm_nonuniform_atlas != pipeline.csm.nonuniform_atlas:
-                    pipeline.csm.set_nonuniform_atlas(self.csm_nonuniform_atlas)
                 if (
-                    self.shadow_distance != pipeline.csm.max_distance
-                    or self.csm_cascades != pipeline.csm.cascade_count
+                    self.csm_cascades != pipeline.csm.cascade_count
                     or self.csm_split_lambda != pipeline.csm.split_lambda
-                    or self.csm_split_mode != pipeline.csm.split_mode
-                    or tuple(self.csm_cascade_distance_scale) != pipeline.csm.cascade_distance_scale
+                    or tuple(self.csm_cascade_distances) != pipeline.csm.cascade_distances
                 ):
                     pipeline.csm.update_splits(
                         self.shadow_distance,
                         self.csm_cascades,
                         self.csm_split_lambda,
-                        self.csm_split_mode,
-                        tuple(float(v) for v in self.csm_cascade_distance_scale),
+                        tuple(float(v) for v in self.csm_cascade_distances),
                     )
 
             if hasattr(pipeline, "spot_shadow_map") and pipeline.spot_shadow_map is not None:
@@ -965,21 +935,13 @@ class EngineTweaks:
             "taa_max_feedback",
             "taa_min_feedback",
             "taa_variance_gamma",
-            "shadow_mode",
-            "shadow_softness",
-            "sun_angular_radius",
-            "shadow_penumbra_scale",
             "shadow_bias",
             "shadow_normal_bias",
             "shadow_distance",
             "csm_split_lambda",
-            "csm_split_mode",
-            "csm_cascade_distance_scale",
+            "csm_cascade_distances",
             "csm_cascades",
             "shadow_resolution",
-            "pcf_samples",
-            "csm_stabilization",
-            "csm_nonuniform_atlas",
             "pom_enabled",
             "pom_min_samples",
             "pom_max_samples",
@@ -1173,21 +1135,13 @@ class EngineTweaks:
             "spot_light_radius": float(self.spot_light_radius),
             "spot_cone_angle": float(self.spot_cone_angle),
             "spot_shadow_bias": float(self.spot_shadow_bias),
-            "shadow_mode": str(self.shadow_mode),
-            "shadow_softness": float(self.shadow_softness),
-            "sun_angular_radius": float(self.sun_angular_radius),
-            "shadow_penumbra_scale": float(self.shadow_penumbra_scale),
             "shadow_bias": float(self.shadow_bias),
             "shadow_normal_bias": float(self.shadow_normal_bias),
             "shadow_distance": float(self.shadow_distance),
             "csm_split_lambda": float(self.csm_split_lambda),
-            "csm_split_mode": str(self.csm_split_mode),
-            "csm_cascade_distance_scale": [float(v) for v in self.csm_cascade_distance_scale],
+            "csm_cascade_distances": [float(v) for v in self.csm_cascade_distances],
             "csm_cascades": int(self.csm_cascades),
-            "csm_stabilization": bool(self.csm_stabilization),
-            "csm_nonuniform_atlas": bool(self.csm_nonuniform_atlas),
             "shadow_resolution": int(self.shadow_resolution),
-            "pcf_samples": int(self.pcf_samples),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
             "fog_resolution": str(self.fog_resolution),
             "fog_point_lights": bool(self.fog_point_lights),
@@ -1263,8 +1217,6 @@ class EngineTweaks:
             "particles_enabled": bool(self.particles_enabled),
             "show_bounds": bool(self.show_bounds),
             "show_physics_colliders": bool(self.show_physics_colliders),
-            "shadow_offset_x": float(self.shadow_offset_x),
-            "shadow_offset_y": float(self.shadow_offset_y),
             "taa_enabled": bool(self.taa_enabled),
             "taa_feedback": float(self.taa_feedback),
             "taa_sharpness": float(self.taa_sharpness),

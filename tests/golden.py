@@ -39,8 +39,7 @@ DEFAULT_TOLERANCE = 2.0
 CAPTURE_VARIANTS: dict[str, dict[str, dict[str, object]]] = {
     "atmosphere_on": {},
     "atmosphere_off": {"project": {"atmosphere_enabled": False}},
-    "shadows_pcss": {"render": {"shadow_mode": "PCSS", "shadow_softness": 1.2}},
-    "shadows_pcf": {"render": {"shadow_mode": "PCF", "shadow_softness": 1.0}},
+    "shadows_hard": {"render": {"shadow_resolution": 2048, "shadow_distance": 250.0}},
     "aa_taa": {"render": {"aa_mode": "TAA", "taa_enabled": True}},
     "aa_smaa4x": {"render": {"aa_mode": "SMAA_4X"}},
     "fog_volumetric": {"render": {"volumetric_fog_enabled": True, "fog_density": 0.012}},

@@ -35,8 +35,8 @@ class TestQualityPresets:
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
 
         assert low.shadow_resolution < cinematic.shadow_resolution
-        assert low.pcf_samples <= cinematic.pcf_samples
         assert low.shadow_distance < cinematic.shadow_distance
+        assert low.csm_cascades <= cinematic.csm_cascades
 
 
 class TestRenderPipelineHeadless:
@@ -106,7 +106,7 @@ class TestRenderPipelineHeadless:
         # Test dynamic quality preset switching
         ultra_config = get_quality_preset(GraphicsQuality.ULTRA)
         pipeline.apply_config(ultra_config)
-        assert pipeline.config.shadow_resolution == 4096
+        assert pipeline.config.shadow_resolution == 8192
 
         # Re-render with new preset
         pipeline.render_frame(

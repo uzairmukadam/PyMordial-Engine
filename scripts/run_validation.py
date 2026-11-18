@@ -296,17 +296,10 @@ def main() -> None:
     )
     parser.add_argument("--debug-tab", type=int, default=0, help="Initial debug menu tab (0, 1, 2)")
     parser.add_argument(
-        "--shadow-mode",
-        type=str,
-        default="pcss",
-        choices=["hard", "pcf", "pcss"],
-        help="Shadow filtering mode (default: pcss)",
-    )
-    parser.add_argument(
         "--shadow-res",
         type=int,
         default=2048,
-        choices=[1024, 2048, 4096],
+        choices=[1024, 2048, 4096, 8192],
         help="Shadow map atlas resolution (default: 2048)",
     )
     parser.add_argument(
@@ -434,7 +427,6 @@ def main() -> None:
     engine_tweaks = EngineTweaks()
     engine_tweaks.quality_preset = initial_preset_enum
     engine_tweaks.vsync_enabled = args.vsync
-    engine_tweaks.shadow_mode = args.shadow_mode.upper()
     engine_tweaks.shadow_resolution = args.shadow_res
     engine_tweaks.shadow_distance = args.shadow_distance
     engine_tweaks.csm_cascades = args.shadow_cascades
@@ -496,8 +488,6 @@ def main() -> None:
         cfg.wireframe = engine_tweaks.show_wireframe
         pipeline.apply_config(cfg)
         engine_tweaks.shadow_resolution = cfg.shadow_resolution
-        engine_tweaks.shadow_mode = cfg.shadow_mode
-        engine_tweaks.shadow_softness = cfg.shadow_softness
         engine_tweaks.shadow_bias = cfg.shadow_bias
         engine_tweaks.shadow_distance = cfg.shadow_distance
         engine_tweaks.csm_cascades = cfg.csm_cascades
@@ -1116,24 +1106,6 @@ def main() -> None:
     )
     game_tweaks.add_float(
         "Shadows",
-        "Align X",
-        default=0.0,
-        min_val=-0.05,
-        max_val=0.05,
-        step=0.001,
-        on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_x", v),
-    )
-    game_tweaks.add_float(
-        "Shadows",
-        "Align Y",
-        default=0.0,
-        min_val=-0.05,
-        max_val=0.05,
-        step=0.001,
-        on_changed=lambda v: setattr(engine_tweaks, "shadow_offset_y", v),
-    )
-    game_tweaks.add_float(
-        "Shadows",
         "Normal Bias",
         default=0.0010,
         min_val=0.0,
@@ -1601,19 +1573,21 @@ def main() -> None:
         if engine_tweaks.shadow_resolution != pipeline.csm.atlas_size:
             pipeline.csm.resize_atlas(engine_tweaks.shadow_resolution)
         if (
-            engine_tweaks.shadow_distance != pipeline.csm.max_distance
-            or engine_tweaks.csm_cascades != pipeline.csm.cascade_count
+            engine_tweaks.csm_cascades != pipeline.csm.cascade_count
+            or tuple(engine_tweaks.csm_cascade_distances) != pipeline.csm.cascade_distances
         ):
-            pipeline.csm.update_splits(engine_tweaks.shadow_distance, engine_tweaks.csm_cascades)
+            pipeline.csm.update_splits(
+                engine_tweaks.shadow_distance,
+                engine_tweaks.csm_cascades,
+                engine_tweaks.csm_split_lambda,
+                tuple(engine_tweaks.csm_cascade_distances),
+            )
         pipeline.config.shadow_resolution = engine_tweaks.shadow_resolution
         pipeline.config.shadow_distance = engine_tweaks.shadow_distance
         pipeline.config.csm_cascades = engine_tweaks.csm_cascades
-        pipeline.config.shadow_mode = engine_tweaks.shadow_mode
-        pipeline.config.shadow_softness = engine_tweaks.shadow_softness
+        pipeline.config.csm_cascade_distances = tuple(engine_tweaks.csm_cascade_distances)
         pipeline.config.shadow_bias = engine_tweaks.shadow_bias
         pipeline.config.shadow_normal_bias = engine_tweaks.shadow_normal_bias
-        pipeline.config.shadow_offset_x = engine_tweaks.shadow_offset_x
-        pipeline.config.shadow_offset_y = engine_tweaks.shadow_offset_y
         pipeline.config.wireframe = engine_tweaks.show_wireframe
         pipeline.config.tonemap_mode = engine_tweaks.tonemap_mode
         pipeline.config.debug_gbuffer = int(engine_tweaks.gbuffer_debug)
@@ -1881,7 +1855,7 @@ def main() -> None:
         print(f" Resolution:          {render_ctx.width}x{render_ctx.height}")
         print(f" Quality Preset:      {engine_tweaks.quality_preset.value.upper()}")
         print(
-            f" Shadows:             {engine_tweaks.shadow_mode} ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | Cascades: {engine_tweaks.csm_cascades}"
+            f" Shadows:             Hard ({engine_tweaks.shadow_resolution}x{engine_tweaks.shadow_resolution}) | Cascades: {engine_tweaks.csm_cascades} | Ends: {[round(d) for d in engine_tweaks.csm_cascade_distances]}"
         )
         print(f" Ambient Occlusion:   {engine_tweaks.ao_mode}")
         print(f" Global Illumination: {engine_tweaks.gi_mode}")
