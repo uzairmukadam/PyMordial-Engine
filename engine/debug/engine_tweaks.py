@@ -63,6 +63,14 @@ class EngineTweaks:
         "pcf_samples",
         "pcf_radius",
         "pcf_falloff",
+        "pcss_cascade_limit",
+        "pcss_search_samples",
+        "pcss_search_radius",
+        "pcss_light_size",
+        "pcss_samples",
+        "pcss_falloff",
+        "pcss_max_radius",
+        "pcss_closest_blocker_weight",
         "ao_mode",
         "ao_intensity",
         "ao_radius",
@@ -282,6 +290,14 @@ class EngineTweaks:
         self.pcf_samples = 16
         self.pcf_radius = 1.5
         self.pcf_falloff = 2.0
+        self.pcss_cascade_limit = 1
+        self.pcss_search_samples = 16
+        self.pcss_search_radius = 8.0
+        self.pcss_light_size = 0.02
+        self.pcss_samples = 24
+        self.pcss_falloff = 2.0
+        self.pcss_max_radius = 96.0
+        self.pcss_closest_blocker_weight = 1.0
 
         # Phase 5 High-End Graphics Settings (Individually customizable)
         self.ao_mode = "GTAO"
@@ -723,6 +739,14 @@ class EngineTweaks:
             p_cfg.pcf_samples = int(self.pcf_samples)
             p_cfg.pcf_radius = float(self.pcf_radius)
             p_cfg.pcf_falloff = float(self.pcf_falloff)
+            p_cfg.pcss_cascade_limit = int(self.pcss_cascade_limit)
+            p_cfg.pcss_search_samples = int(self.pcss_search_samples)
+            p_cfg.pcss_search_radius = float(self.pcss_search_radius)
+            p_cfg.pcss_light_size = float(self.pcss_light_size)
+            p_cfg.pcss_samples = int(self.pcss_samples)
+            p_cfg.pcss_falloff = float(self.pcss_falloff)
+            p_cfg.pcss_max_radius = float(self.pcss_max_radius)
+            p_cfg.pcss_closest_blocker_weight = float(self.pcss_closest_blocker_weight)
 
             if hasattr(pipeline, "csm") and pipeline.csm is not None:
                 if self.shadow_resolution != pipeline.csm.atlas_size:
@@ -962,6 +986,14 @@ class EngineTweaks:
             "pcf_samples",
             "pcf_radius",
             "pcf_falloff",
+            "pcss_cascade_limit",
+            "pcss_search_samples",
+            "pcss_search_radius",
+            "pcss_light_size",
+            "pcss_samples",
+            "pcss_falloff",
+            "pcss_max_radius",
+            "pcss_closest_blocker_weight",
             "pom_enabled",
             "pom_min_samples",
             "pom_max_samples",
@@ -1167,6 +1199,14 @@ class EngineTweaks:
             "pcf_samples": int(self.pcf_samples),
             "pcf_radius": float(self.pcf_radius),
             "pcf_falloff": float(self.pcf_falloff),
+            "pcss_cascade_limit": int(self.pcss_cascade_limit),
+            "pcss_search_samples": int(self.pcss_search_samples),
+            "pcss_search_radius": float(self.pcss_search_radius),
+            "pcss_light_size": float(self.pcss_light_size),
+            "pcss_samples": int(self.pcss_samples),
+            "pcss_falloff": float(self.pcss_falloff),
+            "pcss_max_radius": float(self.pcss_max_radius),
+            "pcss_closest_blocker_weight": float(self.pcss_closest_blocker_weight),
             "volumetric_fog_enabled": bool(self.volumetric_fog_enabled),
             "fog_resolution": str(self.fog_resolution),
             "fog_point_lights": bool(self.fog_point_lights),

@@ -163,6 +163,14 @@ class RenderPipeline:
         "_u_pcf_samples",
         "_u_pcf_radius",
         "_u_pcf_falloff",
+        "_u_pcss_cascade_limit",
+        "_u_pcss_search_samples",
+        "_u_pcss_search_radius",
+        "_u_pcss_light_size",
+        "_u_pcss_samples",
+        "_u_pcss_falloff",
+        "_u_pcss_max_radius",
+        "_u_pcss_closest_weight",
         "_u_cascade_atlas_rect",        "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
@@ -485,6 +493,14 @@ class RenderPipeline:
         self._u_pcf_samples = self.resolve_prog.get("u_PCFSamples", None)
         self._u_pcf_radius = self.resolve_prog.get("u_PCFRadius", None)
         self._u_pcf_falloff = self.resolve_prog.get("u_PCFFalloff", None)
+        self._u_pcss_cascade_limit = self.resolve_prog.get("u_PCSS_CascadeLimit", None)
+        self._u_pcss_search_samples = self.resolve_prog.get("u_PCSSSearchSamples", None)
+        self._u_pcss_search_radius = self.resolve_prog.get("u_PCSSSearchRadius", None)
+        self._u_pcss_light_size = self.resolve_prog.get("u_PCSSLightSize", None)
+        self._u_pcss_samples = self.resolve_prog.get("u_PCSSSamples", None)
+        self._u_pcss_falloff = self.resolve_prog.get("u_PCSSFalloff", None)
+        self._u_pcss_max_radius = self.resolve_prog.get("u_PCSSMaxRadius", None)
+        self._u_pcss_closest_weight = self.resolve_prog.get("u_PCSSClosestBlockerWeight", None)
         self._u_cascade_atlas_rect = self.resolve_prog.get("u_CascadeAtlasRect", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
@@ -1507,7 +1523,7 @@ class RenderPipeline:
             self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
         if self._u_shadow_filter_mode is not None:
             mode = str(getattr(self.config, "shadow_filter_mode", "PCF")).upper()
-            self._u_shadow_filter_mode.value = 1 if mode == "PCF" else 0
+            self._u_shadow_filter_mode.value = {"HARD": 0, "PCF": 1, "PCSS": 2}.get(mode, 1)
         if self._u_pcf_cascade_limit is not None:
             self._u_pcf_cascade_limit.value = int(getattr(self.config, "pcf_cascade_limit", 3))
         if self._u_pcf_samples is not None:
@@ -1516,6 +1532,24 @@ class RenderPipeline:
             self._u_pcf_radius.value = float(getattr(self.config, "pcf_radius", 1.5))
         if self._u_pcf_falloff is not None:
             self._u_pcf_falloff.value = float(getattr(self.config, "pcf_falloff", 2.0))
+        if self._u_pcss_cascade_limit is not None:
+            self._u_pcss_cascade_limit.value = int(getattr(self.config, "pcss_cascade_limit", 1))
+        if self._u_pcss_search_samples is not None:
+            self._u_pcss_search_samples.value = int(getattr(self.config, "pcss_search_samples", 16))
+        if self._u_pcss_search_radius is not None:
+            self._u_pcss_search_radius.value = float(getattr(self.config, "pcss_search_radius", 8.0))
+        if self._u_pcss_light_size is not None:
+            self._u_pcss_light_size.value = float(getattr(self.config, "pcss_light_size", 0.02))
+        if self._u_pcss_samples is not None:
+            self._u_pcss_samples.value = int(getattr(self.config, "pcss_samples", 24))
+        if self._u_pcss_falloff is not None:
+            self._u_pcss_falloff.value = float(getattr(self.config, "pcss_falloff", 2.0))
+        if self._u_pcss_max_radius is not None:
+            self._u_pcss_max_radius.value = float(getattr(self.config, "pcss_max_radius", 96.0))
+        if self._u_pcss_closest_weight is not None:
+            self._u_pcss_closest_weight.value = float(
+                getattr(self.config, "pcss_closest_blocker_weight", 1.0)
+            )
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_cascade_atlas_rect is not None:

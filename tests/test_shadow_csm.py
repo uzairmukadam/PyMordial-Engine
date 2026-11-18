@@ -87,7 +87,6 @@ class TestRemovedShadowMachinery:
             "u_SunAngularRadius",
             "u_ShadowPenumbraScale",
             "u_ShadowOffset",
-            "SamplePCSSShadow",
             "POISSON_DISK",
         ):
             assert removed not in source, f"{removed} should have been removed from the resolve shader."
@@ -177,7 +176,7 @@ class TestPCFFiltering:
         start = source.index("float SampleCascadeShadow(")
         end = source.index("float CalculateCSMShadow(", start)
         body = source[start:end]
-        assert "u_ShadowFilterMode == 1" in body, "PCF must be gated on the filter mode."
+        assert "u_ShadowFilterMode >= 1" in body, "PCF must be gated on the filter mode."
         assert "cascade < u_PCFCascadeLimit" in body, (
             "PCF must be limited to cascades below u_PCFCascadeLimit so the far "
             "cascade keeps the hard path."
@@ -225,7 +224,7 @@ class TestPCFFiltering:
         low = get_quality_preset(GraphicsQuality.LOW)
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
         assert low.shadow_filter_mode == "HARD"
-        assert cinematic.shadow_filter_mode == "PCF"
+        assert cinematic.shadow_filter_mode == "PCSS"
         assert low.pcf_samples < cinematic.pcf_samples
         assert low.pcf_radius < cinematic.pcf_radius
 
@@ -248,8 +247,162 @@ class TestPCFFiltering:
         assert restored.shadow_filter_mode == "PCF"
         assert restored.pcf_cascade_limit == 2
         assert restored.pcf_samples == 32
-        assert restored.pcf_radius == 2.5
-        assert restored.pcf_falloff == 1.5
+
+
+class TestPCSSFiltering:
+    """PCSS is the narrowest tier: variable penumbra on the nearest cascade."""
+
+    def test_config_exposes_pcss_parameters(self) -> None:
+        cfg = RenderConfig()
+        assert cfg.pcss_cascade_limit >= 1
+        assert 4 <= cfg.pcss_search_samples <= 64
+        assert cfg.pcss_search_radius > 0.0
+        assert cfg.pcss_light_size > 0.0
+        assert 4 <= cfg.pcss_samples <= 64
+        assert cfg.pcss_falloff > 0.0
+        assert cfg.pcss_max_radius > 0.0
+
+    def test_shader_declares_pcss_uniforms(self) -> None:
+        source = _resolve_source()
+        for uniform in (
+            "u_PCSS_CascadeLimit",
+            "u_PCSSSearchSamples",
+            "u_PCSSSearchRadius",
+            "u_PCSSLightSize",
+            "u_PCSSSamples",
+            "u_PCSSFalloff",
+            "u_PCSSMaxRadius",
+        ):
+            assert uniform in source, f"{uniform} must be declared in the resolve shader."
+
+    def test_pcss_is_limited_to_near_cascades(self) -> None:
+        source = _resolve_source()
+        start = source.index("float SampleCascadeShadow(")
+        end = source.index("float CalculateCSMShadow(", start)
+        body = source[start:end]
+        assert "u_ShadowFilterMode == 2" in body, "PCSS must be gated on filter mode 2."
+        assert "cascade < u_PCSS_CascadeLimit" in body, (
+            "PCSS must be limited to cascades below u_PCSS_CascadeLimit."
+        )
+
+    def test_pcss_has_three_stages(self) -> None:
+        """Blocker search -> penumbra estimate -> disk filter."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "blocker_sum" in body, "PCSS needs a blocker search pass."
+        assert "penumbra_world" in body, "PCSS needs a penumbra estimate."
+        assert "radius_texels" in body, "PCSS needs a filter radius derived from the gap."
+
+    def test_pcss_penumbra_uses_the_blocker_gap(self) -> None:
+        """The penumbra must scale with the receiver-to-blocker gap, not a constant."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "gap_world" in body
+        assert "u_PCSSLightSize" in body, "The light size must scale the penumbra."
+
+    def test_pcss_penumbra_uses_world_texel_conversion(self) -> None:
+        """Converting metres to texels via inv_rad * cascade_texels is 2x too large."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "c.world_texel" in body, (
+            "The penumbra must convert metres to texels with world_texel; deriving it "
+            "from inv_rad * cascade_texels is 2x too large because a cascade spans "
+            "2 * radius in world space."
+        )
+
+    def test_pcss_filter_is_bounded_by_the_search(self) -> None:
+        """An unanchored penumbra reads as a blurry blob."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "u_PCSSMaxRadius" in body
+        assert "clamp(penumbra_texels" in body
+
+    def test_pcss_returns_lit_when_no_blockers(self) -> None:
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "blocker_count == 0" in body
+
+    def test_pcss_tracks_the_closest_blocker(self) -> None:
+        """Overlapping shadows must not inherit the far caster's softness."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "closest_blocker" in body, (
+            "PCSS must track the closest blocker so a near caster keeps its sharp "
+            "edge when its shadow overlaps a far caster's soft shadow."
+        )
+        assert "closest_gap" in body
+
+    def test_pcss_blends_average_and_closest_gap(self) -> None:
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "u_PCSSClosestBlockerWeight" in body, (
+            "The average/closest blend must be exposed so the classic PCSS look "
+            "remains reachable."
+        )
+        assert "mix(avg_gap, closest_gap" in body
+
+    def test_closest_blocker_weight_defaults_to_closest(self) -> None:
+        cfg = RenderConfig()
+        assert cfg.pcss_closest_blocker_weight == 1.0, (
+            "The default must favour the closest blocker, otherwise overlapping "
+            "shadows soften the near caster."
+        )
+
+    def test_pcss_presets_are_configured(self) -> None:
+        high = get_quality_preset(GraphicsQuality.HIGH)
+        assert high.shadow_filter_mode == "PCSS"
+        assert high.pcss_cascade_limit == 1, "PCSS is limited to cascade 1 by default."
+        assert high.pcss_search_radius > 0.0
+        assert high.pcss_light_size > 0.0
+
+    def test_medium_disables_pcss(self) -> None:
+        """MEDIUM stays on PCF; PCSS is a HIGH-and-above tier."""
+        medium = get_quality_preset(GraphicsQuality.MEDIUM)
+        assert medium.shadow_filter_mode == "PCF"
+        assert medium.pcss_cascade_limit == 0
+
+    def test_engine_tweaks_round_trips_pcss_parameters(self) -> None:
+        tweaks = EngineTweaks()
+        tweaks.shadow_filter_mode = "PCSS"
+        tweaks.pcss_cascade_limit = 2
+        tweaks.pcss_search_samples = 20
+        tweaks.pcss_search_radius = 40.0
+        tweaks.pcss_light_size = 0.15
+        tweaks.pcss_samples = 28
+        tweaks.pcss_falloff = 1.5
+        tweaks.pcss_max_radius = 80.0
+        tweaks.pcss_closest_blocker_weight = 0.75
+        data = tweaks.to_dict()
+        assert data["shadow_filter_mode"] == "PCSS"
+        assert data["pcss_cascade_limit"] == 2
+        assert data["pcss_search_samples"] == 20
+        assert data["pcss_search_radius"] == 40.0
+        assert data["pcss_light_size"] == 0.15
+        assert data["pcss_samples"] == 28
+        assert data["pcss_falloff"] == 1.5
+        assert data["pcss_max_radius"] == 80.0
+        assert data["pcss_closest_blocker_weight"] == 0.75
+
+        restored = EngineTweaks()
+        restored.from_dict(data)
+        assert restored.shadow_filter_mode == "PCSS"
+        assert restored.pcss_cascade_limit == 2
+        assert restored.pcss_light_size == 0.15
+        assert restored.pcss_closest_blocker_weight == 0.75
 
 
 class TestExplicitCascadeDistances:

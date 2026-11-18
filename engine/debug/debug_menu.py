@@ -1579,10 +1579,10 @@ class DebugMenu:
                     et.shadow_distance = distances[3]
                     et.mark_custom()
 
-                # 4. Shadow Filtering. PCF is limited to the near cascades; the
-                # far cascade keeps the hard path because its texels already
-                # span several screen pixels.
-                filter_modes = ["HARD", "PCF"]
+                # 4. Shadow Filtering. Tiers are limited to a prefix of the
+                # cascades; the far cascades keep the cheaper path because their
+                # texels already span several screen pixels.
+                filter_modes = ["HARD", "PCF", "PCSS"]
                 curr_filter = str(getattr(et, "shadow_filter_mode", "PCF")).upper()
                 f_idx = filter_modes.index(curr_filter) if curr_filter in filter_modes else 1
                 f_changed, new_f_idx = imgui.combo("Shadow Filter", f_idx, filter_modes)
@@ -1591,7 +1591,9 @@ class DebugMenu:
                     et.mark_custom()
                     self.toast.show(f"Shadow Filter: {et.shadow_filter_mode}", duration=1.5)
 
-                if str(getattr(et, "shadow_filter_mode", "PCF")).upper() == "PCF":
+                active_filter = str(getattr(et, "shadow_filter_mode", "PCF")).upper()
+
+                if active_filter in ("PCF", "PCSS"):
                     lim_changed, lim_val = imgui.slider_int(
                         "PCF Cascade Limit", int(getattr(et, "pcf_cascade_limit", 3)), 1, 4
                     )
@@ -1618,6 +1620,86 @@ class DebugMenu:
                     )
                     if pcf_f_changed:
                         et.pcf_falloff = pcf_f_val
+                        et.mark_custom()
+
+                if active_filter == "PCSS":
+                    imgui.separator()
+                    imgui.text_disabled("PCSS (variable penumbra)")
+
+                    pcss_lim_changed, pcss_lim_val = imgui.slider_int(
+                        "PCSS Cascade Limit", int(getattr(et, "pcss_cascade_limit", 1)), 1, 4
+                    )
+                    if pcss_lim_changed:
+                        et.pcss_cascade_limit = pcss_lim_val
+                        et.mark_custom()
+
+                    pcss_ls_changed, pcss_ls_val = imgui.slider_float(
+                        "PCSS Light Size",
+                        float(getattr(et, "pcss_light_size", 0.02)),
+                        0.001,
+                        0.20,
+                        "%.3f",
+                    )
+                    if pcss_ls_changed:
+                        et.pcss_light_size = pcss_ls_val
+                        et.mark_custom()
+
+                    pcss_ss_changed, pcss_ss_val = imgui.slider_int(
+                        "PCSS Search Samples", int(getattr(et, "pcss_search_samples", 16)), 4, 64
+                    )
+                    if pcss_ss_changed:
+                        et.pcss_search_samples = pcss_ss_val
+                        et.mark_custom()
+
+                    pcss_sr_changed, pcss_sr_val = imgui.slider_float(
+                        "PCSS Search Radius",
+                        float(getattr(et, "pcss_search_radius", 8.0)),
+                        1.0,
+                        32.0,
+                        "%.1f texels",
+                    )
+                    if pcss_sr_changed:
+                        et.pcss_search_radius = pcss_sr_val
+                        et.mark_custom()
+
+                    pcss_s_changed, pcss_s_val = imgui.slider_int(
+                        "PCSS Samples", int(getattr(et, "pcss_samples", 24)), 4, 64
+                    )
+                    if pcss_s_changed:
+                        et.pcss_samples = pcss_s_val
+                        et.mark_custom()
+
+                    pcss_f_changed, pcss_f_val = imgui.slider_float(
+                        "PCSS Falloff", float(getattr(et, "pcss_falloff", 2.0)), 0.25, 6.0, "%.2f"
+                    )
+                    if pcss_f_changed:
+                        et.pcss_falloff = pcss_f_val
+                        et.mark_custom()
+
+                    pcss_mr_changed, pcss_mr_val = imgui.slider_float(
+                        "PCSS Max Radius",
+                        float(getattr(et, "pcss_max_radius", 96.0)),
+                        2.0,
+                        160.0,
+                        "%.1f texels",
+                    )
+                    if pcss_mr_changed:
+                        et.pcss_max_radius = pcss_mr_val
+                        et.mark_custom()
+
+                    # 0 = classic average-blocker PCSS, 1 = closest blocker.
+                    # The closest blocker keeps overlapping shadows sharp
+                    # instead of letting a far caster's softness bleed onto a
+                    # near caster's edge.
+                    pcss_cb_changed, pcss_cb_val = imgui.slider_float(
+                        "PCSS Closest Blocker",
+                        float(getattr(et, "pcss_closest_blocker_weight", 1.0)),
+                        0.0,
+                        1.0,
+                        "%.2f",
+                    )
+                    if pcss_cb_changed:
+                        et.pcss_closest_blocker_weight = pcss_cb_val
                         et.mark_custom()
 
                 # 5. Shadow Depth Bias

@@ -51,13 +51,29 @@ class RenderConfig:
     # directly. ``None`` falls back to PSSM splits derived from shadow_distance.
     csm_cascade_distances: tuple[float, float, float, float] | None = None
 
-    # PCF filtering. Applied only to the near cascades; the far cascade keeps
-    # the hard path because its texels already span several screen pixels.
-    shadow_filter_mode: str = "PCF"  # "HARD" or "PCF"
+    # Shadow filtering tiers. Each tier is limited to a prefix of the cascades;
+    # the far cascades keep the cheaper path because their texels already span
+    # several screen pixels.
+    shadow_filter_mode: str = "PCF"  # "HARD", "PCF" or "PCSS"
     pcf_cascade_limit: int = 3  # cascades with index < this use PCF
     pcf_samples: int = 16  # Vogel disk taps (4 to 64)
     pcf_radius: float = 1.5  # filter radius in cascade texels
     pcf_falloff: float = 2.0  # radial weight exponent (1 = cone, 2 = bell)
+
+    # PCSS (percentage-closer soft shadows). The penumbra is derived from the
+    # receiver-to-blocker gap, so contact shadows stay sharp and only elevated
+    # casters soften.
+    pcss_cascade_limit: int = 1  # cascades with index < this use PCSS
+    pcss_search_samples: int = 16  # blocker search taps (4 to 64)
+    pcss_search_radius: float = 48.0  # blocker search radius in cascade texels
+    pcss_light_size: float = 0.10  # light-source size factor (penumbra scale)
+    pcss_samples: int = 24  # penumbra filter taps (4 to 64)
+    pcss_falloff: float = 2.0  # radial weight exponent
+    pcss_max_radius: float = 96.0  # penumbra radius clamp in cascade texels
+    # 0.0 = average blocker gap (classic PCSS), 1.0 = closest blocker gap.
+    # The closest blocker keeps overlapping shadows sharp instead of letting a
+    # far caster's softness bleed onto a near caster's edge.
+    pcss_closest_blocker_weight: float = 1.0
 
     # Depth Precision & GPU Culling
     reverse_z: bool = True  # Reversed-Z 32F floating-point depth buffer
@@ -276,6 +292,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pcf_samples=8,
         pcf_radius=1.0,
         pcf_falloff=2.0,
+        pcss_cascade_limit=0,
         ao_mode="GTAO",
         gi_mode="SSGI",
         ssgi_steps=8,
@@ -320,10 +337,17 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=500.0,
         csm_cascade_distances=(20.0, 60.0, 160.0, 500.0),
-        shadow_filter_mode="PCF",
+        shadow_filter_mode="PCSS",
         pcf_samples=16,
         pcf_radius=1.5,
         pcf_falloff=2.0,
+        pcss_cascade_limit=1,
+        pcss_search_samples=16,
+        pcss_search_radius=48.0,
+        pcss_light_size=0.10,
+        pcss_samples=24,
+        pcss_falloff=2.0,
+        pcss_max_radius=96.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=16,
@@ -375,10 +399,17 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=800.0,
         csm_cascade_distances=(25.0, 80.0, 250.0, 800.0),
-        shadow_filter_mode="PCF",
+        shadow_filter_mode="PCSS",
         pcf_samples=24,
         pcf_radius=1.75,
         pcf_falloff=2.0,
+        pcss_cascade_limit=1,
+        pcss_search_samples=24,
+        pcss_search_radius=64.0,
+        pcss_light_size=0.12,
+        pcss_samples=32,
+        pcss_falloff=2.0,
+        pcss_max_radius=128.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=24,
@@ -430,10 +461,17 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         csm_cascades=4,
         shadow_distance=1200.0,
         csm_cascade_distances=(30.0, 110.0, 380.0, 1200.0),
-        shadow_filter_mode="PCF",
+        shadow_filter_mode="PCSS",
         pcf_samples=32,
         pcf_radius=2.0,
         pcf_falloff=2.0,
+        pcss_cascade_limit=1,
+        pcss_search_samples=32,
+        pcss_search_radius=80.0,
+        pcss_light_size=0.15,
+        pcss_samples=40,
+        pcss_falloff=2.0,
+        pcss_max_radius=160.0,
         ao_mode="GTAO",
         gi_mode="RADIANCE_CASCADES",
         rc_ray_count=32,

@@ -78,14 +78,30 @@ uniform float u_ShadowBiasSlopeScale = 2.0; // Slope multiplier for the base bia
 uniform float u_ShadowBiasMinScale = 0.5;   // Lower clamp, as a multiple of the base bias
 uniform float u_ShadowBiasMaxScale = 6.0;   // Upper clamp, as a multiple of the base bias
 
-// PCF filtering. Only the near cascades are filtered: the far cascade keeps the
-// hard path because its texels are already several screen pixels wide, so a
-// wider filter there would cost taps without adding visible detail.
-uniform int u_ShadowFilterMode = 0;   // 0 = HARD everywhere, 1 = PCF on near cascades
+// Shadow filtering tiers. Each tier is limited to a prefix of the cascades:
+// the far cascades keep the cheaper path because their texels already span
+// several screen pixels, so a wider filter there costs taps without adding
+// visible detail.
+uniform int u_ShadowFilterMode = 0;   // 0 = HARD, 1 = PCF, 2 = PCSS
 uniform int u_PCFCascadeLimit = 3;    // cascades with index < this use PCF
 uniform int u_PCFSamples = 16;        // Vogel disk taps (4 to 64)
 uniform float u_PCFRadius = 1.5;      // filter radius in cascade texels
 uniform float u_PCFFalloff = 2.0;     // radial weight exponent (1 = linear cone, 2 = smooth bell)
+
+// PCSS (percentage-closer soft shadows). The penumbra is derived from the
+// receiver-to-blocker gap rather than a fixed radius, so contact shadows stay
+// sharp and only elevated casters soften.
+uniform int u_PCSS_CascadeLimit = 1;      // cascades with index < this use PCSS
+uniform int u_PCSSSearchSamples = 16;     // blocker search taps (4 to 64)
+uniform float u_PCSSSearchRadius = 48.0;  // blocker search radius in cascade texels
+uniform float u_PCSSLightSize = 0.10;     // light-source size factor (penumbra scale)
+uniform int u_PCSSSamples = 24;           // penumbra filter taps (4 to 64)
+uniform float u_PCSSFalloff = 2.0;        // radial weight exponent
+uniform float u_PCSSMaxRadius = 96.0;     // penumbra radius clamp in cascade texels
+// 0.0 = average blocker gap (classic PCSS), 1.0 = closest blocker gap.
+// The closest blocker keeps overlapping shadows sharp instead of letting a far
+// caster's softness bleed onto a near caster's edge.
+uniform float u_PCSSClosestBlockerWeight = 1.0;
 // Per-cascade atlas rect: xy = atlas UV offset, zw = atlas UV scale.
 uniform vec4 u_CascadeAtlasRect[4] = vec4[4](
     vec4(0.0, 0.0, 0.5, 0.5),
@@ -394,11 +410,110 @@ float SamplePCFShadow(ShadowCascade c) {
     return sum / max(weight_sum, 1e-5);
 }
 
-// Dispatches one cascade through the active filter. PCF is limited to the near
-// cascades: the far cascade's texels already span several screen pixels, so
-// filtering it would cost taps without adding visible detail.
+// PCSS: blocker search -> penumbra estimate -> disk filter.
+//
+// Unlike PCF, the filter radius is not authored directly. It is derived from
+// the average distance between the receiver and the blockers found around it,
+// which is the geometric projection of the light source. That is what makes
+// contact shadows stay sharp while only elevated casters soften.
+//
+// The search radius is in cascade texels and is deliberately wider than the
+// filter: a blocker outside the search footprint cannot contribute to the
+// penumbra, so the search must cover the largest gap the light can project.
+float SamplePCSSShadow(ShadowCascade c) {
+    int search_taps = clamp(u_PCSSSearchSamples, 4, 64);
+    float search_radius = max(u_PCSSSearchRadius, c.screen_texels * 0.5) * c.texel_uv;
+    float search_phi = ShadowTapPhase(c.uv, c.cascade_texels);
+
+    // Step 1: blocker search. The centre tap is included explicitly so a
+    // receiver directly under an occluder never reports "no blockers" because
+    // the coarse taps straddled it.
+    //
+    // We track both the average blocker depth and the closest one. The average
+    // is the classic PCSS estimate, but it is wrong when two shadows overlap: a
+    // near caster (small gap, sharp) and a far caster (large gap, soft) average
+    // to a medium gap, which softens the near shadow that should stay crisp.
+    // The closest blocker is what actually determines the sharpest edge at this
+    // pixel, so it is the better default.
+    float blocker_sum = 0.0;
+    int blocker_count = 0;
+    float closest_blocker = -1e20;
+    float center_depth = texture(u_ShadowAtlas, c.uv).r;
+    if (center_depth < c.depth - c.bias) {
+        blocker_sum += center_depth;
+        blocker_count++;
+        closest_blocker = max(closest_blocker, center_depth);
+    }
+    for (int i = 0; i < search_taps; ++i) {
+        vec2 tap = clamp(c.uv + VogelDiskSample(i, search_taps, search_phi) * search_radius, c.uv_min, c.uv_max);
+        float stored = texture(u_ShadowAtlas, tap).r;
+        float ref_depth = ShadowPlaneDepth(c.depth, c.depth_gradient, tap, c.uv) - c.bias;
+        if (stored < ref_depth) {
+            blocker_sum += stored;
+            blocker_count++;
+            closest_blocker = max(closest_blocker, stored);
+        }
+    }
+    if (blocker_count == 0) {
+        return 1.0;
+    }
+
+    // Step 2: penumbra from the receiver-to-blocker gap. Shadow-space depth is
+    // already measured along the light axis, so the gap converts to world units
+    // by dividing by the cascade's depth scale.
+    //
+    // ``u_PCSSClosestBlockerWeight`` blends between the average gap (0.0, the
+    // classic PCSS estimate) and the closest blocker's gap (1.0). The default
+    // is 1.0 so overlapping shadows keep the near caster's sharpness instead of
+    // inheriting the far caster's softness.
+    float avg_blocker = blocker_sum / float(blocker_count);
+    float inv_far = max(c.inv_far, 1e-6);
+    float avg_gap = max(c.depth - avg_blocker, 0.0) / inv_far;
+    float closest_gap = max(c.depth - closest_blocker, 0.0) / inv_far;
+    float gap_world = mix(avg_gap, closest_gap, clamp(u_PCSSClosestBlockerWeight, 0.0, 1.0));
+    float penumbra_world = gap_world * max(u_PCSSLightSize, 1e-5);
+    // world_texel is metres per cascade texel, so this is a plain unit
+    // conversion. Deriving it from inv_rad * cascade_texels instead would be
+    // 2x too large, because the cascade spans 2 * radius in world space.
+    float penumbra_texels = penumbra_world / max(c.world_texel, 1e-6);
+
+    // The filter may never outgrow the region the blocker search actually
+    // covered, otherwise the penumbra is unanchored and reads as a blurry blob.
+    // It is also never narrower than a screen pixel, so a contact shadow still
+    // resolves its edge instead of stair-stepping.
+    float min_radius = max(1.0, c.screen_texels * 0.5);
+    float max_radius = max(min(u_PCSSMaxRadius, u_PCSSSearchRadius * 0.9), min_radius);
+    float radius_texels = clamp(penumbra_texels, min_radius, max_radius);
+    float radius = radius_texels * c.texel_uv;
+
+    // Step 3: disk filter over the estimated penumbra. A second, decorrelated
+    // phase keeps the search and filter disks from sharing tap directions,
+    // which would correlate their error.
+    int taps = clamp(u_PCSSSamples, 4, 64);
+    float falloff = max(u_PCSSFalloff, 0.25);
+    float filter_phi = search_phi + 2.39996323;
+
+    float sum = 0.0;
+    float weight_sum = 0.0;
+    for (int i = 0; i < taps; ++i) {
+        float r2 = (float(i) + 0.5) / float(taps);
+        float w = pow(1.0 - r2, falloff);
+        sum += ShadowCmpTap(c, c.uv + VogelDiskSample(i, taps, filter_phi) * radius) * w;
+        weight_sum += w;
+    }
+    return sum / max(weight_sum, 1e-5);
+}
+
+// Dispatches one cascade through the active filter tier.
+//
+// PCSS is the narrowest tier (cascade 1 by default) because it is the most
+// expensive and its variable penumbra is most visible in the near field. PCF
+// covers the remaining near cascades, and the far cascades keep the hard path.
 float SampleCascadeShadow(int cascade, ShadowCascade c) {
-    if (u_ShadowFilterMode == 1 && cascade < u_PCFCascadeLimit) {
+    if (u_ShadowFilterMode == 2 && cascade < u_PCSS_CascadeLimit) {
+        return SamplePCSSShadow(c);
+    }
+    if (u_ShadowFilterMode >= 1 && cascade < u_PCFCascadeLimit) {
         return SamplePCFShadow(c);
     }
     return SampleHardShadow(c);
