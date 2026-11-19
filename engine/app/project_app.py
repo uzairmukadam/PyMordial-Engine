@@ -160,6 +160,7 @@ class ProjectApp:
                     screen_width=self.config.width,
                     screen_height=self.config.height,
                     app=self,
+                    settings_export_path=self.config.settings_export_path,
                 )
                 if self.engine_tweaks is not None:
                     self.engine_tweaks.sync_from_pipeline(self.pipeline)

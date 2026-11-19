@@ -34,3 +34,7 @@ class ProjectConfig:
     atmosphere_enabled: bool = True
     atmosphere_settings: dict[str, object] = field(default_factory=dict)
     custom_settings: dict[str, object] = field(default_factory=dict)
+    # Optional path for user-saved settings. When set, the debug menu offers a
+    # "Save Settings" action that writes the live graphics configuration to this
+    # INI file. Projects that do not want user-editable settings leave it None.
+    settings_export_path: Path | str | None = None

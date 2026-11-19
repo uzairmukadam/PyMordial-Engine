@@ -53,6 +53,8 @@ projects/my_game/
 ### Step 1: Define `config.py`
 Declare display, physics, and quality presets:
 ```python
+from pathlib import Path
+
 from engine.app.config import ProjectConfig
 
 
@@ -69,6 +71,25 @@ def get_project_config() -> ProjectConfig:
         enable_debug=True,
     )
 ```
+
+#### Optional: user-saved settings
+Set `settings_export_path` to opt into user-editable settings. The F2 debug
+panel then shows a **Save Settings (.ini)** button that writes the live graphics
+configuration to that file:
+
+```python
+SETTINGS_PATH = Path(__file__).resolve().parent / "settings.ini"
+
+return ProjectConfig(
+    ...,
+    settings_export_path=SETTINGS_PATH,
+)
+```
+
+Projects that leave it `None` (the default) get no save action. The file is
+grouped into sections by key prefix (`[shadows]`, `[lighting]`, `[atmosphere]`,
+…), is safe to hand-edit, and ignores unknown keys on load so an older settings
+file still works. See `engine.config.ini_export` for the reader/writer.
 
 ### Step 2: Implement World Building
 You can use the engine's built-in `DefaultWorldBuilder`:

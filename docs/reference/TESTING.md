@@ -88,6 +88,7 @@ finally:
 | `test_frustum_culling.py` | Vectorized AABB culling, batch filtering |
 | `test_hiz_pass.py` | Hi-Z pyramid construction and GPU occlusion |
 | `test_csm_stabilization.py` | Cascade splits, texel snapping, bias |
+| `test_config_ini_export.py` | INI settings round-trip, section layout, per-project opt-in |
 | `test_shadow_csm.py` | Hard-shadow CSM: cascade distance, atlas layout, fitting stability, removal of filter modes |
 | `test_spot_lights.py` | Spot light packing, shadow matrix, quadrant viewport |
 | `test_radiance_cascades.py` | RC pass wiring and parameters |
