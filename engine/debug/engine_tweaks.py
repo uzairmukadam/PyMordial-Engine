@@ -34,6 +34,13 @@ class GBufferDebugMode(IntEnum):
     CASCADE_INDEX = 14  # Selected CSM cascade index (false colour)
     CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
     CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
+    HIZ_BOUNDS_NEAREST = 17  # Hi-Z bounds: nearest linear view depth
+    HIZ_BOUNDS_FARTHEST = 18  # Hi-Z bounds: farthest linear view depth
+    HIZ_BOUNDS_SPAN = 19  # Hi-Z bounds: farthest - nearest
+    HIZ_BOUNDS_MASK = 20  # Hi-Z bounds: empty / occupied mask
+    HIZ_BOUNDS_INVALID = 21  # Hi-Z bounds: highlight corrupt cells
+    HIZ_BOUNDS_RAW = 22  # Hi-Z bounds: nearest (R) / farthest (G) / empty (B)
+    DIRECT_RADIANCE = 23  # Current-frame direct diffuse + emissive (GI source)
 
 
 class EngineTweaks:
@@ -232,6 +239,15 @@ class EngineTweaks:
         "film_grain_enabled",
         "film_grain_intensity",
         "hiz_debug_mip",
+        "ssgi_backend",
+        "ssr_backend",
+        "ao_backend",
+        "rc_backend",
+        "ssgi_debug_view",
+        "ao_debug_view",
+        "rc_debug_view",
+        "rc_temporal_debug_view",
+        "ssgi_surface_reject",
         "_on_quality_changed",
         "_on_vsync_changed",
         "_version",
@@ -325,6 +341,18 @@ class EngineTweaks:
         self.rc_thickness = 0.15
         self.rc_temporal_blend = 0.96
         self.rc_resolution_scale = 1.0
+        # Tracing backends. LEGACY preserves the pre-existing implementation;
+        # the alternative selects the shared Hi-Z tracer / explicit cascades.
+        self.ssgi_backend = "LEGACY"
+        self.ssr_backend = "LEGACY"
+        self.ao_backend = "LEGACY"
+        self.rc_backend = "LEGACY"
+        # Per-pass debug views (0 = off).
+        self.ssgi_debug_view = 0
+        self.ao_debug_view = 0
+        self.rc_debug_view = 0
+        self.rc_temporal_debug_view = 0
+        self.ssgi_surface_reject = False
         self.ibl_enabled = True
         self.ssr_enabled = True
         self.ssr_steps = 64
@@ -704,6 +732,16 @@ class EngineTweaks:
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
+            # Tracing backends and per-pass debug views.
+            p_cfg.ssgi_backend = str(self.ssgi_backend)
+            p_cfg.ssr_backend = str(self.ssr_backend)
+            p_cfg.ao_backend = str(self.ao_backend)
+            p_cfg.rc_backend = str(self.rc_backend)
+            p_cfg.ssgi_debug_view = int(self.ssgi_debug_view)
+            p_cfg.ao_debug_view = int(self.ao_debug_view)
+            p_cfg.rc_debug_view = int(self.rc_debug_view)
+            p_cfg.rc_temporal_debug_view = int(self.rc_temporal_debug_view)
+            p_cfg.ssgi_surface_reject = bool(self.ssgi_surface_reject)
 
             # 4. Reflections & Anti-Aliasing
             p_cfg.ibl_enabled = bool(self.ibl_enabled)
@@ -818,6 +856,7 @@ class EngineTweaks:
             # 10. Debug Displays & Sun
             p_cfg.wireframe = bool(self.show_wireframe)
             p_cfg.debug_gbuffer = int(self.gbuffer_debug)
+            p_cfg.hiz_debug_mip = int(self.hiz_debug_mip)
             p_cfg.sun_intensity = float(self.sun_lux)
 
             # Ensure post_process config is kept in lockstep
@@ -1119,6 +1158,7 @@ class EngineTweaks:
             if hasattr(self.quality_preset, "value")
             else str(self.quality_preset),
             "show_wireframe": bool(self.show_wireframe),
+            "hiz_debug_mip": int(self.hiz_debug_mip),
             "vsync_enabled": bool(self.vsync_enabled),
             "tonemap_mode": str(self.tonemap_mode),
             "exposure": float(self.exposure),
@@ -1179,6 +1219,15 @@ class EngineTweaks:
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),
             "ao_resolution_scale": float(self.ao_resolution_scale),
+            "ssgi_backend": str(self.ssgi_backend),
+            "ssr_backend": str(self.ssr_backend),
+            "ao_backend": str(self.ao_backend),
+            "rc_backend": str(self.rc_backend),
+            "ssgi_debug_view": int(self.ssgi_debug_view),
+            "ao_debug_view": int(self.ao_debug_view),
+            "rc_debug_view": int(self.rc_debug_view),
+            "rc_temporal_debug_view": int(self.rc_temporal_debug_view),
+            "ssgi_surface_reject": bool(self.ssgi_surface_reject),
             "ibl_enabled": bool(self.ibl_enabled),
             "ssr_enabled": bool(self.ssr_enabled),
             "ssr_steps": int(self.ssr_steps),

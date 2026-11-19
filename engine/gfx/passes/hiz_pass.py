@@ -3,6 +3,16 @@
 Downsamples the full-resolution Reversed-Z depth buffer into an analytical
 depth mipmap pyramid using GPU compute shaders. Accelerates screen-space
 raymarching (SSR, SSGI), contact shadows, and GPU occlusion culling.
+
+Two hierarchies are built from the same depth buffer:
+
+* ``hiz_texture`` — the legacy single-channel R32F raw reversed-Z pyramid.
+  Published as ``hiz_texture`` / ``hiz_mip_count`` and still consumed by SSR,
+  SSGI, GPU culling and the resolve debug view.
+* ``hiz_bounds_texture`` — the new RG32F positive linear-view-depth bounds
+  hierarchy. Published as ``hiz_bounds_texture`` / ``hiz_bounds_mip_count``.
+  R = nearest linear depth, G = farthest linear depth, and an empty cell
+  satisfies nearest > farthest. See ``shaders/common/hiz_bounds.glsl``.
 """
 
 from __future__ import annotations
@@ -37,6 +47,13 @@ class HiZPass(RenderPass):
         "_u_down_src_tex",
         "_u_down_src_level",
         "_u_down_reverse_z",
+        "hiz_bounds_texture",
+        "bounds_copy_prog",
+        "bounds_downsample_prog",
+        "_u_bounds_copy_depth",
+        "_u_bounds_copy_inv_proj",
+        "_u_bounds_down_src_tex",
+        "_u_bounds_down_src_level",
         "cull_prog",
         "_u_cull_vp",
         "_u_cull_screen",
@@ -68,6 +85,10 @@ class HiZPass(RenderPass):
         self.downsample_prog = self.ctx.compute_shader(_load_shader("hiz_downsample.comp"))
         self.cull_prog = self.ctx.compute_shader(_load_shader("cull_indirect.comp"))
 
+        # Linear-view-depth bounds hierarchy (RG32F).
+        self.bounds_copy_prog = self.ctx.compute_shader(_load_shader("hiz_bounds_copy.comp"))
+        self.bounds_downsample_prog = self.ctx.compute_shader(_load_shader("hiz_bounds_downsample.comp"))
+
         self._u_copy_depth = self.copy_prog.get("u_DepthTexture", None)
         if self._u_copy_depth is not None:
             self._u_copy_depth.value = 0
@@ -80,6 +101,16 @@ class HiZPass(RenderPass):
         self._u_down_reverse_z = self.downsample_prog.get("u_ReverseZ", None)
         if self._u_down_reverse_z is not None:
             self._u_down_reverse_z.value = 1 if self.reverse_z else 0
+
+        self._u_bounds_copy_depth = self.bounds_copy_prog.get("u_DepthTexture", None)
+        if self._u_bounds_copy_depth is not None:
+            self._u_bounds_copy_depth.value = 0
+        self._u_bounds_copy_inv_proj = self.bounds_copy_prog.get("u_InvProjection", None)
+
+        self._u_bounds_down_src_tex = self.bounds_downsample_prog.get("u_SourceTexture", None)
+        if self._u_bounds_down_src_tex is not None:
+            self._u_bounds_down_src_tex.value = 0
+        self._u_bounds_down_src_level = self.bounds_downsample_prog.get("u_SrcLevel", None)
 
         # Uniforms for GPU occlusion culling
         self._u_cull_vp = self.cull_prog.get("u_ViewProjection", None)
@@ -115,6 +146,14 @@ class HiZPass(RenderPass):
         self.hiz_texture.repeat_y = False
         self.hiz_texture.build_mipmaps()
 
+        # RG32F linear-view-depth bounds hierarchy. Same size and mip count as
+        # the legacy pyramid; R = nearest, G = farthest, empty = nearest > farthest.
+        self.hiz_bounds_texture = self.ctx.texture((self.width, self.height), 2, dtype="f4")
+        self.hiz_bounds_texture.filter = (moderngl.NEAREST_MIPMAP_NEAREST, moderngl.NEAREST)
+        self.hiz_bounds_texture.repeat_x = False
+        self.hiz_bounds_texture.repeat_y = False
+        self.hiz_bounds_texture.build_mipmaps()
+
     def resize(self, width: int, height: int) -> None:
         if self.width == width and self.height == height:
             return
@@ -122,6 +161,8 @@ class HiZPass(RenderPass):
         self.height = height
         if hasattr(self, "hiz_texture") and self.hiz_texture is not None:
             self.hiz_texture.release()
+        if hasattr(self, "hiz_bounds_texture") and self.hiz_bounds_texture is not None:
+            self.hiz_bounds_texture.release()
         self._allocate_pyramid()
 
     def execute(
@@ -158,9 +199,53 @@ class HiZPass(RenderPass):
             gx, gy = self.dispatch_groups[k]
             self.downsample_prog.run(group_x=gx, group_y=gy)
 
+        # 3. Linear-view-depth bounds hierarchy (RG32F).
+        self._build_bounds_hierarchy(ctx, src_depth)
+
         # Publish Hi-Z depth pyramid resources to graph context
         ctx.resources["hiz_texture"] = self.hiz_texture
         ctx.resources["hiz_mip_count"] = self.num_mips
+
+    def _build_bounds_hierarchy(self, ctx: RenderGraphContext, src_depth: moderngl.Texture) -> None:
+        """Builds the RG32F nearest/farthest linear-depth bounds hierarchy.
+
+        Mip zero converts reversed-Z hardware depth into positive linear view
+        depth; every coarser mip conservatively reduces the 2x2 child intervals.
+        """
+        inv_proj = getattr(getattr(ctx, "frame_context", None), "inv_proj_mat", None)
+        if inv_proj is None:
+            # Without a projection the conversion is undefined; publish nothing
+            # so consumers fall back instead of reading garbage.
+            return
+
+        src_depth.use(location=0)
+        if self._u_bounds_copy_inv_proj is not None:
+            self._u_bounds_copy_inv_proj.write(inv_proj.tobytes())
+
+        self.hiz_bounds_texture.bind_to_image(0, read=False, write=True, level=0)
+        gx0, gy0 = self.dispatch_groups[0]
+        self.bounds_copy_prog.run(group_x=gx0, group_y=gy0)
+
+        # The next dispatch samples the mip just written, so the image writes
+        # must be visible to texture fetches before it runs.
+        self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
+
+        self.hiz_bounds_texture.use(location=0)
+        for k in range(1, self.num_mips):
+            if self._u_bounds_down_src_level is not None:
+                self._u_bounds_down_src_level.value = k - 1
+
+            self.hiz_bounds_texture.bind_to_image(0, read=False, write=True, level=k)
+            gx, gy = self.dispatch_groups[k]
+            self.bounds_downsample_prog.run(group_x=gx, group_y=gy)
+
+            if k + 1 < self.num_mips:
+                self.ctx.memory_barrier(
+                    moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
+                )
+
+        ctx.resources["hiz_bounds_texture"] = self.hiz_bounds_texture
+        ctx.resources["hiz_bounds_mip_count"] = self.num_mips
 
     def cull_aabbs_gpu(
         self,
@@ -223,6 +308,8 @@ class HiZPass(RenderPass):
     def destroy(self) -> None:
         if hasattr(self, "hiz_texture") and self.hiz_texture is not None:
             self.hiz_texture.release()
+        if hasattr(self, "hiz_bounds_texture") and self.hiz_bounds_texture is not None:
+            self.hiz_bounds_texture.release()
         if hasattr(self, "ssbo_aabb") and self.ssbo_aabb is not None:
             self.ssbo_aabb.release()
         if hasattr(self, "ssbo_visibility") and self.ssbo_visibility is not None:

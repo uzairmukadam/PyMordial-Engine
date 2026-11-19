@@ -35,6 +35,35 @@ except ImportError:
     gl = None
 
 
+# Hi-Z bounds debug modes (see GBufferDebugMode). These read the shared
+# u_HiZDebugMip uniform, so the mip selector applies to them too.
+_HIZ_BOUNDS_MODES = frozenset(
+    {
+        GBufferDebugMode.HIZ_BOUNDS_NEAREST,
+        GBufferDebugMode.HIZ_BOUNDS_FARTHEST,
+        GBufferDebugMode.HIZ_BOUNDS_SPAN,
+        GBufferDebugMode.HIZ_BOUNDS_MASK,
+        GBufferDebugMode.HIZ_BOUNDS_INVALID,
+        GBufferDebugMode.HIZ_BOUNDS_RAW,
+    }
+)
+
+# Tracing backend choices. LEGACY is the pre-existing implementation; the
+# alternative selects the shared Hi-Z tracer / explicit cascade model.
+_SSGI_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
+_SSR_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
+_AO_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
+_RC_BACKENDS = ("LEGACY", "CASCADES")
+
+
+def _backend_index(value: str, choices: tuple[str, ...]) -> int:
+    """Returns the combo index for a backend name, defaulting to LEGACY."""
+    try:
+        return choices.index(str(value).upper())
+    except ValueError:
+        return 0
+
+
 class DebugMenu:
     """Coordinates independent Dear ImGui debug panels for F1, F2, and F3."""
 
@@ -419,6 +448,35 @@ class DebugMenu:
                 imgui.end_table()
 
             imgui.separator()
+            imgui.text("GPU Pass Timings (async, ms)")
+            profiler = getattr(getattr(self.app, "pipeline", None), "gpu_profiler", None)
+            if profiler is None or not profiler.enabled:
+                imgui.text_disabled("GPU pass timing unavailable")
+            elif not profiler.results():
+                imgui.text_disabled("GPU pass timing warming up")
+            else:
+                if imgui.begin_table(
+                    "GpuPasses",
+                    2,
+                    imgui.TableFlags_.borders_inner_h.value | imgui.TableFlags_.sizing_stretch_prop.value,
+                ):
+                    imgui.table_setup_column("Region")
+                    imgui.table_setup_column("GPU ms")
+                    imgui.table_headers_row()
+                    for region, ms in profiler.results().items():
+                        imgui.table_next_row()
+                        imgui.table_next_column()
+                        imgui.text(region)
+                        imgui.table_next_column()
+                        col = (
+                            imgui.ImVec4(0.29, 0.87, 0.50, 1.0)
+                            if ms <= 2.0
+                            else (imgui.ImVec4(0.98, 0.80, 0.18, 1.0) if ms <= 5.0 else imgui.ImVec4(0.94, 0.27, 0.27, 1.0))
+                        )
+                        imgui.text_colored(col, f"{ms:.3f}")
+                    imgui.end_table()
+
+            imgui.separator()
             stats = m.runtime_stats
             imgui.text(
                 f"Scene: {stats['active_entities']:,}/{stats['entity_capacity']:,} entities  |  "
@@ -563,6 +621,11 @@ class DebugMenu:
                     hiz_changed, new_hiz_mip = imgui.slider_int("Hi-Z Mip Level", et.hiz_debug_mip, 0, 10)
                     if hiz_changed:
                         et.hiz_debug_mip = new_hiz_mip
+                elif et.gbuffer_debug in _HIZ_BOUNDS_MODES:
+                    # The bounds hierarchy debug views read the same mip uniform.
+                    hiz_changed, new_hiz_mip = imgui.slider_int("Hi-Z Bounds Mip Level", et.hiz_debug_mip, 0, 10)
+                    if hiz_changed:
+                        et.hiz_debug_mip = new_hiz_mip
 
             if imgui.collapsing_header(
                 "Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value
@@ -577,6 +640,14 @@ class DebugMenu:
                     self.toast.show(f"GI Mode: {et.gi_mode}", duration=2.0)
 
                 if et.gi_mode == "SSGI":
+                    ssgi_backend_changed, ssgi_backend_idx = imgui.combo(
+                        "SSGI Backend", _backend_index(et.ssgi_backend, _SSGI_BACKENDS), _SSGI_BACKENDS
+                    )
+                    if ssgi_backend_changed:
+                        et.ssgi_backend = _SSGI_BACKENDS[ssgi_backend_idx]
+                        et.mark_custom()
+                        self.toast.show(f"SSGI Backend: {et.ssgi_backend}", duration=2.0)
+
                     ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 32)
                     if ssgi_st_changed:
                         et.ssgi_steps = ssgi_st_val
@@ -639,6 +710,14 @@ class DebugMenu:
                             et.mark_custom()
 
                 if et.gi_mode == "RADIANCE_CASCADES":
+                    rc_backend_changed, rc_backend_idx = imgui.combo(
+                        "RC Backend", _backend_index(et.rc_backend, _RC_BACKENDS), _RC_BACKENDS
+                    )
+                    if rc_backend_changed:
+                        et.rc_backend = _RC_BACKENDS[rc_backend_idx]
+                        et.mark_custom()
+                        self.toast.show(f"RC Backend: {et.rc_backend}", duration=2.0)
+
                     rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
                     if rc_ray_count_changed:
                         et.rc_ray_count = rc_ray_count
@@ -715,6 +794,15 @@ class DebugMenu:
                     self.toast.show(f"AO Mode: {et.ao_mode}", duration=2.0)
 
                 if et.ao_mode != "OFF":
+                    if et.ao_mode == "GTAO":
+                        ao_backend_changed, ao_backend_idx = imgui.combo(
+                            "AO Backend", _backend_index(et.ao_backend, _AO_BACKENDS), _AO_BACKENDS
+                        )
+                        if ao_backend_changed:
+                            et.ao_backend = _AO_BACKENDS[ao_backend_idx]
+                            et.mark_custom()
+                            self.toast.show(f"AO Backend: {et.ao_backend}", duration=2.0)
+
                     ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 3.0, "%.2f")
                     if ao_in_changed:
                         et.ao_intensity = ao_in_val
@@ -748,6 +836,14 @@ class DebugMenu:
                     self.toast.show(f"SSR: {'ON' if ssr_val else 'OFF'}", duration=1.5)
 
                 if et.ssr_enabled:
+                    ssr_backend_changed, ssr_backend_idx = imgui.combo(
+                        "SSR Backend", _backend_index(et.ssr_backend, _SSR_BACKENDS), _SSR_BACKENDS
+                    )
+                    if ssr_backend_changed:
+                        et.ssr_backend = _SSR_BACKENDS[ssr_backend_idx]
+                        et.mark_custom()
+                        self.toast.show(f"SSR Backend: {et.ssr_backend}", duration=2.0)
+
                     ssr_st_changed, ssr_st_val = imgui.slider_int("SSR Steps", et.ssr_steps, 24, 128)
                     if ssr_st_changed:
                         et.ssr_steps = ssr_st_val

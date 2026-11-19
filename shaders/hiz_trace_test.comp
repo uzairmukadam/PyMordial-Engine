@@ -1,0 +1,69 @@
+#version 450 core
+// ============================================================================
+//  Hi-Z Tracer Validation Shader
+//
+//  Runs one deterministic ray per invocation and writes the full HiZTraceHit
+//  so Python can assert on hit/miss, UV, depth, distance, iterations and mip.
+//
+//  Output (rgba32f, one row per ray):
+//      r = hit flag
+//      g = hit UV.x
+//      b = hit UV.y
+//      a = hit linear depth
+//  Output2 (rgba32f, one row per ray):
+//      r = ray distance
+//      g = iterations
+//      b = final mip
+//      a = miss reason
+// ============================================================================
+
+#include "shaders/common/depth.glsl"
+#include "shaders/common/hiz_bounds.glsl"
+
+layout(local_size_x = 1, local_size_y = 1) in;
+
+layout(binding = 0) uniform sampler2D u_HiZTexture;
+layout(binding = 1) uniform sampler2D u_DepthTexture;
+layout(rgba32f, binding = 0) uniform writeonly image2D u_OutHit;
+layout(rgba32f, binding = 1) uniform writeonly image2D u_OutTrace;
+
+// Declared before the tracer include so its TraceHiZ() convenience wrapper can
+// reference them.
+uniform mat4 u_Projection;
+uniform mat4 u_InvProjection;
+uniform int u_RayCount;
+uniform vec3 u_Origin[64];
+uniform vec3 u_Direction[64];
+uniform float u_MinDistance[64];
+uniform float u_MaxDistance[64];
+uniform float u_Thickness[64];
+uniform int u_MaxIterations[64];
+
+#include "shaders/common/hiz_trace.glsl"
+
+void main() {
+    int index = int(gl_GlobalInvocationID.x);
+    if (index >= u_RayCount) {
+        return;
+    }
+
+    HiZTraceRequest request;
+    request.originView = u_Origin[index];
+    request.directionView = u_Direction[index];
+    request.minDistance = u_MinDistance[index];
+    request.maxDistance = u_MaxDistance[index];
+    request.thickness = u_Thickness[index];
+    request.startMip = 0;
+    request.maxIterations = u_MaxIterations[index];
+
+    HiZTraceHit hit = TraceHiZWithMatrices(
+        u_HiZTexture, u_DepthTexture, request, u_Projection, u_InvProjection
+    );
+
+    imageStore(u_OutHit, ivec2(index, 0), vec4(hit.hit ? 1.0 : 0.0, hit.uv, hit.linearDepth));
+    imageStore(
+        u_OutTrace,
+        ivec2(index, 0),
+        vec4(hit.rayDistance, float(hit.iterations), float(hit.finalMip), float(hit.missReason))
+    );
+}

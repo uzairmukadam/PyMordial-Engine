@@ -41,7 +41,15 @@ def headless_ctx():
 
 
 def _resolve_source() -> str:
-    return RESOLVE_SHADER.read_text(encoding="utf-8")
+    """Returns the resolve shader with its #include directives expanded.
+
+    The shadow sampling code lives in ``shaders/common/csm_sampling.glsl`` so the
+    direct-radiance pass can share it. Inspecting the expanded source keeps these
+    tests pinned to what the driver actually compiles.
+    """
+    from engine.gfx.shader_utils import load_shader
+
+    return load_shader("deferred_resolve.frag")
 
 
 def _legacy_rects(atlas_size: int) -> list[tuple[int, int, int, int]]:

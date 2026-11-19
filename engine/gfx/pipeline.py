@@ -23,6 +23,7 @@ from engine.gfx.culling import FrustumCuller
 from engine.gfx.environment import create_default_environment
 from engine.gfx.frame_context import FrameContext
 from engine.gfx.g_buffer import GBuffer
+from engine.gfx.gpu_profiler import GpuPassProfiler
 from engine.gfx.material_registry import MaterialRegistry
 from engine.gfx.mdi import MultiDrawIndirect
 from engine.gfx.mega_buffer import MegaBuffer, MeshAllocation
@@ -31,6 +32,7 @@ from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
 from engine.gfx.passes.decal_pass import DecalPass
+from engine.gfx.passes.direct_radiance_pass import DirectRadiancePass
 from engine.gfx.passes.exposure_pass import ExposurePass
 from engine.gfx.passes.fxaa_pass import FXAAPass
 from engine.gfx.passes.hiz_pass import HiZPass
@@ -129,6 +131,7 @@ class RenderPipeline:
         "ssdm_pass",
         "decal_pass",
         "hiz_pass",
+        "direct_radiance_pass",
         "culler",
         "stats_visible_entities",
         "stats_culled_entities",
@@ -261,6 +264,7 @@ class RenderPipeline:
         "render_graph",
         "render_features",
         "_render_services",
+        "gpu_profiler",
     )
 
     def __init__(
@@ -462,6 +466,9 @@ class RenderPipeline:
 
         # Hierarchical-Z (Hi-Z) Depth Pyramid Pass
         self.hiz_pass = HiZPass(self.ctx, w, h, reverse_z=self.config.reverse_z)
+
+        # Current-frame direct radiance (GI source for SSGI / future RC)
+        self.direct_radiance_pass = DirectRadiancePass(self.ctx, w, h)
 
         self.resolve_prog = self.ctx.program(
             vertex_shader=quad_vert,
@@ -680,6 +687,10 @@ class RenderPipeline:
             material_registry=self.material_registry,
         )
         self.render_graph = self._build_render_graph()
+
+        # Non-blocking per-pass GPU timing. Timestamp queries are read from a
+        # ring of older frames, so this never stalls the pipeline.
+        self.gpu_profiler = GpuPassProfiler(self.ctx)
 
         # Automatically synchronize framebuffers with window resolution changes
         subscribe_event(WindowResizeEvent, self._on_window_resize, priority=90)
@@ -925,6 +936,7 @@ class RenderPipeline:
         self.ssdm_pass.resize(width, height)
         self.decal_pass.resize(width, height)
         self.hiz_pass.resize(width, height)
+        self.direct_radiance_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(
             width,
@@ -959,6 +971,7 @@ class RenderPipeline:
         self.bloom_pass.resize(width, height)
         self.water_pass.resize(width, height)
         self.post_process.resize(width, height)
+        self.gpu_profiler.resize(width, height)
 
         if gl is not None:
             try:
@@ -1050,6 +1063,9 @@ class RenderPipeline:
         active_count = ecs.active_count
         if active_count <= 0:
             return
+
+        profiler = self.gpu_profiler
+        profiler.begin_frame()
 
         w, h = self.ctx_wrapper.width, self.ctx_wrapper.height
         aspect = w / (h if h > 0 else 1)
@@ -1427,6 +1443,7 @@ class RenderPipeline:
         is_wireframe = getattr(self.config, "wireframe", False)
         if is_wireframe:
             self.ctx.wireframe = True
+        profiler.begin("G-buffer")
         try:
             if self._u_gbuffer_prev_vp is not None:
                 self._u_gbuffer_prev_vp.write(self._prev_vp_mat.tobytes())
@@ -1456,6 +1473,7 @@ class RenderPipeline:
                     self._u_tess_prev_vp.write(self._prev_vp_mat.tobytes())
                 self.tess_mdi.submit(self.gbuffer_tess_vao, self.gbuffer_tess_prog)
         finally:
+            profiler.end()
             if is_wireframe:
                 self.ctx.wireframe = False
 
@@ -1476,10 +1494,19 @@ class RenderPipeline:
         self.decal_pass.execute(ctx, self.g_buffer)
 
         # ---- PASS 2.7: Hierarchical-Z (Hi-Z) Depth Pyramid Pass ----
-        self.hiz_pass.execute(ctx)
+        with profiler.region("Hi-Z"):
+            self.hiz_pass.execute(ctx)
+
+        # ---- PASS 2.8: Current-Frame Direct Radiance (GI source) ----
+        # Runs after shadows and Hi-Z so SSGI samples this frame's direct
+        # diffuse + emissive instead of a stale composited HDR frame.
+        ctx.resources["spot_shadow_map"] = self.spot_shadow_map
+        with profiler.region("Direct radiance"):
+            self.direct_radiance_pass.execute(ctx)
 
         # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
-        self.ao_pass.execute(ctx)
+        with profiler.region("AO"):
+            self.ao_pass.execute(ctx)
 
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
@@ -1491,18 +1518,21 @@ class RenderPipeline:
         if self.config.gi_mode == "RADIANCE_CASCADES":
             ctx.resources["prev_view"] = self._prev_view_mat
             self.ssgi_pass.invalidate_history()
-            self.rc_pass.execute(ctx)
+            with profiler.region("RC total"):
+                self.rc_pass.execute(ctx)
         elif self.config.gi_mode == "SSGI":
             self.rc_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
-            self.ssgi_pass.execute(ctx)
+            with profiler.region("SSGI total"):
+                self.ssgi_pass.execute(ctx)
         else:
             self.rc_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
 
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)
-        self.ssr_pass.execute(ctx)
+        with profiler.region("SSR"):
+            self.ssr_pass.execute(ctx)
 
         # ---- PASS 6.5: Environment Sky & Atmosphere (provider-owned) ----
         env.render_sky(
@@ -1547,6 +1577,16 @@ class RenderPipeline:
 
         rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
         rc_tex.use(location=15)
+
+        # RG32F linear-view-depth bounds hierarchy (debug visualization only).
+        hiz_bounds_tex = ctx.resources.get("hiz_bounds_texture", None)
+        if hiz_bounds_tex is not None:
+            hiz_bounds_tex.use(location=17)
+
+        # Current-frame direct radiance (debug visualization).
+        direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
+        if direct_radiance_tex is not None:
+            direct_radiance_tex.use(location=18)
 
         # Set resolve uniforms
         if self._u_shadow_bias is not None:
@@ -1630,7 +1670,9 @@ class RenderPipeline:
         env.apply_resolve_uniforms(self.resolve_prog)
         env.apply_sun_direction(self.resolve_prog, true_sun_dir)
 
+        profiler.begin("Deferred resolve")
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
+        profiler.end()
 
         env.render_clouds(
             hdr_fbo=self.post_process.hdr_fbo,
@@ -1784,6 +1826,8 @@ class RenderPipeline:
         # Clear dynamic point lights for the next frame
         self.lights_pass.clear()
 
+        profiler.end_frame()
+
     @property
     def output_texture_id(self) -> int:
         """Exposes OpenGL texture handle for ImGui viewport dock."""
@@ -1791,6 +1835,7 @@ class RenderPipeline:
 
     def destroy(self) -> None:
         unsubscribe_event(WindowResizeEvent, self._on_window_resize)
+        self.gpu_profiler.destroy()
         self.environment.destroy()
         self.debug.destroy()
         self.resources.close()
@@ -1833,6 +1878,7 @@ class RenderPipeline:
         self.ssdm_pass.destroy()
         self.decal_pass.destroy()
         self.hiz_pass.destroy()
+        self.direct_radiance_pass.destroy()
         self.tess_mdi.destroy()
         self.gbuffer_tess_prog.release()
         self.gbuffer_tess_vao.release()

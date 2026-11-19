@@ -1,0 +1,42 @@
+#version 450 core
+// ============================================================================
+//  Depth Utility Validation Shader
+//
+//  Exercises shaders/common/depth.glsl against a real depth buffer so the
+//  round trip (depth -> view position -> UV) can be verified from Python.
+//
+//  Output A (rgba32f): rgb = reconstructed view position, a = linear view depth
+//  Output B (rgba32f): rg  = round-trip UV, b = background flag, a = in-bounds
+// ============================================================================
+
+#include "shaders/common/depth.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D u_DepthTexture;
+layout(rgba32f, binding = 0) uniform writeonly image2D u_OutPosition;
+layout(rgba32f, binding = 1) uniform writeonly image2D u_OutRoundTrip;
+
+uniform mat4 u_Projection;
+uniform mat4 u_InvProjection;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(u_OutPosition);
+    if (pixel.x >= size.x || pixel.y >= size.y) {
+        return;
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    float rawDepth = texelFetch(u_DepthTexture, pixel, 0).r;
+
+    bool background = IsBackgroundDepth(rawDepth);
+    vec3 viewPosition = ReconstructViewPosition(uv, rawDepth, u_InvProjection);
+    float linearDepth = RawDepthToLinearViewDepth(uv, rawDepth, u_InvProjection);
+
+    vec2 roundTripUV = ProjectViewPositionToUV(viewPosition, u_Projection);
+    bool inBounds = IsUVInBounds(roundTripUV);
+
+    imageStore(u_OutPosition, pixel, vec4(viewPosition, linearDepth));
+    imageStore(u_OutRoundTrip, pixel, vec4(roundTripUV, background ? 1.0 : 0.0, inBounds ? 1.0 : 0.0));
+}

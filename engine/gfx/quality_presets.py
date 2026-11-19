@@ -87,6 +87,9 @@ class RenderConfig:
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
     ao_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # GTAO backend: "LEGACY" (horizon march) or "HIZ_BOUNDS" (bounds-rejected).
+    ao_backend: str = "LEGACY"
+    ao_debug_view: int = 0  # 0=final, 1=mip, 2=occupancy, 3=rejected, 4=refined
 
     # Global Illumination (SSGI vs Radiance Cascades)
     gi_mode: str = "RADIANCE_CASCADES"  # "OFF", "IBL", "SSGI", "RADIANCE_CASCADES"
@@ -101,6 +104,12 @@ class RenderConfig:
     # the camera moves.
     ssgi_temporal_enabled: bool = True
     ssgi_temporal_blend: float = 0.90  # history weight (0 = off, 0.95 = heavy)
+    # Tracing backend: "LEGACY" (fixed-step marcher) or "HIZ_BOUNDS" (shared
+    # hierarchical tracer over the RG32F linear-depth bounds hierarchy).
+    ssgi_backend: str = "LEGACY"
+    ssgi_hiz_max_iterations: int = 64  # iteration budget for the shared tracer
+    ssgi_debug_view: int = 0  # 0=off, 1=raw, 2=hit UV, 3=hit dist, 4=hit ratio, 5=iters, 6=miss, 7=self, 8=surface
+    ssgi_surface_reject: bool = False  # reject hits on the receiver's own surface ID
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
     rc_cascades: int = 3
@@ -114,12 +123,23 @@ class RenderConfig:
     rc_intensity: float = 1.0
     rc_temporal_blend: float = 0.96
     rc_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # Backend: "LEGACY" (per-pixel raymarch) or "CASCADES" (explicit probe cascades).
+    rc_backend: str = "LEGACY"
+    rc_hiz_max_iterations: int = 64  # iteration budget for cascade interval tracing
+    rc_temporal_enabled: bool = True
+    rc_debug_view: int = 0  # reconstruction: 0=irradiance, 1=irradiance, 2=confidence, 3=rejected
+    rc_temporal_debug_view: int = 0  # 0=resolved, 1=current, 2=depth conf, 3=motion conf, 4=history weight
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
     ssr_enabled: bool = True
     ssr_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
     ssr_mode: str = "HIZ"  # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
+    # Tracing backend: "LEGACY" (in-shader march) or "HIZ_BOUNDS" (shared
+    # hierarchical tracer over the RG32F linear-depth bounds hierarchy).
+    ssr_backend: str = "LEGACY"
+    ssr_hiz_max_iterations: int = 96  # iteration budget for the shared tracer
+    ssr_debug_view: int = 0  # 0=off, 1=hit UV, 2=distance, 3=iterations, 4=miss reason, 5=final mip
     ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.12
@@ -211,7 +231,7 @@ class RenderConfig:
     fog_debug_mode: int = 0  # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
     # Debug Visualization
-    debug_gbuffer: int = 0  # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage
+    debug_gbuffer: int = 0  # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage, 17..22=HiZ bounds
     wireframe: bool = False  # ModernGL polygon line rasterization mode
 
     # Phase 6: Parallax Occlusion Mapping (POM)

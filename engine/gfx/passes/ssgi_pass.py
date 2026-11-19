@@ -1,8 +1,26 @@
 """Screen-Space Global Illumination (SSGI) Pass for PyMordial Engine.
 
 Executes cosine-weighted raymarching over the G-Buffer to compute near-field
-diffuse indirect bounces and contact color bleeding, followed by normal- and
-depth-aware edge-preserving filtering.
+diffuse indirect bounces and contact color bleeding.
+
+Reconstruction is split into three independent responsibilities:
+
+1. **Spatial filter** (``ssgi_blur.frag``) — run twice, horizontally then
+   vertically. It never reads history or motion vectors.
+2. **Temporal resolve** (``ssgi_temporal.frag``) — run exactly once per frame.
+   It is the only stage that reads history and motion vectors.
+3. **History update** — the resolved result is copied into the history target.
+
+Resource roles:
+
+    raw_ssgi_tex       ssgi_raw        current trace result
+    spatial_x_tex      ssgi_spatial_x  horizontal filtered result
+    spatial_y_tex      ssgi_spatial_y  vertical filtered result (current spatial)
+    resolved_ssgi_tex  ssgi_resolved   final temporal result (published)
+    history_ssgi_tex   ssgi_history    previous resolved result
+
+History contract: ``rgb`` = resolved indirect radiance, ``a`` = positive linear
+view depth of the pixel that produced ``rgb``.
 """
 
 from __future__ import annotations
@@ -31,59 +49,100 @@ class SSGIPass(RenderPass):
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
 
-        # RGBA16F ping-pong buffers at the configured render scale
-        self.raw_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.raw_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.raw_ssgi_tex.repeat_x = False
-        self.raw_ssgi_tex.repeat_y = False
-
-        self.blur_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.blur_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.blur_ssgi_tex.repeat_x = False
-        self.blur_ssgi_tex.repeat_y = False
-
-        # Temporal history. Holds the previous frame's resolved result, with the
-        # view depth in alpha so the next frame can validate the reprojection.
-        self.history_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.history_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.history_ssgi_tex.repeat_x = False
-        self.history_ssgi_tex.repeat_y = False
-
-        self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
-        self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssgi_tex])
-        self.history_fbo = self.ctx.framebuffer(color_attachments=[self.history_ssgi_tex])
+        self._create_targets()
 
         # 1x1 black fallback
         self.black_fallback = self.ctx.texture((1, 1), 4, data=b"\x00" * 8, dtype="f2")
 
         # Compile Shaders
         quad_vert = load_shader("fullscreen_quad.vert")
-        ssgi_frag = load_shader("ssgi.frag")
-        blur_frag = load_shader("ssgi_blur.frag")
-
-        self.ssgi_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssgi_frag)
-        self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=blur_frag)
+        self.ssgi_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=load_shader("ssgi.frag"))
+        self.ssgi_hiz_prog = self.ctx.program(
+            vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_trace.frag")
+        )
+        self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_blur.frag"))
+        self.temporal_prog = self.ctx.program(
+            vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_temporal.frag")
+        )
 
         self.ssgi_vao = self.ctx.vertex_array(self.ssgi_prog, [])
+        self.ssgi_hiz_vao = self.ctx.vertex_array(self.ssgi_hiz_prog, [])
         self.blur_vao = self.ctx.vertex_array(self.blur_prog, [])
+        self.temporal_vao = self.ctx.vertex_array(self.temporal_prog, [])
 
-        # Uniform handles
+        # Uniform handles — legacy trace
         self._u_steps = self.ssgi_prog.get("u_SSGI_Steps", None)
         self._u_rays = self.ssgi_prog.get("u_SSGI_RayCount", None)
         self._u_dist = self.ssgi_prog.get("u_SSGI_RayDistance", None)
         self._u_thickness = self.ssgi_prog.get("u_SSGI_Thickness", None)
         self._u_hiz_mips = self.ssgi_prog.get("u_HiZMipCount", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
+
+        # Uniform handles — shared Hi-Z trace
+        self._u_hiz_rays = self.ssgi_hiz_prog.get("u_SSGI_RayCount", None)
+        self._u_hiz_dist = self.ssgi_hiz_prog.get("u_SSGI_RayDistance", None)
+        self._u_hiz_thickness = self.ssgi_hiz_prog.get("u_SSGI_Thickness", None)
+        self._u_hiz_intensity = self.ssgi_hiz_prog.get("u_SSGI_Intensity", None)
+        self._u_hiz_max_iters = self.ssgi_hiz_prog.get("u_SSGI_MaxIterations", None)
+        self._u_hiz_debug = self.ssgi_hiz_prog.get("u_SSGIDebugView", None)
+        self._u_hiz_surface_reject = self.ssgi_hiz_prog.get("u_SSGI_SurfaceReject", None)
+
+        # Uniform handles — spatial filter
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
-        self._u_target_res = self.blur_prog.get("u_TargetResolution", None)
-        self._u_prev_view = self.blur_prog.get("u_PrevView", None)
-        self._u_temporal_blend = self.blur_prog.get("u_TemporalBlend", None)
-        self._u_history_valid = self.blur_prog.get("u_HistoryValid", None)
-        self._u_temporal_enabled = self.blur_prog.get("u_TemporalEnabled", None)
+
+        # Uniform handles — temporal resolve
+        self._u_target_res = self.temporal_prog.get("u_TargetResolution", None)
+        self._u_prev_view = self.temporal_prog.get("u_PrevView", None)
+        self._u_temporal_blend = self.temporal_prog.get("u_TemporalBlend", None)
+        self._u_history_valid = self.temporal_prog.get("u_HistoryValid", None)
+        self._u_temporal_enabled = self.temporal_prog.get("u_TemporalEnabled", None)
+
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
         self._target_res_tuple = (float(self.width), float(self.height))
         self._first_frame = True
+
+    # ------------------------------------------------------------------
+    # Targets
+    # ------------------------------------------------------------------
+
+    def _create_targets(self) -> None:
+        def _tex() -> moderngl.Texture:
+            tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+            tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            tex.repeat_x = False
+            tex.repeat_y = False
+            return tex
+
+        self.raw_ssgi_tex = _tex()
+        self.spatial_x_tex = _tex()
+        self.spatial_y_tex = _tex()
+        self.resolved_ssgi_tex = _tex()
+        self.history_ssgi_tex = _tex()
+
+        self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
+        self.spatial_x_fbo = self.ctx.framebuffer(color_attachments=[self.spatial_x_tex])
+        self.spatial_y_fbo = self.ctx.framebuffer(color_attachments=[self.spatial_y_tex])
+        self.resolved_fbo = self.ctx.framebuffer(color_attachments=[self.resolved_ssgi_tex])
+        self.history_fbo = self.ctx.framebuffer(color_attachments=[self.history_ssgi_tex])
+
+    def _release_targets(self) -> None:
+        for fbo in (
+            self.raw_fbo,
+            self.spatial_x_fbo,
+            self.spatial_y_fbo,
+            self.resolved_fbo,
+            self.history_fbo,
+        ):
+            fbo.release()
+        for tex in (
+            self.raw_ssgi_tex,
+            self.spatial_x_tex,
+            self.spatial_y_tex,
+            self.resolved_ssgi_tex,
+            self.history_ssgi_tex,
+        ):
+            tex.release()
 
     def invalidate_history(self) -> None:
         """Forces the next frame to discard temporal history."""
@@ -100,31 +159,8 @@ class SSGIPass(RenderPass):
         self.width = new_w
         self.height = new_h
 
-        self.raw_fbo.release()
-        self.blur_fbo.release()
-        self.history_fbo.release()
-        self.raw_ssgi_tex.release()
-        self.blur_ssgi_tex.release()
-        self.history_ssgi_tex.release()
-
-        self.raw_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.raw_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.raw_ssgi_tex.repeat_x = False
-        self.raw_ssgi_tex.repeat_y = False
-
-        self.blur_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.blur_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.blur_ssgi_tex.repeat_x = False
-        self.blur_ssgi_tex.repeat_y = False
-
-        self.history_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.history_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.history_ssgi_tex.repeat_x = False
-        self.history_ssgi_tex.repeat_y = False
-
-        self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
-        self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssgi_tex])
-        self.history_fbo = self.ctx.framebuffer(color_attachments=[self.history_ssgi_tex])
+        self._release_targets()
+        self._create_targets()
 
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
@@ -133,32 +169,89 @@ class SSGIPass(RenderPass):
         # correspond to the same pixels.
         self._first_frame = True
 
+    # ------------------------------------------------------------------
+    # Execution
+    # ------------------------------------------------------------------
+
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "SSGI")
         if gi_mode != "SSGI":
             context.resources["ssgi_texture"] = self.black_fallback
+            # Leaving SSGI invalidates the history so a later switch back does
+            # not blend against samples from an unrelated frame.
+            self.invalidate_history()
             return
 
         g_buffer = context.resources.get("g_buffer")
         if g_buffer is None:
             context.resources["ssgi_texture"] = self.black_fallback
+            self.invalidate_history()
             return
 
-        # 1. Execute SSGI Raymarch
-        self.raw_fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
         self.ctx.disable(moderngl.DEPTH_TEST)
         self.ctx.disable(moderngl.CULL_FACE)
         self.ctx.disable(moderngl.BLEND)
 
+        # 1. Trace -> raw_ssgi_tex
+        self._trace(context, g_buffer)
+
+        # 2. Horizontal spatial filter: raw -> spatial_x
+        self._spatial_filter(g_buffer, self.raw_ssgi_tex, self.spatial_x_fbo, self._blur_dir_h)
+
+        # 3. Vertical spatial filter: spatial_x -> spatial_y
+        self._spatial_filter(g_buffer, self.spatial_x_tex, self.spatial_y_fbo, self._blur_dir_v)
+
+        # 4. Temporal resolve: spatial_y + history -> resolved
+        self._temporal_resolve(context, g_buffer)
+
+        # 5. Publish the resolved result.
+        context.resources["ssgi_texture"] = self.resolved_ssgi_tex
+
+        # 6. Update history for the next frame.
+        self.ctx.copy_framebuffer(self.history_fbo, self.resolved_fbo)
+        self._first_frame = False
+
+    def _trace(self, context: RenderGraphContext, g_buffer) -> None:
+        """Runs the selected tracer into ``raw_ssgi_tex``."""
+        self.raw_fbo.use()
+
         g_buffer.albedo_roughness_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)
         g_buffer.depth_texture.use(location=2)
-        scene_color = context.resources.get("scene_color", g_buffer.albedo_roughness_texture)
-        scene_color.use(location=3)
 
-        # Hi-Z pyramid (unit 4) for empty-space skipping. Falls back to the depth
-        # texture with a mip count of 1, which disables the skip in the shader.
+        # Current-frame direct radiance. Falls back to the G-Buffer albedo when
+        # the direct-radiance pass has not published a texture yet.
+        radiance_tex = context.resources.get("direct_radiance_texture", None)
+        if radiance_tex is None:
+            radiance_tex = g_buffer.albedo_roughness_texture
+        radiance_tex.use(location=3)
+
+        backend = str(getattr(context.config, "ssgi_backend", "LEGACY")).upper()
+        hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
+
+        if backend == "HIZ_BOUNDS" and hiz_bounds_tex is not None:
+            hiz_bounds_tex.use(location=4)
+            if self._u_hiz_rays is not None:
+                self._u_hiz_rays.value = getattr(context.config, "ssgi_rays", 8)
+            if self._u_hiz_dist is not None:
+                self._u_hiz_dist.value = float(getattr(context.config, "ssgi_ray_distance", 3.0))
+            if self._u_hiz_thickness is not None:
+                self._u_hiz_thickness.value = float(getattr(context.config, "ssgi_thickness", 0.35))
+            if self._u_hiz_intensity is not None:
+                self._u_hiz_intensity.value = float(getattr(context.config, "ssgi_intensity", 1.5))
+            if self._u_hiz_max_iters is not None:
+                self._u_hiz_max_iters.value = int(getattr(context.config, "ssgi_hiz_max_iterations", 64))
+            if self._u_hiz_debug is not None:
+                self._u_hiz_debug.value = int(getattr(context.config, "ssgi_debug_view", 0))
+            if self._u_hiz_surface_reject is not None:
+                self._u_hiz_surface_reject.value = 1 if getattr(context.config, "ssgi_surface_reject", False) else 0
+            self.ssgi_hiz_vao.render(moderngl.TRIANGLES, vertices=3)
+            return
+
+        # Legacy fixed-step marcher. The Hi-Z pyramid (unit 4) is only used for
+        # empty-space skipping; falls back to the depth texture with a mip count
+        # of 1, which disables the skip in the shader.
         hiz_tex = context.resources.get("hiz_texture", None)
         hiz_mips = int(context.resources.get("hiz_mip_count", 1))
         if hiz_tex is not None:
@@ -182,8 +275,18 @@ class SSGIPass(RenderPass):
 
         self.ssgi_vao.render(moderngl.TRIANGLES, vertices=3)
 
-        # Temporal state. The history is only valid if the previous frame wrote
-        # one at the same resolution and the camera did not teleport.
+    def _spatial_filter(self, g_buffer, source_tex, target_fbo, direction) -> None:
+        """Runs one separable direction of the edge-aware spatial filter."""
+        target_fbo.use()
+        source_tex.use(location=0)
+        g_buffer.depth_texture.use(location=1)
+        g_buffer.normal_metallic_texture.use(location=2)
+        if self._u_blur_dir is not None:
+            self._u_blur_dir.value = direction
+        self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+
+    def _temporal_resolve(self, context: RenderGraphContext, g_buffer) -> None:
+        """Runs the single per-frame temporal accumulation stage."""
         prev_view = context.resources.get("prev_view", None)
         history_valid = (not self._first_frame) and prev_view is not None
         temporal_enabled = bool(getattr(context.config, "ssgi_temporal_enabled", True))
@@ -200,43 +303,21 @@ class SSGIPass(RenderPass):
         if self._u_prev_view is not None and prev_view is not None:
             self._u_prev_view.write(prev_view.tobytes())
 
-        # 2. Horizontal Bilateral Blur + temporal resolve: raw -> blur_fbo
-        self.blur_fbo.use()
-        self.raw_ssgi_tex.use(location=0)
-        g_buffer.depth_texture.use(location=1)
-        g_buffer.normal_metallic_texture.use(location=2)
-        self.history_ssgi_tex.use(location=3)
-        g_buffer.velocity_texture.use(location=4)
-        if self._u_blur_dir is not None:
-            self._u_blur_dir.value = self._blur_dir_h
-        self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
-
-        # 3. Vertical Bilateral Blur: blur -> raw_fbo
-        self.raw_fbo.use()
-        self.blur_ssgi_tex.use(location=0)
-        g_buffer.depth_texture.use(location=1)
-        g_buffer.normal_metallic_texture.use(location=2)
-        self.history_ssgi_tex.use(location=3)
-        g_buffer.velocity_texture.use(location=4)
-        if self._u_blur_dir is not None:
-            self._u_blur_dir.value = self._blur_dir_v
-        self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
-
-        # 4. Copy the resolved result into the history for the next frame.
-        self.ctx.copy_framebuffer(self.history_fbo, self.raw_fbo)
-        self._first_frame = False
-
-        context.resources["ssgi_texture"] = self.raw_ssgi_tex
+        self.resolved_fbo.use()
+        self.spatial_y_tex.use(location=0)
+        self.history_ssgi_tex.use(location=1)
+        g_buffer.depth_texture.use(location=2)
+        g_buffer.velocity_texture.use(location=3)
+        self.temporal_vao.render(moderngl.TRIANGLES, vertices=3)
 
     def destroy(self) -> None:
-        self.raw_fbo.release()
-        self.blur_fbo.release()
-        self.history_fbo.release()
-        self.raw_ssgi_tex.release()
-        self.blur_ssgi_tex.release()
-        self.history_ssgi_tex.release()
+        self._release_targets()
         self.black_fallback.release()
         self.ssgi_vao.release()
+        self.ssgi_hiz_vao.release()
         self.blur_vao.release()
+        self.temporal_vao.release()
         self.ssgi_prog.release()
+        self.ssgi_hiz_prog.release()
         self.blur_prog.release()
+        self.temporal_prog.release()

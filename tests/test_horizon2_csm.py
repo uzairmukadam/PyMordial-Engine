@@ -33,11 +33,12 @@ class TestSlopeBiasConfiguration:
         assert hasattr(cinematic, "shadow_bias_slope_scale")
 
     def test_shader_declares_bias_uniforms(self) -> None:
-        from pathlib import Path
+        from engine.gfx.shader_utils import load_shader
 
-        shader = (Path(__file__).resolve().parent.parent / "shaders" / "deferred_resolve.frag").read_text(
-            encoding="utf-8"
-        )
+        # Expanded source: the shadow sampling code lives in
+        # shaders/common/csm_sampling.glsl and is shared with the
+        # direct-radiance pass.
+        shader = load_shader("deferred_resolve.frag")
         assert "u_ShadowBiasSlopeScale" in shader
         assert "u_ShadowBiasMinScale" in shader
         assert "u_ShadowBiasMaxScale" in shader

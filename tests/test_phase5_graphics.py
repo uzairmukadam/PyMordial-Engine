@@ -278,7 +278,7 @@ class TestSSGIGlobalIllumination:
                         time_elapsed=0.1 + i / 60.0,
                         sun_dir=(0.5, -0.7, 0.4),
                     )
-                    raw = pipeline.ssgi_pass.raw_ssgi_tex.read()
+                    raw = pipeline.ssgi_pass.resolved_ssgi_tex.read()
                     frames.append(
                         np.frombuffer(raw, dtype=np.float16).reshape(240, 320, 4)[..., :3].astype(np.float32)
                     )

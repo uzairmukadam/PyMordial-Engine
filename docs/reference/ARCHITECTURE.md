@@ -140,10 +140,10 @@ Resizing only the viewport is a bug: the passes keep their old dimensions, so th
 | 2.5 | SSDM | RT3 | Screen-space displacement |
 | 2.6 | Decals | HDR | Deferred decal projection |
 | 2.7 | Hi-Z pyramid | Hi-Z chain | Feeds occlusion culling + SSR |
+| 2.8 | Direct radiance | GI source | Current-frame direct diffuse + emissive for SSGI |
 | 3 | Ambient Occlusion | AO mask | GTAO or SSAO per `ao_mode` |
 | 4 | Local lights | HDR | Clustered forward+ evaluation |
-| 5 | **GI (exclusive)** | HDR | `SSGI` **or** `RADIANCE_CASCADES` — never both |
-| 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
+| 5 | **GI (exclusive)** | HDR | `SSGI` **or** `RADIANCE_CASCADES` — never both || 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
 | 6.5 | Sky & Atmosphere | HDR | Hillaire scattering — provided by the `pymordial.atmosphere` engine module via `EnvironmentProvider` |
 | 7 | Deferred resolve | HDR | Combines all lighting into final radiance |
 | 7.1 | Auto-exposure | 1×1 EV | Log-luminance histogram + temporal adaptation (`auto_exposure_enabled`) |
@@ -163,11 +163,17 @@ Resizing only the viewport is a bug: the passes keep their old dimensions, so th
 - Motion blur (7.95) runs **after** TAA so the temporal filter accumulates a sharp image before the blur is applied once. Running it before TAA double-blurs.
 - `u_RCTexture` is bound at texture unit **15** in `deferred_resolve.frag`. Do not reassign it.
 - The Hi-Z pyramid is published as `hiz_texture` / `hiz_mip_count` and consumed by SSR (unit 4) and SSGI (unit 4). Both fall back to the depth texture with a mip count of 1 when the pyramid is unavailable, which disables the accelerated path.
+- A second hierarchy, `hiz_bounds_texture` / `hiz_bounds_mip_count`, stores RG32F positive linear-view-depth bounds (R = nearest, G = farthest, empty = nearest > farthest). It is built in the same pass and is currently consumed only by the debug views and the experimental SSR backend. The legacy scalar pyramid is untouched, so existing consumers keep working.
+- Pass 2.8 publishes `direct_radiance_texture`: current-frame directional diffuse (with CSM shadows), clustered point/spot diffuse (with spot shadows) and emissive. It excludes all indirect and specular terms, so SSGI sampling it cannot create a recursive feedback loop through the HDR history.
+- Radiance Cascades has two backends (`rc_backend`). `LEGACY` is the original per-pixel raymarch. `CASCADES` builds explicit per-cascade probe/direction interval textures, merges them far-to-near, reconstructs per-pixel irradiance, then applies a spatial filter and one temporal resolve. Its published output is incident irradiance, so the resolve applies receiver albedo exactly once.
 - Pass 6.5 is owned by the environment provider. `RenderPipeline` calls `env.render_sky()` /
   `env.render_clouds()` and never reads atmosphere config directly. Disabling
   `ProjectConfig.atmosphere_enabled` swaps in `FlatEnvironment`, which still binds valid LUTs.
 - The built-in stage order is mirrored in `RenderPipeline._build_render_graph()` and validated
   at construction. Module render features anchor to those stage names via `after`/`before`.
+- GPU pass timing (`RenderPipeline.gpu_profiler`) wraps the G-buffer, Hi-Z, AO, GI, SSR, and
+  deferred-resolve submissions with `GL_TIMESTAMP` queries. It is measurement only: it never
+  changes pass order, state, or output, and it reads results from older frames so it cannot stall.
 
 ---
 

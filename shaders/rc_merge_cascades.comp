@@ -1,0 +1,79 @@
+#version 450 core
+// ============================================================================
+//  Radiance Cascade Merge (far -> near)
+//
+//  Merges a FAR cascade's directional intervals into a NEAR cascade's, one
+//  probe and one direction per invocation.
+//
+//  Direction mapping: every cascade uses a prefix of the same global Fibonacci
+//  direction set (see shaders/common/rc_direction.glsl), so near direction `d`
+//  is the same world direction as far direction `d`. The far cascade always has
+//  at least as many directions as the near one, so the mapping is an exact
+//  index match with no resampling.
+//
+//  Spatial mapping: the far probe grid is coarser, so a near probe maps to a
+//  fractional far-probe coordinate and is bilinearly interpolated. Probes whose
+//  transmittance is exactly 1.0 with zero radiance are treated as "no data"
+//  (background) and are excluded from the weighted average, so invalid probes
+//  cannot bleed into valid ones.
+//
+//  Output: the near cascade's merged texture (RGB radiance, A transmittance).
+// ============================================================================
+
+#include "shaders/common/rc_composite.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(rgba16f, binding = 0) writeonly uniform image2DArray u_MergedOutput;
+layout(binding = 1) uniform sampler2DArray u_NearIntervals;
+layout(binding = 2) uniform sampler2DArray u_FarIntervals;
+
+uniform ivec2 u_NearProbeSize;
+uniform ivec2 u_FarProbeSize;
+uniform int u_DirectionCount;
+
+// True when a far probe carries no usable interval data.
+bool RCFarProbeEmpty(vec4 interval) {
+    return interval.a >= 0.9999 && dot(interval.rgb, interval.rgb) < 1e-12;
+}
+
+void main() {
+    ivec2 probe = ivec2(gl_GlobalInvocationID.xy);
+    int direction = int(gl_GlobalInvocationID.z);
+
+    if (probe.x >= u_NearProbeSize.x || probe.y >= u_NearProbeSize.y || direction >= u_DirectionCount) {
+        return;
+    }
+
+    vec4 nearInterval = texelFetch(u_NearIntervals, ivec3(probe, direction), 0);
+
+    // Map the near probe centre into far-probe space.
+    vec2 nearUV = (vec2(probe) + 0.5) / vec2(u_NearProbeSize);
+    vec2 farCoord = nearUV * vec2(u_FarProbeSize) - 0.5;
+    ivec2 farBase = ivec2(floor(farCoord));
+    vec2 frac = farCoord - vec2(farBase);
+
+    vec4 farSum = vec4(0.0);
+    float weightSum = 0.0;
+
+    for (int dy = 0; dy <= 1; ++dy) {
+        for (int dx = 0; dx <= 1; ++dx) {
+            ivec2 farProbe = clamp(farBase + ivec2(dx, dy), ivec2(0), u_FarProbeSize - 1);
+            float w = (dx == 0 ? 1.0 - frac.x : frac.x) * (dy == 0 ? 1.0 - frac.y : frac.y);
+            if (w <= 0.0) {
+                continue;
+            }
+            vec4 farInterval = texelFetch(u_FarIntervals, ivec3(farProbe, direction), 0);
+            if (RCFarProbeEmpty(farInterval)) {
+                continue;
+            }
+            farSum += RCSanitizeInterval(farInterval) * w;
+            weightSum += w;
+        }
+    }
+
+    vec4 farInterval = weightSum > 0.0 ? farSum / weightSum : vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 merged = RCCompositeIntervals(nearInterval, farInterval);
+
+    imageStore(u_MergedOutput, ivec3(probe, direction), merged);
+}

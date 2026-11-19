@@ -1,0 +1,54 @@
+#version 450 core
+// ============================================================================
+//  Hi-Z Depth Bounds — mip zero generation
+//
+//  Converts the reversed-Z hardware depth buffer into the first level of the
+//  RG32F linear-view-depth bounds hierarchy.
+//
+//  Output texel:
+//      R = nearest positive linear view depth
+//      G = farthest positive linear view depth
+//
+//  At mip zero a pixel holds exactly one surface, so R == G for geometry.
+//  Background pixels write the canonical empty pair (HIZ_EMPTY_NEAREST,
+//  HIZ_EMPTY_FARTHEST), which satisfies nearest > farthest.
+// ============================================================================
+
+#include "shaders/common/depth.glsl"
+#include "shaders/common/hiz_bounds.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D u_DepthTexture;
+layout(rg32f, binding = 0) uniform writeonly image2D u_DestMip;
+
+uniform mat4 u_InvProjection;
+
+void main() {
+    ivec2 dstPos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dstSize = imageSize(u_DestMip);
+
+    if (dstPos.x >= dstSize.x || dstPos.y >= dstSize.y) {
+        return;
+    }
+
+    float rawDepth = texelFetch(u_DepthTexture, dstPos, 0).r;
+
+    if (IsBackgroundDepth(rawDepth)) {
+        imageStore(u_DestMip, dstPos, vec4(HIZ_EMPTY_NEAREST, HIZ_EMPTY_FARTHEST, 0.0, 0.0));
+        return;
+    }
+
+    // Pixel centre in UV space, matching the texel this invocation owns.
+    vec2 uv = (vec2(dstPos) + 0.5) / vec2(dstSize);
+    float linearDepth = RawDepthToLinearViewDepth(uv, rawDepth, u_InvProjection);
+
+    // A degenerate projection can still yield a non-finite value; treat it as
+    // empty rather than poisoning the hierarchy with NaN.
+    if (!(linearDepth > 0.0) || isinf(linearDepth)) {
+        imageStore(u_DestMip, dstPos, vec4(HIZ_EMPTY_NEAREST, HIZ_EMPTY_FARTHEST, 0.0, 0.0));
+        return;
+    }
+
+    imageStore(u_DestMip, dstPos, vec4(linearDepth, linearDepth, 0.0, 0.0));
+}
