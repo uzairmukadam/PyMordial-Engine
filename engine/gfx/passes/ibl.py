@@ -18,7 +18,7 @@ class IBLPass(RenderPass):
         self.ctx = ctx
         self._last_sun_dir: tuple[float, float, float] | None = None
 
-        self.lut_tex = self.ctx.texture((256, 256), 2, dtype="f2")
+        self.lut_tex = self.ctx.texture((256, 256), 4, dtype="f2")
         self.lut_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.lut_tex.repeat_x = False
         self.lut_tex.repeat_y = False

@@ -146,6 +146,7 @@ Resizing only the viewport is a bug: the passes keep their old dimensions, so th
 | 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
 | 6.5 | Sky & Atmosphere | HDR | Hillaire scattering — provided by the `pymordial.atmosphere` engine module via `EnvironmentProvider` |
 | 7 | Deferred resolve | HDR | Combines all lighting into final radiance |
+| 7.1 | Auto-exposure | 1×1 EV | Log-luminance histogram + temporal adaptation (`auto_exposure_enabled`) |
 | 7.5 | Debug wireframes | HDR | Immediate-mode gizmos |
 | 7.6 | Volumetric fog | HDR | Froxel raymarch |
 | 7.65 | Water | HDR | Per-entity water surfaces |

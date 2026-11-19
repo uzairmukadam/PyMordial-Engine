@@ -3,7 +3,7 @@
 // Multiple Render Targets (MRT)
 layout (location = 0) out vec4 out_AlbedoRoughness; // RT0: Albedo (RGB) + Roughness (A)
 layout (location = 1) out vec4 out_NormalMetallic;   // RT1: Octahedral Normal (RG) + Metallic (B) + AO (A)
-layout (location = 2) out vec2 out_Velocity;         // RT2: Velocity Vectors (RG16F)
+layout (location = 2) out vec4 out_Velocity;         // RT2: Velocity (RG) + Reactive Mask (B)
 layout (location = 3) out vec4 out_DispInfo;         // RT3: Displacement Info (RG=Mesh UV, B=TexLayer, A=DispMode)
 layout (location = 4) out float out_SurfaceID;       // RT4: Entity ID (+1; zero is background)
 
@@ -75,22 +75,17 @@ uniform float u_CarInteriorLayer = 5.0;
 uniform float u_BrickWallLayer = 0.0;
 uniform float u_ConcreteFloorLayer = 0.0;
 
+// Specular anti-aliasing (see common/pbr_brdf.glsl)
+uniform int u_SpecularAAEnabled = 1;
+uniform float u_SpecularAAStrength = 1.0;
+
 // Displacement modes (matches DisplacementMode enum in texture_atlas.py)
 const uint DISP_MODE_NONE = 0u;
 const uint DISP_MODE_POM = 1u;
 const uint DISP_MODE_SSDM = 2u;
 const uint DISP_MODE_TESSELLATION = 3u;
 
-// Octahedral Normal Encoding
-vec2 signNotZero(vec2 v) {
-    return vec2((v.x >= 0.0) ? 1.0 : -1.0, (v.y >= 0.0) ? 1.0 : -1.0);
-}
-
-vec2 OctahedralEncode(vec3 n) {
-    n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    vec2 oct = (n.z >= 0.0) ? n.xy : (1.0 - abs(n.yx)) * signNotZero(n.xy);
-    return oct * 0.5 + 0.5;
-}
+#include "shaders/common/pbr_brdf.glsl"
 
 // Steep Parallax Occlusion Mapping with 6-iteration binary refinement
 // Returns displaced UV and final height at the intersection (1.0 = peak, 0.0 = valley)
@@ -328,6 +323,17 @@ void main() {
     // Apply POM self-shadow into AO channel
     ao *= pom_shadow;
 
+    // Specular anti-aliasing: fold unresolved normal-map variance into
+    // roughness so sub-pixel normal detail widens the specular lobe instead of
+    // aliasing. The variance is the squared screen-space derivative of the
+    // shading normal, which is exactly the detail the rasteriser cannot resolve.
+    if (u_SpecularAAEnabled == 1) {
+        vec3 dnx = dFdx(N);
+        vec3 dny = dFdy(N);
+        float variance = dot(dnx, dnx) + dot(dny, dny);
+        roughness = SpecularAA(roughness, variance, u_SpecularAAStrength);
+    }
+
     // Velocity vector (pure geometric motion in UV space: unjittered_curr_uv - prev_uv)
     float curr_inv_w = 1.0 / max(v_CurrClip.w, 1e-6);
     float prev_inv_w = 1.0 / max(v_PrevClip.w, 1e-6);
@@ -338,7 +344,10 @@ void main() {
     // Pack into MRT outputs
     out_AlbedoRoughness = vec4(albedo, roughness);
     out_NormalMetallic = vec4(OctahedralEncode(N), metallic, ao);
-    out_Velocity = velocity;
+    // Opaque geometry is fully reliable: reactive mask 0 means "accumulate
+    // history normally". Transparent passes (particles, water, decals) write a
+    // non-zero mask into this channel afterwards.
+    out_Velocity = vec4(velocity, 0.0, 1.0);
     out_DispInfo = vec4(sample_uv, tex_layer, float(disp_mode));
     out_SurfaceID = float(v_EntityID + 1u);
 }

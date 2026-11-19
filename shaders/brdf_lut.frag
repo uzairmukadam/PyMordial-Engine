@@ -1,7 +1,7 @@
 #version 450 core
 
 in vec2 v_UV;
-layout (location = 0) out vec2 out_BRDF_LUT;
+layout (location = 0) out vec4 out_BRDF_LUT;
 
 const float PI = 3.14159265358979323846;
 
@@ -51,7 +51,7 @@ float GeometrySmith_IBL(vec3 N, vec3 V, vec3 L, float roughness) {
     return GeometrySchlickGGX_IBL(NdotV, roughness) * GeometrySchlickGGX_IBL(NdotL, roughness);
 }
 
-vec2 IntegrateBRDF(float NdotV, float roughness) {
+vec2 IntegrateBRDF(float NdotV, float roughness, out float out_energy) {
     vec3 V;
     V.x = sqrt(clamp(1.0 - NdotV * NdotV, 0.0, 1.0));
     V.y = 0.0;
@@ -59,6 +59,10 @@ vec2 IntegrateBRDF(float NdotV, float roughness) {
 
     float A = 0.0;
     float B = 0.0;
+    // Directional albedo: the fraction of incident energy the single-scatter
+    // GGX lobe actually reflects. The multi-scatter compensation in
+    // common/pbr_brdf.glsl uses this to restore the missing energy.
+    float E = 0.0;
     vec3 N = vec3(0.0, 0.0, 1.0);
 
     const uint SAMPLE_COUNT = 1024u;
@@ -78,13 +82,19 @@ vec2 IntegrateBRDF(float NdotV, float roughness) {
 
             A += (1.0 - Fc) * G_Vis;
             B += Fc * G_Vis;
+            // With F0 = 1 the split-sum result (A + B) is exactly the
+            // directional albedo of the single-scatter lobe.
+            E += (1.0 - Fc) * G_Vis + Fc * G_Vis;
         }
     }
+    out_energy = E / float(SAMPLE_COUNT);
     return vec2(A / float(SAMPLE_COUNT), B / float(SAMPLE_COUNT));
 }
 
 void main() {
     float NdotV = clamp(v_UV.x, 0.001, 1.0);
     float roughness = clamp(v_UV.y, 0.0, 1.0);
-    out_BRDF_LUT = IntegrateBRDF(NdotV, roughness);
+    float energy;
+    vec2 ab = IntegrateBRDF(NdotV, roughness, energy);
+    out_BRDF_LUT = vec4(ab, energy, 1.0);
 }

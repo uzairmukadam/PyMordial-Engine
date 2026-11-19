@@ -12,15 +12,22 @@ layout (std430, binding = 1) readonly buffer TransformBuffer {
     mat4 u_WorldTransforms[];
 };
 
+// SSBO 7: Previous-frame world transforms (see gbuffer.vert).
+layout (std430, binding = 7) readonly buffer PrevTransformBuffer {
+    mat4 u_PrevWorldTransforms[];
+};
+
 // Outputs to Tessellation Control Shader
 out vec3 tc_Position;
 out vec3 tc_Normal;
 out vec2 tc_UV;
 out vec2 tc_UVScale;
 out vec4 tc_Tangent;
+out vec3 tc_PrevPosition;
 out flat uint tc_EntityID;
 
 uniform uint u_BaseInstance;
+uniform int u_ObjectMotionVectors = 1;
 
 void main() {
 #ifdef GL_ARB_shader_draw_parameters
@@ -35,6 +42,11 @@ void main() {
 
     vec4 world_pos = model * vec4(in_position, 1.0);
     tc_Position = world_pos.xyz;
+    // Previous-frame world position, before displacement. The evaluation shader
+    // adds the same displacement to both so the motion vector stays consistent.
+    tc_PrevPosition = (u_ObjectMotionVectors == 1)
+        ? (u_PrevWorldTransforms[entity_idx] * vec4(in_position, 1.0)).xyz
+        : world_pos.xyz;
     tc_Normal = normalize(normal_matrix * in_normal);
     tc_UV = in_uv;
     vec3 local_tangent = normalize(in_tangent.xyz);

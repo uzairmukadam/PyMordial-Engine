@@ -100,6 +100,7 @@ class CascadedShadowMap:
         "cascade_rects",
         "cascade_rect_uv",
         "cascade_rect_uv_array",
+        "cascade_resolutions",
     )
 
     def __init__(
@@ -109,6 +110,7 @@ class CascadedShadowMap:
         cascade_count: int = 4,
         max_distance: float = 500.0,
         split_lambda: float = 0.85,
+        cascade_resolutions: tuple[int, ...] | None = None,
     ) -> None:
         self.ctx = ctx
         self.atlas_size = atlas_size
@@ -117,6 +119,10 @@ class CascadedShadowMap:
         self.max_caster_reach = MAX_CASTER_REACH
         self.split_lambda = float(split_lambda)
         self.cascade_distances: tuple[float, float, float, float] | None = None
+        # Per-cascade rect sizes. ``None`` keeps the legacy equal 2x2 quadrants.
+        self.cascade_resolutions: tuple[int, ...] | None = (
+            tuple(int(v) for v in cascade_resolutions) if cascade_resolutions else None
+        )
 
         # Depth texture atlas and framebuffer
         self.depth_texture = None  # type: ignore[assignment]
@@ -152,24 +158,73 @@ class CascadedShadowMap:
     # ------------------------------------------------------------------
 
     def _update_cascade_rects(self) -> None:
-        """Rebuilds the fixed 2x2 quadrant atlas layout."""
+        """Rebuilds the atlas layout.
+
+        With ``cascade_resolutions`` unset this is the legacy fixed 2x2 quadrant
+        layout. When set, the per-cascade sizes are shelf-packed into the atlas
+        so the near cascade can claim a larger share of the texel budget than the
+        far ones. Packing falls back to the equal layout if the request does not
+        fit, so a bad config degrades instead of producing overlapping rects.
+        """
         size = int(self.atlas_size)
-        half = size // 2
-        rects = [
-            (0, 0, half, half),
-            (half, 0, half, half),
-            (0, half, half, half),
-            (half, half, half, half),
-        ]
+        rects = self._pack_cascade_rects(size)
         self.cascade_rects = rects
         inv = 1.0 / float(max(size, 1))
         self.cascade_rect_uv = [(x * inv, y * inv, w * inv, h * inv) for (x, y, w, h) in rects]
         # Refresh the pre-allocated upload buffer in place (no per-frame allocation).
         self.cascade_rect_uv_array[:] = np.asarray(self.cascade_rect_uv, dtype=np.float32)
 
+    def _equal_rects(self, size: int) -> list[tuple[int, int, int, int]]:
+        half = size // 2
+        return [
+            (0, 0, half, half),
+            (half, 0, half, half),
+            (0, half, half, half),
+            (half, half, half, half),
+        ]
+
+    def _pack_cascade_rects(self, size: int) -> list[tuple[int, int, int, int]]:
+        """Shelf-packs per-cascade square sizes into the atlas, in cascade order."""
+        resolutions = self.cascade_resolutions
+        if not resolutions:
+            return self._equal_rects(size)
+
+        count = max(1, min(4, self.cascade_count))
+        sizes = [max(1, min(size, int(resolutions[i]) if i < len(resolutions) else size // 2)) for i in range(count)]
+
+        # Tallest first so each shelf wastes as little vertical space as possible.
+        order = sorted(range(count), key=lambda i: (-sizes[i], i))
+        placed: list[tuple[int, int, int, int] | None] = [None] * count
+        cursor_x = 0
+        cursor_y = 0
+        shelf_height = 0
+        for index in order:
+            side = sizes[index]
+            if cursor_x + side > size:
+                cursor_y += shelf_height
+                cursor_x = 0
+                shelf_height = 0
+            if cursor_y + side > size:
+                # Does not fit: fall back to the equal layout rather than
+                # emitting overlapping rects.
+                return self._equal_rects(size)
+            placed[index] = (cursor_x, cursor_y, side, side)
+            cursor_x += side
+            shelf_height = max(shelf_height, side)
+
+        return [rect if rect is not None else (0, 0, 1, 1) for rect in placed]
+
     def cascade_texel_size(self, cascade_idx: int) -> int:
         """Square texel size of one cascade's atlas rect."""
         return int(self.cascade_rects[max(0, min(3, int(cascade_idx)))][2])
+
+    def set_cascade_resolutions(self, resolutions: tuple[int, ...] | None) -> None:
+        """Swaps the per-cascade rect sizes and rebuilds the atlas layout."""
+        new_value = tuple(int(v) for v in resolutions) if resolutions else None
+        if new_value == self.cascade_resolutions:
+            return
+        self.cascade_resolutions = new_value
+        self._update_cascade_rects()
 
     # ------------------------------------------------------------------
     # Split distribution

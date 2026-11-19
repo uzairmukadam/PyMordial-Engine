@@ -1,0 +1,59 @@
+#version 450 core
+// ============================================================
+//  Auto-Exposure: Log-Luminance Histogram Build
+//
+//  Each invocation reads one pixel of the HDR scene, converts it to
+//  log2 luminance, maps it into a fixed bin range, and atomically
+//  increments that bin. The result is a 256-bin histogram that the
+//  adaptation pass turns into a target EV.
+//
+//  A 64x64 dispatch over a 1080p frame samples every ~4th pixel on
+//  each axis. That is deliberate: exposure adaptation is a low-pass
+//  signal, and reading every pixel costs 4x the bandwidth for no
+//  visible difference.
+// ============================================================
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout (binding = 0) uniform sampler2D u_SceneHDR;
+
+layout (std430, binding = 10) buffer HistogramBuffer {
+    uint u_Histogram[256];
+};
+
+uniform vec2  u_ScreenSize;      // Full-resolution scene size in pixels
+uniform float u_MinLogLum;       // Bin 0 lower bound (log2 luminance)
+uniform float u_MaxLogLum;       // Bin 255 upper bound (log2 luminance)
+uniform int   u_HistogramBins;   // Always 256; kept explicit for clarity
+
+const float LUMINANCE_R = 0.2126;
+const float LUMINANCE_G = 0.7152;
+const float LUMINANCE_B = 0.0722;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 grid = ivec2(gl_NumWorkGroups.xy * gl_WorkGroupSize.xy);
+    if (pixel.x >= grid.x || pixel.y >= grid.y) {
+        return;
+    }
+
+    // Map the sample grid onto the full-resolution scene.
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(grid);
+    vec3 hdr = texture(u_SceneHDR, uv).rgb;
+
+    // Reject non-finite radiance so one bad pixel cannot poison the histogram.
+    if (any(isnan(hdr)) || any(isinf(hdr))) {
+        return;
+    }
+
+    float luminance = dot(max(hdr, vec3(0.0)), vec3(LUMINANCE_R, LUMINANCE_G, LUMINANCE_B));
+    // Floor keeps log2 finite for pure-black pixels.
+    float log_lum = log2(max(luminance, 1e-8));
+
+    float range = max(u_MaxLogLum - u_MinLogLum, 1e-4);
+    float normalized = clamp((log_lum - u_MinLogLum) / range, 0.0, 1.0);
+    int bin = int(normalized * float(u_HistogramBins - 1) + 0.5);
+    bin = clamp(bin, 0, u_HistogramBins - 1);
+
+    atomicAdd(u_Histogram[bin], 1u);
+}

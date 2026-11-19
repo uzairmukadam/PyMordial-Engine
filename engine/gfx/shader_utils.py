@@ -93,6 +93,38 @@ def get_shader_path(rel_path: str | Path) -> Path:
     return direct_path
 
 
+def expand_includes(source: str, visited: set[Path] | None = None) -> str:
+    """Expands ``#include`` directives in an in-memory shader source string.
+
+    ``load_shader`` does this for files on disk. Callers that build a program
+    from a source string (for example a test that reads a shader and hands it
+    straight to a pass) need the same expansion, otherwise the driver sees a
+    literal ``#include`` and fails to compile.
+    """
+    if visited is None:
+        visited = set()
+
+    sdir = get_shader_dir()
+    lines: list[str] = []
+
+    for line in source.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith("#include"):
+            start_q = line.find('"')
+            end_q = line.rfind('"')
+            if start_q != -1 and end_q > start_q:
+                inc_rel = line[start_q + 1 : end_q]
+                inc_clean = inc_rel[len("shaders/") :] if inc_rel.startswith("shaders/") else inc_rel
+                inc_path = sdir / inc_clean
+                if not inc_path.is_file() and (sdir.parent / inc_rel).is_file():
+                    inc_path = sdir.parent / inc_rel
+                lines.append(load_shader(inc_path, visited=visited))
+                continue
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
 def load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
     """Loads a GLSL shader file and recursively expands #include directives."""
     if visited is None:

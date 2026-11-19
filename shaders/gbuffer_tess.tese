@@ -7,6 +7,7 @@ in vec3 te_Normal[];
 in vec2 te_UV[];
 in vec2 te_UVScale[];
 in vec4 te_Tangent[];
+in vec3 te_PrevPosition[];
 in flat uint te_EntityID[];
 
 // Outputs to G-Buffer Fragment (identical interface to gbuffer.vert)
@@ -80,6 +81,7 @@ void main() {
     vec4 t2 = te_Tangent[2];
 
     vec3 pos = tc.x * p0 + tc.y * p1 + tc.z * p2;
+    vec3 prev_pos = tc.x * te_PrevPosition[0] + tc.y * te_PrevPosition[1] + tc.z * te_PrevPosition[2];
     vec3 norm = normalize(tc.x * n0 + tc.y * n1 + tc.z * n2);
     vec2 uv = tc.x * uv0 + tc.y * uv1 + tc.z * uv2;
     vec4 tang = tc.x * t0 + tc.y * t1 + tc.z * t2;
@@ -111,6 +113,10 @@ void main() {
         }
 
         pos += norm * disp;
+        // Displacement is a surface property, not motion, so the previous
+        // position receives the same offset. Otherwise the heightfield would
+        // register as object velocity and TAA would smear it.
+        prev_pos += norm * disp;
     }
 
     v_WorldPos = pos;
@@ -121,7 +127,9 @@ void main() {
     v_UVScale = tc.x * uv_scale0 + tc.y * uv_scale1 + tc.z * uv_scale2;
 
     v_CurrClip = u_ViewProjection * vec4(pos, 1.0);
-    v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * vec4(pos, 1.0)) : v_CurrClip;
+    v_PrevClip = (u_PrevViewProjection[3][3] != 0.0)
+        ? (u_PrevViewProjection * vec4(prev_pos, 1.0))
+        : v_CurrClip;
 
     // Recompute TBN matrix for the tessellated surface
     vec3 T = normalize(tang.xyz - dot(tang.xyz, norm) * norm);

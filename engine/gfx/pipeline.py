@@ -31,6 +31,7 @@ from engine.gfx.passes.bloom_pass import BloomPass
 from engine.gfx.passes.camera_optics_pass import CameraOpticsPass
 from engine.gfx.passes.clustered_lights import ClusteredLightingPass, PointLight, SpotLight
 from engine.gfx.passes.decal_pass import DecalPass
+from engine.gfx.passes.exposure_pass import ExposurePass
 from engine.gfx.passes.fxaa_pass import FXAAPass
 from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.passes.ibl import IBLPass
@@ -104,13 +105,16 @@ class RenderPipeline:
         "smaa_pass",
         "volumetric_fog_pass",
         "bloom_pass",
+        "exposure_pass",
         "_prev_vp_mat",
         "_prev_view_mat",
+        "_prev_transforms_seeded",
         "post_process",
         "resources",
         "debug",
         "ssbo_transforms",
         "ssbo_materials",
+        "ssbo_prev_transforms",
         "gbuffer_prog",
         "csm_prog",
         "resolve_prog",
@@ -171,14 +175,20 @@ class RenderPipeline:
         "_u_pcss_falloff",
         "_u_pcss_max_radius",
         "_u_pcss_closest_weight",
-        "_u_cascade_atlas_rect",        "_u_cascade_count",
+        "_u_cascade_atlas_rect",
+        "_u_cascade_count",
         "_u_gbuffer_debug",
         "_u_hiz_debug_mip",
         "_u_gbuffer_prev_vp",
+        "_u_gbuffer_object_motion",
+        "_u_gbuffer_tess_object_motion",
         "_u_ao_enabled",
         "_u_gi_enabled",
         "_u_ibl_enabled",
         "_u_ssr_enabled",
+        "_u_energy_compensation_enabled",
+        "_u_specular_aa_enabled",
+        "_u_specular_aa_strength",
         "_u_point_light_count",
         "_u_spot_light_count",
         "_u_spot_shadow_enabled",
@@ -308,6 +318,12 @@ class RenderPipeline:
         self.ssbo_materials = self.ctx.buffer(reserve=max_entities * 8 * 4)
         self.ssbo_materials.bind_to_storage_buffer(binding=2)
 
+        # SSBO 7: Previous-frame world transforms, consumed by the G-buffer
+        # vertex shader to build per-object motion vectors. Zero-initialised, so
+        # the first frame falls back to the current transform (see gbuffer.vert).
+        self.ssbo_prev_transforms = self.ctx.buffer(reserve=max_entities * 16 * 4)
+        self.ssbo_prev_transforms.bind_to_storage_buffer(binding=7)
+
         # 6. Initialize Phase 5 High-End Graphics Passes
         self.ibl_pass = IBLPass(self.ctx)
         self.ao_pass = AmbientOcclusionPass(
@@ -349,6 +365,7 @@ class RenderPipeline:
         self.volumetric_fog_pass = VolumetricFogPass(self.ctx, w, h)
         self._prev_vp_mat = np.identity(4, dtype=np.float32).flatten()
         self._prev_view_mat = np.identity(4, dtype=np.float32).flatten()
+        self._prev_transforms_seeded = False
 
         # Phase 3: Frustum Culling & MDI Batch Filter
         self.culler = FrustumCuller(max_entities=max_entities)
@@ -506,11 +523,16 @@ class RenderPipeline:
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
         self._u_hiz_debug_mip = self.resolve_prog.get("u_HiZDebugMip", None)
         self._u_gbuffer_prev_vp = self.gbuffer_prog.get("u_PrevViewProjection", None)
+        self._u_gbuffer_object_motion = self.gbuffer_prog.get("u_ObjectMotionVectors", None)
+        self._u_gbuffer_tess_object_motion = self.gbuffer_tess_prog.get("u_ObjectMotionVectors", None)
 
         self._u_ao_enabled = self.resolve_prog.get("u_AOEnabled", None)
         self._u_gi_enabled = self.resolve_prog.get("u_GIEnabled", None)
         self._u_ibl_enabled = self.resolve_prog.get("u_IBLEnabled", None)
         self._u_ssr_enabled = self.resolve_prog.get("u_SSREnabled", None)
+        self._u_energy_compensation_enabled = self.resolve_prog.get("u_EnergyCompensationEnabled", None)
+        self._u_specular_aa_enabled = self.gbuffer_prog.get("u_SpecularAAEnabled", None)
+        self._u_specular_aa_strength = self.gbuffer_prog.get("u_SpecularAAStrength", None)
         self._u_point_light_count = self.resolve_prog.get("u_PointLightCount", None)
         self._u_spot_light_count = self.resolve_prog.get("u_SpotLightCount", None)
         self._u_spot_shadow_enabled = self.resolve_prog.get("u_SpotShadowEnabled", None)
@@ -614,6 +636,9 @@ class RenderPipeline:
         # 8.7. HDR Bloom Pyramid
         self.bloom_pass = BloomPass(self.ctx, w, h)
 
+        # 8.75. GPU Auto-Exposure (histogram + temporal adaptation)
+        self.exposure_pass = ExposurePass(self.ctx)
+
         # 8.8. Dynamic Water Simulation & Screen-Space Refraction (Phase 4)
         self.water_pass = WaterPass(self.ctx, w, h)
 
@@ -715,6 +740,7 @@ class RenderPipeline:
             _BuiltinPass("Water", inputs=("g_buffer", "hdr_fbo"), outputs=("water_output",)),
             _BuiltinPass("Particles", inputs=("g_buffer", "hdr_fbo"), outputs=("particle_output",)),
             _BuiltinPass("CameraOptics", inputs=("g_buffer", "hdr_fbo"), outputs=("lens_flare_texture",)),
+            _BuiltinPass("Exposure", inputs=("hdr_color",), outputs=("exposure_ev",)),
             _BuiltinPass("TAA", inputs=("hdr_color", "g_buffer"), outputs=("taa_output",)),
             _BuiltinPass("PostProcess", inputs=("hdr_color",), outputs=("ldr_color",)),
         ]
@@ -1355,6 +1381,15 @@ class RenderPipeline:
             self._u_gbuffer_disp_near_radius.value = getattr(self.config, "disp_near_radius", 120.0)
         if self._u_gbuffer_disp_mid_radius is not None:
             self._u_gbuffer_disp_mid_radius.value = getattr(self.config, "disp_mid_radius", 300.0)
+        object_motion = 1 if getattr(self.config, "object_motion_vectors_enabled", True) else 0
+        if self._u_gbuffer_object_motion is not None:
+            self._u_gbuffer_object_motion.value = object_motion
+        if self._u_gbuffer_tess_object_motion is not None:
+            self._u_gbuffer_tess_object_motion.value = object_motion
+        if self._u_specular_aa_enabled is not None:
+            self._u_specular_aa_enabled.value = 1 if getattr(self.config, "specular_aa_enabled", True) else 0
+        if self._u_specular_aa_strength is not None:
+            self._u_specular_aa_strength.value = float(getattr(self.config, "specular_aa_strength", 1.0))
         if self._u_gbuffer_car_paint_layer is not None:
             self._u_gbuffer_car_paint_layer.value = float(self.texture_atlas.name_to_layer.get("car_body_paint", 2))
         if self._u_gbuffer_car_glass_layer is not None:
@@ -1550,9 +1585,7 @@ class RenderPipeline:
         if self._u_pcss_max_radius is not None:
             self._u_pcss_max_radius.value = float(getattr(self.config, "pcss_max_radius", 96.0))
         if self._u_pcss_closest_weight is not None:
-            self._u_pcss_closest_weight.value = float(
-                getattr(self.config, "pcss_closest_blocker_weight", 1.0)
-            )
+            self._u_pcss_closest_weight.value = float(getattr(self.config, "pcss_closest_blocker_weight", 1.0))
         if self._u_cascade_count is not None:
             self._u_cascade_count.value = self.config.csm_cascades
         if self._u_cascade_atlas_rect is not None:
@@ -1578,6 +1611,10 @@ class RenderPipeline:
             self._u_ibl_enabled.value = 1 if self.config.ibl_enabled else 0
         if self._u_ssr_enabled is not None:
             self._u_ssr_enabled.value = 1 if self.config.ssr_enabled else 0
+        if self._u_energy_compensation_enabled is not None:
+            self._u_energy_compensation_enabled.value = (
+                1 if getattr(self.config, "energy_compensation_enabled", True) else 0
+            )
         if self._u_point_light_count is not None:
             self._u_point_light_count.value = ctx.resources.get("point_light_count", 0)
         if self._u_spot_light_count is not None:
@@ -1605,6 +1642,13 @@ class RenderPipeline:
             sun_color=active_sun_col,
             time_elapsed=time_elapsed,
         )
+
+        # ---- PASS 7.1: GPU Auto-Exposure (histogram + temporal adaptation) ----
+        # Runs on the resolved HDR scene before any additive effect, so the
+        # histogram measures scene radiance rather than lens flare or bloom.
+        ctx.resources["hdr_color"] = self.post_process.hdr_fbo.color_attachments[0]
+        ctx.delta_time = calc_dt
+        self.exposure_pass.execute(ctx)
 
         # ---- PASS 7.5: Immediate-Mode 3D Debug Wireframes ----
         active_debug = debug_draw if debug_draw is not None else self.debug
@@ -1705,6 +1749,7 @@ class RenderPipeline:
             flare_texture=flare_tex,
             bloom_texture=bloom_tex,
             time_elapsed=time_elapsed,
+            exposure_ev=ctx.resources.get("exposure_ev"),
         )
         ctx.resources["ldr_color"] = self.post_process.final_texture
 
@@ -1724,6 +1769,17 @@ class RenderPipeline:
         # Store current unjittered ViewProjection for next frame's motion vectors (zero-allocation)
         np.copyto(self._prev_vp_mat, self._unjittered_vp_mat)
         np.copyto(self._prev_view_mat, self._view_mat)
+
+        # Snapshot this frame's transforms as next frame's "previous" transforms.
+        # Only the dynamic slice can change, so static entities are copied once
+        # (on the first frame) and never again.
+        if getattr(self.config, "object_motion_vectors_enabled", True):
+            if not self._prev_transforms_seeded:
+                self.ssbo_prev_transforms.write(ecs.get_active_transforms_view().tobytes(), offset=0)
+                self._prev_transforms_seeded = True
+            elif active_count > s_count:
+                dyn_offset_t = s_count * 64
+                self.ssbo_prev_transforms.write(ecs.get_dynamic_transforms_view().tobytes(), offset=dyn_offset_t)
 
         # Clear dynamic point lights for the next frame
         self.lights_pass.clear()
@@ -1754,6 +1810,7 @@ class RenderPipeline:
         self.fxaa_pass.destroy()
         self.smaa_pass.destroy()
         self.volumetric_fog_pass.destroy()
+        self.exposure_pass.destroy()
         if self.particle_pass is not None:
             self.particle_pass.destroy()
         if self.camera_optics_pass is not None:
@@ -1766,6 +1823,7 @@ class RenderPipeline:
         self.post_process.destroy()
         self.ssbo_transforms.release()
         self.ssbo_materials.release()
+        self.ssbo_prev_transforms.release()
         self.gbuffer_prog.release()
         self.csm_prog.release()
         self.resolve_prog.release()

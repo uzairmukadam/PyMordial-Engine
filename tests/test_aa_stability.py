@@ -62,6 +62,10 @@ class TestStaticCameraStability:
         pipeline = RenderPipeline(render_ctx)
         pipeline.config.aa_mode = aa_mode
         pipeline.config.taa_enabled = aa_mode == "TAA"
+        # Film grain is animated on purpose (it re-seeds at 24 Hz), so it is
+        # non-convergent by design. Measuring temporal stability with it enabled
+        # measures the grain, not the AA resolve.
+        pipeline.config.film_grain_enabled = False
         ecs = _build_scene()
         try:
             frames = _render_frames(pipeline, ecs, 8)

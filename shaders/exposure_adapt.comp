@@ -1,0 +1,89 @@
+#version 450 core
+// ============================================================
+//  Auto-Exposure: Histogram -> Target EV -> Temporal Adaptation
+//
+//  A single invocation walks the 256-bin histogram, finds the bin at
+//  the configured percentile (the "key" luminance), converts it to an
+//  EV100 value, and adapts the stored exposure toward it with
+//  asymmetric speeds: fast when the scene darkens, slow when it
+//  brightens. That asymmetry is what stops a camera from pumping when
+//  a bright object briefly enters frame.
+//
+//  Output: RGBA16F 1x1, .r = adapted EV100.
+// ============================================================
+
+layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout (std430, binding = 10) readonly buffer HistogramBuffer {
+    uint u_Histogram[256];
+};
+
+layout (binding = 0, rgba16f) uniform writeonly image2D u_ExposureOut;
+
+uniform sampler2D u_PreviousExposure;  // 1x1 RGBA16F, .r = previous EV100
+
+uniform float u_MinLogLum;
+uniform float u_MaxLogLum;
+uniform int   u_HistogramBins;
+uniform float u_ExposureKey;      // Target percentile in [0, 1]
+uniform float u_MinEV;            // Clamp on the adapted EV100
+uniform float u_MaxEV;
+uniform float u_AdaptSpeedUp;     // EV/s when the scene brightens
+uniform float u_AdaptSpeedDown;   // EV/s when the scene darkens
+uniform float u_DeltaTime;        // Seconds since the previous frame
+uniform int   u_HistoryValid;     // 0 on the first frame / after a cut
+
+// Calibration constant: the luminance (cd/m^2) that maps to EV100 = 0.
+const float LUMINANCE_TO_EV100 = 1.0 / 1.2;
+
+void main() {
+    uint total = 0u;
+    for (int i = 0; i < u_HistogramBins; ++i) {
+        total += u_Histogram[i];
+    }
+
+    // An empty histogram (fully black frame, or a frame that failed to
+    // render) must not drive the exposure to an extreme.
+    if (total == 0u) {
+        return;
+    }
+
+    // Walk from the darkest bin until the accumulated count reaches the key
+    // percentile. That bin's log luminance is the scene's representative
+    // luminance.
+    uint target_count = uint(float(total) * clamp(u_ExposureKey, 0.0, 1.0));
+    uint accumulated = 0u;
+    int key_bin = 0;
+    for (int i = 0; i < u_HistogramBins; ++i) {
+        accumulated += u_Histogram[i];
+        if (accumulated >= target_count) {
+            key_bin = i;
+            break;
+        }
+    }
+
+    float range = max(u_MaxLogLum - u_MinLogLum, 1e-4);
+    float bin_fraction = (float(key_bin) + 0.5) / float(u_HistogramBins);
+    float key_log_lum = u_MinLogLum + bin_fraction * range;
+    float key_luminance = exp2(key_log_lum);
+
+    // EV100 for that luminance, then the exposure multiplier that maps it to
+    // middle grey (0.18).
+    float ev100 = log2(max(key_luminance * LUMINANCE_TO_EV100, 1e-8));
+    float target_ev = log2(0.18) - ev100;
+    target_ev = clamp(target_ev, u_MinEV, u_MaxEV);
+
+    float previous_ev = target_ev;
+    if (u_HistoryValid == 1) {
+        previous_ev = texelFetch(u_PreviousExposure, ivec2(0, 0), 0).r;
+    }
+
+    // Asymmetric adaptation. Brightening (target > current) uses the slower
+    // speed so a passing highlight does not pump the whole image.
+    float speed = (target_ev > previous_ev) ? u_AdaptSpeedUp : u_AdaptSpeedDown;
+    float max_step = max(speed, 0.0) * max(u_DeltaTime, 0.0);
+    float delta = clamp(target_ev - previous_ev, -max_step, max_step);
+    float adapted_ev = clamp(previous_ev + delta, u_MinEV, u_MaxEV);
+
+    imageStore(u_ExposureOut, ivec2(0, 0), vec4(adapted_ev, target_ev, key_luminance, 1.0));
+}

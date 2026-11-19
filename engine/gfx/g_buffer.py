@@ -11,7 +11,7 @@ class GBuffer:
     Attachments:
     - RT0: Albedo (RGB) + Roughness (A) (RGBA8)
     - RT1: Octahedral Normal (RG) + Metallic (B) + AO (A) (RGBA16F)
-    - RT2: Velocity Vectors (RG16F)
+    - RT2: Velocity Vectors (RG) + Reactive Mask (B) (RGBA16F)
     - RT3: Displacement Info (RG16F) -> R=TextureLayerIndex, G=DisplacementMode
     - RT4: Entity Surface ID (R32F, exact integer IDs)
     - Depth: 32-bit Floating Point Depth (Reversed-Z)
@@ -74,8 +74,11 @@ class GBuffer:
         self.rt_normal_metallic = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.rt_normal_metallic.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
-        # RT2: Velocity Vectors (RG16F)
-        self.rt_velocity = self.ctx.texture((self.width, self.height), 2, dtype="f2")
+        # RT2: Velocity Vectors (RG) + Reactive Mask (B) (RGBA16F)
+        # The reactive mask marks pixels whose history must not accumulate
+        # (particles, water, decals, disocclusion). TAA reads it to drop the
+        # temporal feedback to zero there instead of smearing stale colour.
+        self.rt_velocity = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.rt_velocity.filter = (moderngl.NEAREST, moderngl.NEAREST)
 
         # RT3: Displacement Info (RGBA16F) -> RG=Mesh UV, B=TexLayerIndex, A=DisplacementMode

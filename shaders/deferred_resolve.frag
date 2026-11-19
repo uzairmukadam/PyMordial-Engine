@@ -102,6 +102,12 @@ uniform float u_PCSSMaxRadius = 96.0;     // penumbra radius clamp in cascade te
 // The closest blocker keeps overlapping shadows sharp instead of letting a far
 // caster's softness bleed onto a near caster's edge.
 uniform float u_PCSSClosestBlockerWeight = 1.0;
+// Physical penumbra scale: tan of the sun's angular radius (0.265 deg for the
+// real sun). When > 0 the penumbra is derived from the light's solid angle
+// instead of the authored ``u_PCSSLightSize`` factor, which is what produces
+// true contact hardening: a caster touching the receiver has a zero gap and
+// therefore a zero penumbra, while a caster 2 m up softens by 2 * tan(0.265deg).
+uniform float u_SunAngularRadius = 0.0;
 // Per-cascade atlas rect: xy = atlas UV offset, zw = atlas UV scale.
 uniform vec4 u_CascadeAtlasRect[4] = vec4[4](
     vec4(0.0, 0.0, 0.5, 0.5),
@@ -115,6 +121,7 @@ uniform int u_AOEnabled = 1;
 uniform int u_GIEnabled = 4;     // 0=Off/IBL, 1=SSGI, 4=Radiance Cascades (SSRC+FFPC)
 uniform int u_IBLEnabled = 1;
 uniform int u_SSREnabled = 1;
+uniform int u_EnergyCompensationEnabled = 1;
 uniform int u_PointLightCount = 0;
 uniform int u_SpotLightCount = 0;
 uniform int u_SpotShadowEnabled = 1;
@@ -123,6 +130,7 @@ uniform mat4 u_SpotLightViewProjection[4];
 #include "shaders/atmosphere.glsl"
 
 #include "shaders/common/shadows.glsl"
+#include "shaders/common/pbr_brdf.glsl"
 
 // Jorge Jimenez's Interleaved Gradient Noise (IGN) for uniform blue-noise spatial distribution
 float InterleavedGradientNoise(vec2 screen_pos) {
@@ -187,43 +195,8 @@ float SampleSpotShadow(int shadow_idx, vec3 world_pos, vec3 N, float bias) {
     return sum / max(weight_sum, 1e-5);
 }
 
-vec3 OctahedralDecode(vec2 f) {
-    f = f * 2.0 - 1.0;
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = clamp(-n.z, 0.0, 1.0);
-    n.x += (n.x >= 0.0) ? -t : t;
-    n.y += (n.y >= 0.0) ? -t : t;
-    return normalize(n);
-}
-
-float DistributionGGX(vec3 N, vec3 H, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    return a2 / max(PI * denom * denom, 0.0000001);
-}
-
-float GeometrySchlickGGX(float NdotV, float roughness) {
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    return NdotV / max(NdotV * (1.0 - k) + k, 0.0000001);
-}
-
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness) {
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
-}
-
-vec3 FresnelSchlick(float cosTheta, vec3 F0) {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
+// OctahedralDecode, DistributionGGX, GeometrySchlickGGX, GeometrySmith,
+// FresnelSchlick and FresnelSchlickRoughness come from common/pbr_brdf.glsl.
 
 // Jimenez Multi-Bounce Approximation for rich indirect saturation inside crevices
 vec3 MultiBounceAO(float visibility, vec3 albedo) {
@@ -489,7 +462,14 @@ float SamplePCSSShadow(ShadowCascade c) {
     float avg_gap = max(c.depth - avg_blocker, 0.0) / inv_far;
     float close_gap = max(c.depth - close_blocker, 0.0) / inv_far;
     float gap_world = mix(avg_gap, close_gap, clamp(u_PCSSClosestBlockerWeight, 0.0, 1.0));
-    float penumbra_world = gap_world * max(u_PCSSLightSize, 1e-5);
+    // Penumbra width. With a physical sun angular radius the penumbra is the
+    // geometric projection of the light disc: gap * tan(angular_radius). That
+    // is what makes contact hardening automatic -- a caster touching the
+    // receiver has gap 0 and therefore a perfectly sharp edge. The authored
+    // ``u_PCSSLightSize`` factor remains as the fallback for stylised lights.
+    float penumbra_world = (u_SunAngularRadius > 0.0)
+        ? gap_world * u_SunAngularRadius
+        : gap_world * max(u_PCSSLightSize, 1e-5);
     // world_texel is metres per cascade texel, so this is a plain unit
     // conversion. Deriving it from inv_rad * cascade_texels instead would be
     // 2x too large, because the cascade spans 2 * radius in world space.
@@ -840,7 +820,18 @@ void main() {
 
     // Subtle direct contact crevice micro-shadowing
     float direct_crevice = clamp(ao + max(dot(N, L), 0.0), 0.0, 1.0);
-    vec3 direct_sun = (kD * albedo / PI + specular) * radiance * NdotL * shadow * direct_crevice;
+
+    // Multi-scatter energy compensation. Single-scatter GGX drops the light that
+    // would bounce between microfacets, so rough metals lose 20-40% of their
+    // reflected energy. The BRDF LUT's blue channel carries the directional
+    // albedo E; the compensation factor restores the missing energy.
+    vec3 energy_comp = vec3(1.0);
+    if (u_EnergyCompensationEnabled == 1) {
+        float E = texture(u_BRDFLUT, vec2(max(dot(N, V), 0.001), roughness)).b;
+        energy_comp = GGXEnergyCompensation(F0, roughness, E);
+    }
+
+    vec3 direct_sun = (kD * albedo / PI + specular * energy_comp) * radiance * NdotL * shadow * direct_crevice;
 
     // Dynamic Clustered Point Lights (SSBO 3)
     vec3 point_lights_accum = vec3(0.0);
@@ -870,7 +861,7 @@ void main() {
                 vec3 pl_diff = (vec3(1.0) - pl_F) * (1.0 - metallic) * albedo / PI;
 
                 vec3 pl_rad = u_PointLights[i].color_intensity.rgb * u_PointLights[i].color_intensity.w;
-                point_lights_accum += (pl_diff + pl_spec) * pl_rad * pl_NdotL * atten;
+                point_lights_accum += (pl_diff + pl_spec * energy_comp) * pl_rad * pl_NdotL * atten;
             }
         }
     }
@@ -916,7 +907,7 @@ void main() {
                     vec3 sp_diff = (vec3(1.0) - sp_F) * (1.0 - metallic) * albedo / PI;
 
                     vec3 sp_rad = u_SpotLights[i].color_intensity.rgb * u_SpotLights[i].color_intensity.w;
-                    spot_lights_accum += (sp_diff + sp_spec) * sp_rad * sp_NdotL * atten * spot_cone * sp_shadow;
+                    spot_lights_accum += (sp_diff + sp_spec * energy_comp) * sp_rad * sp_NdotL * atten * spot_cone * sp_shadow;
                 }
             }
         }
@@ -985,8 +976,9 @@ void main() {
         vec3 R = reflect(-V, N);
         float NdotV = max(dot(N, V), 0.0);
 
-        // Sample Split-Sum BRDF LUT
-        vec2 brdf = texture(u_BRDFLUT, vec2(NdotV, roughness)).rg;
+        // Sample Split-Sum BRDF LUT. `rg` is the split-sum term, `b` is the
+        // directional albedo used by the multi-scatter energy compensation.
+        vec3 brdf = texture(u_BRDFLUT, vec2(NdotV, roughness)).rgb;
 
         // Sample Prefiltered Environment Map
         vec2 env_uv = vec2(atan(R.z, R.x) / (2.0 * PI) + 0.5, asin(clamp(R.y, -0.999, 0.999)) / PI + 0.5);
@@ -1014,7 +1006,7 @@ void main() {
         float spec_ao = clamp(ao * ao + sqrt(NdotV) * (1.0 - ao), 0.0, 1.0);
 
         vec3 F_env = FresnelSchlickRoughness(NdotV, F0, roughness);
-        indirect_specular = env_radiance * (F_env * brdf.x + brdf.y) * spec_ao;
+        indirect_specular = env_radiance * (F_env * brdf.x + brdf.y) * spec_ao * energy_comp;
     }
 
     // Total combine with Multi-Bounce color-preserving Ambient Occlusion on diffuse
@@ -1027,7 +1019,10 @@ void main() {
         isinf(total_lit.r) || isinf(total_lit.g) || isinf(total_lit.b)) {
         total_lit = max(ambient_base, vec3(0.05));
     }
-    total_lit = clamp(total_lit, vec3(0.0), vec3(100.0));
+    // Sanity clamp only. The previous 100.0 ceiling clipped real HDR headroom
+    // (sun disc, speculars, emissives) before bloom and tone-mapping could use
+    // it. 1e4 still catches runaway values without touching legitimate radiance.
+    total_lit = clamp(total_lit, vec3(0.0), vec3(1e4));
 
     out_HDRColor = vec4(total_lit, 1.0);
 }

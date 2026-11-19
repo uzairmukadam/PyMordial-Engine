@@ -274,6 +274,12 @@ void main() {
     float speedPx = length(velocity * res);
     float fb = mix(u_Feedback, max(u_Feedback - 0.15, u_MinFeedback), smoothstep(1.5, 6.0, speedPx));
 
+    // Reactive mask: pixels flagged by transparent passes (particles, water,
+    // decals) or by disocclusion must not accumulate stale history. Dropping
+    // the feedback to zero makes them resolve to the current frame.
+    float reactive = clamp(texture(u_VelocityTexture, v_UV).b, 0.0, 1.0);
+    fb = mix(fb, 0.0, reactive);
+
     vec3 blended_yc = mix(curr_yc, clipped_yc, fb);
     vec3 resolved_rgb = max(YCoCgtoRGB(UntonemapYCoCg(blended_yc)), vec3(0.0));
 

@@ -7,6 +7,7 @@ in vec3 tc_Normal[];
 in vec2 tc_UV[];
 in vec2 tc_UVScale[];
 in vec4 tc_Tangent[];
+in vec3 tc_PrevPosition[];
 in flat uint tc_EntityID[];
 
 out vec3 te_Position[];
@@ -14,6 +15,7 @@ out vec3 te_Normal[];
 out vec2 te_UV[];
 out vec2 te_UVScale[];
 out vec4 te_Tangent[];
+out vec3 te_PrevPosition[];
 out flat uint te_EntityID[];
 
 // Common Frame Data UBO (binding 0)
@@ -133,6 +135,7 @@ void main() {
     te_UV[gl_InvocationID] = tc_UV[gl_InvocationID];
     te_UVScale[gl_InvocationID] = tc_UVScale[gl_InvocationID];
     te_Tangent[gl_InvocationID] = tc_Tangent[gl_InvocationID];
+    te_PrevPosition[gl_InvocationID] = tc_PrevPosition[gl_InvocationID];
     te_EntityID[gl_InvocationID] = tc_EntityID[gl_InvocationID];
 
     // Compute dynamic tessellation levels on first invocation

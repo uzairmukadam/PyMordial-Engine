@@ -156,8 +156,49 @@ class RenderConfig:
     bloom_iterations: int = 5  # Dual-filter pyramid mip passes (3 to 6)
     bloom_threshold: float = 1.0
     bloom_intensity: float = 0.12
-    tonemap_mode: str = "ACES"  # "ACES", "AgX", "Reinhard"
+    tonemap_mode: str = "ACES"  # "ACES" (fitted RRT+ODT), "AgX", "Neutral", "Reinhard"
     exposure: float = 1.0
+
+    # ---- Graphics Upgrade: colour pipeline (Pass 1) ----
+    # EV stops applied on top of `exposure`. Positive brightens.
+    exposure_compensation: float = 0.0
+    # White balance in Kelvin; 6500 K is a no-op. Disabled by default so the
+    # existing look is unchanged until a project opts in.
+    white_balance_enabled: bool = False
+    white_balance_k: float = 6500.0
+    # ASC-CDL style grading applied in display-referred space after the curve.
+    contrast: float = 1.0
+    saturation: float = 1.0
+    lift: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    gamma: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    gain: tuple[float, float, float] = (1.0, 1.0, 1.0)
+
+    # ---- Graphics Upgrade: auto-exposure (Pass 2) ----
+    # When enabled, a GPU log-luminance histogram drives the exposure and
+    # `exposure` becomes a bias on top of the adapted value.
+    auto_exposure_enabled: bool = False
+    exposure_key: float = 0.5  # Target percentile of the luminance histogram
+    exposure_min_ev: float = -8.0  # Clamp on the adapted EV100
+    exposure_max_ev: float = 12.0
+    exposure_adapt_speed_up: float = 1.5  # EV/s when the scene brightens
+    exposure_adapt_speed_down: float = 4.0  # EV/s when the scene darkens
+    exposure_min_log_luminance: float = -12.0  # Histogram bin 0 lower bound
+    exposure_max_log_luminance: float = 16.0  # Histogram bin 255 upper bound
+
+    # ---- Graphics Upgrade: energy-conserving BRDF (Pass 3) ----
+    # Restores the energy single-scatter GGX drops between microfacets, so rough
+    # metals stop going dark. Requires the BRDF LUT's blue channel (directional
+    # albedo), which is generated automatically.
+    energy_compensation_enabled: bool = True
+    # Folds unresolved normal-map variance into roughness to stop specular
+    # aliasing on high-frequency detail.
+    specular_aa_enabled: bool = True
+    specular_aa_strength: float = 1.0
+
+    # ---- Graphics Upgrade: per-object motion vectors (Pass 4) ----
+    # Reprojects with the previous frame's model matrix so moving objects report
+    # their own velocity. Without this TAA smears anything that moves.
+    object_motion_vectors_enabled: bool = True
 
     volumetric_fog_enabled: bool = True
     fog_resolution: str = "HIGH"  # "LOW", "MEDIUM", "HIGH", "ULTRA", "CINEMATIC"
@@ -242,7 +283,7 @@ class RenderConfig:
     vignette_intensity: float = 0.35
     vignette_roundness: float = 0.85
     vignette_smoothness: float = 0.50
-    film_grain_enabled: bool = True
+    film_grain_enabled: bool = False
     film_grain_intensity: float = 0.03
 
 
@@ -284,7 +325,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=False,
         vignette_enabled=True,
         vignette_intensity=0.20,
-        film_grain_enabled=True,
+        film_grain_enabled=False,
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.MEDIUM: RenderConfig(
@@ -333,7 +374,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.003,
         vignette_enabled=True,
-        film_grain_enabled=True,
+        film_grain_enabled=False,
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.HIGH: RenderConfig(
@@ -395,7 +436,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.005,
         vignette_enabled=True,
-        film_grain_enabled=True,
+        film_grain_enabled=False,
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.ULTRA: RenderConfig(
@@ -457,7 +498,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.007,
         vignette_enabled=True,
-        film_grain_enabled=True,
+        film_grain_enabled=False,
         film_grain_intensity=0.03,
     ),
     GraphicsQuality.CINEMATIC: RenderConfig(
@@ -520,7 +561,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         chromatic_aberration_enabled=True,
         chromatic_aberration_intensity=0.008,
         vignette_enabled=True,
-        film_grain_enabled=True,
+        film_grain_enabled=False,
         film_grain_intensity=0.03,
     ),
 }

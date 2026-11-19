@@ -33,6 +33,15 @@ layout (std430, binding = 1) readonly buffer TransformBuffer {
     mat4 u_WorldTransforms[];
 };
 
+// SSBO 7: Previous-frame world transforms.
+//
+// Motion vectors must reproject with the transform the object had LAST frame,
+// not the one it has now. Using the current matrix reports zero object velocity
+// for anything that moves, which makes TAA smear it across the screen.
+layout (std430, binding = 7) readonly buffer PrevTransformBuffer {
+    mat4 u_PrevWorldTransforms[];
+};
+
 // SSBO 2: Material Data (two vec4 per entity)
 layout (std430, binding = 2) readonly buffer MaterialBuffer {
     vec4 u_MaterialData[];
@@ -56,6 +65,9 @@ out vec3 v_TangentSunDir;
 
 uniform uint u_BaseInstance; // Set per draw batch or via indirect command
 uniform mat4 u_PrevViewProjection;
+// 1 = reproject with the previous model matrix (correct per-object motion).
+// 0 = reproject with the current one (camera-only motion, the legacy path).
+uniform int u_ObjectMotionVectors = 1;
 
 void main() {
 #ifdef GL_ARB_shader_draw_parameters
@@ -82,7 +94,15 @@ void main() {
     );
 
     v_CurrClip = u_ViewProjection * world_pos;
-    v_PrevClip = (u_PrevViewProjection[3][3] != 0.0) ? (u_PrevViewProjection * world_pos) : v_CurrClip;
+    // Reproject with the PREVIOUS model matrix so a moving object reports its
+    // own motion. The guard keeps the first frame (all-zero buffer) from
+    // producing a garbage velocity.
+    vec4 prev_world_pos = (u_ObjectMotionVectors == 1)
+        ? (u_PrevWorldTransforms[entity_idx] * vec4(in_position, 1.0))
+        : world_pos;
+    v_PrevClip = (u_PrevViewProjection[3][3] != 0.0)
+        ? (u_PrevViewProjection * prev_world_pos)
+        : v_CurrClip;
 
     // Phase 6: Compute TBN matrix from vertex tangent + normal
     vec3 T = normalize(normal_matrix * in_tangent.xyz);

@@ -5,6 +5,7 @@ from __future__ import annotations
 import moderngl
 
 from engine.gfx.quality_presets import RenderConfig
+from engine.gfx.shader_utils import expand_includes
 
 
 class PostProcessPipeline:
@@ -23,9 +24,17 @@ class PostProcessPipeline:
         "quad_vao",
         "_dummy_black_tex",
         "_u_exposure",
+        "_u_exposure_compensation",
         "_u_bloom_enabled",
         "_u_bloom_intensity",
         "_u_tonemap_mode",
+        "_u_white_balance_enabled",
+        "_u_white_balance_k",
+        "_u_contrast",
+        "_u_saturation",
+        "_u_lift",
+        "_u_gamma",
+        "_u_gain",
         "_u_lens_flare_enabled",
         "_u_chromatic_aberration_enabled",
         "_u_chromatic_aberration_intensity",
@@ -54,7 +63,7 @@ class PostProcessPipeline:
 
         self.program = self.ctx.program(
             vertex_shader=quad_vert_glsl,
-            fragment_shader=post_process_glsl,
+            fragment_shader=expand_includes(post_process_glsl),
         )
 
         # Procedural full-screen quad (0 vertex attributes)
@@ -62,9 +71,18 @@ class PostProcessPipeline:
 
         # Cache uniform handles to eliminate per-frame dictionary lookups
         self._u_exposure = self.program.get("u_Exposure", None)
+        self._u_exposure_compensation = self.program.get("u_ExposureCompensation", None)
         self._u_bloom_enabled = self.program.get("u_BloomEnabled", None)
         self._u_bloom_intensity = self.program.get("u_BloomIntensity", None)
         self._u_tonemap_mode = self.program.get("u_TonemapMode", None)
+
+        self._u_white_balance_enabled = self.program.get("u_WhiteBalanceEnabled", None)
+        self._u_white_balance_k = self.program.get("u_WhiteBalanceK", None)
+        self._u_contrast = self.program.get("u_Contrast", None)
+        self._u_saturation = self.program.get("u_Saturation", None)
+        self._u_lift = self.program.get("u_Lift", None)
+        self._u_gamma = self.program.get("u_Gamma", None)
+        self._u_gain = self.program.get("u_Gain", None)
 
         self._u_lens_flare_enabled = self.program.get("u_LensFlareEnabled", None)
         self._u_chromatic_aberration_enabled = self.program.get("u_ChromaticAberrationEnabled", None)
@@ -137,8 +155,13 @@ class PostProcessPipeline:
         flare_texture: moderngl.Texture | None = None,
         bloom_texture: moderngl.Texture | None = None,
         time_elapsed: float = 0.0,
+        exposure_ev: float | None = None,
     ) -> None:
-        """Executes tonemapping and blits to target_fbo (or screen)."""
+        """Executes tonemapping and blits to target_fbo (or screen).
+
+        ``exposure_ev`` is the auto-exposure controller's adapted EV. When it is
+        ``None`` the static ``RenderConfig.exposure`` is used instead.
+        """
         fbo = target_fbo if target_fbo is not None else self.final_fbo
         fbo.use()
         self.ctx.viewport = (0, 0, self.width, self.height)
@@ -163,19 +186,47 @@ class PostProcessPipeline:
 
         # Set uniforms via pre-cached handles (zero string lookups)
         if self._u_exposure is not None:
-            self._u_exposure.value = self.config.exposure
+            if exposure_ev is not None:
+                # Auto-exposure: the adapted EV is the exposure, and the static
+                # `exposure` becomes a user bias on top of it.
+                self._u_exposure.value = float(2.0**exposure_ev) * float(self.config.exposure)
+            else:
+                self._u_exposure.value = self.config.exposure
+        if self._u_exposure_compensation is not None:
+            self._u_exposure_compensation.value = float(getattr(self.config, "exposure_compensation", 0.0))
         if self._u_bloom_enabled is not None:
             self._u_bloom_enabled.value = 1 if bloom_on else 0
         if self._u_bloom_intensity is not None:
             self._u_bloom_intensity.value = self.config.bloom_intensity
 
-        tonemap_idx = 0  # ACES
+        tonemap_idx = 0  # ACES fitted
         if self.config.tonemap_mode == "AgX":
             tonemap_idx = 1
-        elif self.config.tonemap_mode == "Reinhard":
+        elif self.config.tonemap_mode == "Neutral":
             tonemap_idx = 2
+        elif self.config.tonemap_mode == "Reinhard":
+            tonemap_idx = 3
         if self._u_tonemap_mode is not None:
             self._u_tonemap_mode.value = tonemap_idx
+
+        # White balance
+        wb_on = bool(getattr(self.config, "white_balance_enabled", False))
+        if self._u_white_balance_enabled is not None:
+            self._u_white_balance_enabled.value = 1 if wb_on else 0
+        if self._u_white_balance_k is not None:
+            self._u_white_balance_k.value = float(getattr(self.config, "white_balance_k", 6500.0))
+
+        # Grading
+        if self._u_contrast is not None:
+            self._u_contrast.value = float(getattr(self.config, "contrast", 1.0))
+        if self._u_saturation is not None:
+            self._u_saturation.value = float(getattr(self.config, "saturation", 1.0))
+        if self._u_lift is not None:
+            self._u_lift.value = tuple(getattr(self.config, "lift", (0.0, 0.0, 0.0)))
+        if self._u_gamma is not None:
+            self._u_gamma.value = tuple(getattr(self.config, "gamma", (1.0, 1.0, 1.0)))
+        if self._u_gain is not None:
+            self._u_gain.value = tuple(getattr(self.config, "gain", (1.0, 1.0, 1.0)))
 
         # Lens Flare
         if self._u_lens_flare_enabled is not None:
