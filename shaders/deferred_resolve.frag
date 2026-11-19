@@ -429,20 +429,35 @@ float SamplePCSSShadow(ShadowCascade c) {
     // receiver directly under an occluder never reports "no blockers" because
     // the coarse taps straddled it.
     //
-    // We track both the average blocker depth and the closest one. The average
-    // is the classic PCSS estimate, but it is wrong when two shadows overlap: a
-    // near caster (small gap, sharp) and a far caster (large gap, soft) average
-    // to a medium gap, which softens the near shadow that should stay crisp.
-    // The closest blocker is what actually determines the sharpest edge at this
-    // pixel, so it is the better default.
+    // Two estimates are accumulated:
+    //
+    //   * ``avg_blocker`` - the classic PCSS average. Stable, but wrong when two
+    //     shadows overlap: a near caster (small gap, sharp) and a far caster
+    //     (large gap, soft) average to a medium gap, softening the near shadow.
+    //   * ``close_blocker`` - a closeness-weighted average. A pure max would be
+    //     the sharpest estimate, but a max over noisy taps is high-variance:
+    //     one outlier tap dominates the whole pixel, which is exactly what makes
+    //     a PCSS penumbra look blotchy. Weighting each blocker by how close it
+    //     is keeps the near caster dominant while averaging away the noise.
     float blocker_sum = 0.0;
     int blocker_count = 0;
-    float closest_blocker = -1e20;
+    float close_blocker_sum = 0.0;
+    float close_weight_sum = 0.0;
+
+    // Closeness weight: 1.0 for a blocker touching the receiver, falling off
+    // with the gap measured in cascade texels. The 0.05 scale means a blocker
+    // 20 texels further away contributes half as much.
+    float inv_far = max(c.inv_far, 1e-6);
+    float inv_world_texel = 1.0 / max(c.world_texel, 1e-6);
+
     float center_depth = texture(u_ShadowAtlas, c.uv).r;
     if (center_depth < c.depth - c.bias) {
         blocker_sum += center_depth;
         blocker_count++;
-        closest_blocker = max(closest_blocker, center_depth);
+        float gap_texels = max(c.depth - center_depth, 0.0) * inv_far * inv_world_texel;
+        float w = 1.0 / (1.0 + gap_texels * 0.05);
+        close_blocker_sum += center_depth * w;
+        close_weight_sum += w;
     }
     for (int i = 0; i < search_taps; ++i) {
         vec2 tap = clamp(c.uv + VogelDiskSample(i, search_taps, search_phi) * search_radius, c.uv_min, c.uv_max);
@@ -451,7 +466,10 @@ float SamplePCSSShadow(ShadowCascade c) {
         if (stored < ref_depth) {
             blocker_sum += stored;
             blocker_count++;
-            closest_blocker = max(closest_blocker, stored);
+            float gap_texels = max(c.depth - stored, 0.0) * inv_far * inv_world_texel;
+            float w = 1.0 / (1.0 + gap_texels * 0.05);
+            close_blocker_sum += stored * w;
+            close_weight_sum += w;
         }
     }
     if (blocker_count == 0) {
@@ -463,14 +481,14 @@ float SamplePCSSShadow(ShadowCascade c) {
     // by dividing by the cascade's depth scale.
     //
     // ``u_PCSSClosestBlockerWeight`` blends between the average gap (0.0, the
-    // classic PCSS estimate) and the closest blocker's gap (1.0). The default
+    // classic PCSS estimate) and the closeness-weighted gap (1.0). The default
     // is 1.0 so overlapping shadows keep the near caster's sharpness instead of
     // inheriting the far caster's softness.
     float avg_blocker = blocker_sum / float(blocker_count);
-    float inv_far = max(c.inv_far, 1e-6);
+    float close_blocker = close_blocker_sum / max(close_weight_sum, 1e-6);
     float avg_gap = max(c.depth - avg_blocker, 0.0) / inv_far;
-    float closest_gap = max(c.depth - closest_blocker, 0.0) / inv_far;
-    float gap_world = mix(avg_gap, closest_gap, clamp(u_PCSSClosestBlockerWeight, 0.0, 1.0));
+    float close_gap = max(c.depth - close_blocker, 0.0) / inv_far;
+    float gap_world = mix(avg_gap, close_gap, clamp(u_PCSSClosestBlockerWeight, 0.0, 1.0));
     float penumbra_world = gap_world * max(u_PCSSLightSize, 1e-5);
     // world_texel is metres per cascade texel, so this is a plain unit
     // conversion. Deriving it from inv_rad * cascade_texels instead would be
@@ -486,19 +504,46 @@ float SamplePCSSShadow(ShadowCascade c) {
     float radius_texels = clamp(penumbra_texels, min_radius, max_radius);
     float radius = radius_texels * c.texel_uv;
 
-    // Step 3: disk filter over the estimated penumbra. A second, decorrelated
-    // phase keeps the search and filter disks from sharing tap directions,
-    // which would correlate their error.
-    int taps = clamp(u_PCSSSamples, 4, 64);
+    // Step 3: disk filter over the estimated penumbra.
+    //
+    // Two things make this read as a smooth penumbra rather than a blurry blob:
+    //
+    //   * A Gaussian falloff instead of ``pow(1 - r2, n)``. The polynomial form
+    //     has a hard rim at r2 = 1, which shows up as a visible ring where the
+    //     filter stops. A Gaussian decays to zero smoothly, so the penumbra
+    //     fades out instead of ending.
+    //   * A tap count that scales with the radius. A fixed budget spread over a
+    //     wide penumbra under-samples it into visible banding; scaling keeps
+    //     taps-per-texel roughly constant.
+    //
+    // A second, decorrelated phase keeps the search and filter disks from
+    // sharing tap directions, which would correlate their error.
+    float radius_texels_clamped = max(radius_texels, 1.0);
+    int taps = clamp(
+        int(radius_texels_clamped * radius_texels_clamped * 0.35),
+        clamp(u_PCSSSamples, 4, 64),
+        96
+    );
     float falloff = max(u_PCSSFalloff, 0.25);
     float filter_phi = search_phi + 2.39996323;
+
+    // Gaussian sigma chosen so the kernel reaches ~zero at the disk rim.
+    float sigma = max(radius_texels_clamped * 0.5, 1e-3);
+    float inv_two_sigma_sq = 1.0 / (2.0 * sigma * sigma);
 
     float sum = 0.0;
     float weight_sum = 0.0;
     for (int i = 0; i < taps; ++i) {
-        float r2 = (float(i) + 0.5) / float(taps);
-        float w = pow(1.0 - r2, falloff);
-        sum += ShadowCmpTap(c, c.uv + VogelDiskSample(i, taps, filter_phi) * radius) * w;
+        vec2 offset = VogelDiskSample(i, taps, filter_phi) * radius;
+        // VogelDiskSample returns a unit-disk point, so its squared length is
+        // the normalised squared radius used by the Gaussian.
+        float r2 = dot(offset, offset) / max(radius * radius, 1e-12);
+        float dist_texels = sqrt(r2) * radius_texels_clamped;
+        float w = exp(-dist_texels * dist_texels * inv_two_sigma_sq);
+        // Sharpen the tail for high falloff values so the parameter still
+        // controls how tight the penumbra reads.
+        w = pow(w, falloff * 0.5);
+        sum += ShadowCmpTap(c, c.uv + offset) * w;
         weight_sum += w;
     }
     return sum / max(weight_sum, 1e-5);

@@ -338,11 +338,23 @@ class TestPCSSFiltering:
         start = source.index("float SamplePCSSShadow(")
         end = source.index("float SampleCascadeShadow(", start)
         body = source[start:end]
-        assert "closest_blocker" in body, (
-            "PCSS must track the closest blocker so a near caster keeps its sharp "
-            "edge when its shadow overlaps a far caster's soft shadow."
+        assert "close_blocker" in body, (
+            "PCSS must track a closeness-weighted blocker so a near caster keeps its "
+            "sharp edge when its shadow overlaps a far caster's soft shadow."
         )
-        assert "closest_gap" in body
+        assert "close_gap" in body
+
+    def test_closest_blocker_is_closeness_weighted_not_a_max(self) -> None:
+        """A raw max over noisy taps is what makes a PCSS penumbra blotchy."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "close_weight_sum" in body, (
+            "The closest-blocker estimate must be a closeness-weighted average, not a "
+            "max: a max lets one outlier tap dominate the whole pixel."
+        )
+        assert "closest_blocker = max(" not in body
 
     def test_pcss_blends_average_and_closest_gap(self) -> None:
         source = _resolve_source()
@@ -353,7 +365,30 @@ class TestPCSSFiltering:
             "The average/closest blend must be exposed so the classic PCSS look "
             "remains reachable."
         )
-        assert "mix(avg_gap, closest_gap" in body
+        assert "mix(avg_gap, close_gap" in body
+
+    def test_pcss_filter_uses_a_gaussian_falloff(self) -> None:
+        """A polynomial cutoff leaves a visible rim where the filter stops."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "exp(-" in body, (
+            "The penumbra filter must use a Gaussian falloff; pow(1 - r2, n) has a "
+            "hard rim at the disk edge that reads as a visible ring."
+        )
+        assert "pow(1.0 - r2" not in body
+
+    def test_pcss_tap_count_scales_with_radius(self) -> None:
+        """A fixed budget over a wide penumbra under-samples into banding."""
+        source = _resolve_source()
+        start = source.index("float SamplePCSSShadow(")
+        end = source.index("float SampleCascadeShadow(", start)
+        body = source[start:end]
+        assert "radius_texels_clamped * radius_texels_clamped" in body, (
+            "The tap count must scale with the squared radius so taps-per-texel "
+            "stays roughly constant."
+        )
 
     def test_closest_blocker_weight_defaults_to_closest(self) -> None:
         cfg = RenderConfig()

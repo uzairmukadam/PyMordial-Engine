@@ -1455,12 +1455,15 @@ class RenderPipeline:
         ctx.resources["sky_view_lut"] = env.sky_view_lut
         if self.config.gi_mode == "RADIANCE_CASCADES":
             ctx.resources["prev_view"] = self._prev_view_mat
+            self.ssgi_pass.invalidate_history()
             self.rc_pass.execute(ctx)
         elif self.config.gi_mode == "SSGI":
             self.rc_pass.invalidate_history()
+            ctx.resources["prev_view"] = self._prev_view_mat
             self.ssgi_pass.execute(ctx)
         else:
             self.rc_pass.invalidate_history()
+            self.ssgi_pass.invalidate_history()
 
         # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
         self.ibl_pass.execute(ctx)

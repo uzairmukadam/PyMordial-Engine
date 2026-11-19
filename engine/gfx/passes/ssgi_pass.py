@@ -42,8 +42,16 @@ class SSGIPass(RenderPass):
         self.blur_ssgi_tex.repeat_x = False
         self.blur_ssgi_tex.repeat_y = False
 
+        # Temporal history. Holds the previous frame's resolved result, with the
+        # view depth in alpha so the next frame can validate the reprojection.
+        self.history_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.history_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.history_ssgi_tex.repeat_x = False
+        self.history_ssgi_tex.repeat_y = False
+
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssgi_tex])
+        self.history_fbo = self.ctx.framebuffer(color_attachments=[self.history_ssgi_tex])
 
         # 1x1 black fallback
         self.black_fallback = self.ctx.texture((1, 1), 4, data=b"\x00" * 8, dtype="f2")
@@ -67,8 +75,19 @@ class SSGIPass(RenderPass):
         self._u_hiz_mips = self.ssgi_prog.get("u_HiZMipCount", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
+        self._u_target_res = self.blur_prog.get("u_TargetResolution", None)
+        self._u_prev_view = self.blur_prog.get("u_PrevView", None)
+        self._u_temporal_blend = self.blur_prog.get("u_TemporalBlend", None)
+        self._u_history_valid = self.blur_prog.get("u_HistoryValid", None)
+        self._u_temporal_enabled = self.blur_prog.get("u_TemporalEnabled", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
+        self._target_res_tuple = (float(self.width), float(self.height))
+        self._first_frame = True
+
+    def invalidate_history(self) -> None:
+        """Forces the next frame to discard temporal history."""
+        self._first_frame = True
 
     def resize(self, width: int, height: int, resolution_scale: float | None = None) -> None:
         new_scale = self.resolution_scale if resolution_scale is None else min(max(float(resolution_scale), 0.25), 1.0)
@@ -83,8 +102,10 @@ class SSGIPass(RenderPass):
 
         self.raw_fbo.release()
         self.blur_fbo.release()
+        self.history_fbo.release()
         self.raw_ssgi_tex.release()
         self.blur_ssgi_tex.release()
+        self.history_ssgi_tex.release()
 
         self.raw_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.raw_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -96,11 +117,21 @@ class SSGIPass(RenderPass):
         self.blur_ssgi_tex.repeat_x = False
         self.blur_ssgi_tex.repeat_y = False
 
+        self.history_ssgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.history_ssgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.history_ssgi_tex.repeat_x = False
+        self.history_ssgi_tex.repeat_y = False
+
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssgi_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssgi_tex])
+        self.history_fbo = self.ctx.framebuffer(color_attachments=[self.history_ssgi_tex])
 
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
+        self._target_res_tuple = (float(self.width), float(self.height))
+        # A resized target invalidates the history: the old samples no longer
+        # correspond to the same pixels.
+        self._first_frame = True
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "SSGI")
@@ -151,11 +182,31 @@ class SSGIPass(RenderPass):
 
         self.ssgi_vao.render(moderngl.TRIANGLES, vertices=3)
 
-        # 2. Horizontal Bilateral Blur: raw -> blur_fbo
+        # Temporal state. The history is only valid if the previous frame wrote
+        # one at the same resolution and the camera did not teleport.
+        prev_view = context.resources.get("prev_view", None)
+        history_valid = (not self._first_frame) and prev_view is not None
+        temporal_enabled = bool(getattr(context.config, "ssgi_temporal_enabled", True))
+        temporal_blend = float(getattr(context.config, "ssgi_temporal_blend", 0.90))
+
+        if self._u_target_res is not None:
+            self._u_target_res.value = self._target_res_tuple
+        if self._u_temporal_blend is not None:
+            self._u_temporal_blend.value = temporal_blend
+        if self._u_history_valid is not None:
+            self._u_history_valid.value = 1 if history_valid else 0
+        if self._u_temporal_enabled is not None:
+            self._u_temporal_enabled.value = 1 if temporal_enabled else 0
+        if self._u_prev_view is not None and prev_view is not None:
+            self._u_prev_view.write(prev_view.tobytes())
+
+        # 2. Horizontal Bilateral Blur + temporal resolve: raw -> blur_fbo
         self.blur_fbo.use()
         self.raw_ssgi_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
+        self.history_ssgi_tex.use(location=3)
+        g_buffer.velocity_texture.use(location=4)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_h
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
@@ -165,17 +216,25 @@ class SSGIPass(RenderPass):
         self.blur_ssgi_tex.use(location=0)
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
+        self.history_ssgi_tex.use(location=3)
+        g_buffer.velocity_texture.use(location=4)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_v
         self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+
+        # 4. Copy the resolved result into the history for the next frame.
+        self.ctx.copy_framebuffer(self.history_fbo, self.raw_fbo)
+        self._first_frame = False
 
         context.resources["ssgi_texture"] = self.raw_ssgi_tex
 
     def destroy(self) -> None:
         self.raw_fbo.release()
         self.blur_fbo.release()
+        self.history_fbo.release()
         self.raw_ssgi_tex.release()
         self.blur_ssgi_tex.release()
+        self.history_ssgi_tex.release()
         self.black_fallback.release()
         self.ssgi_vao.release()
         self.blur_vao.release()

@@ -82,6 +82,8 @@ class EngineTweaks:
         "ssgi_ray_distance",
         "ssgi_intensity",
         "ssgi_resolution_scale",
+        "ssgi_temporal_enabled",
+        "ssgi_temporal_blend",
         "rc_ray_count",
         "rc_intensity",
         "rc_interval_c0",
@@ -311,6 +313,8 @@ class EngineTweaks:
         self.ssgi_ray_distance = 3.0
         self.ssgi_intensity = 1.5
         self.ssgi_resolution_scale = 1.0
+        self.ssgi_temporal_enabled = True
+        self.ssgi_temporal_blend = 0.90
         self.rc_ray_count = 16
         self.rc_intensity = 1.0
         self.rc_interval_c0 = 0.40
@@ -685,6 +689,8 @@ class EngineTweaks:
             p_cfg.ssgi_ray_distance = float(self.ssgi_ray_distance)
             p_cfg.ssgi_intensity = float(self.ssgi_intensity)
             p_cfg.ssgi_resolution_scale = float(self.ssgi_resolution_scale)
+            p_cfg.ssgi_temporal_enabled = bool(self.ssgi_temporal_enabled)
+            p_cfg.ssgi_temporal_blend = float(self.ssgi_temporal_blend)
             p_cfg.rc_ray_count = int(self.rc_ray_count)
             p_cfg.rc_intensity = float(self.rc_intensity)
             p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
@@ -941,6 +947,8 @@ class EngineTweaks:
             "ssgi_ray_distance",
             "ssgi_intensity",
             "ssgi_resolution_scale",
+            "ssgi_temporal_enabled",
+            "ssgi_temporal_blend",
             "rc_ray_count",
             "rc_intensity",
             "rc_interval_c0",
@@ -1155,6 +1163,8 @@ class EngineTweaks:
             "ssgi_ray_distance": float(self.ssgi_ray_distance),
             "ssgi_intensity": float(self.ssgi_intensity),
             "ssgi_resolution_scale": float(self.ssgi_resolution_scale),
+            "ssgi_temporal_enabled": bool(self.ssgi_temporal_enabled),
+            "ssgi_temporal_blend": float(self.ssgi_temporal_blend),
             "rc_ray_count": int(self.rc_ray_count),
             "rc_intensity": float(self.rc_intensity),
             "rc_interval_c0": float(self.rc_interval_c0),

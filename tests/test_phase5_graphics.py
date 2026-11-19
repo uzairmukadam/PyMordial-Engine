@@ -224,6 +224,75 @@ class TestGTAOAndBilateralBlur:
 
 
 class TestSSGIGlobalIllumination:
+    def test_ssgi_has_a_temporal_history_target(self, render_ctx: RenderContext):
+        """A single-frame SSGI estimate is noisy; history is what converges it."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            assert pipeline.ssgi_pass.history_ssgi_tex.size == (320, 240)
+            assert pipeline.ssgi_pass.history_ssgi_tex.dtype == "f2"
+        finally:
+            pipeline.destroy()
+
+    def test_ssgi_temporal_config_defaults(self) -> None:
+        cfg = RenderConfig()
+        assert cfg.ssgi_temporal_enabled is True
+        assert 0.0 < cfg.ssgi_temporal_blend <= 0.95
+
+    def test_ssgi_history_invalidated_on_resize(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0))
+            pipeline.config.gi_mode = GIMode.SSGI.value
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), camera_target=(0.0, 0.0, 0.0))
+            assert pipeline.ssgi_pass._first_frame is False
+
+            pipeline.resize(400, 300)
+            assert pipeline.ssgi_pass._first_frame is True, (
+                "A resize must invalidate the history: old samples no longer "
+                "correspond to the same pixels."
+            )
+        finally:
+            pipeline.destroy()
+            # The context is module-scoped; restore the size other tests expect.
+            render_ctx.resize(320, 240)
+
+    def test_ssgi_temporal_reduces_flicker(self, render_ctx: RenderContext):
+        """Temporal accumulation must make the SSGI signal more stable."""
+        import numpy as np
+
+        def sample(temporal: bool) -> float:
+            pipeline = RenderPipeline(render_ctx)
+            try:
+                pipeline.config.gi_mode = GIMode.SSGI.value
+                pipeline.config.ssgi_temporal_enabled = temporal
+                ecs = EntityManager(max_entities=10)
+                ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+                ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.2, 0.2))
+                frames = []
+                for i in range(10):
+                    pipeline.render_frame(
+                        ecs=ecs,
+                        camera_pos=(0.0, 2.0, 5.0),
+                        camera_target=(0.0, 0.0, 0.0),
+                        time_elapsed=0.1 + i / 60.0,
+                        sun_dir=(0.5, -0.7, 0.4),
+                    )
+                    raw = pipeline.ssgi_pass.raw_ssgi_tex.read()
+                    frames.append(
+                        np.frombuffer(raw, dtype=np.float16).reshape(240, 320, 4)[..., :3].astype(np.float32)
+                    )
+                deltas = [float(np.abs(frames[i + 1] - frames[i]).mean()) for i in range(len(frames) - 1)]
+                return float(np.mean(deltas[4:]))
+            finally:
+                pipeline.destroy()
+
+        off = sample(False)
+        on = sample(True)
+        assert on < off, (
+            f"Temporal accumulation did not reduce SSGI flicker (off={off:.5f}, on={on:.5f})."
+        )
+
     def test_ssgi_pass_execution(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
 

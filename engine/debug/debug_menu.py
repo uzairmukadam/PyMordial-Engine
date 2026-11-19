@@ -587,6 +587,25 @@ class DebugMenu:
                         et.ssgi_resolution_scale = ssgi_res_val
                         et.mark_custom()
 
+                    ssgi_t_changed, ssgi_t_val = imgui.checkbox(
+                        "SSGI Temporal Denoise", bool(getattr(et, "ssgi_temporal_enabled", True))
+                    )
+                    if ssgi_t_changed:
+                        et.ssgi_temporal_enabled = ssgi_t_val
+                        et.mark_custom()
+
+                    if getattr(et, "ssgi_temporal_enabled", True):
+                        ssgi_tb_changed, ssgi_tb_val = imgui.slider_float(
+                            "SSGI Temporal Blend",
+                            float(getattr(et, "ssgi_temporal_blend", 0.90)),
+                            0.0,
+                            0.95,
+                            "%.2f",
+                        )
+                        if ssgi_tb_changed:
+                            et.ssgi_temporal_blend = ssgi_tb_val
+                            et.mark_custom()
+
                 if et.gi_mode == "RADIANCE_CASCADES":
                     rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
                     if rc_ray_count_changed:

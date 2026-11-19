@@ -96,6 +96,11 @@ class RenderConfig:
     ssgi_thickness: float = 0.35
     ssgi_intensity: float = 1.5
     ssgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # Temporal accumulation. A single-frame SSGI estimate is inherently noisy;
+    # accumulating across frames is what converges it and keeps it stable while
+    # the camera moves.
+    ssgi_temporal_enabled: bool = True
+    ssgi_temporal_blend: float = 0.90  # history weight (0 = off, 0.95 = heavy)
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
     rc_cascades: int = 3
