@@ -5,22 +5,20 @@
 //  Merges a FAR cascade's directional intervals into a NEAR cascade's, one
 //  probe and one direction per invocation.
 //
-//  Direction mapping: every cascade uses a prefix of the same global Fibonacci
-//  direction set (see shaders/common/rc_direction.glsl), so near direction `d`
-//  is the same world direction as far direction `d`. The far cascade always has
-//  at least as many directions as the near one, so the mapping is an exact
-//  index match with no resampling.
+//  Direction mapping: RCDirection is a nested equal-solid-angle hierarchy with
+//  four children per parent, so near direction `d` owns exactly the far
+//  children 4*d .. 4*d+3. All four children carry equal solid angle and are
+//  combined with equal weight. See shaders/common/rc_direction.glsl.
 //
 //  Spatial mapping: the far probe grid is coarser, so a near probe maps to a
-//  fractional far-probe coordinate and is bilinearly interpolated. Probes whose
-//  transmittance is exactly 1.0 with zero radiance are treated as "no data"
-//  (background) and are excluded from the weighted average, so invalid probes
-//  cannot bleed into valid ones.
+//  fractional far-probe coordinate and is bilinearly interpolated. Transparent
+//  intervals (RGB = 0, A = 1) are valid data and participate normally.
 //
 //  Output: the near cascade's merged texture (RGB radiance, A transmittance).
 // ============================================================================
 
 #include "shaders/common/rc_composite.glsl"
+#include "shaders/common/rc_direction.glsl"
 
 layout(local_size_x = 8, local_size_y = 8) in;
 
@@ -31,11 +29,11 @@ layout(binding = 2) uniform sampler2DArray u_FarIntervals;
 uniform ivec2 u_NearProbeSize;
 uniform ivec2 u_FarProbeSize;
 uniform int u_DirectionCount;
-
-// True when a far probe carries no usable interval data.
-bool RCFarProbeEmpty(vec4 interval) {
-    return interval.a >= 0.9999 && dot(interval.rgb, interval.rgb) < 1e-12;
-}
+uniform int u_FarDirectionCount;
+// Cascade isolation gate. 0 = do not admit this far cascade at all, so the
+// near interval passes through unchanged. The CPU sets this per dispatch from
+// the user-facing 0/1/2 setting (0 = C0 only, 1 = C1 into C0, 2 = full chain).
+uniform int u_RCMergeMaxCascade;
 
 void main() {
     ivec2 probe = ivec2(gl_GlobalInvocationID.xy);
@@ -46,6 +44,15 @@ void main() {
     }
 
     vec4 nearInterval = texelFetch(u_NearIntervals, ivec3(probe, direction), 0);
+
+    // Angular mapping: RCDirection is a nested equal-solid-angle hierarchy with
+    // FOUR children per parent, so near direction `direction` owns exactly the
+    // far children 4*d .. 4*d+3. All four children have equal solid angle, so
+    // they combine with equal weight.
+    int child0 = direction * 4;
+    int child1 = direction * 4 + 1;
+    int child2 = direction * 4 + 2;
+    int child3 = direction * 4 + 3;
 
     // Map the near probe centre into far-probe space.
     vec2 nearUV = (vec2(probe) + 0.5) / vec2(u_NearProbeSize);
@@ -63,17 +70,29 @@ void main() {
             if (w <= 0.0) {
                 continue;
             }
-            vec4 farInterval = texelFetch(u_FarIntervals, ivec3(farProbe, direction), 0);
-            if (RCFarProbeEmpty(farInterval)) {
-                continue;
-            }
-            farSum += RCSanitizeInterval(farInterval) * w;
+            vec4 interval0 = RCSanitizeInterval(
+                texelFetch(u_FarIntervals, ivec3(farProbe, child0), 0)
+            );
+            vec4 interval1 = RCSanitizeInterval(
+                texelFetch(u_FarIntervals, ivec3(farProbe, child1), 0)
+            );
+            vec4 interval2 = RCSanitizeInterval(
+                texelFetch(u_FarIntervals, ivec3(farProbe, child2), 0)
+            );
+            vec4 interval3 = RCSanitizeInterval(
+                texelFetch(u_FarIntervals, ivec3(farProbe, child3), 0)
+            );
+            vec4 farInterval = 0.25 * interval0 + 0.25 * interval1
+                             + 0.25 * interval2 + 0.25 * interval3;
+            farSum += farInterval * w;
             weightSum += w;
         }
     }
 
     vec4 farInterval = weightSum > 0.0 ? farSum / weightSum : vec4(0.0, 0.0, 0.0, 1.0);
-    vec4 merged = RCCompositeIntervals(nearInterval, farInterval);
+    // Cascade isolation: when this far cascade is not admitted, the near
+    // interval passes through unchanged instead of being composed with it.
+    vec4 merged = u_RCMergeMaxCascade > 0 ? RCCompositeIntervals(nearInterval, farInterval) : nearInterval;
 
     imageStore(u_MergedOutput, ivec3(probe, direction), merged);
 }

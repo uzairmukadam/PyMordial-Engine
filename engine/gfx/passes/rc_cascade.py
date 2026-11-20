@@ -26,12 +26,14 @@ from dataclasses import dataclass
 import moderngl
 
 # Global direction budget. Every cascade uses a prefix of this set.
-RC_MAX_DIRECTIONS = 32
+RC_MAX_DIRECTIONS = 256
 
 # Probe spacing in screen pixels. Near cascades are denser.
 RC_CASCADE_SPACING = (4, 8, 16)
-# Direction counts. Farther cascades resolve more angular detail.
-RC_CASCADE_DIRECTIONS = (8, 16, 32)
+# Direction counts. Farther cascades resolve more angular detail. The counts
+# grow 4x per cascade to match the 2D spatial progression, where doubling probe
+# spacing in X and Y reduces the probe count by approximately 4x.
+RC_CASCADE_DIRECTIONS = (16, 64, 256)
 
 
 class RCCascadeConfigError(ValueError):

@@ -723,6 +723,13 @@ class DebugMenu:
                         et.rc_ray_count = rc_ray_count
                         et.mark_custom()
 
+                    rc_merge_changed, rc_merge_val = imgui.slider_int(
+                        "RC Cascade Isolation", int(getattr(et, "rc_merge_max_cascade", 2)), 0, 2
+                    )
+                    if rc_merge_changed:
+                        et.rc_merge_max_cascade = rc_merge_val
+                        et.mark_custom()
+
                     rc_in_changed, rc_in_val = imgui.slider_float(
                         "RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f"
                     )

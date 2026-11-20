@@ -56,6 +56,10 @@ uniform int u_ProbeHeight;
 uniform int u_DirectionCount;
 uniform float u_IntervalStart;
 uniform float u_IntervalEnd;
+// Far end of the whole RC system (not this cascade's interval end). Used for a
+// single global distance-confidence falloff so the term stays continuous across
+// cascade boundaries.
+uniform float u_GlobalMaxDistance;
 uniform float u_Thickness;
 uniform int u_MaxIterations;
 uniform float u_Intensity;
@@ -110,7 +114,7 @@ void main() {
     request.directionView = ray_dir;
     // Start beyond the thickness slab so the receiver's own surface cannot be
     // accepted as an immediate hit.
-    request.minDistance = max(u_IntervalStart, u_Thickness);
+    request.minDistance = max(u_IntervalStart, 0.02);
     request.maxDistance = max(u_IntervalEnd, request.minDistance + 1e-3);
     request.thickness = u_Thickness;
     request.startMip = 0;
@@ -137,13 +141,19 @@ void main() {
             vec2 edge = smoothstep(0.0, 0.08, hit.uv) * (1.0 - smoothstep(0.92, 1.0, hit.uv));
             float edge_fade = edge.x * edge.y;
 
-            // Distance attenuation across the interval.
-            float span = max(request.maxDistance - request.minDistance, 1e-3);
-            float t = clamp((hit.rayDistance - request.minDistance) / span, 0.0, 1.0);
-            float dist_atten = 1.0 - t * t;
+            // Global distance confidence: one continuous falloff over the whole
+            // RC range, so it never resets at a cascade boundary.
+            float distanceConfidence = clamp(
+                1.0 - hit.rayDistance / max(u_GlobalMaxDistance, 1e-3),
+                0.0,
+                1.0
+            );
 
-            radiance = hit_radiance * edge_fade * dist_atten * u_Intensity;
-            transmittance = 1.0 - edge_fade;
+            radiance = hit_radiance * edge_fade * distanceConfidence * u_Intensity;
+            // Opaque deferred geometry: an accepted hit terminates the interval.
+            // Transmittance must not depend on screen position, so edge_fade
+            // stays on radiance only.
+            transmittance = 0.0;
         }
     }
 

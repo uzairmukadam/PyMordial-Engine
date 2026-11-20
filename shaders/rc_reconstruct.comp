@@ -121,7 +121,16 @@ void main() {
             // Normal compatibility: reject probes across a sharp crease.
             float normalWeight = pow(max(dot(normal_view, probeNormal), 0.0), 8.0);
 
-            float weight = spatialWeight * depthWeight * normalWeight;
+            // Receiver-plane compatibility: a probe must lie near the plane the
+            // receiver sits on. Depth and normal alone cannot separate two
+            // surfaces that share a view depth and an orientation but are
+            // laterally apart.
+            vec3 probeDelta = probePos - view_pos;
+            float planeDistance = abs(dot(normal_view, probeDelta));
+            float planeTolerance = max(0.05, receiver_depth * 0.005);
+            float planeWeight = 1.0 - smoothstep(planeTolerance, planeTolerance * 2.0, planeDistance);
+
+            float weight = spatialWeight * depthWeight * normalWeight * planeWeight;
             if (weight <= 1e-5) {
                 rejected += spatialWeight;
                 continue;
@@ -143,7 +152,10 @@ void main() {
                 }
                 probeIrradiance += interval.rgb * cosine;
             }
-            probeIrradiance *= RCDirectionSolidAngle(u_DirectionCount);
+            // The LEGACY backend's cosine-PDF estimator divides only by the ray
+            // count, so its output is irradiance / PI. Dividing by PI here puts
+            // the cascade estimator on the same energy scale.
+            probeIrradiance *= RCDirectionSolidAngle(u_DirectionCount) / RC_PI;
 
             irradiance += probeIrradiance * weight;
             weightSum += weight;

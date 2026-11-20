@@ -14,10 +14,18 @@
 //    2. Compute the parametric distance at which the ray leaves the cell that
 //       contains that UV at the active mip.
 //    3. Compare the ray's depth interval over [t, tExit] with the cell bounds.
-//       - No overlap  -> jump to tExit + epsilon and try a coarser mip.
+//       - No overlap  -> jump past the cell, then look ahead at the parent cell
+//                        and ascend one mip only if that parent is PROVEN to
+//                        contain no reachable depth interval.
 //       - Overlap     -> descend one mip without advancing, so the region is
 //                        never skipped.
 //    4. At mip zero, confirm against the full-resolution depth buffer.
+//
+//  The ascent is deliberately a look-ahead rather than a blind coarsen-on-miss.
+//  Coarsening on a miss makes the next cell cover a larger screen area, so its
+//  exit lands further away and the ray can skip the geometry it was about to
+//  reach. Ascending only after the parent has been proven non-overlapping over
+//  the segment the ray actually spends inside it cannot hide geometry.
 // ============================================================================
 
 #ifndef HIZ_TRACE_GLSL
@@ -180,12 +188,6 @@ HiZTraceHit TraceHiZWithMatrices(
             //    changes) make progress at all, and
             //  * the cell exit, so a ray that also moves in UV never overshoots
             //    the cell it is currently testing.
-            //
-            // The mip is deliberately NOT coarsened here. Coarsening on a miss
-            // makes the next cell cover a larger screen area, so its exit lands
-            // further away and the ray can skip the geometry it was about to
-            // reach. Staying at the current level keeps every step bounded by
-            // one cell.
             float tAdvance = tExit;
             if (rayFarthest < bounds.nearest) {
                 float targetDepth = max(bounds.nearest - request.thickness, rayFarthest);
@@ -195,6 +197,43 @@ HiZTraceHit TraceHiZWithMatrices(
                 }
             }
             t = max(tAdvance, t + HIZ_TRACE_BOUNDARY_EPSILON);
+
+            // Look-ahead ascent. The ray has just left a cell that provably
+            // holds nothing it can reach, so try the parent cell that covers
+            // the post-advance position. The parent is only adopted when its
+            // own bounds are ALSO proven non-overlapping over the segment the
+            // ray spends inside it. Because a parent's interval is the union of
+            // its children's intervals, a proven-empty parent cannot hide
+            // geometry, so this coarsens without ever skipping a surface.
+            //
+            // Ascending only after the parent has been tested is what prevents
+            // the ascend/descend ping-pong that a blind coarsen-on-miss causes.
+            if (mip < maxMip && t < tEnd) {
+                vec3 nextPosition = request.originView + rayDir * t;
+                vec2 nextUV;
+                if (HiZProjectToUV(nextPosition, projection, nextUV) && IsUVInBounds(nextUV)) {
+                    int parentMip = mip + 1;
+                    ivec2 parentCellSize = textureSize(hizTexture, parentMip);
+                    ivec2 parentCell = HiZCellFromUV(hizTexture, nextUV, parentMip);
+                    HiZDepthBounds parentBounds = LoadHiZBounds(hizTexture, parentCell, parentMip);
+
+                    float parentProbeT = t + max((tEnd - t) * 1e-3, 1e-4);
+                    vec2 parentProbeUV;
+                    float parentExit = tEnd;
+                    if (HiZProjectToUV(request.originView + rayDir * parentProbeT, projection, parentProbeUV)) {
+                        vec2 parentUVPerUnitT = (parentProbeUV - nextUV) / (parentProbeT - t);
+                        parentExit = HiZCellExitDistance(nextUV, parentUVPerUnitT, parentCellSize, t, tEnd);
+                    }
+                    parentExit = clamp(parentExit, t, tEnd);
+
+                    float parentRayNearest = max(-(request.originView.z + rayDir.z * t), 0.0);
+                    float parentRayFarthest = max(-(request.originView.z + rayDir.z * parentExit), 0.0);
+
+                    if (!DepthIntervalsOverlap(parentRayNearest, parentRayFarthest, parentBounds, request.thickness)) {
+                        mip = parentMip;
+                    }
+                }
+            }
             continue;
         }
 

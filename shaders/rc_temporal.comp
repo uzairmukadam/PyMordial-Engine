@@ -86,6 +86,7 @@ void main() {
     float viewDepth = max(-viewPos.z, 0.0);
     vec3 result = current.rgb;
     float depthConfidence = 0.0;
+    float normalConfidence = 0.0;
     float motionConfidence = 0.0;
     float historyWeight = 0.0;
 
@@ -103,6 +104,14 @@ void main() {
             float depthTolerance = max(0.10, expectedPrevDepth * 0.02);
             depthConfidence = 1.0 - smoothstep(depthTolerance, depthTolerance * 2.0, depthError);
 
+            // Normal rejection: depth alone cannot separate two surfaces that
+            // happen to sit at a similar distance, so a reprojected sample must
+            // also agree with this pixel's orientation.
+            vec3 currentNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg));
+            vec3 previousNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, previousUV).rg));
+            float normalSimilarity = max(dot(currentNormal, previousNormal), 0.0);
+            normalConfidence = smoothstep(0.85, 0.97, normalSimilarity);
+
             // Neighbourhood clamp keeps a stale sample from pulling the result
             // away from what this frame measured.
             vec3 clampMargin = max(abs(current.rgb) * 0.35, vec3(0.02));
@@ -111,7 +120,7 @@ void main() {
             float motionPixels = length(motion * u_TargetResolution);
             motionConfidence = 1.0 - smoothstep(1.0, 8.0, motionPixels);
 
-            historyWeight = clamp(u_TemporalBlend, 0.0, 0.95) * depthConfidence * motionConfidence;
+            historyWeight = clamp(u_TemporalBlend, 0.0, 0.95) * depthConfidence * normalConfidence * motionConfidence;
             result = mix(current.rgb, historyRGB, historyWeight);
         }
     }

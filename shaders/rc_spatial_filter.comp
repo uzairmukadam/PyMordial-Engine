@@ -72,6 +72,7 @@ void main() {
     vec3 sum = vec3(0.0);
     float confidenceSum = 0.0;
     float weightSum = 0.0;
+    float radianceWeightSum = 0.0;
 
     for (int y = -2; y <= 2; ++y) {
         for (int x = -2; x <= 2; ++x) {
@@ -88,7 +89,22 @@ void main() {
 
             float planeDistance = abs(dot(centerNormal, samplePos - centerPos));
             float normalWeight = pow(max(dot(centerNormal, sampleNormal), 0.0), 24.0);
-            float weight = kernel[x + 2] * kernel[y + 2] * exp(-planeDistance / depthSigma) * normalWeight;
+
+            // Independent view-depth rejection: plane distance alone cannot
+            // separate two surfaces that are parallel to the receiver's plane
+            // but sit at a different distance.
+            float centerDepth = max(-centerPos.z, 0.0);
+            float sampleDepth = max(-samplePos.z, 0.0);
+            float viewDepthDelta = abs(sampleDepth - centerDepth);
+            float viewDepthTolerance = max(0.03, centerDepth * 0.003);
+            float viewDepthWeight = 1.0 - smoothstep(
+                viewDepthTolerance,
+                viewDepthTolerance * 2.0,
+                viewDepthDelta
+            );
+
+            float weight = kernel[x + 2] * kernel[y + 2] * exp(-planeDistance / depthSigma)
+                         * normalWeight * viewDepthWeight;
             if (weight <= 1e-6) {
                 continue;
             }
@@ -97,13 +113,21 @@ void main() {
             if (any(isnan(tap)) || any(isinf(tap))) {
                 continue;
             }
-            sum += tap.rgb * weight;
+            // A tap with no reconstruction confidence carries no radiance, so
+            // it must not darken its neighbours. Confidence gates the RGB
+            // contribution only; the confidence output keeps its own average.
+            float radianceWeight = weight * clamp(tap.a, 0.0, 1.0);
+            if (radianceWeight <= 1e-6) {
+                continue;
+            }
+            sum += tap.rgb * radianceWeight;
+            radianceWeightSum += radianceWeight;
             confidenceSum += tap.a * weight;
             weightSum += weight;
         }
     }
 
-    vec3 result = weightSum > 0.0 ? sum / weightSum : vec3(0.0);
+    vec3 result = radianceWeightSum > 0.0 ? sum / radianceWeightSum : vec3(0.0);
     float confidence = weightSum > 0.0 ? confidenceSum / weightSum : 0.0;
     imageStore(u_OutputFiltered, pixel, vec4(clamp(result, vec3(0.0), vec3(1e4)), clamp(confidence, 0.0, 1.0)));
 }

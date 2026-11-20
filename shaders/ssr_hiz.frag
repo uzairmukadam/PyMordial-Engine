@@ -7,13 +7,20 @@
 //  gating, confidence, edge fade, radiance lookup, BRDF approximation) stays
 //  here.
 //
-//  Debug views are selected with u_SSRDebugView:
-//      0 = off (normal reflection colour)
-//      1 = hit UV
-//      2 = hit distance
-//      3 = iteration count
-//      4 = miss reason
-//      5 = final mip
+//  Staged debug views (u_SSRDebugView). Each stage is evaluated in pipeline
+//  order, so the first stage that goes dark identifies where the signal dies:
+//
+//      0  OFF                  normal reflection colour
+//      1  PASS_EXECUTION       constant magenta (proves the pass ran)
+//      2  ELIGIBLE_PIXELS      green where background/roughness/depth pass
+//      3  REFLECTION_DIRECTION view-space R encoded as RGB
+//      4  TRACE_HIT            green = hit, red = miss
+//      5  TRACE_MISS_REASON    distinct colour per TraceHiZ miss reason
+//      6  TRACE_ITERATIONS     normalised iteration count
+//      7  HIT_UV               hit UV in RG
+//      8  HIT_DISTANCE         hit ray distance ramp
+//      9  FORCED_HIT_OUTPUT    bright colour for hits that survive rejection
+//     10  FINAL_CONFIDENCE     the alpha that would reach deferred composition
 // ============================================================================
 
 #include "shaders/common/depth.glsl"
@@ -72,44 +79,71 @@ vec3 DebugRamp(float t) {
     return vec3(t, 1.0 - abs(t * 2.0 - 1.0), 1.0 - t);
 }
 
+// Distinct colour per TraceHiZ miss reason.
+vec3 MissReasonColor(int reason) {
+    if (reason == HIZ_MISS_NONE) return vec3(0.0, 1.0, 0.0);            // green
+    if (reason == HIZ_MISS_LEFT_SCREEN) return vec3(1.0, 0.0, 0.0);      // red
+    if (reason == HIZ_MISS_EXCEEDED_DIST) return vec3(1.0, 1.0, 0.0);    // yellow
+    if (reason == HIZ_MISS_EXCEEDED_ITERS) return vec3(1.0, 0.0, 1.0);   // magenta
+    if (reason == HIZ_MISS_INVALID_PROJ) return vec3(0.0, 1.0, 1.0);     // cyan
+    return vec3(0.0, 0.0, 1.0);                                          // blue
+}
+
 void main() {
-    float raw_depth = texture(u_GBufferDepth, v_UV).r;
-    if (IsBackgroundDepth(raw_depth)) {
-        out_SSR = vec4(0.0);
+    // ---- Stage 1: pass execution ------------------------------------------
+    if (u_SSRDebugView == 1) {
+        out_SSR = vec4(1.0, 0.0, 1.0, 1.0);
         return;
     }
+
+    // ---- Stage 2: eligibility ---------------------------------------------
+    float raw_depth = texture(u_GBufferDepth, v_UV).r;
+    bool has_surface = !IsBackgroundDepth(raw_depth);
 
     vec4 albedo_rough = texture(u_GBufferAlbedoRoughness, v_UV);
     float roughness = albedo_rough.a;
-    if (roughness > u_SSR_MaxRoughness) {
-        out_SSR = vec4(0.0);
-        return;
-    }
+    bool rough_ok = roughness <= u_SSR_MaxRoughness;
 
-    vec3 view_pos = ReconstructViewPosition(v_UV, raw_depth, u_InvProjection);
+    vec3 view_pos = has_surface ? ReconstructViewPosition(v_UV, raw_depth, u_InvProjection) : vec3(0.0);
     float v_len = length(view_pos);
-    if (v_len <= 1e-5) {
+    bool depth_ok = v_len > 1e-5;
+
+    bool eligible = has_surface && rough_ok && depth_ok;
+
+    if (u_SSRDebugView == 2) {
+        out_SSR = vec4(eligible ? vec3(0.0, 1.0, 0.0) : vec3(0.0), 1.0);
+        return;
+    }
+
+    if (!eligible) {
         out_SSR = vec4(0.0);
         return;
     }
 
+    // ---- Stage 3: reflection direction ------------------------------------
     vec3 world_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, v_UV).rg);
     vec3 view_normal = normalize((u_View * vec4(world_normal, 0.0)).xyz);
     vec3 view_dir = -view_pos / v_len;
     vec3 R = reflect(-view_dir, view_normal);
+
+    if (u_SSRDebugView == 3) {
+        out_SSR = vec4(R * 0.5 + 0.5, 1.0);
+        return;
+    }
 
     if (dot(view_normal, R) <= 0.001) {
         out_SSR = vec4(0.0);
         return;
     }
 
+    // ---- Stage 4: trace ---------------------------------------------------
     // Normal offset to avoid self-reflection acne.
     vec3 ray_origin = view_pos + view_normal * 0.02;
 
     HiZTraceRequest request;
     request.originView = ray_origin;
     request.directionView = R;
-    request.minDistance = 0.05;
+    request.minDistance = max(0.05, u_SSR_Thickness);
     request.maxDistance = u_SSR_MaxDistance;
     request.thickness = u_SSR_Thickness;
     request.startMip = 0;
@@ -117,50 +151,33 @@ void main() {
 
     HiZTraceHit hit = TraceHiZ(u_HiZTexture, u_GBufferDepth, request);
 
-    // ---- Debug views -------------------------------------------------------
-    if (u_SSRDebugView == 1) {
-        out_SSR = vec4(hit.hit ? vec3(hit.uv, 0.0) : vec3(0.0), 1.0);
-        return;
-    }
-    if (u_SSRDebugView == 2) {
-        out_SSR = vec4(hit.hit ? DebugRamp(hit.rayDistance / max(u_SSR_MaxDistance, 1e-3)) : vec3(0.0), 1.0);
-        return;
-    }
-    if (u_SSRDebugView == 3) {
-        out_SSR = vec4(DebugRamp(float(hit.iterations) / float(max(u_SSR_MaxIterations, 1))), 1.0);
-        return;
-    }
     if (u_SSRDebugView == 4) {
-        // Distinct colour per miss reason; green when the ray hit.
-        vec3 c = vec3(0.0);
-        if (hit.hit) {
-            c = vec3(0.0, 1.0, 0.0);
-        } else if (hit.missReason == HIZ_MISS_LEFT_SCREEN) {
-            c = vec3(1.0, 0.0, 0.0);
-        } else if (hit.missReason == HIZ_MISS_EXCEEDED_DIST) {
-            c = vec3(1.0, 1.0, 0.0);
-        } else if (hit.missReason == HIZ_MISS_EXCEEDED_ITERS) {
-            c = vec3(1.0, 0.0, 1.0);
-        } else if (hit.missReason == HIZ_MISS_INVALID_PROJ) {
-            c = vec3(0.0, 1.0, 1.0);
-        } else {
-            c = vec3(0.0, 0.0, 1.0);
-        }
-        out_SSR = vec4(c, 1.0);
+        out_SSR = vec4(hit.hit ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), 1.0);
         return;
     }
     if (u_SSRDebugView == 5) {
-        out_SSR = vec4(DebugRamp(float(hit.finalMip) / 8.0), 1.0);
+        out_SSR = vec4(MissReasonColor(hit.missReason), 1.0);
+        return;
+    }
+    if (u_SSRDebugView == 6) {
+        out_SSR = vec4(DebugRamp(float(hit.iterations) / float(max(u_SSR_MaxIterations, 1))), 1.0);
+        return;
+    }
+    if (u_SSRDebugView == 7) {
+        out_SSR = vec4(hit.hit ? vec3(hit.uv, 0.0) : vec3(0.0), 1.0);
+        return;
+    }
+    if (u_SSRDebugView == 8) {
+        out_SSR = vec4(hit.hit ? DebugRamp(hit.rayDistance / max(u_SSR_MaxDistance, 1e-3)) : vec3(0.0), 1.0);
         return;
     }
 
-    // ---- Normal reflection shading ----------------------------------------
     if (!hit.hit) {
         out_SSR = vec4(0.0);
         return;
     }
 
-    // SSR-specific validation: reject self-hits and back faces.
+    // ---- Stage 5: SSR-specific rejection ----------------------------------
     vec3 hit_view_pos = ReconstructViewPosition(hit.uv, hit.rawDepth, u_InvProjection);
     float plane_dist = dot(hit_view_pos - view_pos, view_normal);
     vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, hit.uv).rg);
@@ -170,12 +187,31 @@ void main() {
     bool back_facing = dot(R, hit_normal_view) > -0.05;
     bool too_close = length(hit.uv - v_UV) < 0.008 || hit.rayDistance < 0.05;
 
-    if (plane_dist <= 0.02 || self_hit || back_facing || too_close) {
+    bool accepted = !(plane_dist <= 0.02 || self_hit || back_facing || too_close);
+
+    // Diagnostic-only: identify which rejection clause fires.
+    if (u_SSRDebugView == 11) {
+        vec3 c = vec3(0.0);
+        if (accepted) c = vec3(0.0, 1.0, 0.0);
+        else if (plane_dist <= 0.02) c = vec3(1.0, 0.0, 0.0);      // red
+        else if (self_hit) c = vec3(1.0, 1.0, 0.0);                // yellow
+        else if (back_facing) c = vec3(1.0, 0.0, 1.0);             // magenta
+        else if (too_close) c = vec3(0.0, 1.0, 1.0);               // cyan
+        out_SSR = vec4(c, 1.0);
+        return;
+    }
+
+    if (u_SSRDebugView == 9) {
+        out_SSR = vec4(accepted ? vec3(1.0, 1.0, 0.0) : vec3(0.15, 0.0, 0.0), 1.0);
+        return;
+    }
+
+    if (!accepted) {
         out_SSR = vec4(0.0);
         return;
     }
 
-    // Screen edge vignette fade to eliminate hard boundary popping.
+    // ---- Stage 6: confidence ----------------------------------------------
     vec2 edge_coords = abs(hit.uv - 0.5) * 2.0;
     float edge_factor = clamp(1.0 - max(edge_coords.x, edge_coords.y), 0.0, 1.0);
     edge_factor = smoothstep(0.0, 0.15, edge_factor);
@@ -203,5 +239,12 @@ void main() {
 
     float alpha = edge_factor * dist_fade * rough_fade * grazing_fade * energy_fade;
     if (isnan(alpha) || isinf(alpha)) alpha = 0.0;
-    out_SSR = vec4(reflected_color, clamp(alpha, 0.0, 1.0));
+    alpha = clamp(alpha, 0.0, 1.0);
+
+    if (u_SSRDebugView == 10) {
+        out_SSR = vec4(vec3(alpha), alpha);
+        return;
+    }
+
+    out_SSR = vec4(reflected_color, alpha);
 }

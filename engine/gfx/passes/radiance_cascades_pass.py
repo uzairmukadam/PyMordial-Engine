@@ -82,12 +82,15 @@ class RadianceCascadesPass(RenderPass):
         "_u_trace_direction_count",
         "_u_trace_interval",
         "_u_trace_interval_end",
+        "_u_trace_global_max_distance",
         "_u_trace_thickness",
         "_u_trace_max_iters",
         "_u_trace_intensity",
         "_u_merge_near_size",
         "_u_merge_far_size",
         "_u_merge_direction_count",
+        "_u_merge_far_direction_count",
+        "_u_merge_max_cascade",
         "_u_recon_target_res",
         "_u_recon_probe_size",
         "_u_recon_direction_count",
@@ -176,6 +179,7 @@ class RadianceCascadesPass(RenderPass):
         self._u_trace_direction_count = self.trace_prog.get("u_DirectionCount", None)
         self._u_trace_interval = self.trace_prog.get("u_IntervalStart", None)
         self._u_trace_interval_end = self.trace_prog.get("u_IntervalEnd", None)
+        self._u_trace_global_max_distance = self.trace_prog.get("u_GlobalMaxDistance", None)
         self._u_trace_thickness = self.trace_prog.get("u_Thickness", None)
         self._u_trace_max_iters = self.trace_prog.get("u_MaxIterations", None)
         self._u_trace_intensity = self.trace_prog.get("u_Intensity", None)
@@ -183,6 +187,8 @@ class RadianceCascadesPass(RenderPass):
         self._u_merge_near_size = self.merge_cascades_prog.get("u_NearProbeSize", None)
         self._u_merge_far_size = self.merge_cascades_prog.get("u_FarProbeSize", None)
         self._u_merge_direction_count = self.merge_cascades_prog.get("u_DirectionCount", None)
+        self._u_merge_far_direction_count = self.merge_cascades_prog.get("u_FarDirectionCount", None)
+        self._u_merge_max_cascade = self.merge_cascades_prog.get("u_RCMergeMaxCascade", None)
 
         self._u_recon_target_res = self.reconstruct_prog.get("u_TargetResolution", None)
         self._u_recon_probe_size = self.reconstruct_prog.get("u_ProbeSize", None)
@@ -433,6 +439,9 @@ class RadianceCascadesPass(RenderPass):
                 self._u_trace_interval.value = cascade.interval_start
             if self._u_trace_interval_end is not None:
                 self._u_trace_interval_end.value = cascade.interval_end
+            if self._u_trace_global_max_distance is not None:
+                # Far end of the whole RC system, not this cascade's interval.
+                self._u_trace_global_max_distance.value = self._cascade_intervals()[-1][1]
             if self._u_trace_thickness is not None:
                 self._u_trace_thickness.value = thickness
             if self._u_trace_max_iters is not None:
@@ -466,6 +475,14 @@ class RadianceCascadesPass(RenderPass):
                 self._u_merge_far_size.value = (far.probe_width, far.probe_height)
             if self._u_merge_direction_count is not None:
                 self._u_merge_direction_count.value = near.direction_count
+            if self._u_merge_far_direction_count is not None:
+                self._u_merge_far_direction_count.value = far.direction_count
+            if self._u_merge_max_cascade is not None:
+                # Cascade isolation: admit this far cascade only when its index
+                # is within the configured limit (0 = C0 only, 1 = C1 into C0,
+                # 2 = full C2 -> C1 -> C0 chain).
+                max_cascade = int(getattr(config, "rc_merge_max_cascade", 2))
+                self._u_merge_max_cascade.value = 1 if (near_index + 1) <= max_cascade else 0
 
             gx, gy, gz = near.dispatch_groups
             self.merge_cascades_prog.run(group_x=gx, group_y=gy, group_z=gz)
@@ -496,23 +513,31 @@ class RadianceCascadesPass(RenderPass):
 
         self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
 
-        # 4. Edge-aware spatial filter.
-        self.spatial_tex.bind_to_image(0, read=False, write=True, level=0)
-        self.irradiance_tex.use(location=1)
-        g_buffer.depth_texture.use(location=2)
-        g_buffer.normal_metallic_texture.use(location=3)
-        if self._u_spatial_target_res is not None:
-            self._u_spatial_target_res.value = self._target_res_tuple
-        self.spatial_prog.run(group_x=gx, group_y=gy, group_z=1)
+        # 4. Edge-aware spatial filter (skippable for A/B comparison).
+        spatial_enabled = bool(getattr(config, "rc_spatial_filter_enabled", True))
+        if spatial_enabled:
+            self.spatial_tex.bind_to_image(0, read=False, write=True, level=0)
+            self.irradiance_tex.use(location=1)
+            g_buffer.depth_texture.use(location=2)
+            g_buffer.normal_metallic_texture.use(location=3)
+            if self._u_spatial_target_res is not None:
+                self._u_spatial_target_res.value = self._target_res_tuple
+            self.spatial_prog.run(group_x=gx, group_y=gy, group_z=1)
 
-        self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
+            self.ctx.memory_barrier(
+                moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
+            )
+            current_irradiance_tex = self.spatial_tex
+        else:
+            # Bypass: hand the unfiltered reconstruction to the next stage.
+            current_irradiance_tex = self.irradiance_tex
 
         # 5. Temporal resolve, exactly once.
         prev_view = context.resources.get("prev_view", None)
         history_valid = (not self._first_frame) and prev_view is not None
 
         self.resolved_tex.bind_to_image(0, read=False, write=True, level=0)
-        self.spatial_tex.use(location=1)
+        current_irradiance_tex.use(location=1)
         self.history_tex.use(location=2)
         g_buffer.depth_texture.use(location=3)
         g_buffer.normal_metallic_texture.use(location=4)

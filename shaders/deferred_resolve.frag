@@ -569,7 +569,9 @@ void main() {
             isinf(rc_sample.r) || isinf(rc_sample.g) || isinf(rc_sample.b)) {
             rc_sample = vec4(0.0);
         }
-        vec3 rc_diffuse = clamp(rc_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
+        // The CASCADES backend publishes incident diffuse irradiance, so the
+        // receiver's Lambertian BRDF (albedo / PI) is applied exactly once here.
+        vec3 rc_diffuse = clamp(rc_sample.rgb, vec3(0.0), vec3(30.0)) * (albedo / PI) * (1.0 - metallic);
         indirect_diffuse += rc_diffuse;
     } else if (u_GIEnabled == 1 || u_GIEnabled == 2 || u_GIEnabled == 3) {
         // SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
