@@ -248,6 +248,7 @@ class EngineTweaks:
         "rc_debug_view",
         "rc_temporal_debug_view",
         "rc_merge_max_cascade",
+        "rc_angular_filter_enabled",
         "ssgi_surface_reject",
         "_on_quality_changed",
         "_on_vsync_changed",
@@ -354,6 +355,7 @@ class EngineTweaks:
         self.rc_debug_view = 0
         self.rc_temporal_debug_view = 0
         self.rc_merge_max_cascade = 2
+        self.rc_angular_filter_enabled = True
         self.ssgi_surface_reject = False
         self.ibl_enabled = True
         self.ssr_enabled = True
@@ -744,6 +746,7 @@ class EngineTweaks:
             p_cfg.rc_debug_view = int(self.rc_debug_view)
             p_cfg.rc_temporal_debug_view = int(self.rc_temporal_debug_view)
             p_cfg.rc_merge_max_cascade = int(self.rc_merge_max_cascade)
+            p_cfg.rc_angular_filter_enabled = bool(self.rc_angular_filter_enabled)
             p_cfg.ssgi_surface_reject = bool(self.ssgi_surface_reject)
 
             # 4. Reflections & Anti-Aliasing
@@ -1231,6 +1234,7 @@ class EngineTweaks:
             "rc_debug_view": int(self.rc_debug_view),
             "rc_temporal_debug_view": int(self.rc_temporal_debug_view),
             "rc_merge_max_cascade": int(self.rc_merge_max_cascade),
+            "rc_angular_filter_enabled": bool(self.rc_angular_filter_enabled),
             "ssgi_surface_reject": bool(self.ssgi_surface_reject),
             "ibl_enabled": bool(self.ibl_enabled),
             "ssr_enabled": bool(self.ssr_enabled),

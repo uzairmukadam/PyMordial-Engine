@@ -1,0 +1,66 @@
+#version 450 core
+// ============================================================================
+//  Radiance Cascade Angular Filter
+//
+//  Smooths the merged C0 directional field across neighbouring direction bins.
+//
+//  Why this exists: the near cascade uses a coarse azimuth/z bin layout (8x8 at
+//  64 directions). A thin occluder therefore lands in exactly one azimuth bin,
+//  and reconstruction turns that single bin into a hard radial wedge. Averaging
+//  each direction with its angular neighbours spreads the occluder's
+//  contribution over several bins, which removes the spokes while preserving
+//  the overall directional energy.
+//
+//  One invocation = one probe, one direction. The filter is applied to the
+//  merged C0 texture only; the traced interval textures are left untouched.
+//
+//  Output: filtered merged C0 (RGB radiance, A transmittance).
+// ============================================================================
+
+#include "shaders/common/rc_composite.glsl"
+#include "shaders/common/rc_direction.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(rgba16f, binding = 0) writeonly uniform image2DArray u_Output;
+layout(binding = 1) uniform sampler2DArray u_Input;
+
+uniform ivec2 u_ProbeSize;
+uniform int u_DirectionCount;
+
+void main() {
+    ivec2 probe = ivec2(gl_GlobalInvocationID.xy);
+    int direction = int(gl_GlobalInvocationID.z);
+
+    if (probe.x >= u_ProbeSize.x || probe.y >= u_ProbeSize.y || direction >= u_DirectionCount) {
+        return;
+    }
+
+    int az, z, azCount, zCount;
+    if (!RCDirectionBins(direction, u_DirectionCount, az, z, azCount, zCount)) {
+        // Non-hierarchical direction count: pass through unchanged.
+        imageStore(u_Output, ivec3(probe, direction), texelFetch(u_Input, ivec3(probe, direction), 0));
+        return;
+    }
+
+    // 3x3 angular kernel over (azimuth, z) bins. The centre bin is weighted
+    // highest so the filter smooths without flattening the field.
+    const float kernel[3] = float[](1.0, 2.0, 1.0);
+
+    vec4 sum = vec4(0.0);
+    float weightSum = 0.0;
+
+    for (int dz = -1; dz <= 1; ++dz) {
+        for (int da = -1; da <= 1; ++da) {
+            int naz = (az + da + azCount) % azCount;
+            int nz = clamp(z + dz, 0, zCount - 1);
+            int neighbour = RCDirectionIndex(naz, nz, u_DirectionCount);
+            float w = kernel[da + 1] * kernel[dz + 1];
+            sum += RCSanitizeInterval(texelFetch(u_Input, ivec3(probe, neighbour), 0)) * w;
+            weightSum += w;
+        }
+    }
+
+    vec4 result = weightSum > 0.0 ? sum / weightSum : vec4(0.0, 0.0, 0.0, 1.0);
+    imageStore(u_Output, ivec3(probe, direction), result);
+}

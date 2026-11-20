@@ -29,6 +29,7 @@ layout(binding = 1) uniform sampler2D u_GBufferDepth;
 layout(binding = 2) uniform sampler2D u_GBufferNormalMetallic;
 layout(binding = 3) uniform sampler2D u_DirectRadiance;
 layout(binding = 4) uniform sampler2D u_HiZBoundsTexture;   // RG32F linear-depth bounds
+layout(binding = 5) uniform sampler2D u_GBufferSurfaceID;   // R32F stable object identity
 
 layout(std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -103,6 +104,7 @@ void main() {
 
     vec3 normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg);
     vec3 normal_view = normalize(mat3(u_View) * normal_world);
+    float originSurfaceID = texture(u_GBufferSurfaceID, uv).r;
 
     vec3 ray_dir = RCDirection(direction, u_DirectionCount);
 
@@ -120,41 +122,72 @@ void main() {
     request.startMip = 0;
     request.maxIterations = u_MaxIterations;
 
-    HiZTraceHit hit = TraceHiZ(u_HiZBoundsTexture, u_GBufferDepth, request);
-
     vec3 radiance = vec3(0.0);
     float transmittance = 1.0;
 
-    if (hit.hit) {
+    // A rejected hit (backface or the probe's own surface) must not end the
+    // trace: at close range the receiver's own surface fills the view, so the
+    // first Hi-Z hit is almost always a self-hit. Restarting the trace just
+    // past that hit lets the ray reach the geometry behind it instead of
+    // returning black, which is what made close-up GI vanish.
+    float traceStart = request.minDistance;
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        request.minDistance = traceStart;
+        HiZTraceHit hit = TraceHiZ(u_HiZBoundsTexture, u_GBufferDepth, request);
+        if (!hit.hit) {
+            break;
+        }
+
         // Backface rejection: a surface facing away from the probe cannot
         // contribute reflected radiance towards it.
         vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, hit.uv).rg);
         vec3 hit_normal_view = normalize(mat3(u_View) * hit_normal_world);
-        if (dot(hit_normal_view, -ray_dir) > 0.05) {
-            vec3 hit_radiance = texture(u_DirectRadiance, hit.uv).rgb;
-            if (any(isnan(hit_radiance)) || any(isinf(hit_radiance))) {
-                hit_radiance = vec3(0.0);
+        bool facing = dot(hit_normal_view, -ray_dir) > 0.05;
+
+        // Same-surface rejection: a hit on the probe's own surface is a
+        // self-intersection, not a bounce. Mirrors the legacy marcher's
+        // surface-ID + normal + tangent-distance test.
+        float hitSurfaceID = texture(u_GBufferSurfaceID, hit.uv).r;
+        vec3 hit_position_view = ReconstructViewPosition(hit.uv, hit.rawDepth, u_InvProjection);
+        float tangentDistance = abs(dot(normal_view, hit_position_view - view_pos));
+        bool sameSurface = originSurfaceID > 0.0
+            && abs(hitSurfaceID - originSurfaceID) < 0.25
+            && dot(normal_view, hit_normal_view) > 0.96
+            && tangentDistance < max(0.03, hit.rayDistance * 0.02);
+
+        if (!facing || sameSurface) {
+            // Skip past this rejected surface and keep tracing.
+            traceStart = hit.rayDistance + max(u_Thickness * 2.0, hit.rayDistance * 0.01);
+            if (traceStart >= request.maxDistance) {
+                break;
             }
-
-            // Screen-edge confidence: a hit near the border is less reliable
-            // because the ray may have left the screen just beyond it.
-            vec2 edge = smoothstep(0.0, 0.08, hit.uv) * (1.0 - smoothstep(0.92, 1.0, hit.uv));
-            float edge_fade = edge.x * edge.y;
-
-            // Global distance confidence: one continuous falloff over the whole
-            // RC range, so it never resets at a cascade boundary.
-            float distanceConfidence = clamp(
-                1.0 - hit.rayDistance / max(u_GlobalMaxDistance, 1e-3),
-                0.0,
-                1.0
-            );
-
-            radiance = hit_radiance * edge_fade * distanceConfidence * u_Intensity;
-            // Opaque deferred geometry: an accepted hit terminates the interval.
-            // Transmittance must not depend on screen position, so edge_fade
-            // stays on radiance only.
-            transmittance = 0.0;
+            continue;
         }
+
+        vec3 hit_radiance = texture(u_DirectRadiance, hit.uv).rgb;
+        if (any(isnan(hit_radiance)) || any(isinf(hit_radiance))) {
+            hit_radiance = vec3(0.0);
+        }
+
+        // Screen-edge confidence: a hit near the border is less reliable
+        // because the ray may have left the screen just beyond it.
+        vec2 edge = smoothstep(0.0, 0.08, hit.uv) * (1.0 - smoothstep(0.92, 1.0, hit.uv));
+        float edge_fade = edge.x * edge.y;
+
+        // Global distance confidence: one continuous falloff over the whole
+        // RC range, so it never resets at a cascade boundary.
+        float distanceConfidence = clamp(
+            1.0 - hit.rayDistance / max(u_GlobalMaxDistance, 1e-3),
+            0.0,
+            1.0
+        );
+
+        radiance = hit_radiance * edge_fade * distanceConfidence * u_Intensity;
+        // Opaque deferred geometry: an accepted hit terminates the interval.
+        // Transmittance must not depend on screen position, so edge_fade
+        // stays on radiance only.
+        transmittance = 0.0;
+        break;
     }
 
     if (any(isnan(radiance)) || any(isinf(radiance))) {

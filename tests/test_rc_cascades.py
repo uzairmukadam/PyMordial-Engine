@@ -29,8 +29,16 @@ class TestCascadeResources:
             # Near cascades must have denser spatial probes.
             assert c0.probe_spacing < c1.probe_spacing < c2.probe_spacing
             assert c0.probe_width > c1.probe_width > c2.probe_width
-            # Farther cascades must have more directions.
-            assert c0.direction_count < c1.direction_count < c2.direction_count
+            # Angular resolution must not decrease with distance, and the far
+            # cascade refines further. The near cascade needs at least 64
+            # directions: a 16-direction set collapses a hemisphere quadrant
+            # into one sample and smears contact occlusion.
+            assert c0.direction_count >= 64
+            assert c0.direction_count <= c1.direction_count < c2.direction_count
+            # Direction counts must stay in the nested 4x hierarchy (or be
+            # equal) so the merge can map a parent direction to its children.
+            assert c1.direction_count in (c0.direction_count, c0.direction_count * 4)
+            assert c2.direction_count == c1.direction_count * 4
             # Intervals must be contiguous and increasing.
             assert c0.interval_start == 0.0
             assert c0.interval_end == c1.interval_start

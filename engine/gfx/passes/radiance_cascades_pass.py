@@ -68,6 +68,11 @@ class RadianceCascadesPass(RenderPass):
         "reconstruct_prog",
         "spatial_prog",
         "temporal_prog",
+        "angular_prog",
+        "angular_tex",
+        "angular_fbo",
+        "_u_angular_probe_size",
+        "_u_angular_direction_count",
         "irradiance_tex",
         "irradiance_fbo",
         "spatial_tex",
@@ -172,6 +177,7 @@ class RadianceCascadesPass(RenderPass):
         self.reconstruct_prog = self.ctx.compute_shader(load_shader("rc_reconstruct.comp"))
         self.spatial_prog = self.ctx.compute_shader(load_shader("rc_spatial_filter.comp"))
         self.temporal_prog = self.ctx.compute_shader(load_shader("rc_temporal.comp"))
+        self.angular_prog = self.ctx.compute_shader(load_shader("rc_angular_filter.comp"))
 
         self._u_trace_target_res = self.trace_prog.get("u_TargetResolution", None)
         self._u_trace_probe_size = self.trace_prog.get("u_ProbeWidth", None)
@@ -197,6 +203,9 @@ class RadianceCascadesPass(RenderPass):
 
         self._u_spatial_target_res = self.spatial_prog.get("u_TargetResolution", None)
 
+        self._u_angular_probe_size = self.angular_prog.get("u_ProbeSize", None)
+        self._u_angular_direction_count = self.angular_prog.get("u_DirectionCount", None)
+
         self._u_temporal_target_res = self.temporal_prog.get("u_TargetResolution", None)
         self._u_temporal_prev_view = self.temporal_prog.get("u_PrevView", None)
         self._u_temporal_blend = self.temporal_prog.get("u_TemporalBlend", None)
@@ -211,11 +220,19 @@ class RadianceCascadesPass(RenderPass):
     # ------------------------------------------------------------------
 
     def _cascade_intervals(self) -> tuple[tuple[float, float], ...]:
-        """Returns the (start, end) distance interval for each cascade."""
+        """Returns the (start, end) distance interval for each cascade.
+
+        The near cascade must cover the range that actually carries visible
+        light, not just a thin slab. With a 0.4 m near interval almost all
+        visible light came from the coarser far cascades, whose bilinear merge
+        smeared contact detail and object bases. Giving the sharp 4 px probe
+        grid the whole 0-6 m near field keeps it responsible for the light that
+        defines contact and crevices; the far cascades only add distant detail.
+        """
         return (
-            (0.0, 0.40),
-            (0.40, 2.50),
-            (2.50, 40.0),
+            (0.0, 6.00),
+            (6.00, 20.0),
+            (20.0, 40.0),
         )
 
     def _create_cascade_targets(self) -> None:
@@ -240,6 +257,16 @@ class RadianceCascadesPass(RenderPass):
         self.resolved_tex = _tex()
         self.history_tex = _tex()
 
+        # Angular filter target: same layout as the C0 merged texture.
+        c0 = self.cascades[0]
+        self.angular_tex = self.ctx.texture_array(
+            (c0.probe_width, c0.probe_height, c0.direction_count), 4, dtype="f2"
+        )
+        self.angular_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.angular_tex.repeat_x = False
+        self.angular_tex.repeat_y = False
+        self.angular_fbo = self.ctx.framebuffer(color_attachments=[self.angular_tex])
+
         self.irradiance_fbo = self.ctx.framebuffer(color_attachments=[self.irradiance_tex])
         self.spatial_fbo = self.ctx.framebuffer(color_attachments=[self.spatial_tex])
         self.resolved_fbo = self.ctx.framebuffer(color_attachments=[self.resolved_tex])
@@ -249,9 +276,9 @@ class RadianceCascadesPass(RenderPass):
         for cascade in self.cascades:
             cascade.release()
         self.cascades = []
-        for fbo in (self.irradiance_fbo, self.spatial_fbo, self.resolved_fbo, self.history_fbo):
+        for fbo in (self.irradiance_fbo, self.spatial_fbo, self.resolved_fbo, self.history_fbo, self.angular_fbo):
             fbo.release()
-        for tex in (self.irradiance_tex, self.spatial_tex, self.resolved_tex, self.history_tex):
+        for tex in (self.irradiance_tex, self.spatial_tex, self.resolved_tex, self.history_tex, self.angular_tex):
             tex.release()
 
     def cascade_metadata(self) -> list[dict[str, object]]:
@@ -426,6 +453,7 @@ class RadianceCascadesPass(RenderPass):
             g_buffer.normal_metallic_texture.use(location=2)
             radiance_tex.use(location=3)
             hiz_bounds_tex.use(location=4)
+            g_buffer.surface_id_texture.use(location=5)
 
             if self._u_trace_target_res is not None:
                 self._u_trace_target_res.value = self._target_res_tuple
@@ -491,10 +519,29 @@ class RadianceCascadesPass(RenderPass):
                 moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
             )
 
-        # 3. Reconstruct per-pixel irradiance from merged C0.
+        # 3. Angular filter on merged C0: smooths the coarse azimuth/z bins so a
+        # thin occluder does not become a hard radial wedge in reconstruction.
         c0 = self.cascades[0]
+        angular_enabled = bool(getattr(config, "rc_angular_filter_enabled", True))
+        if angular_enabled:
+            self.angular_tex.bind_to_image(0, read=False, write=True, level=0)
+            c0.merged_texture.use(location=1)
+            if self._u_angular_probe_size is not None:
+                self._u_angular_probe_size.value = (c0.probe_width, c0.probe_height)
+            if self._u_angular_direction_count is not None:
+                self._u_angular_direction_count.value = c0.direction_count
+            agx, agy, agz = c0.dispatch_groups
+            self.angular_prog.run(group_x=agx, group_y=agy, group_z=agz)
+            self.ctx.memory_barrier(
+                moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
+            )
+            c0_source = self.angular_tex
+        else:
+            c0_source = c0.merged_texture
+
+        # 4. Reconstruct per-pixel irradiance from merged C0.
         self.irradiance_tex.bind_to_image(0, read=False, write=True, level=0)
-        c0.merged_texture.use(location=1)
+        c0_source.use(location=1)
         g_buffer.depth_texture.use(location=2)
         g_buffer.normal_metallic_texture.use(location=3)
 
@@ -578,3 +625,4 @@ class RadianceCascadesPass(RenderPass):
         self.reconstruct_prog.release()
         self.spatial_prog.release()
         self.temporal_prog.release()
+        self.angular_prog.release()

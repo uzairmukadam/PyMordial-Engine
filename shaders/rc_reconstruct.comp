@@ -85,19 +85,29 @@ void main() {
     vec3 normal_view = normalize(mat3(u_View) * normal_world);
     float receiver_depth = max(-view_pos.z, 0.0);
 
-    // Bilinear gather of the four neighbouring C0 probes.
+    // Gather the 4x4 neighbourhood of C0 probes. A 2x2 bilinear gather lets a
+    // single probe's directional bin leak across the whole cell, which shows up
+    // as radial spokes around thin occluders. A wider gather with a smooth
+    // world-space falloff averages several probes, so a thin object's
+    // contribution is spread over many directions instead of one wedge.
     vec2 probeCoord = uv * vec2(u_ProbeSize) - 0.5;
     ivec2 base = ivec2(floor(probeCoord));
     vec2 frac = probeCoord - vec2(base);
+
+    // World-space size of one probe cell at the receiver, used to scale the
+    // distance falloff so the kernel is resolution independent.
+    float probeWorld = max(receiver_depth * 0.02, 1e-3);
 
     vec3 irradiance = vec3(0.0);
     float weightSum = 0.0;
     float rejected = 0.0;
 
-    for (int dy = 0; dy <= 1; ++dy) {
-        for (int dx = 0; dx <= 1; ++dx) {
+    for (int dy = -1; dy <= 2; ++dy) {
+        for (int dx = -1; dx <= 2; ++dx) {
             ivec2 probe = clamp(base + ivec2(dx, dy), ivec2(0), u_ProbeSize - 1);
-            float spatialWeight = (dx == 0 ? 1.0 - frac.x : frac.x) * (dy == 0 ? 1.0 - frac.y : frac.y);
+            // Smooth tent weight centred on the receiver's probe coordinate.
+            float spatialWeight = max(0.0, 1.0 - abs(float(dx) - frac.x))
+                                * max(0.0, 1.0 - abs(float(dy) - frac.y));
             if (spatialWeight <= 0.0) {
                 continue;
             }
@@ -131,6 +141,18 @@ void main() {
             float planeWeight = 1.0 - smoothstep(planeTolerance, planeTolerance * 2.0, planeDistance);
 
             float weight = spatialWeight * depthWeight * normalWeight * planeWeight;
+            if (weight <= 1e-5) {
+                rejected += spatialWeight;
+                continue;
+            }
+
+            // World-space distance falloff: probes further from the receiver
+            // describe a different part of the scene, so they contribute less.
+            // This is what turns the 4x4 gather into a smooth reconstruction
+            // instead of a hard bilinear cell.
+            float probeDistance = length(probePos - view_pos);
+            float distanceWeight = exp(-probeDistance / (probeWorld * 2.0));
+            weight *= distanceWeight;
             if (weight <= 1e-5) {
                 rejected += spatialWeight;
                 continue;

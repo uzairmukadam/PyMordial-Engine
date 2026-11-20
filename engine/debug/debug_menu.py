@@ -730,6 +730,13 @@ class DebugMenu:
                         et.rc_merge_max_cascade = rc_merge_val
                         et.mark_custom()
 
+                    rc_ang_changed, rc_ang_val = imgui.checkbox(
+                        "RC Angular Filter", bool(getattr(et, "rc_angular_filter_enabled", True))
+                    )
+                    if rc_ang_changed:
+                        et.rc_angular_filter_enabled = rc_ang_val
+                        et.mark_custom()
+
                     rc_in_changed, rc_in_val = imgui.slider_float(
                         "RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f"
                     )

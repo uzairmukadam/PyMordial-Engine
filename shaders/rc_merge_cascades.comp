@@ -45,14 +45,26 @@ void main() {
 
     vec4 nearInterval = texelFetch(u_NearIntervals, ivec3(probe, direction), 0);
 
-    // Angular mapping: RCDirection is a nested equal-solid-angle hierarchy with
-    // FOUR children per parent, so near direction `direction` owns exactly the
-    // far children 4*d .. 4*d+3. All four children have equal solid angle, so
-    // they combine with equal weight.
+    // Angular mapping. Two layouts are supported:
+    //   * far == 4 * near : RCDirection is a nested equal-solid-angle hierarchy
+    //     with FOUR children per parent, so near direction `direction` owns the
+    //     far children 4*d .. 4*d+3. All four children have equal solid angle,
+    //     so they combine with equal weight.
+    //   * far == near     : the two cascades share the same direction set, so
+    //     the far sample is taken at the identical index (identity mapping).
+    // Any other ratio falls back to the nearest-index mapping, which is exact
+    // for the equal-count case and a safe approximation otherwise.
     int child0 = direction * 4;
     int child1 = direction * 4 + 1;
     int child2 = direction * 4 + 2;
     int child3 = direction * 4 + 3;
+    bool refine = (u_FarDirectionCount == u_DirectionCount * 4);
+    if (!refine) {
+        child0 = direction;
+        child1 = direction;
+        child2 = direction;
+        child3 = direction;
+    }
 
     // Map the near probe centre into far-probe space.
     vec2 nearUV = (vec2(probe) + 0.5) / vec2(u_NearProbeSize);

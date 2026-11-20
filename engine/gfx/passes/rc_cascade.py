@@ -30,10 +30,15 @@ RC_MAX_DIRECTIONS = 256
 
 # Probe spacing in screen pixels. Near cascades are denser.
 RC_CASCADE_SPACING = (4, 8, 16)
-# Direction counts. Farther cascades resolve more angular detail. The counts
-# grow 4x per cascade to match the 2D spatial progression, where doubling probe
-# spacing in X and Y reduces the probe count by approximately 4x.
-RC_CASCADE_DIRECTIONS = (16, 64, 256)
+# Direction counts. The near cascade needs enough angular resolution to resolve
+# contact occlusion: a 16-direction set smears crevices and object bases because
+# a whole hemisphere quadrant collapses into a single sample. 64 directions
+# keeps the near field crisp. The mid cascade shares that count (its interval is
+# already covered by the near cascade's angular detail), and the far cascade
+# refines to 256 directions for distant detail. Counts must stay in the nested
+# 4x hierarchy (16 -> 64 -> 256) so the merge can map a parent direction to its
+# four children.
+RC_CASCADE_DIRECTIONS = (64, 64, 256)
 
 
 class RCCascadeConfigError(ValueError):

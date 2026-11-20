@@ -130,6 +130,10 @@ class RenderConfig:
     # Debug A/B: bypass rc_spatial_filter.comp and feed the raw reconstruction
     # straight to the temporal/publish stage.
     rc_spatial_filter_enabled: bool = False
+    # Angular filter on merged C0: smooths the coarse azimuth/z direction bins
+    # so a thin occluder does not become a hard radial wedge. Cheap (one pass
+    # over the C0 probe grid) and on by default for the cascade backend.
+    rc_angular_filter_enabled: bool = True
     rc_debug_view: int = 0  # reconstruction: 0=irradiance, 1=irradiance, 2=confidence, 3=rejected
     rc_temporal_debug_view: int = 0  # 0=resolved, 1=current, 2=depth conf, 3=motion conf, 4=history weight
     # Cascade isolation for debugging: 0 = C0 only, 1 = C1 into C0, 2 = full chain.

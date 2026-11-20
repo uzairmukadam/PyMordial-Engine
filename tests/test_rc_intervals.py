@@ -41,6 +41,8 @@ class TestIntervalComposition:
         prog["u_NearProbeSize"].value = NEAR_SIZE
         prog["u_FarProbeSize"].value = FAR_SIZE
         prog["u_DirectionCount"].value = DIRECTIONS
+        prog["u_FarDirectionCount"].value = DIRECTIONS
+        prog["u_RCMergeMaxCascade"].value = 1
         prog.run(group_x=1, group_y=1, group_z=DIRECTIONS)
 
         result = np.frombuffer(out.read(), dtype=np.float16).reshape(

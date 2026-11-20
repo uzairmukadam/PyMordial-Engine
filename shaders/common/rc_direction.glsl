@@ -88,6 +88,61 @@ float RCDirectionSolidAngle(int count) {
     return 4.0 * RC_PI / float(clamp(count, 1, RC_MAX_DIRECTIONS));
 }
 
+// Inverse of RCDirection's hierarchical decode: rebuilds the direction index
+// from an (azimuthIndex, zIndex) pair. Only the three nested counts are
+// supported; any other count returns the clamped linear index so callers that
+// use it for neighbour lookups degrade gracefully.
+int RCDirectionIndex(int azimuthIndex, int zIndex, int count) {
+    int n = clamp(count, 1, RC_MAX_DIRECTIONS);
+    if (n == 16) {
+        int az = clamp(azimuthIndex, 0, 3);
+        int z = clamp(zIndex, 0, 3);
+        return (az << 2) | z;
+    } else if (n == 64) {
+        int az = clamp(azimuthIndex, 0, 7);
+        int z = clamp(zIndex, 0, 7);
+        // bits: [az2 az1 z2 z1 az0 z0]
+        return (((az >> 2) & 1) << 5) | (((az >> 1) & 1) << 4)
+             | (((z >> 2) & 1) << 3) | (((z >> 1) & 1) << 2)
+             | ((az & 1) << 1) | (z & 1);
+    } else if (n == 256) {
+        int az = clamp(azimuthIndex, 0, 15);
+        int z = clamp(zIndex, 0, 15);
+        // bits: [az3 az2 z3 z2 az1 z1 az0 z0]
+        return (((az >> 3) & 1) << 7) | (((az >> 2) & 1) << 6)
+             | (((z >> 3) & 1) << 5) | (((z >> 2) & 1) << 4)
+             | (((az >> 1) & 1) << 3) | (((z >> 1) & 1) << 2)
+             | ((az & 1) << 1) | (z & 1);
+    }
+    return clamp(azimuthIndex, 0, n - 1);
+}
+
+// Decodes a direction index into its (azimuthIndex, zIndex) bin coordinates.
+// Returns false for counts that do not use the hierarchical layout.
+bool RCDirectionBins(int index, int count, out int azimuthIndex, out int zIndex, out int azimuthCount, out int zCount) {
+    int n = clamp(count, 1, RC_MAX_DIRECTIONS);
+    int i = clamp(index, 0, n - 1);
+    if (n == 16) {
+        azimuthCount = 4; zCount = 4;
+        azimuthIndex = i >> 2; zIndex = i & 3;
+        return true;
+    } else if (n == 64) {
+        azimuthCount = 8; zCount = 8;
+        azimuthIndex = (((i >> 5) & 1) << 2) | (((i >> 4) & 1) << 1) | ((i >> 1) & 1);
+        zIndex = (((i >> 3) & 1) << 2) | (((i >> 2) & 1) << 1) | (i & 1);
+        return true;
+    } else if (n == 256) {
+        azimuthCount = 16; zCount = 16;
+        azimuthIndex = (((i >> 7) & 1) << 3) | (((i >> 6) & 1) << 2)
+                     | (((i >> 3) & 1) << 1) | ((i >> 1) & 1);
+        zIndex = (((i >> 5) & 1) << 3) | (((i >> 4) & 1) << 2)
+               | (((i >> 2) & 1) << 1) | (i & 1);
+        return true;
+    }
+    azimuthIndex = i; zIndex = 0; azimuthCount = n; zCount = 1;
+    return false;
+}
+
 // Two nearest far-cascade directions for one near-cascade direction.
 //
 // RCDirection(i, N) is NOT nested across direction counts: the polar term
