@@ -18,7 +18,7 @@
 | Mip count | `num_mips` | `num_mips` |
 | Published as | `hiz_texture` / `hiz_mip_count` | `hiz_bounds_texture` / `hiz_bounds_mip_count` |
 | Built by | `hiz_copy.comp` + `hiz_downsample.comp` | `hiz_bounds_copy.comp` + `hiz_bounds_downsample.comp` |
-| Barriers | **none (defect)** | present |
+| Barriers | present (repaired in Phase 3B) | present |
 
 ---
 
@@ -42,31 +42,22 @@ surface in a cell, it is definitely hidden.
 |---|---|---|
 | SSR legacy march (`ssr.frag:MarchHiZ`) | skip empty space | yes (given correct mips) |
 | SSGI legacy (`ssgi.frag`) | empty-space skip | yes |
-| Culling (`cull_indirect.comp`) | occlusion test | **no — wrong corner** |
+| Culling (`cull_indirect.comp`) | occlusion test | yes (repaired in Phase 3B) |
 
-### 2.3 The barrier defect (P0)
+### 2.3 The barrier defect (P0 — repaired in Phase 3B)
 
-`hiz_pass.py:186-200`:
+`hiz_pass.py` originally dispatched the mip chain with **no `memory_barrier`** between
+dispatches, so mip *k* could read a partially-written mip *k−1*. The bounds hierarchy in
+the same file already inserted barriers, proving the requirement was known.
 
-```python
-self.hiz_texture.bind_to_image(0, read=False, write=True, level=0)
-self.copy_prog.run(...)                       # writes mip 0
+**Repair**: `memory_barrier(TEXTURE_FETCH | SHADER_IMAGE_ACCESS)` is now inserted after
+the mip-0 copy and between each downsample dispatch. Reduction operator, format, mip
+dimensions, reversed-Z semantics, filtering, and the bounds hierarchy are unchanged.
 
-self.hiz_texture.use(location=0)              # samples mip 0..k-1
-for k in range(1, self.num_mips):
-    self.hiz_texture.bind_to_image(0, read=False, write=True, level=k)
-    self.downsample_prog.run(...)             # reads mip k-1, writes mip k
-```
+**Validation**: mip 0 equals raw depth; every higher mip equals `min(2×2 children)`;
+deterministic across repeated runs at 64×64, 63×63, 65×37, 128×72.
 
-**No `memory_barrier` between dispatches.** Mip *k* may read a partially-written mip *k−1*.
-
-The bounds hierarchy in the same file **does** insert barriers (lines 231, 243), proving the
-requirement was known. The scalar path omits it.
-
-**Consequence**: `hiz_texture` mips are non-deterministic. SSR's Hi-Z march and SSGI's empty-space
-skip read corrupted data, producing the reported "Hi-Z SSR appears incorrect".
-
-**Class: P0.**
+**Class: P0 (repaired).**
 
 ### 2.4 Odd-resolution handling
 
@@ -140,7 +131,7 @@ Both hierarchies use `u_SrcLevel` / `u_SrcLevel`-style uniforms to select the so
 
 ---
 
-## 5. Culling Contract (P0 defect)
+## 5. Culling Contract (repaired in Phase 3B)
 
 `cull_indirect.comp` samples `hiz_texture` (scalar) at a mip chosen from the box's screen footprint:
 
@@ -156,18 +147,25 @@ float objectDepth = maxNDC.z;                                    // NEAREST box 
 if (objectDepth < occluderDepth) { cull; }
 ```
 
-**Defect**: `maxNDC.z` is the box's **nearest** point. The conservative test must use the
-**farthest** point (`minNDC.z`). Using the nearest point culls an object as soon as its front face
-is behind the occluder, even when its back half is still visible.
+**This comparison is correct and conservative.** In reversed-Z the object is fully
+occluded only if even its **nearest** point (`maxNDC.z`) is further than the **furthest**
+occluder over its footprint (`min` of the four samples). Phase 3A's earlier claim that
+this should use `minNDC.z` was inverted: switching to the farthest corner would cull
+objects that are still partially visible.
 
-**Correct form**:
+**The actual defect was a temporal space mismatch.** The Hi-Z pyramid is built from the
+**previous** frame's depth, but culling ran before the G-buffer pass and used the
+**current** frame's VP matrix. The repaired contract:
 
-```glsl
-float objectFarthest = minNDC.z;   // reversed-Z: min = farthest
-if (objectFarthest < occluderDepth) { cull; }
-```
+1. Frustum culling uses the **current** VP (`u_ViewProjection`).
+2. The occlusion test uses the **previous** VP (`u_PrevViewProjection`), matching the
+   space the pyramid was built in.
+3. The AABB is expanded by the camera translation (`u_CameraDelta`) so the stale
+   previous-frame footprint conservatively covers the current one.
+4. The footprint is dilated by one texel at the selected mip so the four corner samples
+   cover every texel the AABB touches.
 
-**Class: P0.**
+**Class: P0 (repaired).**
 
 ---
 
@@ -190,14 +188,15 @@ A racy pyramid shows mip-dependent noise that does not match the raw depth.
 
 ## 7. Invariants Checklist
 
-- [ ] `hiz_texture` mip 0 is a raw copy of G-Buffer depth.
-- [ ] `hiz_texture` reduction is `min` in reversed-Z.
-- [ ] **A `memory_barrier` separates every mip dispatch.**
-- [ ] `hiz_bounds_texture` mip 0 stores positive linear view depth.
-- [ ] Empty cells are `(1e30, 0.0)`.
-- [ ] Bounds reduction is `min(nearest)`, `max(farthest)` over valid children.
-- [ ] Occlusion tests use the **farthest** box corner.
-- [ ] Conservative consumers use `LoadHiZBounds`, never `SampleHiZBounds`.
+- [x] `hiz_texture` mip 0 is a raw copy of G-Buffer depth.
+- [x] `hiz_texture` reduction is `min` in reversed-Z.
+- [x] **A `memory_barrier` separates every mip dispatch.**
+- [x] `hiz_bounds_texture` mip 0 stores positive linear view depth.
+- [x] Empty cells are `(1e30, 0.0)`.
+- [x] Bounds reduction is `min(nearest)`, `max(farthest)` over valid children.
+- [x] Occlusion tests use the **nearest** box corner (`maxNDC.z`) against the **furthest**
+      occluder, evaluated in the **previous** frame's VP space.
+- [x] Conservative consumers use `LoadHiZBounds`, never `SampleHiZBounds`.
 
 ---
 

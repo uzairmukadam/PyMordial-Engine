@@ -24,7 +24,9 @@ layout(std430, binding = 6) writeonly buffer VisibilityBuffer {
 
 layout(binding = 0) uniform sampler2D u_HiZTexture;
 
-uniform mat4 u_ViewProjection;
+uniform mat4 u_ViewProjection;      // current-frame VP (frustum culling)
+uniform mat4 u_PrevViewProjection;  // previous-frame VP (Hi-Z is built from it)
+uniform vec3 u_CameraDelta;         // current_cam_pos - prev_cam_pos (world space)
 uniform vec2 u_ScreenSize;
 uniform int  u_EntityCount;
 uniform int  u_HiZMipCount;
@@ -90,22 +92,36 @@ void main() {
         return;
     }
 
-    // 2. Screen-Space Projected AABB Bounds
+    // 2. Occlusion test in the Hi-Z's own space.
+    //
+    // The Hi-Z pyramid is built from the PREVIOUS frame's depth buffer, so it is
+    // expressed in the previous frame's view-projection. Testing it with the
+    // current VP (as the old code did) mixes two different spaces and produces
+    // false occlusion whenever the camera moves. We therefore:
+    //   a) expand the AABB by the camera translation between frames so the
+    //      previous-frame footprint conservatively covers the current one, and
+    //   b) project and sample with u_PrevViewProjection.
+    vec3 expandedExtents = extents + abs(u_CameraDelta);
+
+    vec4 prevCorners[8];
+    GetBoxCorners(center, expandedExtents, prevCorners);
+
     vec3 minNDC = vec3(1e6);
     vec3 maxNDC = vec3(-1e6);
     bool intersectsNearPlane = false;
 
     for (int i = 0; i < 8; ++i) {
-        if (corners[i].w <= 0.01) {
+        if (prevCorners[i].w <= 0.01) {
             intersectsNearPlane = true;
             break;
         }
-        vec3 ndc = corners[i].xyz / corners[i].w;
+        vec3 ndc = prevCorners[i].xyz / prevCorners[i].w;
         minNDC = min(minNDC, ndc);
         maxNDC = max(maxNDC, ndc);
     }
 
-    // If AABB intersects near camera plane, skip Hi-Z test and mark visible
+    // If the AABB intersects the near plane (or was behind the camera last frame),
+    // the previous-frame footprint is not a reliable occluder: keep it visible.
     if (intersectsNearPlane) {
         u_VisibleMask[idx] = 1;
         return;
@@ -128,6 +144,17 @@ void main() {
     // Select mip level where AABB footprint is roughly 1-2 texels
     float mipLevel = clamp(ceil(log2(max(maxDim, 1.0))), 0.0, float(u_HiZMipCount - 1));
 
+    // Dilate the footprint by one texel at the selected mip so the four corner
+    // samples conservatively cover every texel the AABB actually touches.
+    // Without this, a footprint that lands between texel centres can miss the
+    // occluder entirely and report a false "visible" (harmless) — but a
+    // footprint that clips a partially-covered texel can also miss geometry
+    // that is genuinely in front, so dilation keeps the test conservative.
+    vec2 mipSize = max(vec2(1.0), floor(u_ScreenSize / exp2(mipLevel)));
+    vec2 texel = 1.0 / mipSize;
+    minUV = clamp(minUV - texel, vec2(0.0), vec2(1.0));
+    maxUV = clamp(maxUV + texel, vec2(0.0), vec2(1.0));
+
     // Sample the 4 bounding texels in Hi-Z pyramid
     vec2 uv0 = minUV;
     vec2 uv1 = vec2(maxUV.x, minUV.y);
@@ -139,21 +166,23 @@ void main() {
     float depth2 = textureLod(u_HiZTexture, uv2, mipLevel).r;
     float depth3 = textureLod(u_HiZTexture, uv3, mipLevel).r;
 
-    // Nearest occluder depth in the sampled region
+    // Conservative occluder depth over the sampled region.
+    // The scalar Hi-Z stores the FURTHEST reversed-Z depth per texel (min
+    // reduction), so the furthest occluder over the footprint is the minimum
+    // of the four samples.
     float occluderDepth;
     if (u_ReverseZ == 1) {
-        // Reversed-Z: larger = closer. In Hi-Z downsample, min represents the furthest occluder
-        // For occlusion, we test if the closest point on the object is behind the furthest occluder
+        // Reversed-Z: larger = nearer. Object's nearest point is maxNDC.z.
+        // The object is fully occluded only if even its NEAREST point is
+        // further than the FURTHEST occluder over its footprint.
         occluderDepth = min(min(depth0, depth1), min(depth2, depth3));
-        // Object closest point in Reversed-Z is maxNDC.z
         float objectDepth = maxNDC.z;
-        // If object's closest point is further away than the occluder (smaller in Reversed-Z), it is occluded
         if (objectDepth < occluderDepth) {
             u_VisibleMask[idx] = 0;
             return;
         }
     } else {
-        // Standard-Z: smaller = closer.
+        // Standard-Z: smaller = nearer. Object's nearest point is minNDC.z.
         occluderDepth = max(max(depth0, depth1), max(depth2, depth3));
         float objectDepth = minNDC.z;
         if (objectDepth > occluderDepth) {

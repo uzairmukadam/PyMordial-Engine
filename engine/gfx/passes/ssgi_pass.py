@@ -97,6 +97,7 @@ class SSGIPass(RenderPass):
         # Uniform handles — temporal resolve
         self._u_target_res = self.temporal_prog.get("u_TargetResolution", None)
         self._u_prev_view = self.temporal_prog.get("u_PrevView", None)
+        self._u_prev_jitter = self.temporal_prog.get("u_PrevJitter", None)
         self._u_temporal_blend = self.temporal_prog.get("u_TemporalBlend", None)
         self._u_history_valid = self.temporal_prog.get("u_HistoryValid", None)
         self._u_temporal_enabled = self.temporal_prog.get("u_TemporalEnabled", None)
@@ -315,6 +316,9 @@ class SSGIPass(RenderPass):
             self._u_temporal_enabled.value = 1 if temporal_enabled else 0
         if self._u_prev_view is not None and prev_view is not None:
             self._u_prev_view.write(prev_view.tobytes())
+        if self._u_prev_jitter is not None:
+            prev_jitter = context.resources.get("prev_jitter", (0.0, 0.0))
+            self._u_prev_jitter.value = (float(prev_jitter[0]), float(prev_jitter[1]))
 
         self.resolved_fbo.use()
         self.spatial_y_tex.use(location=0)

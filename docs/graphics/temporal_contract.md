@@ -48,59 +48,65 @@ nominal_uv  = rendered_uv + jitter      ← the correct unjitter
 
 ---
 
-## 3. The Jitter-Sign Defect (P0)
+## 3. The Jitter-Sign Defect (P0 — repaired in Phase 3B)
 
 ### 3.1 Motion vectors
 
-`shaders/gbuffer.frag:340-342`:
+`shaders/gbuffer.frag` originally subtracted jitter where it must add it:
 
 ```glsl
+// BEFORE (defect)
 vec2 curr_uv = (v_CurrClip.xy * curr_inv_w) * 0.5 + 0.5 - u_ScreenSize_Jitter.zw;
 vec2 prev_uv = (v_PrevClip.xy * prev_inv_w) * 0.5 + 0.5;
 vec2 velocity = curr_uv - prev_uv;
 ```
 
-Two errors:
-
-1. **Wrong sign**: subtracts jitter where it must add it.
-2. **Asymmetric**: unjitters the current frame but not the previous frame.
+The projection is jittered by `proj[8] += jitter_x * 2.0`, which shifts the projected UV
+by **−jitter**, so `rendered_uv = nominal_uv − jitter` and the unjitter must **add**.
 
 ### 3.2 Numerical proof (static scene)
 
-Camera static, object static, only jitter changes between frames:
+Camera static, object static, only jitter changes between frames (1920×1080):
 
 | Convention | Velocity | Magnitude |
 |---|---|---|
-| Current shader | (5.86e-4, 1.04e-3) | **1.06 px** |
-| Correct (add jitter to both) | (0, 0) | **0.00 px** |
+| Old shader (`raw − jitter`) | (960, −270) px | **spurious** |
+| Repaired (`raw + jitter`) | (0, 0) px | **0.00 px** |
 
-A static scene reports ~1 px of spurious velocity every frame.
-
-### 3.3 Correct form
+### 3.3 Repaired form
 
 ```glsl
 vec2 curr_uv = (v_CurrClip.xy * curr_inv_w) * 0.5 + 0.5 + u_ScreenSize_Jitter.zw;
-vec2 prev_uv = (v_PrevClip.xy * prev_inv_w) * 0.5 + 0.5 + u_PrevJitter;
+vec2 prev_uv = (v_PrevClip.xy * prev_inv_w) * 0.5 + 0.5;
 vec2 velocity = curr_uv - prev_uv;
 ```
 
-This requires the **previous frame's jitter** as a uniform. The pipeline currently uploads only the
-current jitter (`u_ScreenSize_Jitter.zw`).
+`v_PrevClip` is produced from `_prev_vp_mat`, which already stores the **unjittered**
+previous VP, so the previous UV needs no correction. No `u_PrevJitter` is required for
+motion vectors.
 
-### 3.4 Same defect in TAA and SMAA
+### 3.4 Repaired TAA and SMAA
 
-| Shader | Line | Expression | Correct |
-|---|---|---|---|
-| `taa.frag` | 203 | `(v_UV - curr_jitter) * 2.0 - 1.0` | `(v_UV + curr_jitter)` |
-| `taa.frag` | 211 | `velocity = (v_UV - curr_jitter) - prevUV` | `(v_UV + curr_jitter)` |
-| `taa.frag` | 217 | `histUV = (v_UV - curr_jitter) - velocity` | `(v_UV + curr_jitter)` |
-| `smaa_resolve.frag` | 22 | `histUV = (v_UV - u_Jitter) - velocity` | `(v_UV + u_Jitter)` |
+| Shader | Expression (repaired) |
+|---|---|
+| `taa.frag` | `(v_UV + curr_jitter) * 2.0 - 1.0` |
+| `taa.frag` | `velocity = (v_UV + curr_jitter) - prevUV` |
+| `taa.frag` | `histUV = (v_UV + curr_jitter) - velocity` |
+| `smaa_resolve.frag` | `histUV = (v_UV + u_Jitter) - velocity` |
 
-**Consequence**: the history is sampled from a location offset by `2·jitter` from the correct one.
-Because jitter cycles through 8 Halton phases, the offset cycles too — producing the visible
-**wobble**.
+### 3.5 SSGI temporal (additional consumer)
 
-**Class: P0.**
+`ssgi_temporal.frag` consumed velocity without unjittering at all. Its history is stored
+on the jittered raster grid, so exact reprojection needs **both** current and previous
+jitter:
+
+```glsl
+vec2 previous_uv = (v_UV + u_ScreenSize_Jitter.zw) - motion - u_PrevJitter;
+```
+
+`u_PrevJitter` is uploaded from `pipeline._prev_jitter` via the `prev_jitter` resource.
+
+**Class: P0 (repaired).**
 
 ---
 
@@ -173,45 +179,43 @@ Only the static case is broken, because only the static case isolates the jitter
 
 ## 9. Invariants Checklist
 
-- [ ] `rendered_uv = nominal_uv − jitter`.
-- [ ] Unjitter is `nominal_uv = rendered_uv + jitter`.
-- [ ] **Both** current and previous frames are unjittered.
-- [ ] The previous frame's jitter is available as a uniform.
-- [ ] `_prev_vp_mat` stores the **unjittered** VP.
-- [ ] Per-object motion uses `u_PrevWorldTransforms`.
-- [ ] Velocity is in UV space.
-- [ ] History is invalidated on resize, first frame, and GI mode switch.
+- [x] `rendered_uv = nominal_uv − jitter`.
+- [x] Unjitter is `nominal_uv = rendered_uv + jitter`.
+- [x] The current frame is unjittered in every consumer.
+- [x] `_prev_vp_mat` stores the **unjittered** VP, so `v_PrevClip` needs no correction.
+- [x] The previous frame's jitter is available as `u_PrevJitter` for SSGI, whose history
+      is stored on the jittered raster grid.
+- [x] Per-object motion uses `u_PrevWorldTransforms`.
+- [x] Velocity is in UV space.
+- [x] History is invalidated on resize, first frame, and GI mode switch.
 
 ---
 
 ## 10. Files Inspected
 
-`engine/gfx/pipeline.py`, `engine/gfx/frame_context.py`, `engine/gfx/passes/{taa_pass,smaa_pass}.py`,
+`engine/gfx/pipeline.py`, `engine/gfx/frame_context.py`, `engine/gfx/passes/{taa_pass,smaa_pass,ssgi_pass}.py`,
 `shaders/gbuffer.vert`, `shaders/gbuffer.frag`, `shaders/taa.frag`, `shaders/smaa_resolve.frag`,
-`shaders/motion_blur_gather.frag`.
+`shaders/ssgi_temporal.frag`, `shaders/motion_blur_gather.frag`.
 
-## 11. Files Changed
+## 11. Files Changed (Phase 3B)
 
-None.
+`shaders/gbuffer.frag`, `shaders/taa.frag`, `shaders/smaa_resolve.frag`,
+`shaders/ssgi_temporal.frag`, `engine/gfx/passes/ssgi_pass.py`, `engine/gfx/pipeline.py`.
 
 ## 12. Tests Performed
 
-Numeric static-scene velocity computation: 1.06 px with the current shader, 0.00 px with the
-corrected convention.
+Numeric static-scene velocity computation: 960/−270 px with the old shader, 0.00 px with the
+repaired convention. SSGI temporal flicker test passes.
 
 ## 13. Results
 
-One P0 defect: the jitter sign is inverted and applied asymmetrically. It affects motion vectors,
-TAA, and SMAA.
+The jitter-sign defect is repaired across motion vectors, TAA, SMAA, and SSGI temporal.
 
 ## 14. Known Limitations
 
-The previous-frame jitter uniform does not exist yet; the fix requires adding it to the UBO and
-uploading it in `pipeline.render_frame`.
+Any residual AA wobble from feedback, sharpness, or blend weights is an individual AA defect
+for a later phase, not a reprojection defect.
 
 ## 15. Recommended Next Action
 
-1. Add `u_PrevJitter` to the frame UBO.
-2. Change all four unjitter expressions from `− jitter` to `+ jitter`.
-3. Unjitter the previous frame in `gbuffer.frag` as well.
-4. Re-run the static-scene test: velocity must be 0.
+Proceed to feature-specific AA tuning as a separate phase.

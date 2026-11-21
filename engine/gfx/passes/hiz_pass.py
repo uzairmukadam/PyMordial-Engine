@@ -56,6 +56,8 @@ class HiZPass(RenderPass):
         "_u_bounds_down_src_level",
         "cull_prog",
         "_u_cull_vp",
+        "_u_cull_prev_vp",
+        "_u_cull_cam_delta",
         "_u_cull_screen",
         "_u_cull_count",
         "_u_cull_mips",
@@ -114,6 +116,8 @@ class HiZPass(RenderPass):
 
         # Uniforms for GPU occlusion culling
         self._u_cull_vp = self.cull_prog.get("u_ViewProjection", None)
+        self._u_cull_prev_vp = self.cull_prog.get("u_PrevViewProjection", None)
+        self._u_cull_cam_delta = self.cull_prog.get("u_CameraDelta", None)
         self._u_cull_screen = self.cull_prog.get("u_ScreenSize", None)
         self._u_cull_count = self.cull_prog.get("u_EntityCount", None)
         self._u_cull_mips = self.cull_prog.get("u_HiZMipCount", None)
@@ -188,6 +192,11 @@ class HiZPass(RenderPass):
         gx0, gy0 = self.dispatch_groups[0]
         self.copy_prog.run(group_x=gx0, group_y=gy0)
 
+        # The next dispatch samples mip 0 as a texture while it was just written
+        # through an image binding, so the image writes must be visible to
+        # texture fetches before the first downsample runs.
+        self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
+
         # 2. Downsample: Iteratively build mips 1..num_mips-1
         self.hiz_texture.use(location=0)
 
@@ -198,6 +207,12 @@ class HiZPass(RenderPass):
             self.hiz_texture.bind_to_image(0, read=False, write=True, level=k)
             gx, gy = self.dispatch_groups[k]
             self.downsample_prog.run(group_x=gx, group_y=gy)
+
+            # Mip k+1 samples mip k, so its writes must be visible first.
+            if k + 1 < self.num_mips:
+                self.ctx.memory_barrier(
+                    moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
+                )
 
         # 3. Linear-view-depth bounds hierarchy (RG32F).
         self._build_bounds_hierarchy(ctx, src_depth)
@@ -253,14 +268,23 @@ class HiZPass(RenderPass):
         active_count: int,
         vp_matrix: np.ndarray,
         screen_size: tuple[float, float],
+        prev_vp_matrix: np.ndarray | None = None,
+        camera_delta: tuple[float, float, float] | np.ndarray | None = None,
     ) -> np.ndarray:
         """Executes GPU-driven Hi-Z occlusion culling and returns a visibility mask uint8/bool array.
 
         Args:
             aabbs: Contiguous (active_count, 6) float32 slice: [cx, cy, cz, hx, hy, hz].
             active_count: Total active entities.
-            vp_matrix: 16-element column-major float32 array.
+            vp_matrix: 16-element column-major float32 current-frame VP (frustum culling).
             screen_size: (width, height) in pixels.
+            prev_vp_matrix: 16-element column-major float32 previous-frame VP. The Hi-Z
+                pyramid is built from the previous frame's depth, so the occlusion test
+                must be evaluated in this space. Defaults to ``vp_matrix`` when omitted
+                (correct only for a static camera).
+            camera_delta: World-space camera translation since the previous frame. The
+                AABB is expanded by this amount so the previous-frame footprint
+                conservatively covers the current one. Defaults to zero.
 
         Returns:
             Boolean ndarray of shape (active_count,) where True indicates visible geometry.
@@ -287,6 +311,16 @@ class HiZPass(RenderPass):
         # Set Uniforms
         if self._u_cull_vp is not None:
             self._u_cull_vp.write(vp_matrix.tobytes())
+        if self._u_cull_prev_vp is not None:
+            prev = vp_matrix if prev_vp_matrix is None else prev_vp_matrix
+            self._u_cull_prev_vp.write(np.asarray(prev, dtype=np.float32).tobytes())
+        if self._u_cull_cam_delta is not None:
+            delta = (0.0, 0.0, 0.0) if camera_delta is None else camera_delta
+            self._u_cull_cam_delta.value = (
+                float(delta[0]),
+                float(delta[1]),
+                float(delta[2]),
+            )
         if self._u_cull_screen is not None:
             self._u_cull_screen.value = (float(screen_size[0]), float(screen_size[1]))
         if self._u_cull_count is not None:

@@ -39,7 +39,7 @@ scale as `dimensions / base_dimensions`, and each primitive has a different base
 
 ---
 
-## 3. The Normal Matrix (P0 defect)
+## 3. The Normal Matrix (P0 — repaired in Phase 3B)
 
 ### 3.1 The rule
 
@@ -51,17 +51,15 @@ mat3 normal_matrix = transpose(inverse(mat3(model)));
 vec3 world_normal = normalize(normal_matrix * in_normal);
 ```
 
-### 3.2 What the engine does
+### 3.2 What the engine did (before repair)
 
-`shaders/gbuffer.vert:88`:
+`shaders/gbuffer.vert`, `shaders/gbuffer_tess.vert`, and `shaders/csm_tess.vert` used:
 
 ```glsl
 mat3 normal_matrix = mat3(model); // Assumes uniform scale or orthogonal
 ```
 
-`shaders/gbuffer_tess.vert` and `shaders/csm_tess.vert:28` do the same.
-
-### 3.3 Why the assumption fails
+### 3.3 Why the assumption failed
 
 The comment's assumption holds only for uniform scale or a pure rotation. The engine violates it:
 
@@ -75,9 +73,9 @@ The comment's assumption holds only for uniform scale or a pure rotation. The en
 | cone | (1,1,1) | (1, 1, 1) | no |
 
 Only capsule and cylinder receive non-uniform scale, which is exactly why only curved geometry
-shows the defect.
+showed the defect.
 
-### 3.4 Quantified error
+### 3.4 Quantified error (before repair)
 
 | Primitive | Normal | Shader | Correct | Error |
 |---|---|---|---|---|
@@ -85,8 +83,15 @@ shows the defect.
 | capsule | (0.577, 0.577, 0.577) | (0.675, 0.300, 0.675) | (0.376, 0.847, 0.376) | **40.4°** |
 | cylinder | (0.707, 0.707, 0) | (0.447, 0.894, 0) | (0.894, 0.447, 0) | **36.9°** |
 
-Axis-aligned normals are unaffected (0° error), which is why a cylinder's flat caps look correct
-while its barrel does not.
+Axis-aligned normals were unaffected (0° error), which is why a cylinder's flat caps looked correct
+while its barrel did not.
+
+### 3.5 Repair
+
+All three vertex shaders now compute `transpose(inverse(mat3(model)))`. Post-repair error is
+0.00° for uniform, non-uniform, rotated, and rotated+non-uniform cases. The remaining
+`mat3(model)` uses in `gbuffer.vert` / `gbuffer_tess.vert` are for `v_UVScale` (length
+ratios) and are intentionally unchanged.
 
 ### 3.5 Downstream impact
 
@@ -157,12 +162,12 @@ Right-handed view space, −Z forward. `matrix_look_at` produces a right-handed 
 
 ## 8. Invariants Checklist
 
-- [ ] Normals transform by `transpose(inverse(mat3(model)))`, never `mat3(model)`.
-- [ ] Tangents transform by the same normal matrix, then Gram-Schmidt against N.
-- [ ] G-Buffer stores **world** normals, octahedral-encoded.
-- [ ] Consumers transform world → view with `mat3(u_View)` (rotation only).
-- [ ] UV origin is bottom-left everywhere.
-- [ ] View space is right-handed, −Z forward.
+- [x] Normals transform by `transpose(inverse(mat3(model)))`, never `mat3(model)`.
+- [x] Tangents transform by the same normal matrix, then Gram-Schmidt against N.
+- [x] G-Buffer stores **world** normals, octahedral-encoded.
+- [x] Consumers transform world → view with `mat3(u_View)` (rotation only).
+- [x] UV origin is bottom-left everywhere.
+- [x] View space is right-handed, −Z forward.
 
 ---
 
@@ -172,25 +177,25 @@ Right-handed view space, −Z forward. `matrix_look_at` produces a right-handed 
 `shaders/gbuffer.vert`, `shaders/gbuffer.frag`, `shaders/gbuffer_tess.vert`, `shaders/csm_tess.vert`,
 `shaders/common/csm_sampling.glsl`, `shaders/{gtao,ssgi_trace,ssr_hiz}.frag`.
 
-## 10. Files Changed
+## 10. Files Changed (Phase 3B)
 
-None.
+`shaders/gbuffer.vert`, `shaders/gbuffer_tess.vert`, `shaders/csm_tess.vert`.
 
 ## 11. Tests Performed
 
-Numeric comparison of `M·n` vs `inverse(M)ᵀ·n` for capsule and cylinder scales; 36.9°–42.1° error.
+Numeric comparison of `M·n` vs `inverse(M)ᵀ·n` for capsule and cylinder scales: 36.9°–42.1° error
+before repair, 0.00° after.
 
 ## 12. Results
 
-One P0 defect: the normal matrix. Everything else in the coordinate chain is correct.
+The normal-matrix defect is repaired. Everything else in the coordinate chain is correct.
 
 ## 13. Known Limitations
 
 The error was computed for the default `dimensions=(1,1,1)`; other dimension requests produce
-different (possibly larger) errors.
+different (possibly larger) pre-repair errors.
 
 ## 14. Recommended Next Action
 
-Replace `mat3(model)` with `transpose(inverse(mat3(model)))` in `gbuffer.vert`,
-`gbuffer_tess.vert`, and `csm_tess.vert`. Precompute it on the CPU and upload as a per-entity mat3
-if the per-vertex inverse proves expensive.
+None for correctness. If the per-vertex inverse proves expensive, precompute the normal matrix on
+the CPU and upload it as a per-entity mat3 — but only after measurement.

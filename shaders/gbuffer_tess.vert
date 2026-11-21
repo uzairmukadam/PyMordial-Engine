@@ -38,7 +38,8 @@ void main() {
     tc_EntityID = entity_idx;
 
     mat4 model = u_WorldTransforms[entity_idx];
-    mat3 normal_matrix = mat3(model);
+    // Inverse-transpose so non-uniform scale does not skew normals/tangents.
+    mat3 normal_matrix = transpose(inverse(mat3(model)));
 
     vec4 world_pos = model * vec4(in_position, 1.0);
     tc_Position = world_pos.xyz;

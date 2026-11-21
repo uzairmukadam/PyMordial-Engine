@@ -8,9 +8,18 @@
 #endif
 
 // Octahedral unit-vector encoding (projects sphere to [-1, 1] octahedron)
+//
+// The lower-hemisphere branch must use a sign function that never returns 0.
+// GLSL's built-in sign(0.0) == 0.0, so a normal with an exactly-zero component
+// (e.g. a cylinder barrel where n.y == 0) would have that component collapsed
+// to 0 in the encoded value, decoding back to a wrong axis-aligned normal.
+vec2 OctahedralSignNotZero(vec2 v) {
+    return vec2((v.x >= 0.0) ? 1.0 : -1.0, (v.y >= 0.0) ? 1.0 : -1.0);
+}
+
 vec2 OctahedralEncode(vec3 n) {
     n /= (abs(n.x) + abs(n.y) + abs(n.z));
-    vec2 oct = (n.z >= 0.0) ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
+    vec2 oct = (n.z >= 0.0) ? n.xy : (1.0 - abs(n.yx)) * OctahedralSignNotZero(n.xy);
     return oct * 0.5 + 0.5; // Map [-1, 1] to [0, 1]
 }
 

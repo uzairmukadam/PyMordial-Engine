@@ -16,7 +16,7 @@ Six reported defects were traced to **four foundational defects**, three of whic
 |---|---|---|---|
 | 1 | Shadows wrong on capsules/cylinders | `normal_matrix = mat3(model)` under non-uniform scale | **P0** |
 | 2 | AO wrong on curved geometry | Same normal-matrix defect | **P0** |
-| 3 | Hi-Z culling removes partially visible objects | Culling shader tests the **wrong depth corner** | **P0** |
+| 3 | Hi-Z culling removes partially visible objects | Culling tests previous-frame Hi-Z with the **current** VP (space mismatch) | **P0** |
 | 4 | Hi-Z SSR incorrect | Scalar Hi-Z pyramid built **without memory barriers** | **P0** |
 | 5 | TAA/SMAA wobble | Jitter **sign inverted** in velocity + reprojection | **P0** |
 | 6 | SSGI/SSR depth-hierarchy questions | Bounds hierarchy is correct; scalar pyramid is not (see #4) | P0 (shared with #4) |
@@ -314,9 +314,9 @@ self.aabbs[dense_idx, 3] = abs(mat[0])*hx + abs(mat[4])*hy + abs(mat[8])*hz
 Verified numerically for a 45°-rotated capsule: Arvo extents == true support extents exactly.
 **Conservative. No defect.**
 
-### 7.2 Hi-Z culling depth test (P0)
+### 7.2 Hi-Z culling depth test (P0 — re-diagnosed in Phase 3B)
 
-`shaders/cull_indirect.comp:139-152`:
+`shaders/cull_indirect.comp`:
 
 ```glsl
 occluderDepth = min(min(depth0, depth1), min(depth2, depth3));
@@ -324,21 +324,23 @@ float objectDepth = maxNDC.z;
 if (objectDepth < occluderDepth) { u_VisibleMask[idx] = 0; return; }
 ```
 
-Two defects:
+**Phase 3A's original claim was inverted.** This comparison is correct and conservative:
+in reversed-Z the object is fully occluded only if even its **nearest** point (`maxNDC.z`)
+is further than the **furthest** occluder over its footprint. A GPU test of the actual
+shader across the 11 required scenarios confirmed 10/10 static cases correct; switching
+to `minNDC.z` would have introduced false occlusion on every partially-protruding object.
 
-1. **`maxNDC.z` is the wrong corner.** In reversed-Z, larger z = nearer. `maxNDC.z` is the
-   **nearest** point of the box. The conservative test must use the **farthest** point
-   (`minNDC.z`): an object is only fully occluded if even its nearest point is behind the occluder.
-   Using the nearest point declares an object occluded as soon as its front face is behind the
-   occluder, even when its back half is still visible.
+**The actual defect is a temporal space mismatch.** The Hi-Z pyramid is built from the
+**previous** frame's depth (PASS 2.7), but culling runs before the G-buffer pass and used
+the **current** frame's VP. Under camera motion this produced false occlusion at rates
+from 2.6% (0.02 units/frame) to 58.8% (0.5 units/frame).
 
-2. **`minNDC`/`maxNDC` are computed from NDC, not from the depth range.** `minNDC.z`/`maxNDC.z`
-   are the min/max of the 8 projected corners' NDC z, which is correct in principle — but combined
-   with defect 1 the comparison is inverted.
+**Repair (Phase 3B)**: frustum culling stays in the current VP; the occlusion test runs
+in the previous VP (`u_PrevViewProjection`) with the AABB expanded by the camera
+translation (`u_CameraDelta`) and the footprint dilated by one texel. Post-repair false
+occlusion is 0.0% across all tested motion steps.
 
-**Consequence**: partially visible objects are culled. This is exactly symptom 3.
-
-**Class: P0.**
+**Class: P0 (repaired).**
 
 ### 7.3 Near-plane handling (confirmed correct)
 
@@ -382,7 +384,7 @@ Conservative. **No defect.**
 | ID | Defect | Class | Symptoms |
 |---|---|---|---|
 | F1 | `mat3(model)` normal matrix under non-uniform scale | **P0** | 1, 2 |
-| F2 | Hi-Z culling tests nearest corner instead of farthest | **P0** | 3 |
+| F2 | Hi-Z culling tests previous-frame Hi-Z with the current VP (space mismatch) | **P0** | 3 |
 | F3 | Scalar Hi-Z pyramid missing memory barriers | **P0** | 4, 6 |
 | F4 | Jitter sign inverted in velocity + TAA/SMAA reprojection | **P0** | 5 |
 | F5 | SSDM writes `gl_FragDepth` to an FBO with no depth attachment | P1 | (silent) |
@@ -437,7 +439,8 @@ Fix in this order (each is independent, smallest-first):
 1. **F4 (jitter sign)** — one-line change in `gbuffer.frag`, `taa.frag`, `smaa_resolve.frag`.
 2. **F1 (normal matrix)** — compute `transpose(inverse(mat3(model)))` in the three vertex shaders.
 3. **F3 (Hi-Z barriers)** — add `memory_barrier` between scalar mip dispatches.
-4. **F2 (culling corner)** — use `minNDC.z` for the reversed-Z occlusion test.
+4. **F2 (culling)** — evaluate the occlusion test in the previous frame's VP space with a
+   motion-expanded AABB (see `foundation_repair_report.md`).
 5. **F5 (SSDM depth)** — attach the G-Buffer depth to the SSDM FBO, or document that SSDM is
    normal-only.
 

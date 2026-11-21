@@ -56,6 +56,7 @@ layout (std140, binding = 0) uniform FrameData {
 
 uniform mat4 u_PrevView;
 uniform vec2 u_TargetResolution;
+uniform vec2 u_PrevJitter;       // previous frame subpixel jitter (UV space)
 uniform float u_TemporalBlend;   // 0 = no history, ~0.9 = heavy accumulation
 uniform int u_HistoryValid;      // 0 on the first frame, after a resize, or after invalidate_history()
 uniform int u_TemporalEnabled;   // 0 disables reprojection entirely
@@ -84,7 +85,12 @@ void main() {
 
     if (u_TemporalEnabled != 0 && u_HistoryValid != 0) {
         vec2 motion = texture(u_MotionVectors, v_UV).rg;
-        vec2 previous_uv = v_UV - motion;
+        // v_UV is the jittered rasterised UV; the history stores nominal frames.
+        // nominal_curr_uv = v_UV + curr_jitter, and motion = nominal_curr - nominal_prev,
+        // so nominal_prev_uv = (v_UV + curr_jitter) - motion. The history texture was
+        // itself rasterised with the previous frame's jitter, so the sample location is
+        // nominal_prev_uv - prev_jitter.
+        vec2 previous_uv = (v_UV + u_ScreenSize_Jitter.zw) - motion - u_PrevJitter;
 
         if (all(greaterThanEqual(previous_uv, vec2(0.0))) &&
             all(lessThanEqual(previous_uv, vec2(1.0)))) {

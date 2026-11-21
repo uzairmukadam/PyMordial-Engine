@@ -153,10 +153,12 @@ class RenderPipeline:
         "_inv_proj",
         "_inv_view",
         "_cam_pos",
+        "_prev_cam_pos",
         "_cam_fwd",
         "_sun_v",
         "_screen_size_tuple",
         "_zero_jitter",
+        "_prev_jitter",
         "_mie_beta_tuple",
         "_prev_mie_beta",
         "_csm_cascade_idx_uniform",
@@ -392,10 +394,12 @@ class RenderPipeline:
         self._inv_proj = np.zeros(16, dtype=np.float32)
         self._inv_view = np.zeros(16, dtype=np.float32)
         self._cam_pos = np.zeros(3, dtype=np.float32)
+        self._prev_cam_pos = np.zeros(3, dtype=np.float32)
         self._cam_fwd = np.zeros(3, dtype=np.float32)
         self._sun_v = np.zeros(3, dtype=np.float32)
         self._screen_size_tuple = (float(w), float(h))
         self._zero_jitter = (0.0, 0.0)
+        self._prev_jitter = (0.0, 0.0)
         self._mie_beta_tuple = (0.0, 0.0, 0.0)
         self._prev_mie_beta = -1.0
 
@@ -1284,11 +1288,17 @@ class RenderPipeline:
         if (frustum_cull_active or hiz_cull_active) and draw_batches:
             active_aabbs = ecs.get_active_aabbs_view()
             if hiz_cull_active and hasattr(self, "hiz_pass") and self.hiz_pass is not None:
+                # The Hi-Z pyramid is built from the previous frame's depth, so the
+                # occlusion test must run in the previous frame's VP space. Expand the
+                # AABB by the camera translation so the stale footprint stays conservative.
+                cam_delta = self._cam_pos - self._prev_cam_pos
                 visible_mask = self.hiz_pass.cull_aabbs_gpu(
                     aabbs=active_aabbs,
                     active_count=active_count,
                     vp_matrix=self._vp_mat,
                     screen_size=(w, h),
+                    prev_vp_matrix=self._prev_vp_mat,
+                    camera_delta=cam_delta,
                 )
             else:
                 self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
@@ -1547,6 +1557,7 @@ class RenderPipeline:
         elif self.config.gi_mode == "SSGI":
             self.rc_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
+            ctx.resources["prev_jitter"] = self._prev_jitter
             with profiler.region("SSGI total"):
                 self.ssgi_pass.execute(ctx)
         else:
@@ -1835,6 +1846,8 @@ class RenderPipeline:
         # Store current unjittered ViewProjection for next frame's motion vectors (zero-allocation)
         np.copyto(self._prev_vp_mat, self._unjittered_vp_mat)
         np.copyto(self._prev_view_mat, self._view_mat)
+        np.copyto(self._prev_cam_pos, self._cam_pos)
+        self._prev_jitter = (jitter_x, jitter_y)
 
         # Snapshot this frame's transforms as next frame's "previous" transforms.
         # Only the dynamic slice can change, so static entities are copied once

@@ -19,7 +19,7 @@ void main() {
     vec2 velocity = texture(u_VelocityTexture, v_UV).xy;
 
     // The current frame is jittered, so the nominal (unjittered) previous UV is:
-    vec2 histUV = (v_UV - u_Jitter) - velocity;
+    vec2 histUV = (v_UV + u_Jitter) - velocity;
 
     // Disocclusion / boundary rejection
     if (histUV.x < 0.0 || histUV.x > 1.0 || histUV.y < 0.0 || histUV.y > 1.0) {

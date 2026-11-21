@@ -78,7 +78,11 @@ void main() {
     v_EntityID = entity_idx;
 
     mat4 model = u_WorldTransforms[entity_idx];
-    mat3 normal_matrix = mat3(model); // Assumes uniform scale or orthogonal
+    // Normals are co-vectors: under non-uniform scale they must transform by the
+    // inverse transpose, not by the model matrix itself. Entity dimensions can
+    // produce non-uniform scale (e.g. capsule/cylinder base aspect ratios), so
+    // mat3(model) would skew curved-surface normals by up to ~42 degrees.
+    mat3 normal_matrix = transpose(inverse(mat3(model)));
 
     vec4 world_pos = model * vec4(in_position, 1.0);
     v_WorldPos = world_pos.xyz;

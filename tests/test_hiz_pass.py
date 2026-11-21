@@ -169,3 +169,77 @@ class TestHiZPass:
         assert not mask[2]
 
         pass_instance.destroy()
+
+    def test_hiz_culling_conservative_under_camera_motion(self, render_ctx: RenderContext):
+        """F2 regression: a partially-visible object must never be culled when the
+        camera moves between the frame that built the Hi-Z and the frame that culls.
+
+        The Hi-Z pyramid is built from the previous frame's depth, so the occlusion
+        test must run in the previous frame's VP space with the AABB expanded by the
+        camera translation. Before the fix, culling used the current VP against the
+        stale pyramid and produced false occlusion.
+        """
+        import math
+
+        from engine.core.math_utils import mat4_mul, matrix_look_at, matrix_perspective
+
+        w, h = 320, 240
+        pass_instance = HiZPass(render_ctx.ctx, width=w, height=h, reverse_z=True)
+
+        def make_vp(cam_x: float) -> np.ndarray:
+            view = matrix_look_at((cam_x, 0.0, 0.0), (cam_x, 0.0, -1.0), (0.0, 1.0, 0.0))
+            proj = matrix_perspective(math.radians(60), w / h, 0.1, 1000.0, reverse_z=True)
+            return mat4_mul(proj, view).astype(np.float32)
+
+        def project(vp_flat: np.ndarray, pt) -> tuple[float, float, float]:
+            vp = vp_flat.reshape(4, 4, order="F")
+            p = vp @ np.array([pt[0], pt[1], pt[2], 1.0], dtype=np.float32)
+            ndc = p[:3] / p[3]
+            return ndc[0] * 0.5 + 0.5, ndc[1] * 0.5 + 0.5, ndc[2]
+
+        wall_c, wall_e = (0.0, 0.0, -10.0), (2.0, 3.0, 0.1)
+        obj_c, obj_e = (1.8, 0.0, -20.0), (0.5, 0.5, 0.5)
+
+        # Build the previous-frame Hi-Z from a wall rasterised with the previous VP.
+        vp_prev = make_vp(0.0)
+        raw = np.zeros((h, w), dtype=np.float32)
+        corners = []
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                pt = (wall_c[0] + sx * wall_e[0], wall_c[1] + sy * wall_e[1], wall_c[2] + wall_e[2])
+                u, v, z = project(vp_prev, pt)
+                corners.append((u, v, z))
+        us = [c[0] for c in corners]
+        vs = [c[1] for c in corners]
+        zs = [c[2] for c in corners]
+        u0, u1 = int(max(0, min(us) * w)), int(min(w, max(us) * w))
+        v0, v1 = int(max(0, min(vs) * h)), int(min(h, max(vs) * h))
+        if u1 > u0 and v1 > v0:
+            raw[v0:v1, u0:u1] = max(zs)
+        pass_instance.hiz_texture.write(raw.tobytes(), level=0)
+        pass_instance.hiz_texture.use(location=0)
+        for k in range(pass_instance.num_mips - 1):
+            pass_instance._u_down_src_level.value = k
+            pass_instance._u_down_reverse_z.value = 1
+            pass_instance.hiz_texture.bind_to_image(0, read=False, write=True, level=k + 1)
+            gx, gy = pass_instance.dispatch_groups[k + 1]
+            pass_instance.downsample_prog.run(group_x=gx, group_y=gy)
+
+        # Camera translates right by 3 units; the object now peeks past the wall edge.
+        step = 3.0
+        vp_cur = make_vp(step)
+        aabbs = np.zeros((1, 6), dtype=np.float32)
+        aabbs[0, 0:3] = obj_c
+        aabbs[0, 3:6] = obj_e
+
+        mask = pass_instance.cull_aabbs_gpu(
+            aabbs=aabbs,
+            active_count=1,
+            vp_matrix=vp_cur,
+            screen_size=(w, h),
+            prev_vp_matrix=vp_prev,
+            camera_delta=(step, 0.0, 0.0),
+        )
+        assert bool(mask[0]), "partially-visible object was falsely occluded under camera motion"
+
+        pass_instance.destroy()

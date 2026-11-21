@@ -200,7 +200,7 @@ void main() {
 
     // 2. Camera-Matrix Reprojection Fallback for background / sky
     if (closestDepth <= 1e-6 || dot(velocity, velocity) <= 1e-12) {
-        vec2 unjittered_ndc = (v_UV - curr_jitter) * 2.0 - 1.0;
+        vec2 unjittered_ndc = (v_UV + curr_jitter) * 2.0 - 1.0;
         vec4 clipPos = vec4(unjittered_ndc, max(closestDepth, 0.0), 1.0);
         vec4 viewPos = u_InvProjection * clipPos;
         viewPos     /= max(viewPos.w, 1e-6);
@@ -208,13 +208,15 @@ void main() {
 
         vec4 prevClip = u_PrevViewProjection * wPos;
         vec2 prevUV   = (prevClip.xy / max(prevClip.w, 1e-6)) * 0.5 + 0.5;
-        velocity      = (v_UV - curr_jitter) - prevUV;
+        velocity      = (v_UV + curr_jitter) - prevUV;
     }
 
     // 3. Compute History Lookup UV
     // The history buffer stores nominal unjittered resolved frames.
-    // Fragment at v_UV has subpixel offset curr_jitter, so its nominal previous UV is:
-    vec2 histUV = (v_UV - curr_jitter) - velocity;
+    // The rasterised UV is offset by -jitter from the nominal position, so the
+    // nominal current UV is (v_UV + curr_jitter); the nominal previous UV is that
+    // minus the geometric velocity.
+    vec2 histUV = (v_UV + curr_jitter) - velocity;
 
     // Rejection on screen edges
     if (any(lessThan(histUV, vec2(0.0))) || any(greaterThan(histUV, vec2(1.0)))) {
