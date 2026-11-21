@@ -50,6 +50,14 @@ class EngineTweaks:
         "quality_preset",
         "tonemap_mode",
         "exposure",
+        "auto_exposure_enabled",
+        "exposure_low_percentile",
+        "exposure_high_percentile",
+        "exposure_middle_gray",
+        "exposure_min_ev",
+        "exposure_max_ev",
+        "exposure_adapt_speed_up",
+        "exposure_adapt_speed_down",
         "gbuffer_debug",
         "show_wireframe",
         "show_physics_colliders",
@@ -272,6 +280,17 @@ class EngineTweaks:
         self.quality_preset = GraphicsQuality.CUSTOM
         self.tonemap_mode = "ACES"
         self.exposure = 1.0
+        # Auto-exposure (GPU log-luminance histogram + temporal adaptation).
+        # Off by default so existing projects keep their fixed exposure; the
+        # debug menu exposes the toggle and the tuning parameters.
+        self.auto_exposure_enabled = False
+        self.exposure_low_percentile = 0.10
+        self.exposure_high_percentile = 0.90
+        self.exposure_middle_gray = 0.18
+        self.exposure_min_ev = -8.0
+        self.exposure_max_ev = 12.0
+        self.exposure_adapt_speed_up = 1.5
+        self.exposure_adapt_speed_down = 4.0
         self.gbuffer_debug = GBufferDebugMode.DISABLED
         self.hiz_debug_mip = 0
 
@@ -692,6 +711,14 @@ class EngineTweaks:
             # 1. Post-Processing, Optics & Tone-Mapping
             p_cfg.tonemap_mode = self.tonemap_mode
             p_cfg.exposure = float(self.exposure)
+            p_cfg.auto_exposure_enabled = bool(self.auto_exposure_enabled)
+            p_cfg.exposure_low_percentile = float(self.exposure_low_percentile)
+            p_cfg.exposure_high_percentile = float(self.exposure_high_percentile)
+            p_cfg.exposure_middle_gray = float(self.exposure_middle_gray)
+            p_cfg.exposure_min_ev = float(self.exposure_min_ev)
+            p_cfg.exposure_max_ev = float(self.exposure_max_ev)
+            p_cfg.exposure_adapt_speed_up = float(self.exposure_adapt_speed_up)
+            p_cfg.exposure_adapt_speed_down = float(self.exposure_adapt_speed_down)
             p_cfg.bloom_enabled = bool(self.bloom_enabled)
             p_cfg.bloom_intensity = float(self.bloom_intensity)
             p_cfg.chromatic_aberration_enabled = bool(self.chromatic_aberration_enabled)
@@ -980,6 +1007,14 @@ class EngineTweaks:
         for prop in (
             "tonemap_mode",
             "exposure",
+            "auto_exposure_enabled",
+            "exposure_low_percentile",
+            "exposure_high_percentile",
+            "exposure_middle_gray",
+            "exposure_min_ev",
+            "exposure_max_ev",
+            "exposure_adapt_speed_up",
+            "exposure_adapt_speed_down",
             "bloom_enabled",
             "bloom_intensity",
             "chromatic_aberration_enabled",
@@ -1199,6 +1234,14 @@ class EngineTweaks:
             "vsync_enabled": bool(self.vsync_enabled),
             "tonemap_mode": str(self.tonemap_mode),
             "exposure": float(self.exposure),
+            "auto_exposure_enabled": bool(self.auto_exposure_enabled),
+            "exposure_low_percentile": float(self.exposure_low_percentile),
+            "exposure_high_percentile": float(self.exposure_high_percentile),
+            "exposure_middle_gray": float(self.exposure_middle_gray),
+            "exposure_min_ev": float(self.exposure_min_ev),
+            "exposure_max_ev": float(self.exposure_max_ev),
+            "exposure_adapt_speed_up": float(self.exposure_adapt_speed_up),
+            "exposure_adapt_speed_down": float(self.exposure_adapt_speed_down),
             "bloom_enabled": bool(self.bloom_enabled),
             "bloom_intensity": float(self.bloom_intensity),
             "chromatic_aberration_enabled": bool(self.chromatic_aberration_enabled),

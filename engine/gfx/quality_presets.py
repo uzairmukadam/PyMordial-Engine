@@ -209,11 +209,18 @@ class RenderConfig:
     # When enabled, a GPU log-luminance histogram drives the exposure and
     # `exposure` becomes a bias on top of the adapted value.
     auto_exposure_enabled: bool = False
-    exposure_key: float = 0.5  # Target percentile of the luminance histogram
-    exposure_min_ev: float = -8.0  # Clamp on the adapted EV100
+    # Percentile-trimmed weighted mean of log2 luminance. Samples below
+    # `exposure_low_percentile` and above `exposure_high_percentile` are
+    # discarded, rejecting near-black background and extreme highlights.
+    # Boundary bins are included partially so the estimate stays continuous.
+    exposure_low_percentile: float = 0.10
+    exposure_high_percentile: float = 0.90
+    # Display luminance the representative scene luminance is mapped to.
+    exposure_middle_gray: float = 0.18
+    exposure_min_ev: float = -8.0  # Clamp on the adapted log2 multiplier
     exposure_max_ev: float = 12.0
-    exposure_adapt_speed_up: float = 1.5  # EV/s when the scene brightens
-    exposure_adapt_speed_down: float = 4.0  # EV/s when the scene darkens
+    exposure_adapt_speed_up: float = 1.5  # Units/s when the scene brightens
+    exposure_adapt_speed_down: float = 4.0  # Units/s when the scene darkens
     exposure_min_log_luminance: float = -12.0  # Histogram bin 0 lower bound
     exposure_max_log_luminance: float = 16.0  # Histogram bin 255 upper bound
 

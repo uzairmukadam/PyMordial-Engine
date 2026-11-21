@@ -609,6 +609,73 @@ class DebugMenu:
                     et.exposure = exposure_value
                     et.mark_custom()
 
+                # Auto-Exposure (GPU histogram + temporal adaptation). When on,
+                # the slider above becomes a bias on top of the adapted EV.
+                auto_exp_changed, auto_exp_val = imgui.checkbox(
+                    "Auto Exposure", et.auto_exposure_enabled
+                )
+                if auto_exp_changed:
+                    et.auto_exposure_enabled = auto_exp_val
+                    et.mark_custom()
+                    self.toast.show(
+                        f"Auto Exposure: {'ON' if auto_exp_val else 'OFF'}", duration=2.0
+                    )
+
+                if et.auto_exposure_enabled:
+                    low_changed, low_val = imgui.slider_float(
+                        "Low Percentile (trim dark)", et.exposure_low_percentile, 0.0, 0.45, "%.2f"
+                    )
+                    if low_changed:
+                        et.exposure_low_percentile = low_val
+                        et.mark_custom()
+                    high_changed, high_val = imgui.slider_float(
+                        "High Percentile (trim bright)", et.exposure_high_percentile, 0.55, 1.0, "%.2f"
+                    )
+                    if high_changed:
+                        et.exposure_high_percentile = high_val
+                        et.mark_custom()
+                    mg_changed, mg_val = imgui.slider_float(
+                        "Middle Gray", et.exposure_middle_gray, 0.02, 0.5, "%.3f"
+                    )
+                    if mg_changed:
+                        et.exposure_middle_gray = mg_val
+                        et.mark_custom()
+                    min_ev_changed, min_ev_val = imgui.slider_float(
+                        "Min EV", et.exposure_min_ev, -12.0, 0.0, "%.1f"
+                    )
+                    if min_ev_changed:
+                        et.exposure_min_ev = min_ev_val
+                        et.mark_custom()
+                    max_ev_changed, max_ev_val = imgui.slider_float(
+                        "Max EV", et.exposure_max_ev, 0.0, 16.0, "%.1f"
+                    )
+                    if max_ev_changed:
+                        et.exposure_max_ev = max_ev_val
+                        et.mark_custom()
+                    up_changed, up_val = imgui.slider_float(
+                        "Adapt Speed Up (EV/s)", et.exposure_adapt_speed_up, 0.1, 10.0, "%.2f"
+                    )
+                    if up_changed:
+                        et.exposure_adapt_speed_up = up_val
+                        et.mark_custom()
+                    down_changed, down_val = imgui.slider_float(
+                        "Adapt Speed Down (EV/s)", et.exposure_adapt_speed_down, 0.1, 10.0, "%.2f"
+                    )
+                    if down_changed:
+                        et.exposure_adapt_speed_down = down_val
+                        et.mark_custom()
+
+                    # Live telemetry from the exposure controller.
+                    pipeline = getattr(self.app, "pipeline", None) if self.app is not None else None
+                    exp_pass = getattr(pipeline, "exposure_pass", None) if pipeline is not None else None
+                    if exp_pass is not None:
+                        imgui.text(
+                            f"  measured key lum: {exp_pass.key_luminance:.4f}   "
+                            f"target EV: {exp_pass.target_ev:+.2f}   "
+                            f"adapted EV: {exp_pass.adapted_ev:+.2f}   "
+                            f"mult: {exp_pass.exposure_multiplier:.3f}"
+                        )
+
                 # 3. G-Buffer Debug Mode
                 gbuf_names = [m.name for m in GBufferDebugMode]
                 gbuf_idx = gbuf_names.index(et.gbuffer_debug.name) if et.gbuffer_debug.name in gbuf_names else 0

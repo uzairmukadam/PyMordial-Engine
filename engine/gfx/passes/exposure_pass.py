@@ -55,7 +55,9 @@ class ExposurePass(RenderPass):
         "_u_adapt_min_log",
         "_u_adapt_max_log",
         "_u_adapt_bins",
-        "_u_adapt_key",
+        "_u_adapt_low_percentile",
+        "_u_adapt_high_percentile",
+        "_u_adapt_middle_gray",
         "_u_adapt_min_ev",
         "_u_adapt_max_ev",
         "_u_adapt_speed_up",
@@ -109,7 +111,9 @@ class ExposurePass(RenderPass):
         self._u_adapt_min_log = self.adapt_prog.get("u_MinLogLum", None)
         self._u_adapt_max_log = self.adapt_prog.get("u_MaxLogLum", None)
         self._u_adapt_bins = self.adapt_prog.get("u_HistogramBins", None)
-        self._u_adapt_key = self.adapt_prog.get("u_ExposureKey", None)
+        self._u_adapt_low_percentile = self.adapt_prog.get("u_LowPercentile", None)
+        self._u_adapt_high_percentile = self.adapt_prog.get("u_HighPercentile", None)
+        self._u_adapt_middle_gray = self.adapt_prog.get("u_MiddleGray", None)
         self._u_adapt_min_ev = self.adapt_prog.get("u_MinEV", None)
         self._u_adapt_max_ev = self.adapt_prog.get("u_MaxEV", None)
         self._u_adapt_speed_up = self.adapt_prog.get("u_AdaptSpeedUp", None)
@@ -200,8 +204,18 @@ class ExposurePass(RenderPass):
             self._u_adapt_max_log.value = max_log
         if self._u_adapt_bins is not None:
             self._u_adapt_bins.value = HISTOGRAM_BINS
-        if self._u_adapt_key is not None:
-            self._u_adapt_key.value = float(getattr(config, "exposure_key", 0.5))
+        if self._u_adapt_low_percentile is not None:
+            self._u_adapt_low_percentile.value = float(
+                getattr(config, "exposure_low_percentile", 0.10)
+            )
+        if self._u_adapt_high_percentile is not None:
+            self._u_adapt_high_percentile.value = float(
+                getattr(config, "exposure_high_percentile", 0.90)
+            )
+        if self._u_adapt_middle_gray is not None:
+            self._u_adapt_middle_gray.value = float(
+                getattr(config, "exposure_middle_gray", 0.18)
+            )
         if self._u_adapt_min_ev is not None:
             self._u_adapt_min_ev.value = float(getattr(config, "exposure_min_ev", -8.0))
         if self._u_adapt_max_ev is not None:

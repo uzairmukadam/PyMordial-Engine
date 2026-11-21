@@ -1,15 +1,21 @@
 #version 450 core
 // ============================================================
-//  Auto-Exposure: Histogram -> Target EV -> Temporal Adaptation
+//  Auto-Exposure: Histogram -> Target Exposure -> Temporal Adaptation
 //
-//  A single invocation walks the 256-bin histogram, finds the bin at
-//  the configured percentile (the "key" luminance), converts it to an
-//  EV100 value, and adapts the stored exposure toward it with
-//  asymmetric speeds: fast when the scene darkens, slow when it
-//  brightens. That asymmetry is what stops a camera from pumping when
-//  a bright object briefly enters frame.
+//  The representative scene luminance is a percentile-trimmed weighted
+//  mean of log2 luminance. Samples below u_LowPercentile and above
+//  u_HighPercentile are discarded, which rejects both near-black
+//  background and extreme highlights. Boundary bins are included
+//  *partially* (by the fraction of their samples that falls inside the
+//  trim window) so the estimate stays continuous when a percentile
+//  boundary crosses a populated bin.
 //
-//  Output: RGBA16F 1x1, .r = adapted EV100.
+//  A single-bin percentile estimator was replaced because it produced
+//  step discontinuities: a two-mode scene flipping from 51% dark to 49%
+//  dark jumped the target by ~11.9 stops.
+//
+//  Output: RGBA16F 1x1, .r = adapted log2 exposure multiplier,
+//          .g = target log2 exposure multiplier, .b = key luminance.
 // ============================================================
 
 layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
@@ -20,21 +26,20 @@ layout (std430, binding = 10) readonly buffer HistogramBuffer {
 
 layout (binding = 0, rgba16f) uniform writeonly image2D u_ExposureOut;
 
-uniform sampler2D u_PreviousExposure;  // 1x1 RGBA16F, .r = previous EV100
+uniform sampler2D u_PreviousExposure;  // 1x1 RGBA16F, .r = previous adapted value
 
 uniform float u_MinLogLum;
 uniform float u_MaxLogLum;
 uniform int   u_HistogramBins;
-uniform float u_ExposureKey;      // Target percentile in [0, 1]
-uniform float u_MinEV;            // Clamp on the adapted EV100
+uniform float u_LowPercentile;    // Trim below this cumulative fraction [0, 1)
+uniform float u_HighPercentile;   // Trim above this cumulative fraction (0, 1]
+uniform float u_MiddleGray;       // Target display luminance for the key
+uniform float u_MinEV;            // Clamp on the adapted value
 uniform float u_MaxEV;
-uniform float u_AdaptSpeedUp;     // EV/s when the scene brightens
-uniform float u_AdaptSpeedDown;   // EV/s when the scene darkens
+uniform float u_AdaptSpeedUp;     // Units/s when the scene brightens
+uniform float u_AdaptSpeedDown;   // Units/s when the scene darkens
 uniform float u_DeltaTime;        // Seconds since the previous frame
 uniform int   u_HistoryValid;     // 0 on the first frame / after a cut
-
-// Calibration constant: the luminance (cd/m^2) that maps to EV100 = 0.
-const float LUMINANCE_TO_EV100 = 1.0 / 1.2;
 
 void main() {
     uint total = 0u;
@@ -42,35 +47,71 @@ void main() {
         total += u_Histogram[i];
     }
 
-    // An empty histogram (fully black frame, or a frame that failed to
-    // render) must not drive the exposure to an extreme.
+    // Preserve the previous exposure state when there is nothing to measure.
+    // Writing the previous value (rather than returning) keeps the ping-pong
+    // target coherent instead of leaving stale data from two frames ago.
     if (total == 0u) {
+        float held = (u_HistoryValid == 1)
+            ? texelFetch(u_PreviousExposure, ivec2(0, 0), 0).r
+            : 0.0;
+        imageStore(u_ExposureOut, ivec2(0, 0), vec4(held, held, 0.0, 1.0));
         return;
     }
 
-    // Walk from the darkest bin until the accumulated count reaches the key
-    // percentile. That bin's log luminance is the scene's representative
-    // luminance.
-    uint target_count = uint(float(total) * clamp(u_ExposureKey, 0.0, 1.0));
-    uint accumulated = 0u;
-    int key_bin = 0;
-    for (int i = 0; i < u_HistogramBins; ++i) {
-        accumulated += u_Histogram[i];
-        if (accumulated >= target_count) {
-            key_bin = i;
-            break;
-        }
+    // Trim window in cumulative-sample space.
+    float low_p = clamp(u_LowPercentile, 0.0, 1.0);
+    float high_p = clamp(u_HighPercentile, 0.0, 1.0);
+    if (high_p < low_p) {
+        float tmp = low_p;
+        low_p = high_p;
+        high_p = tmp;
     }
+    float low_count = float(total) * low_p;
+    float high_count = float(total) * high_p;
 
     float range = max(u_MaxLogLum - u_MinLogLum, 1e-4);
-    float bin_fraction = (float(key_bin) + 0.5) / float(u_HistogramBins);
-    float key_log_lum = u_MinLogLum + bin_fraction * range;
-    float key_luminance = exp2(key_log_lum);
+    float bin_width = range / float(u_HistogramBins);
 
-    // EV100 for that luminance, then the exposure multiplier that maps it to
-    // middle grey (0.18).
-    float ev100 = log2(max(key_luminance * LUMINANCE_TO_EV100, 1e-8));
-    float target_ev = log2(0.18) - ev100;
+    // Percentile-trimmed weighted mean of bin-centre log2 luminance.
+    float weighted_log_sum = 0.0;
+    float included = 0.0;
+    float cumulative = 0.0;
+
+    for (int i = 0; i < u_HistogramBins; ++i) {
+        float count = float(u_Histogram[i]);
+        if (count <= 0.0) {
+            continue;
+        }
+        float bin_start = cumulative;
+        float bin_end = cumulative + count;
+        cumulative = bin_end;
+
+        // Fraction of this bin's samples inside [low_count, high_count].
+        float overlap = min(bin_end, high_count) - max(bin_start, low_count);
+        if (overlap <= 0.0) {
+            continue;
+        }
+
+        float bin_center_log_lum = u_MinLogLum + (float(i) + 0.5) * bin_width;
+        weighted_log_sum += overlap * bin_center_log_lum;
+        included += overlap;
+    }
+
+    // Nothing survived the trim: preserve the previous state.
+    if (included <= 0.0) {
+        float held = (u_HistoryValid == 1)
+            ? texelFetch(u_PreviousExposure, ivec2(0, 0), 0).r
+            : 0.0;
+        imageStore(u_ExposureOut, ivec2(0, 0), vec4(held, held, 0.0, 1.0));
+        return;
+    }
+
+    float representative_log_lum = weighted_log_sum / included;
+    float key_luminance = exp2(representative_log_lum);
+
+    // Log2 exposure multiplier that maps the key luminance to middle grey.
+    float middle_gray = max(u_MiddleGray, 1e-6);
+    float target_ev = log2(middle_gray / max(key_luminance, 1e-8));
     target_ev = clamp(target_ev, u_MinEV, u_MaxEV);
 
     float previous_ev = target_ev;
