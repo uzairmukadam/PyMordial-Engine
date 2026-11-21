@@ -142,6 +142,42 @@ class MapEntityNode:
                     restitution=collision.restitution,
                 )
 
+                # Configure dynamic properties and register with prop manager
+                if collision.body_type == "dynamic":
+                    phys = self.entity_def.resolved_physics()
+                    lin_damp = phys.linear_damping if phys is not None else 0.05
+                    ang_damp = phys.angular_damping if phys is not None else 0.1
+                    app.physics.set_damping(entity_id, linear=lin_damp, angular=ang_damp)
+
+                    if hasattr(app, "props") and app.props is not None:
+                        from engine.physics.props import PropInstance, PropType
+
+                        shape_lower = collision.shape.lower()
+                        if shape_lower in ("box", "cube"):
+                            ptype = PropType.CRATE
+                        elif shape_lower == "sphere":
+                            ptype = PropType.SPHERE
+                        elif shape_lower in ("cylinder", "barrel"):
+                            ptype = PropType.BARREL if "barrel" in self.entity_def.id.lower() else PropType.CYLINDER
+                        elif shape_lower == "cone":
+                            ptype = PropType.CONE
+                        else:
+                            ptype = PropType.CRATE
+
+                        destructible = bool(self.properties.get("destructible", False))
+                        health = float(self.properties.get("health", 40.0))
+
+                        prop_inst = PropInstance(
+                            entity_id=entity_id,
+                            prop_type=ptype,
+                            shape_name=collision.shape,
+                            scale=self.world_transform.scale,
+                            is_destructible=destructible,
+                            health=health,
+                            max_health=health,
+                        )
+                        app.props.register_prop(prop_inst)
+
         # 6. Instantiate attached behavioral scripts
         from engine.world.mapping.script_runner import get_script_class
 
@@ -154,10 +190,21 @@ class MapEntityNode:
                 if hasattr(app, "map_manager") and app.map_manager is not None:
                     app.map_manager.script_runner.attach_script(instance)
 
-        # 7. Register trigger zone if defined
-        if self.entity_def.trigger is not None:
+        # 7. Register trigger zone if defined or auto-derived from SENSOR role
+        trigger_def = self.entity_def.trigger
+        if trigger_def is None and self.entity_def.physics is not None:
+            from engine.world.mapping.schema import PhysicsRole, TriggerDef
+
+            if self.entity_def.physics.role == PhysicsRole.SENSOR:
+                dim = self.entity_def.physics.dimensions
+                if dim is None:
+                    dim = tuple(0.5 * s for s in self.world_transform.scale)
+                trigger_def = TriggerDef(shape=self.entity_def.physics.shape or "box", dimensions=dim)
+                self.entity_def.trigger = trigger_def
+
+        if trigger_def is not None:
             if hasattr(app, "map_manager") and app.map_manager is not None:
-                app.map_manager.trigger_system.register_trigger(self, self.entity_def.trigger)
+                app.map_manager.trigger_system.register_trigger(self, trigger_def)
 
         # 8. Recursively spawn children
         for child_def in self.entity_def.children:
@@ -185,10 +232,13 @@ class MapEntityNode:
             script.on_despawn()
         self.scripts.clear()
 
-        # 3. Remove Rapier physics body
-        if self.has_rigid_body and self.ecs_id is not None:
-            app.physics.remove_body(self.ecs_id)
-            self.has_rigid_body = False
+        # 3. Unregister dynamic prop and remove Rapier physics body
+        if self.ecs_id is not None:
+            if hasattr(app, "props") and app.props is not None:
+                app.props.unregister_prop(self.ecs_id)
+            if self.has_rigid_body:
+                app.physics.remove_body(self.ecs_id)
+                self.has_rigid_body = False
 
         # 3. Destroy ECS entity
         if self.ecs_id is not None:

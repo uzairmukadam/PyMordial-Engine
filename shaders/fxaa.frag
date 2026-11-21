@@ -54,6 +54,14 @@ void main() {
     subpix_blend = subpix_blend * subpix_blend * u_SubpixelQuality;
 
     // 4. Edge direction test: Horizontal vs Vertical
+    //
+    // `edge_horz` is the second derivative taken along the horizontal axis, so a
+    // large value means the image varies horizontally — i.e. the edge itself is
+    // VERTICAL. `edge_vert` is the mirror case: large means a HORIZONTAL edge.
+    // The previous `is_horizontal = (edge_horz >= edge_vert)` was inverted: it
+    // classified every edge as the opposite orientation, so the raymarch walked
+    // perpendicular to the real edge, dist_pos == dist_neg, edge_blend collapsed
+    // to 0, and FXAA looked almost identical to OFF.
     float edge_horz = abs(luma_nw + luma_ne - 2.0 * luma_n) * 2.0
                     + abs(luma_w  + luma_e  - 2.0 * luma_m) * 2.0
                     + abs(luma_sw + luma_se - 2.0 * luma_s) * 2.0;
@@ -62,7 +70,7 @@ void main() {
                     + abs(luma_n  + luma_s  - 2.0 * luma_m) * 2.0
                     + abs(luma_ne + luma_se - 2.0 * luma_e) * 2.0;
 
-    bool is_horizontal = (edge_horz >= edge_vert);
+    bool is_horizontal = (edge_vert > edge_horz);
 
     // 5. Determine edge boundary and gradient
     float luma_1 = is_horizontal ? luma_n : luma_w;

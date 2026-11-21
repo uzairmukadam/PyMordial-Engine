@@ -133,3 +133,96 @@ class TestTaaTunables:
         assert restored.taa_max_feedback == pytest.approx(0.93)
         assert restored.taa_min_feedback == pytest.approx(0.70)
         assert restored.taa_variance_gamma == pytest.approx(1.6)
+
+
+class TestFxaaEdgeDirection:
+    """Phase 3.4B regression: FXAA must actually antialias edges.
+
+    The edge-direction test was inverted (`is_horizontal = edge_horz >= edge_vert`),
+    so the raymarch walked perpendicular to the real edge. dist_pos == dist_neg,
+    edge_blend collapsed to 0, and only the weak subpixel term survived — FXAA
+    looked almost identical to OFF (0.09% of pixels changed in a real scene).
+    """
+
+    W = 128
+    H = 128
+
+    def _run_fxaa(self, gl, img):
+        import moderngl
+
+        from engine.gfx.passes.fxaa_pass import FXAAPass
+
+        class _Ctx:
+            def __init__(self, gl, cfg, tex):
+                self.ctx = gl
+                self.config = cfg
+                self.width = TestFxaaEdgeDirection.W
+                self.height = TestFxaaEdgeDirection.H
+                self.delta_time = 1.0 / 60.0
+                self.resources = {"ldr_color": tex}
+
+        src = gl.texture((self.W, self.H), 3, dtype="f1")
+        src.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        src.write(img.tobytes())
+
+        cfg = RenderConfig()
+        cfg.aa_mode = "FXAA"
+        fp = FXAAPass(gl, self.W, self.H)
+        try:
+            fp.execute(_Ctx(gl, cfg, src))
+            out = np.frombuffer(fp.fbo.read(components=3), dtype=np.uint8)
+            return out.reshape(self.H, self.W, 3).copy()
+        finally:
+            fp.destroy()
+            src.release()
+
+    def _vertical_edge_image(self):
+        img = np.zeros((self.H, self.W, 3), dtype=np.uint8)
+        img[:] = 40
+        img[:, self.W // 2 :] = 255
+        return img
+
+    def test_vertical_edge_is_antialiased(self, render_ctx: RenderContext):
+        """A hard vertical edge must produce intermediate values after FXAA."""
+        img = self._vertical_edge_image()
+        out = self._run_fxaa(render_ctx.ctx, img)
+
+        row = out[self.H // 2, :, 0].astype(np.int16)
+        mid = self.W // 2
+        # The two pixels straddling the edge must no longer be pure 40 / 255.
+        straddle = row[mid - 1 : mid + 1]
+        assert not np.array_equal(straddle, np.array([40, 255], dtype=np.int16)), (
+            f"FXAA left the vertical edge untouched: {straddle.tolist()}"
+        )
+        # And the blend must be a genuine intermediate, not a full inversion.
+        assert straddle.min() > 0 and straddle.max() < 255
+
+    def test_horizontal_edge_is_antialiased(self, render_ctx: RenderContext):
+        """The mirror case must also be antialiased (guards against a one-sided fix)."""
+        img = np.zeros((self.H, self.W, 3), dtype=np.uint8)
+        img[:] = 40
+        img[self.H // 2 :, :] = 255
+        out = self._run_fxaa(render_ctx.ctx, img)
+
+        col = out[:, self.W // 2, 0].astype(np.int16)
+        mid = self.H // 2
+        straddle = col[mid - 1 : mid + 1]
+        assert not np.array_equal(straddle, np.array([40, 255], dtype=np.int16)), (
+            f"FXAA left the horizontal edge untouched: {straddle.tolist()}"
+        )
+
+    def test_flat_region_is_untouched(self, render_ctx: RenderContext):
+        """A constant image must pass through FXAA unchanged."""
+        img = np.full((self.H, self.W, 3), 128, dtype=np.uint8)
+        out = self._run_fxaa(render_ctx.ctx, img)
+        assert np.array_equal(out, img), "FXAA altered a flat region"
+
+    def test_edge_direction_predicate_is_not_inverted(self):
+        """Guard the exact defect: is_horizontal must select the vertical-edge case."""
+        from engine.gfx.shader_utils import load_shader
+
+        src = load_shader("fxaa.frag")
+        assert "bool is_horizontal = (edge_vert > edge_horz);" in src, (
+            "FXAA edge-direction test is inverted; a vertical edge must set "
+            "is_horizontal = false so the raymarch runs along the edge."
+        )

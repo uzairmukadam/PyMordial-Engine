@@ -54,6 +54,7 @@ class ProjectApp:
         "engine_loop",
         "world_builder",
         "map_manager",
+        "props",
         "is_running",
         "system_monitor",
         "engine_tweaks",
@@ -121,8 +122,10 @@ class ProjectApp:
         self.ui.attach_app(self)
         self.state_manager: GameStateManager = GameStateManager(app=self)
 
+        from engine.physics.props import InteractivePropManager
         from engine.world.mapping.map_manager import MapManager
 
+        self.props: InteractivePropManager = InteractivePropManager(self.physics, self.ecs, getattr(self, "audio", None))
         self.map_manager: MapManager = MapManager(self)
 
         # 6. Central Sacred Debug Subsystem (F1, F2, F3)
@@ -294,6 +297,7 @@ class ProjectApp:
 
             # 0. Update MapManager (kinematic platforms, levers, trigger evaluation, streaming)
             self.map_manager.on_fixed_update(dt)
+            self.props.update(dt)
 
             # 1. Update active modules on fixed simulation tick
             for m in self._modules:

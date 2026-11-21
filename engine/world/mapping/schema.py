@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -191,6 +192,145 @@ class CollisionDef:
         )
 
 
+class PhysicsRole(str, Enum):
+    """High-level semantic physics role for map entities."""
+
+    STATIC = "static"        # Immovable scenery, ground, walls (zero gravity, fixed body)
+    KINEMATIC = "kinematic"  # Animated / scripted velocity body (elevators, gates; unstoppable)
+    DYNAMIC = "dynamic"      # Interactive rigid body (crates, barrels, balls; reacts to gravity & impulses)
+    SENSOR = "sensor"        # Trigger volume only (zero physical resistance, zero draw overhead)
+    NONE = "none"            # No physics simulation (visual only)
+
+
+@dataclass(slots=True)
+class PhysicalMaterial:
+    """Preset physical material properties for friction, restitution, and density."""
+
+    name: str
+    friction: float = 0.70
+    restitution: float = 0.05
+    density: float = 1000.0  # kg/m^3
+
+
+PHYSICAL_MATERIALS: dict[str, PhysicalMaterial] = {
+    "concrete": PhysicalMaterial(name="concrete", friction=0.85, restitution=0.02, density=2400.0),
+    "stone": PhysicalMaterial(name="stone", friction=0.85, restitution=0.02, density=2400.0),
+    "wood": PhysicalMaterial(name="wood", friction=0.65, restitution=0.15, density=650.0),
+    "metal": PhysicalMaterial(name="metal", friction=0.50, restitution=0.20, density=7800.0),
+    "rubber": PhysicalMaterial(name="rubber", friction=0.90, restitution=0.80, density=1100.0),
+    "ice": PhysicalMaterial(name="ice", friction=0.05, restitution=0.02, density=920.0),
+    "cardboard": PhysicalMaterial(name="cardboard", friction=0.55, restitution=0.05, density=200.0),
+    "default": PhysicalMaterial(name="default", friction=0.70, restitution=0.05, density=1000.0),
+}
+
+
+def get_physical_material(name: str | None) -> PhysicalMaterial:
+    """Resolves a physical material preset by name, or returns the default preset."""
+    if name is None:
+        return PHYSICAL_MATERIALS["default"]
+    return PHYSICAL_MATERIALS.get(str(name).lower(), PHYSICAL_MATERIALS["default"])
+
+
+@dataclass(slots=True)
+class PhysicsDef:
+    """High-level, designer-friendly physics descriptor for map entities."""
+
+    role: PhysicsRole | str = PhysicsRole.STATIC
+    material: str | None = None
+    mass: float | None = None
+    friction: float | None = None
+    restitution: float | None = None
+    density: float | None = None
+    ccd: bool = False
+    can_sleep: bool = True
+    linear_damping: float = 0.05
+    angular_damping: float = 0.1
+    shape: str | None = None
+    dimensions: tuple[float, ...] | None = None
+    is_sensor: bool = False
+
+    def __post_init__(self) -> None:
+        if isinstance(self.role, str):
+            role_norm = self.role.lower()
+            valid_roles = {r.value for r in PhysicsRole}
+            if role_norm not in valid_roles:
+                raise ValueError(f"Unknown physics role '{self.role}'. Expected one of {sorted(valid_roles)}")
+            object.__setattr__(self, "role", PhysicsRole(role_norm))
+
+        mat = get_physical_material(self.material)
+        if self.friction is None:
+            object.__setattr__(self, "friction", mat.friction)
+        else:
+            object.__setattr__(self, "friction", float(self.friction))
+
+        if self.restitution is None:
+            object.__setattr__(self, "restitution", mat.restitution)
+        else:
+            object.__setattr__(self, "restitution", float(self.restitution))
+
+        if self.density is None:
+            object.__setattr__(self, "density", mat.density)
+        else:
+            object.__setattr__(self, "density", float(self.density))
+
+        if self.dimensions is not None:
+            if not isinstance(self.dimensions, (list, tuple)) or len(self.dimensions) == 0:
+                raise ValueError(f"dimensions must be a non-empty sequence of floats, got {self.dimensions}")
+            dim_floats = tuple(float(x) for x in self.dimensions)
+            if any(x < 0.0 for x in dim_floats):
+                raise ValueError(f"Physics dimensions must be non-negative: {dim_floats}")
+            object.__setattr__(self, "dimensions", dim_floats)
+
+        if self.mass is not None:
+            object.__setattr__(self, "mass", float(self.mass))
+        object.__setattr__(self, "ccd", bool(self.ccd))
+        object.__setattr__(self, "can_sleep", bool(self.can_sleep))
+        object.__setattr__(self, "linear_damping", float(self.linear_damping))
+        object.__setattr__(self, "angular_damping", float(self.angular_damping))
+        object.__setattr__(self, "is_sensor", bool(self.is_sensor or self.role == PhysicsRole.SENSOR))
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "role": self.role.value if isinstance(self.role, PhysicsRole) else str(self.role),
+            "friction": self.friction,
+            "restitution": self.restitution,
+            "density": self.density,
+            "ccd": self.ccd,
+            "can_sleep": self.can_sleep,
+            "linear_damping": self.linear_damping,
+            "angular_damping": self.angular_damping,
+        }
+        if self.material is not None:
+            d["material"] = self.material
+        if self.mass is not None:
+            d["mass"] = self.mass
+        if self.shape is not None:
+            d["shape"] = self.shape
+        if self.dimensions is not None:
+            d["dimensions"] = list(self.dimensions)
+        if self.is_sensor:
+            d["is_sensor"] = True
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PhysicsDef:
+        return cls(
+            role=data.get("role", PhysicsRole.STATIC),
+            material=data.get("material"),
+            mass=float(data["mass"]) if "mass" in data and data["mass"] is not None else None,
+            friction=float(data["friction"]) if "friction" in data and data["friction"] is not None else None,
+            restitution=float(data["restitution"]) if "restitution" in data and data["restitution"] is not None else None,
+            density=float(data["density"]) if "density" in data and data["density"] is not None else None,
+            ccd=bool(data.get("ccd", False)),
+            can_sleep=bool(data.get("can_sleep", True)),
+            linear_damping=float(data.get("linear_damping", 0.05)),
+            angular_damping=float(data.get("angular_damping", 0.1)),
+            shape=data.get("shape"),
+            dimensions=tuple(float(x) for x in data["dimensions"]) if "dimensions" in data and data["dimensions"] is not None else None,
+            is_sensor=bool(data.get("is_sensor", False)),
+        )
+
+
 @dataclass(slots=True)
 class TriggerActionDef:
     """Action dispatched when an observer interacts with a trigger zone."""
@@ -306,6 +446,7 @@ class EntityDef:
     transform: TransformDef = field(default_factory=TransformDef)
     visual: VisualDef | None = None
     collision: CollisionDef | None = None
+    physics: PhysicsDef | None = None
     properties: dict[str, Any] = field(default_factory=dict)
     scripts: list[ScriptDef] = field(default_factory=list)
     trigger: TriggerDef | None = None
@@ -326,16 +467,113 @@ class EntityDef:
         """Returns the declared collision, or auto-derives a matching collider if collision is omitted."""
         if self.collision is not None:
             return self.collision
-        # If visual exists without explicit collision, auto-derive default fixed collider matching visual
+
+        # If high-level physics is declared, synthesize a CollisionDef from it
+        if self.physics is not None:
+            role = self.physics.role
+            if role in (PhysicsRole.NONE, PhysicsRole.SENSOR):
+                return None
+
+            # Map role to Rapier body_type
+            if role == PhysicsRole.DYNAMIC:
+                body_type = "dynamic"
+            elif role == PhysicsRole.KINEMATIC:
+                body_type = "kinematic_velocity"
+            else:
+                body_type = "fixed"
+
+            # Derive shape
+            raw_shape = self.physics.shape
+            if not raw_shape and self.visual is not None:
+                raw_shape = self.visual.shape
+            shape = "box" if (not raw_shape or raw_shape in ("box", "cube")) else raw_shape.lower()
+
+            # Derive dimensions if not explicitly set
+            if self.physics.dimensions is not None:
+                dim = self.physics.dimensions
+            elif self.visual is not None and self.visual.shape in VALID_PRIMITIVE_SHAPES:
+                sx, sy, sz = self.transform.scale
+                if shape in ("box", "cube"):
+                    dim = (sx * 0.5, sy * 0.5, sz * 0.5)
+                elif shape == "sphere":
+                    dim = (0.5 * max(sx, sy, sz),)
+                elif shape == "cylinder":
+                    dim = (sy * 0.5, sx * 1.0)
+                elif shape == "capsule":
+                    dim = (sy * 0.5, sx * 0.5)
+                elif shape == "cone":
+                    dim = (sy * 0.5, sx * 0.5)
+                elif shape == "plane":
+                    dim = (sx * 0.5, sz * 0.5, 0.05)
+                else:
+                    dim = (sx * 0.5, sy * 0.5, sz * 0.5)
+            else:
+                dim = (0.5, 0.5, 0.5)
+
+            return CollisionDef(
+                enabled=True,
+                body_type=body_type,
+                shape=shape,
+                dimensions=dim,
+                friction=self.physics.friction if self.physics.friction is not None else 0.70,
+                restitution=self.physics.restitution if self.physics.restitution is not None else 0.05,
+                density=self.physics.density,
+                is_sensor=self.physics.is_sensor or (role == PhysicsRole.SENSOR),
+            )
+
+        # Fallback: if visual exists without explicit collision/physics, auto-derive default fixed collider matching visual
         if self.visual is not None and self.visual.shape in VALID_PRIMITIVE_SHAPES:
-            # Box half-extents are half scale
-            dim = tuple(0.5 * s for s in self.transform.scale)
+            sx, sy, sz = self.transform.scale
+            v_shape = self.visual.shape.lower()
+            if v_shape in ("box", "cube"):
+                dim = (sx * 0.5, sy * 0.5, sz * 0.5)
+            elif v_shape == "sphere":
+                dim = (0.5 * max(sx, sy, sz),)
+            elif v_shape == "cylinder":
+                dim = (sy * 0.5, sx * 1.0)
+            elif v_shape == "capsule":
+                dim = (sy * 0.5, sx * 0.5)
+            elif v_shape == "cone":
+                dim = (sy * 0.5, sx * 0.5)
+            elif v_shape == "plane":
+                dim = (sx * 0.5, sz * 0.5, 0.05)
+            else:
+                dim = (sx * 0.5, sy * 0.5, sz * 0.5)
+
             return CollisionDef(
                 enabled=True,
                 body_type="fixed",
-                shape="box" if self.visual.shape in ("box", "cube") else self.visual.shape,
+                shape="box" if v_shape in ("box", "cube") else v_shape,
                 dimensions=dim,
             )
+        return None
+
+    def resolved_physics(self) -> PhysicsDef | None:
+        """Returns the declared PhysicsDef, or synthesizes one from CollisionDef or VisualDef."""
+        if self.physics is not None:
+            return self.physics
+        if self.collision is not None:
+            if not self.collision.enabled:
+                role = PhysicsRole.NONE
+            elif self.collision.is_sensor:
+                role = PhysicsRole.SENSOR
+            elif self.collision.body_type == "dynamic":
+                role = PhysicsRole.DYNAMIC
+            elif self.collision.body_type in ("kinematic_velocity", "kinematic_position"):
+                role = PhysicsRole.KINEMATIC
+            else:
+                role = PhysicsRole.STATIC
+            return PhysicsDef(
+                role=role,
+                friction=self.collision.friction,
+                restitution=self.collision.restitution,
+                density=self.collision.density,
+                shape=self.collision.shape,
+                dimensions=self.collision.dimensions,
+                is_sensor=self.collision.is_sensor,
+            )
+        if self.visual is not None and self.visual.shape in VALID_PRIMITIVE_SHAPES:
+            return PhysicsDef(role=PhysicsRole.STATIC, shape=self.visual.shape)
         return None
 
     def to_dict(self) -> dict[str, Any]:
@@ -347,6 +585,8 @@ class EntityDef:
             d["visual"] = self.visual.to_dict()
         if self.collision is not None:
             d["collision"] = self.collision.to_dict()
+        if self.physics is not None:
+            d["physics"] = self.physics.to_dict()
         if self.properties:
             d["properties"] = self.properties
         if self.scripts:
@@ -376,6 +616,10 @@ class EntityDef:
         # Collision
         col_data = data.get("collision")
         collision = CollisionDef.from_dict(col_data) if isinstance(col_data, dict) else None
+
+        # Physics (High-level)
+        phys_data = data.get("physics")
+        physics = PhysicsDef.from_dict(phys_data) if isinstance(phys_data, dict) else None
 
         # Properties
         properties = dict(data.get("properties", {}))

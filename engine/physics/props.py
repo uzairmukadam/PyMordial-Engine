@@ -84,6 +84,14 @@ class InteractivePropManager:
         """Checks if a given entity ID belongs to a managed dynamic prop."""
         return entity_id in self._props
 
+    def register_prop(self, prop: PropInstance) -> None:
+        """Registers an externally instantiated prop instance for pushing, grabbing, and destruction."""
+        self._props[prop.entity_id] = prop
+
+    def unregister_prop(self, entity_id: int) -> bool:
+        """Unregisters a prop without destroying its ECS or physics body."""
+        return self._props.pop(entity_id, None) is not None
+
     def get_prop(self, entity_id: int) -> PropInstance | None:
         """Retrieves a prop instance by its entity ID."""
         return self._props.get(entity_id, None)

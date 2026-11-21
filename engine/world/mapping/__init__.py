@@ -11,9 +11,13 @@ from engine.world.mapping.entity_node import MapEntityNode
 from engine.world.mapping.map_manager import MapManager
 from engine.world.mapping.prefab_manager import PrefabManager
 from engine.world.mapping.schema import (
+    PHYSICAL_MATERIALS,
     CollisionDef,
     EntityDef,
     MapDef,
+    PhysicalMaterial,
+    PhysicsDef,
+    PhysicsRole,
     ScriptDef,
     SectorBoundsDef,
     SectorDef,
@@ -21,6 +25,7 @@ from engine.world.mapping.schema import (
     TriggerActionDef,
     TriggerDef,
     VisualDef,
+    get_physical_material,
     load_map_file,
     load_sector_file,
     save_map_file,
@@ -51,6 +56,11 @@ __all__ = [
     "TransformDef",
     "VisualDef",
     "CollisionDef",
+    "PhysicsRole",
+    "PhysicalMaterial",
+    "PHYSICAL_MATERIALS",
+    "get_physical_material",
+    "PhysicsDef",
     "TriggerActionDef",
     "TriggerDef",
     "ScriptDef",
