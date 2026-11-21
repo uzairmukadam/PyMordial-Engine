@@ -83,6 +83,10 @@ class MapWorldBuilder(BaseWorldBuilder):
         )
         self.sector_instance.activate(app)
 
+        # Register with MapManager if available
+        if hasattr(app, "map_manager") and app.map_manager is not None:
+            app.map_manager.register_sector(self.sector_instance)
+
         # 3. Cache references for backwards compatibility
         self.nodes = list(self.sector_instance.root_nodes)
         self.entity_ids = list(self.sector_instance.entity_ids)
@@ -90,6 +94,9 @@ class MapWorldBuilder(BaseWorldBuilder):
     def teardown_world(self, app: ProjectApp) -> None:
         """Cleans up static colliders and frees mesh allocations."""
         if self.sector_instance is not None:
+            if hasattr(app, "map_manager") and app.map_manager is not None:
+                if self.sector_instance.name in app.map_manager.active_sectors:
+                    del app.map_manager.active_sectors[self.sector_instance.name]
             self.sector_instance.deactivate(app)
             self.sector_instance = None
         self.nodes.clear()

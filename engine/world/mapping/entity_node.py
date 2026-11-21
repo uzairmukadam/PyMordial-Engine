@@ -77,8 +77,9 @@ class MapEntityNode:
         collision = self.entity_def.resolved_collision()
         has_trigger = self.entity_def.trigger is not None
 
-        # 4. Allocate ECS Entity if visual, collision, or trigger is active
-        if has_visual or (collision is not None and collision.enabled) or has_trigger:
+        # 4. Allocate ECS Entity if visual or collision is active
+        # (pure triggers without visual or physics do not need an ECS entity)
+        if has_visual or (collision is not None and collision.enabled):
             pos = self.world_transform.position
             rot = self.world_transform.rotation
             scale = self.world_transform.scale if has_visual else (0.0, 0.0, 0.0)
