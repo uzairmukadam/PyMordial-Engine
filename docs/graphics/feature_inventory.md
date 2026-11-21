@@ -18,6 +18,12 @@
 > **A feature is NOT marked "verified" here.** Status reflects *code reachability*, not visual
 > correctness. Visual correctness is the job of
 > [manual_verification_matrix.md](./manual_verification_matrix.md).
+>
+> **Phase 2.5 update**: several Phase 2 classifications were corrected after independent
+> re-confirmation. See [configuration_audit.md](./configuration_audit.md) §3. In particular
+> `ssr_mode` and `ssr_debug_view` **are** consumed (now exposed in F2), `motion_blur_samples` is now
+> consumed, `u_SunAngularRadius` is **not** dead, and `rc_cascades` was removed. Backend fallbacks
+> are now observable via `RenderPipeline.feature_state()`.
 
 ---
 
@@ -580,7 +586,7 @@ deferred/forward hybrid switch.
 | Test scene | n/a |
 | Camera | n/a |
 | Expected | absent |
-| Known artifacts | **`u_SunAngularRadius` was NOT removed** — still declared at `deferred_resolve.frag:123` and never set. A test asserts its removal and fails. |
+| Known artifacts | **Phase 2.5 correction**: `u_SunAngularRadius` is **not** dead — `csm_sampling.glsl:278` uses it to derive a physical penumbra from the sun's solid angle. The stale test that asserted its removal was corrected. |
 | Debug view | n/a |
 | Pass/fail | n/a |
 | Perf testable | n/a |
@@ -801,7 +807,7 @@ deferred/forward hybrid switch.
 | Debug view | RADIANCE_CASCADES (13) |
 | Pass/fail | irradiance smooth; contact darkening correct |
 | Perf testable | yes |
-| **Note** | `rc_cascades` config field is **not consumed** — cascade intervals are hardcoded `(0–6, 6–20, 20–40)` m with spacings `(4, 8, 16)` px and directions `(64, 64, 256)`. Changing `rc_cascades` has no effect. |
+| **Note** | `rc_cascades` config field is **not consumed** — cascade intervals are hardcoded `(0–6, 6–20, 20–40)` m with spacings `(4, 8, 16)` px and directions `(64, 64, 256)`. **Phase 2.5: the dead field was removed.** |
 
 ### 7.6 RC debug views
 | Field | Value |
@@ -881,9 +887,9 @@ deferred/forward hybrid switch.
 | Field | Value |
 |---|---|
 | Variant | `ssr_mode="HIZ"` (default) / `"LINEAR"` |
-| Status | **unreachable** |
-| Activation | `RenderConfig.ssr_mode` only |
-| Python | [ssr_pass.py:210](../../engine/gfx/passes/ssr_pass.py:210) |
+| Status | **working** |
+| Activation | `RenderConfig.ssr_mode`; F2 "SSR March Mode" |
+| Python | [ssr_pass.py:211](../../engine/gfx/passes/ssr_pass.py:211) |
 | Shaders | `ssr.frag` (`u_SSR_Mode`) |
 | Inputs | Hi-Z pyramid |
 | Outputs | reflection |
@@ -897,17 +903,17 @@ deferred/forward hybrid switch.
 | Expected | Hi-Z faster, similar result |
 | Known artifacts | linear march slower |
 | Debug view | none |
-| Pass/fail | n/a |
+| Pass/fail | A/B produces similar image; Hi-Z measurably faster |
 | Perf testable | yes |
-| **Note** | **Not in `EngineTweaks` or `DebugMenu`** (0 hits each). Config-only. |
+| **Phase 2.5** | Phase 2 wrongly classified this as dead. It is consumed by `ssr_pass.py:211` and is now exposed in F2. |
 
 ### 8.4 SSR debug views
 | Field | Value |
 |---|---|
 | Variant | `ssr_debug_view` 0–5 |
-| Status | **unreachable** |
-| Activation | `RenderConfig.ssr_debug_view` only |
-| Python | [ssr_pass.py:88](../../engine/gfx/passes/ssr_pass.py:88) |
+| Status | **working** |
+| Activation | `RenderConfig.ssr_debug_view`; F2 (HIZ_BOUNDS backend) |
+| Python | [ssr_pass.py:232](../../engine/gfx/passes/ssr_pass.py:232) |
 | Shaders | `ssr_hiz.frag` (`u_SSRDebugView`) |
 | Inputs | n/a |
 | Outputs | debug visualization |
@@ -921,9 +927,9 @@ deferred/forward hybrid switch.
 | Expected | debug visualization |
 | Known artifacts | n/a |
 | Debug view | itself |
-| Pass/fail | n/a |
+| Pass/fail | each mode shows a distinct image |
 | Perf testable | no |
-| **Note** | Field exists in `RenderConfig` but **not in `EngineTweaks` at all** (0 hits). Config-only. |
+| **Phase 2.5** | Phase 2 wrongly classified this as dead. It is consumed by `ssr_pass.py:232` and is now exposed in F2. |
 
 ---
 
@@ -1704,8 +1710,7 @@ by grep. No full-frame render-scale (e.g. 0.75× then upscale) exists.
 | Debug view | none |
 | Pass/fail | blur direction matches motion; static regions sharp |
 | Perf testable | yes |
-| **Note** | `motion_blur_samples` config field is **not consumed** by the pass (0 hits). Only `motion_blur_max_samples` is used. Changing `motion_blur_samples` has no effect. |
-
+| **Note** | **Phase 2.5**: `motion_blur_samples` is now consumed by the pass (it takes precedence over the legacy `motion_blur_max_samples` cap). |
 ---
 
 ## 23. Debug Visualization
@@ -1889,22 +1894,22 @@ every GI mode switch, so switching GI does not blend stale history.
 | `WaypointGraph` | unwired | stub | none | `ProjectApp.waypoint_graph` always None |
 | `CVarRegistry` | unwired | stub | tests only | no runtime consumer |
 | `gi_mode="IBL"` | misleading | partial | F2 | behaves like `OFF` |
-| `rc_cascades` | unused field | unreachable | config | hardcoded intervals |
-| `motion_blur_samples` | unused field | unreachable | config | only `max_samples` used |
-| `ssr_mode` | unreachable | unreachable | config | not in F2 |
-| `ssr_debug_view` | unreachable | unreachable | config | not in EngineTweaks |
-| `ao_debug_view` | unreachable | unreachable | config | not in F2 |
-| `ssgi_debug_view` | unreachable | unreachable | config | not in F2 |
-| `rc_debug_view` | unreachable | unreachable | config | not in F2 |
-| `rc_temporal_debug_view` | unreachable | unreachable | config | not in F2 |
-| `rc_temporal_enabled` | unreachable | unreachable | config | not in F2 |
-| `rc_spatial_filter_enabled` | unreachable | unreachable | config | not in F2 |
-| `ssgi_surface_reject` | unreachable | unreachable | config | not in F2 |
-| `energy_compensation_enabled` | unreachable | unreachable | config | not in F2 |
-| `specular_aa_enabled` | unreachable | unreachable | config | not in F2 |
-| `object_motion_vectors_enabled` | unreachable | unreachable | config | not in F2 |
-| `white_balance_enabled` | unreachable | unreachable | config | not in F2 |
-| `u_SunAngularRadius` | dead uniform | legacy | n/a | declared, never set |
+| `rc_cascades` | unused field | **removed** | — | Phase 2.5: dead field deleted |
+| `motion_blur_samples` | now consumed | working | F2 | Phase 2.5: pass reads it first |
+| `ssr_mode` | now exposed | working | F2 | Phase 2.5: was consumed, now reachable |
+| `ssr_debug_view` | now exposed | working | F2 | Phase 2.5: was consumed, now reachable |
+| `ao_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `ssgi_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `rc_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `rc_temporal_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `rc_temporal_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `rc_spatial_filter_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `ssgi_surface_reject` | now exposed | working | F2 | Phase 2.5 |
+| `energy_compensation_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `specular_aa_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `object_motion_vectors_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `white_balance_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `u_SunAngularRadius` | **not dead** | working | n/a | Phase 2.5: used by `csm_sampling.glsl` |
 
 ---
 

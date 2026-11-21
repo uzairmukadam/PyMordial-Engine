@@ -108,6 +108,8 @@ class EngineTweaks:
         "ssr_max_roughness",
         "ssr_max_distance",
         "ssr_resolution_scale",
+        "ssr_mode",
+        "ssr_debug_view",
         "fxaa_subpixel",
         "fxaa_edge_threshold",
         "smaa_threshold",
@@ -249,7 +251,14 @@ class EngineTweaks:
         "rc_temporal_debug_view",
         "rc_merge_max_cascade",
         "rc_angular_filter_enabled",
+        "rc_temporal_enabled",
+        "rc_spatial_filter_enabled",
         "ssgi_surface_reject",
+        "energy_compensation_enabled",
+        "specular_aa_enabled",
+        "object_motion_vectors_enabled",
+        "white_balance_enabled",
+        "white_balance_k",
         "_on_quality_changed",
         "_on_vsync_changed",
         "_version",
@@ -356,7 +365,14 @@ class EngineTweaks:
         self.rc_temporal_debug_view = 0
         self.rc_merge_max_cascade = 2
         self.rc_angular_filter_enabled = True
+        self.rc_temporal_enabled = False
+        self.rc_spatial_filter_enabled = False
         self.ssgi_surface_reject = False
+        self.energy_compensation_enabled = True
+        self.specular_aa_enabled = True
+        self.object_motion_vectors_enabled = True
+        self.white_balance_enabled = False
+        self.white_balance_k = 6500.0
         self.ibl_enabled = True
         self.ssr_enabled = True
         self.ssr_steps = 64
@@ -364,6 +380,8 @@ class EngineTweaks:
         self.ssr_max_roughness = 0.65
         self.ssr_max_distance = 30.0
         self.ssr_resolution_scale = 1.0
+        self.ssr_mode = "HIZ"
+        self.ssr_debug_view = 0
         self.fxaa_subpixel = 0.75
         self.fxaa_edge_threshold = 0.125
         self.smaa_threshold = 0.08
@@ -747,7 +765,14 @@ class EngineTweaks:
             p_cfg.rc_temporal_debug_view = int(self.rc_temporal_debug_view)
             p_cfg.rc_merge_max_cascade = int(self.rc_merge_max_cascade)
             p_cfg.rc_angular_filter_enabled = bool(self.rc_angular_filter_enabled)
+            p_cfg.rc_temporal_enabled = bool(self.rc_temporal_enabled)
+            p_cfg.rc_spatial_filter_enabled = bool(self.rc_spatial_filter_enabled)
             p_cfg.ssgi_surface_reject = bool(self.ssgi_surface_reject)
+            p_cfg.energy_compensation_enabled = bool(self.energy_compensation_enabled)
+            p_cfg.specular_aa_enabled = bool(self.specular_aa_enabled)
+            p_cfg.object_motion_vectors_enabled = bool(self.object_motion_vectors_enabled)
+            p_cfg.white_balance_enabled = bool(self.white_balance_enabled)
+            p_cfg.white_balance_k = float(self.white_balance_k)
 
             # 4. Reflections & Anti-Aliasing
             p_cfg.ibl_enabled = bool(self.ibl_enabled)
@@ -757,8 +782,12 @@ class EngineTweaks:
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.ssr_max_distance = float(self.ssr_max_distance)
             p_cfg.ssr_resolution_scale = float(self.ssr_resolution_scale)
+            p_cfg.ssr_mode = str(self.ssr_mode)
+            p_cfg.ssr_debug_view = int(self.ssr_debug_view)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
-            p_cfg.taa_enabled = p_cfg.aa_mode == "TAA" or bool(getattr(self, "taa_enabled", False))
+            # taa_enabled is derived: TAA is selected by aa_mode alone, so a
+            # spatial mode can never run alongside the temporal stage.
+            p_cfg.taa_enabled = p_cfg.aa_mode == "TAA"
             p_cfg.taa_feedback = float(getattr(self, "taa_feedback", 0.95))
             p_cfg.taa_sharpness = float(getattr(self, "taa_sharpness", 0.35))
             p_cfg.taa_gamma = float(getattr(self, "taa_gamma", 1.25))
@@ -1015,6 +1044,8 @@ class EngineTweaks:
             "ssr_max_roughness",
             "ssr_max_distance",
             "ssr_resolution_scale",
+            "ssr_mode",
+            "ssr_debug_view",
             "fxaa_subpixel",
             "fxaa_edge_threshold",
             "smaa_threshold",
@@ -1235,7 +1266,14 @@ class EngineTweaks:
             "rc_temporal_debug_view": int(self.rc_temporal_debug_view),
             "rc_merge_max_cascade": int(self.rc_merge_max_cascade),
             "rc_angular_filter_enabled": bool(self.rc_angular_filter_enabled),
+            "rc_temporal_enabled": bool(self.rc_temporal_enabled),
+            "rc_spatial_filter_enabled": bool(self.rc_spatial_filter_enabled),
             "ssgi_surface_reject": bool(self.ssgi_surface_reject),
+            "energy_compensation_enabled": bool(self.energy_compensation_enabled),
+            "specular_aa_enabled": bool(self.specular_aa_enabled),
+            "object_motion_vectors_enabled": bool(self.object_motion_vectors_enabled),
+            "white_balance_enabled": bool(self.white_balance_enabled),
+            "white_balance_k": float(self.white_balance_k),
             "ibl_enabled": bool(self.ibl_enabled),
             "ssr_enabled": bool(self.ssr_enabled),
             "ssr_steps": int(self.ssr_steps),
@@ -1243,6 +1281,8 @@ class EngineTweaks:
             "ssr_max_roughness": float(self.ssr_max_roughness),
             "ssr_max_distance": float(self.ssr_max_distance),
             "ssr_resolution_scale": float(self.ssr_resolution_scale),
+            "ssr_mode": str(self.ssr_mode),
+            "ssr_debug_view": int(self.ssr_debug_view),
             "fxaa_subpixel": float(self.fxaa_subpixel),
             "fxaa_edge_threshold": float(self.fxaa_edge_threshold),
             "smaa_threshold": float(self.smaa_threshold),

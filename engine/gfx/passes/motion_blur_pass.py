@@ -171,7 +171,19 @@ class MotionBlurPass(RenderPass):
 
         velocity_tex = g_buffer.velocity_texture
         depth_tex = g_buffer.depth_texture
-        max_samples = max(1, int(getattr(config, "motion_blur_max_samples", 32)))
+        # ``motion_blur_samples`` is the user-facing tap budget (exposed in F2 and
+        # set by every quality preset). ``motion_blur_max_samples`` is the legacy
+        # hard cap; it is only used when the user-facing field is absent.
+        max_samples = max(
+            1,
+            int(
+                getattr(
+                    config,
+                    "motion_blur_samples",
+                    getattr(config, "motion_blur_max_samples", 32),
+                )
+            ),
+        )
         intensity = float(getattr(config, "motion_blur_intensity", 1.5))
         max_radius = float(getattr(config, "motion_blur_max_radius", 48.0))
 

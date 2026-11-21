@@ -107,6 +107,10 @@ class RadianceCascadesPass(RenderPass):
         "_u_temporal_history_valid",
         "_u_temporal_enabled",
         "_u_temporal_debug",
+        # Observable backend state: what was requested vs what actually ran.
+        "requested_backend",
+        "active_backend",
+        "fallback_reason",
     )
 
     def __init__(
@@ -118,6 +122,9 @@ class RadianceCascadesPass(RenderPass):
     ) -> None:
         super().__init__(name="RadianceCascadesPass", enabled=True)
         self.ctx = ctx
+        self.requested_backend = "LEGACY"
+        self.active_backend = "LEGACY"
+        self.fallback_reason: str | None = None
         self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
@@ -337,21 +344,28 @@ class RadianceCascadesPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "RADIANCE_CASCADES")
+        self.requested_backend = str(getattr(context.config, "rc_backend", "LEGACY")).upper()
+        self.fallback_reason = None
         if gi_mode != "RADIANCE_CASCADES":
+            self.active_backend = "OFF"
             context.resources["rc_texture"] = self.black_fallback
             self.invalidate_history()
             return
 
         g_buffer = context.resources.get("g_buffer", None)
         if g_buffer is None:
+            self.active_backend = "OFF"
+            self.fallback_reason = "no G-buffer"
             context.resources["rc_texture"] = self.black_fallback
             self.invalidate_history()
             return
 
         backend = str(getattr(context.config, "rc_backend", "LEGACY")).upper()
         if backend == "CASCADES":
+            self.active_backend = "CASCADES"
             self._execute_cascades(context, g_buffer)
         else:
+            self.active_backend = "LEGACY"
             self._execute_legacy(context, g_buffer)
 
     # ------------------------------------------------------------------

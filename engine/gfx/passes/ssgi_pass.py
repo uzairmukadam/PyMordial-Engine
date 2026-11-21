@@ -45,6 +45,10 @@ class SSGIPass(RenderPass):
     ) -> None:
         super().__init__(name="SSGIPass", enabled=True)
         self.ctx = ctx
+        # Observable backend state: what was requested vs what actually ran.
+        self.requested_backend = "LEGACY"
+        self.active_backend = "LEGACY"
+        self.fallback_reason: str | None = None
         self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
@@ -175,7 +179,10 @@ class SSGIPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "SSGI")
+        self.requested_backend = str(getattr(context.config, "ssgi_backend", "LEGACY")).upper()
+        self.fallback_reason = None
         if gi_mode != "SSGI":
+            self.active_backend = "OFF"
             context.resources["ssgi_texture"] = self.black_fallback
             # Leaving SSGI invalidates the history so a later switch back does
             # not blend against samples from an unrelated frame.
@@ -184,6 +191,8 @@ class SSGIPass(RenderPass):
 
         g_buffer = context.resources.get("g_buffer")
         if g_buffer is None:
+            self.active_backend = "OFF"
+            self.fallback_reason = "no G-buffer"
             context.resources["ssgi_texture"] = self.black_fallback
             self.invalidate_history()
             return
@@ -231,6 +240,7 @@ class SSGIPass(RenderPass):
         hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
 
         if backend == "HIZ_BOUNDS" and hiz_bounds_tex is not None:
+            self.active_backend = "HIZ_BOUNDS"
             hiz_bounds_tex.use(location=4)
             if self._u_hiz_rays is not None:
                 self._u_hiz_rays.value = getattr(context.config, "ssgi_rays", 8)
@@ -252,6 +262,9 @@ class SSGIPass(RenderPass):
         # Legacy fixed-step marcher. The Hi-Z pyramid (unit 4) is only used for
         # empty-space skipping; falls back to the depth texture with a mip count
         # of 1, which disables the skip in the shader.
+        self.active_backend = "LEGACY"
+        if backend == "HIZ_BOUNDS":
+            self.fallback_reason = "missing Hi-Z bounds texture"
         hiz_tex = context.resources.get("hiz_texture", None)
         hiz_mips = int(context.resources.get("hiz_mip_count", 1))
         if hiz_tex is not None:

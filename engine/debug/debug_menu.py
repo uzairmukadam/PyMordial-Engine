@@ -709,6 +709,24 @@ class DebugMenu:
                             et.ssgi_temporal_blend = ssgi_tb_val
                             et.mark_custom()
 
+                    if str(getattr(et, "ssgi_backend", "LEGACY")).upper() == "HIZ_BOUNDS":
+                        ssgi_dbg_changed, ssgi_dbg_val = imgui.slider_int(
+                            "SSGI Debug View (0=off,1=raw,2=hitUV,3=dist,4=ratio,5=iters,6=miss,7=self,8=surface)",
+                            int(getattr(et, "ssgi_debug_view", 0)),
+                            0,
+                            8,
+                        )
+                        if ssgi_dbg_changed:
+                            et.ssgi_debug_view = ssgi_dbg_val
+                            et.mark_custom()
+
+                        ssgi_sr_changed, ssgi_sr_val = imgui.checkbox(
+                            "SSGI Surface Reject", bool(getattr(et, "ssgi_surface_reject", False))
+                        )
+                        if ssgi_sr_changed:
+                            et.ssgi_surface_reject = ssgi_sr_val
+                            et.mark_custom()
+
                 if et.gi_mode == "RADIANCE_CASCADES":
                     rc_backend_changed, rc_backend_idx = imgui.combo(
                         "RC Backend", _backend_index(et.rc_backend, _RC_BACKENDS), _RC_BACKENDS
@@ -798,6 +816,41 @@ class DebugMenu:
                         et.rc_resolution_scale = rc_res_val
                         et.mark_custom()
 
+                    rc_temporal_changed, rc_temporal_val = imgui.checkbox(
+                        "RC Temporal Resolve", bool(getattr(et, "rc_temporal_enabled", False))
+                    )
+                    if rc_temporal_changed:
+                        et.rc_temporal_enabled = rc_temporal_val
+                        et.mark_custom()
+
+                    rc_spatial_changed, rc_spatial_val = imgui.checkbox(
+                        "RC Spatial Filter", bool(getattr(et, "rc_spatial_filter_enabled", False))
+                    )
+                    if rc_spatial_changed:
+                        et.rc_spatial_filter_enabled = rc_spatial_val
+                        et.mark_custom()
+
+                    if str(getattr(et, "rc_backend", "LEGACY")).upper() == "CASCADES":
+                        rc_dbg_changed, rc_dbg_val = imgui.slider_int(
+                            "RC Debug View (0=irradiance,1=irradiance,2=confidence,3=rejected)",
+                            int(getattr(et, "rc_debug_view", 0)),
+                            0,
+                            3,
+                        )
+                        if rc_dbg_changed:
+                            et.rc_debug_view = rc_dbg_val
+                            et.mark_custom()
+
+                        rc_tdbg_changed, rc_tdbg_val = imgui.slider_int(
+                            "RC Temporal Debug (0=resolved,1=current,2=depth,3=motion,4=history)",
+                            int(getattr(et, "rc_temporal_debug_view", 0)),
+                            0,
+                            4,
+                        )
+                        if rc_tdbg_changed:
+                            et.rc_temporal_debug_view = rc_tdbg_val
+                            et.mark_custom()
+
                 # AO Mode (OFF, SSAO, GTAO)
                 ao_modes = ["OFF", "SSAO", "GTAO"]
                 curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 3
@@ -833,6 +886,17 @@ class DebugMenu:
                     if ao_res_changed:
                         et.ao_resolution_scale = ao_res_val
                         et.mark_custom()
+
+                    if et.ao_mode == "GTAO" and str(getattr(et, "ao_backend", "LEGACY")).upper() == "HIZ_BOUNDS":
+                        ao_dbg_changed, ao_dbg_val = imgui.slider_int(
+                            "AO Debug View (0=final,1=mip,2=occupancy,3=rejected,4=refined)",
+                            int(getattr(et, "ao_debug_view", 0)),
+                            0,
+                            4,
+                        )
+                        if ao_dbg_changed:
+                            et.ao_debug_view = ao_dbg_val
+                            et.mark_custom()
 
             if imgui.collapsing_header("Image Quality, Reflections & Local Lights"):
                 # IBL
@@ -894,6 +958,16 @@ class DebugMenu:
                     if ssr_res_changed:
                         et.ssr_resolution_scale = ssr_res_val
                         et.mark_custom()
+
+                    ssr_modes = ["HIZ", "LINEAR"]
+                    ssr_mode_idx = ssr_modes.index(str(getattr(et, "ssr_mode", "HIZ")).upper()) if str(
+                        getattr(et, "ssr_mode", "HIZ")
+                    ).upper() in ssr_modes else 0
+                    ssr_mode_changed, ssr_mode_new = imgui.combo("SSR March Mode", ssr_mode_idx, ssr_modes)
+                    if ssr_mode_changed and ssr_mode_new != ssr_mode_idx:
+                        et.ssr_mode = ssr_modes[ssr_mode_new]
+                        et.mark_custom()
+                        self.toast.show(f"SSR March: {et.ssr_mode}", duration=1.5)
 
                 # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
                 aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x", "TAA"]
@@ -1884,9 +1958,88 @@ class DebugMenu:
                     et.show_wireframe = wire_val
                     self.toast.show(f"Mesh Wireframe: {'ON' if wire_val else 'OFF'}", duration=1.5)
 
+                imgui.separator()
+                imgui.text_disabled("Material & Lighting Diagnostics")
+
+                ec_changed, ec_val = imgui.checkbox(
+                    "Energy Compensation (multi-scatter GGX)", bool(getattr(et, "energy_compensation_enabled", True))
+                )
+                if ec_changed:
+                    et.energy_compensation_enabled = ec_val
+                    et.mark_custom()
+
+                saa_changed, saa_val = imgui.checkbox(
+                    "Specular AA (Toksvig roughness)", bool(getattr(et, "specular_aa_enabled", True))
+                )
+                if saa_changed:
+                    et.specular_aa_enabled = saa_val
+                    et.mark_custom()
+
+                omv_changed, omv_val = imgui.checkbox(
+                    "Per-Object Motion Vectors", bool(getattr(et, "object_motion_vectors_enabled", True))
+                )
+                if omv_changed:
+                    et.object_motion_vectors_enabled = omv_val
+                    et.mark_custom()
+
+                wb_changed, wb_val = imgui.checkbox(
+                    "White Balance", bool(getattr(et, "white_balance_enabled", False))
+                )
+                if wb_changed:
+                    et.white_balance_enabled = wb_val
+                    et.mark_custom()
+                if getattr(et, "white_balance_enabled", False):
+                    wbk_changed, wbk_val = imgui.slider_float(
+                        "White Balance (K)", float(getattr(et, "white_balance_k", 6500.0)), 2000.0, 12000.0, "%.0f K"
+                    )
+                    if wbk_changed:
+                        et.white_balance_k = wbk_val
+                        et.mark_custom()
+
+                imgui.separator()
+                imgui.text_disabled("Active Feature State (read-only)")
+                self._render_active_feature_state()
+
             imgui.separator()
             imgui.text_disabled("[F2] Close Panel  |  [F9] Mouse Grab")
         imgui.end()
+
+    def _render_active_feature_state(self) -> None:
+        """Renders the live requested-vs-active backend state for verification."""
+        pipeline = getattr(self, "app", None)
+        pipeline = getattr(pipeline, "pipeline", None) if pipeline is not None else None
+        if pipeline is None or not hasattr(pipeline, "feature_state"):
+            imgui.text_disabled("(pipeline unavailable)")
+            return
+        try:
+            state = pipeline.feature_state()
+        except Exception as exc:  # noqa: BLE001 - diagnostics must never crash the panel
+            imgui.text_disabled(f"(state error: {exc})")
+            return
+
+        def _row(label: str, requested: object, active: object, reason: object = None) -> None:
+            ok = requested == active or reason is None
+            color = imgui.ImVec4(0.45, 0.85, 0.55, 1.0) if ok else imgui.ImVec4(1.0, 0.72, 0.30, 1.0)
+            imgui.text_colored(color, f"{label}: req={requested} active={active}")
+            if reason:
+                imgui.same_line()
+                imgui.text_colored(imgui.ImVec4(1.0, 0.55, 0.35, 1.0), f"[fallback: {reason}]")
+
+        gi = state["gi"]
+        _row("GI", gi["requested_mode"], gi["active_mode"])
+        if gi["requested_backend"] is not None:
+            _row("  GI backend", gi["requested_backend"], gi["active_backend"], gi["fallback_reason"])
+        ao = state["ao"]
+        _row("AO", ao["mode"], ao["active_backend"], ao["fallback_reason"])
+        ssr = state["ssr"]
+        _row("SSR", ssr["requested_backend"] if ssr["enabled"] else "OFF", ssr["active_backend"], ssr["fallback_reason"])
+        imgui.text_disabled(f"AA stages: {', '.join(state['aa']['active_stages']) or 'none'}")
+        sh = state["shadows"]
+        imgui.text_disabled(f"Shadows: {sh['filter']} x{sh['cascades']} @ {sh['resolution']}")
+        fog = state["fog"]
+        imgui.text_disabled(f"Fog: {'ON' if fog['enabled'] else 'OFF'} ({fog['froxel_resolution']})")
+        env = state["environment"]
+        imgui.text_disabled(f"Environment: {env['provider']}")
 
     def _render_f3_game_tweaks(self) -> None:
         """Renders independent F3 Gameplay Developer Tweaks & Inspector panel."""

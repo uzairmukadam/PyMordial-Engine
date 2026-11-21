@@ -33,6 +33,10 @@ class AmbientOcclusionPass(RenderPass):
     ) -> None:
         super().__init__(name="AmbientOcclusionPass", enabled=True)
         self.ctx = ctx
+        # Observable backend state: what was requested vs what actually ran.
+        self.requested_backend = "LEGACY"
+        self.active_backend = "LEGACY"
+        self.fallback_reason: str | None = None
         self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
@@ -129,12 +133,17 @@ class AmbientOcclusionPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         ao_mode = getattr(context.config, "ao_mode", "GTAO")
+        self.requested_backend = str(getattr(context.config, "ao_backend", "LEGACY")).upper()
+        self.fallback_reason = None
         if ao_mode == "OFF":
+            self.active_backend = "OFF"
             context.resources["ao_texture"] = self.white_fallback
             return
 
         g_buffer = context.resources.get("g_buffer")
         if g_buffer is None:
+            self.active_backend = "OFF"
+            self.fallback_reason = "no G-buffer"
             context.resources["ao_texture"] = self.white_fallback
             return
 
@@ -145,7 +154,7 @@ class AmbientOcclusionPass(RenderPass):
         hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
         use_hiz_bounds = (
             ao_mode == "GTAO"
-            and str(getattr(context.config, "ao_backend", "LEGACY")).upper() == "HIZ_BOUNDS"
+            and self.requested_backend == "HIZ_BOUNDS"
             and hiz_bounds_tex is not None
         )
 
@@ -153,14 +162,19 @@ class AmbientOcclusionPass(RenderPass):
             vao = self.ssao_vao
             u_rad = self._u_ssao_radius
             u_int = self._u_ssao_intensity
+            self.active_backend = "SSAO"
         elif use_hiz_bounds:
             vao = self.gtao_hiz_vao
             u_rad = self._u_gtao_hiz_radius
             u_int = self._u_gtao_hiz_intensity
+            self.active_backend = "HIZ_BOUNDS"
         else:  # "GTAO"
             vao = self.gtao_vao
             u_rad = self._u_gtao_radius
             u_int = self._u_gtao_intensity
+            self.active_backend = "LEGACY"
+            if ao_mode == "GTAO" and self.requested_backend == "HIZ_BOUNDS":
+                self.fallback_reason = "missing Hi-Z bounds texture"
 
         # 2. Render Raw AO
         self.raw_fbo.use()

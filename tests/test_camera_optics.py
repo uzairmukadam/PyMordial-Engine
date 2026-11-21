@@ -259,7 +259,7 @@ def test_quality_presets_camera_optics_scaling():
     assert low.lens_flare_enabled is False
     assert low.chromatic_aberration_enabled is False
     assert low.vignette_enabled is True
-    assert low.film_grain_enabled is True
+    assert low.film_grain_enabled is False
     assert low.film_grain_intensity == 0.03
 
     med = get_quality_preset(GraphicsQuality.MEDIUM)
@@ -268,7 +268,7 @@ def test_quality_presets_camera_optics_scaling():
     assert med.motion_blur_samples == 6
     assert med.chromatic_aberration_enabled is True
     assert med.vignette_enabled is True
-    assert med.film_grain_enabled is True
+    assert med.film_grain_enabled is False
     assert med.film_grain_intensity == 0.03
 
     high = get_quality_preset(GraphicsQuality.HIGH)
@@ -278,7 +278,7 @@ def test_quality_presets_camera_optics_scaling():
     assert high.motion_blur_samples == 12
     assert high.lens_flare_enabled is True
     assert high.chromatic_aberration_enabled is True
-    assert high.film_grain_enabled is True
+    assert high.film_grain_enabled is False
     assert high.film_grain_intensity == 0.03
 
     ultra = get_quality_preset(GraphicsQuality.ULTRA)

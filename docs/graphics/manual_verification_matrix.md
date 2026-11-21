@@ -239,7 +239,7 @@ Each row is one verification. "Toggle" means the exact config field to change.
 | A1 | SSAO | S8 | C-static | `ao_mode="SSAO"` | crease darkening | no halo on silhouettes |
 | A2 | GTAO legacy | S8 | C-static | `ao_mode="GTAO"`, `ao_backend="LEGACY"` | cleaner AO | contact darkening correct |
 | A3 | GTAO Hi-Z | S8 | C-static | `ao_backend="HIZ_BOUNDS"` | ≈ legacy | A/B no gross difference |
-| A4 | AO debug views | S1 | C-static | set `ao_debug_view` 1–4 (code) | debug images | each mode distinct |
+| A4 | AO debug views | S1 | C-static | set `ao_debug_view` 1–4 (F2, GTAO+HIZ_BOUNDS) | debug images | each mode distinct |
 
 ### 3.7 GI
 
@@ -247,10 +247,10 @@ Each row is one verification. "Toggle" means the exact config field to change.
 |---|---|---|---|---|---|---|
 | GI1 | SSGI legacy | S1 | C-static | `gi_mode="SSGI"`, `ssgi_backend="LEGACY"` | color bleed | red/blue bleed visible |
 | GI2 | SSGI Hi-Z | S1 | C-static | `ssgi_backend="HIZ_BOUNDS"` | ≈ legacy | A/B no gross difference |
-| GI3 | SSGI debug | S1 | C-static | set `ssgi_debug_view` 1–8 (code) | debug images | each mode distinct |
+| GI3 | SSGI debug | S1 | C-static | set `ssgi_debug_view` 1–8 (F2, HIZ_BOUNDS) | debug images | each mode distinct |
 | GI4 | RC legacy | S1 | C-static | `gi_mode="RADIANCE_CASCADES"`, `rc_backend="LEGACY"` | indirect diffuse | no light leaks through walls |
 | GI5 | RC cascades | S1 | C-static | `rc_backend="CASCADES"` | smooth irradiance | contact detail correct |
-| GI6 | RC debug | S1 | C-static | set `rc_debug_view` (code) | debug images | each mode distinct |
+| GI6 | RC debug | S1 | C-static | set `rc_debug_view` (F2, CASCADES) | debug images | each mode distinct |
 
 ### 3.8 Reflections
 
@@ -258,8 +258,8 @@ Each row is one verification. "Toggle" means the exact config field to change.
 |---|---|---|---|---|---|---|
 | R1 | SSR legacy | S5 | C-graze | `ssr_backend="LEGACY"` | reflections | tracks geometry, no edge smear |
 | R2 | SSR Hi-Z | S5 | C-graze | `ssr_backend="HIZ_BOUNDS"` | ≈ legacy | A/B no gross difference |
-| R3 | SSR march mode | S5 | C-graze | `ssr_mode="LINEAR"` vs `"HIZ"` (code) | similar result | Hi-Z faster, similar image |
-| R4 | SSR debug | S5 | C-graze | set `ssr_debug_view` (code) | debug images | each mode distinct |
+| R3 | SSR march mode | S5 | C-graze | `ssr_mode="LINEAR"` vs `"HIZ"` (F2 "SSR March Mode") | similar result | Hi-Z faster, similar image |
+| R4 | SSR debug | S5 | C-graze | set `ssr_debug_view` (F2, HIZ_BOUNDS only) | debug images | each mode distinct |
 
 ### 3.9 Sky / Atmosphere
 
@@ -309,8 +309,9 @@ Each row is one verification. "Toggle" means the exact config field to change.
 |---|---|---|---|---|---|---|
 | AA1 | TAA | S3 | C-static then C-pan-slow | `aa_mode="TAA"` | stable edges | no shimmer static; no ghost after pan |
 | AA2 | FXAA | S3 | C-static | `aa_mode="FXAA"` | softened edges | smoother, no gross blur |
-| AA3 | SMAA | S3 | C-static | `aa_mode="SMAA"` | smooth + sharp | detail preserved |
+| AA3 | SMAA | S3 | C-static | `aa_mode="SMAA_1X"` | smooth + sharp | detail preserved |
 | AA4 | No AA | S3 | C-static | `aa_mode="OFF"` | aliased | baseline |
+| AA5 | AA exclusivity | S3 | C-static | set `aa_mode="FXAA"` then force `taa_enabled=True` | only FXAA runs | `feature_state()["aa"]["active_stages"] == ("FXAA",)` |
 
 ### 3.15 Resolution Scaling
 
@@ -348,7 +349,7 @@ Each row is one verification. "Toggle" means the exact config field to change.
 
 | # | Feature | Scene | Camera | Procedure | Expected | Pass criteria |
 |---|---|---|---|---|---|---|
-| CG1 | White balance | S6 | C-static | toggle `white_balance_enabled` (code) | warm/cool shift | visible shift |
+| CG1 | White balance | S6 | C-static | toggle `white_balance_enabled` (F2 Diagnostics) | warm/cool shift | visible shift |
 | CG2 | Contrast | S6 | C-static | `contrast` 1.0→1.5 | punchier | visible |
 | CG3 | Saturation | S6 | C-static | `saturation` 1.0→0.0 | greyscale | visible |
 | CG4 | CDL | S6 | C-static | `lift`/`gamma`/`gain` | graded | visible |
@@ -385,7 +386,7 @@ Each row is one verification. "Toggle" means the exact config field to change.
 | TP1 | TAA history | S4 | C-disocclude | `aa_mode="TAA"` | no ghost | clean after 5 frames |
 | TP2 | SSGI history | S1 | C-disocclude | `gi_mode="SSGI"` | no ghost | clean after 5 frames |
 | TP3 | RC history | S1 | C-disocclude | `gi_mode="RADIANCE_CASCADES"` | no ghost | clean after 5 frames |
-| TP4 | RC cascades temporal | S1 | C-disocclude | `rc_temporal_enabled=True` (code) | no ghost | clean after 5 frames |
+| TP4 | RC cascades temporal | S1 | C-disocclude | `rc_temporal_enabled=True` (F2, CASCADES) | no ghost | clean after 5 frames |
 | TP5 | Motion vectors | S4 | C-pan-fast | render | correct velocity | blur direction matches |
 
 ### 3.24 Culling

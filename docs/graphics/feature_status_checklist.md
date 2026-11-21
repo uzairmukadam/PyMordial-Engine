@@ -85,7 +85,8 @@
 | A1 | SSAO | `ao_mode="SSAO"` | working | S8 | | | |
 | A2 | GTAO legacy | `ao_backend="LEGACY"` | working | S8 | | | |
 | A3 | GTAO Hi-Z | `ao_backend="HIZ_BOUNDS"` | working | S8 | | | |
-| A4 | AO debug views | `ao_debug_view` 1–4 | unreachable | S1 | | | |
+| A4 | AO debug views | `ao_debug_view` 1–4 | working (F2) | S1 | | | |
+| A5 | AO backend fallback | `ao_backend="HIZ_BOUNDS"` | observable | S1 | | | |
 
 ## 7. Global Illumination
 
@@ -93,10 +94,11 @@
 |---|---|---|---|---|---|---|---|
 | GI1 | SSGI legacy | `ssgi_backend="LEGACY"` | working | S1 | | | |
 | GI2 | SSGI Hi-Z | `ssgi_backend="HIZ_BOUNDS"` | working | S1 | | | |
-| GI3 | SSGI debug | `ssgi_debug_view` 1–8 | unreachable | S1 | | | |
+| GI3 | SSGI debug | `ssgi_debug_view` 1–8 | working (F2) | S1 | | | |
 | GI4 | RC legacy | `rc_backend="LEGACY"` | working | S1 | | | |
 | GI5 | RC cascades | `rc_backend="CASCADES"` | working | S1 | | | |
-| GI6 | RC debug | `rc_debug_view` | unreachable | S1 | | | |
+| GI6 | RC debug | `rc_debug_view` | working (F2) | S1 | | | |
+| GI7 | GI backend fallback | `ssgi_backend="HIZ_BOUNDS"` | observable | S1 | | | |
 
 ## 8. Reflections
 
@@ -104,8 +106,9 @@
 |---|---|---|---|---|---|---|---|
 | R1 | SSR legacy | `ssr_backend="LEGACY"` | working | S5 | | | |
 | R2 | SSR Hi-Z | `ssr_backend="HIZ_BOUNDS"` | working | S5 | | | |
-| R3 | SSR march mode | `ssr_mode` | unreachable | S5 | | | |
-| R4 | SSR debug | `ssr_debug_view` | unreachable | S5 | | | |
+| R3 | SSR march mode | `ssr_mode` | working (F2) | S5 | | | |
+| R4 | SSR debug | `ssr_debug_view` | working (F2) | S5 | | | |
+| R5 | SSR backend fallback | `ssr_backend="HIZ_BOUNDS"` | observable | S5 | | | |
 
 ## 9. Sky / Atmosphere
 
@@ -164,6 +167,7 @@
 | AA2 | FXAA | `aa_mode="FXAA"` | working | S3 | | | |
 | AA3 | SMAA | `aa_mode="SMAA"` | working | S3 | | | |
 | AA4 | No AA | `aa_mode="OFF"` | working | S3 | | | |
+| AA5 | AA exclusivity | `aa_mode="FXAA"` + `taa_enabled` | enforced | S3 | | | |
 
 ## 16. Resolution Scaling
 
@@ -201,7 +205,7 @@
 
 | # | Feature | Variant | Status (code) | Scene | Result | Notes | Screenshot |
 |---|---|---|---|---|---|---|---|
-| CG1 | White balance | `white_balance_enabled` | working (config only) | S6 | | | |
+| CG1 | White balance | `white_balance_enabled` | working (F2) | S6 | | | |
 | CG2 | Contrast | `contrast` | working | S6 | | | |
 | CG3 | Saturation | `saturation` | working | S6 | | | |
 | CG4 | CDL | `lift`/`gamma`/`gain` | working | S6 | | | |
@@ -259,7 +263,7 @@
 | TP1 | TAA history | ping-pong | working | S4 | | | |
 | TP2 | SSGI history | ping-pong | working | S1 | | | |
 | TP3 | RC history (legacy) | history tex | working | S1 | | | |
-| TP4 | RC cascades temporal | `rc_temporal_enabled` | partial (default off) | S1 | | | |
+| TP4 | RC cascades temporal | `rc_temporal_enabled` | working (F2) | S1 | | | |
 | TP5 | Motion vectors | prev VP | working | S4 | | | |
 
 ## 25. Culling / LOD
@@ -281,22 +285,22 @@
 | X5 | `VolumetricSettings` | stub | stub | | |
 | X6 | `WaypointGraph` | stub | stub | | |
 | X7 | `CVarRegistry` | stub | stub | | |
-| X8 | `rc_cascades` unused | unreachable | unreachable | | |
-| X9 | `motion_blur_samples` unused | unreachable | unreachable | | |
-| X10 | `ssr_mode` | unreachable | unreachable | | |
-| X11 | `ssr_debug_view` | unreachable | unreachable | | |
-| X12 | `ao_debug_view` | unreachable | unreachable | | |
-| X13 | `ssgi_debug_view` | unreachable | unreachable | | |
-| X14 | `rc_debug_view` | unreachable | unreachable | | |
-| X15 | `rc_temporal_debug_view` | unreachable | unreachable | | |
-| X16 | `rc_temporal_enabled` | unreachable | unreachable | | |
-| X17 | `rc_spatial_filter_enabled` | unreachable | unreachable | | |
-| X18 | `ssgi_surface_reject` | unreachable | unreachable | | |
-| X19 | `energy_compensation_enabled` | unreachable | unreachable | | |
-| X20 | `specular_aa_enabled` | unreachable | unreachable | | |
-| X21 | `object_motion_vectors_enabled` | unreachable | unreachable | | |
-| X22 | `white_balance_enabled` | unreachable | unreachable | | |
-| X23 | `u_SunAngularRadius` dead uniform | legacy | legacy | | |
+| X8 | `rc_cascades` unused | **removed** | removed | Phase 2.5: dead field deleted |
+| X9 | `motion_blur_samples` unused | **fixed** | working | Phase 2.5: now consumed |
+| X10 | `ssr_mode` | **exposed** | working | Phase 2.5: F2 "SSR March Mode" |
+| X11 | `ssr_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X12 | `ao_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X13 | `ssgi_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X14 | `rc_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X15 | `rc_temporal_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X16 | `rc_temporal_enabled` | **exposed** | working | Phase 2.5: F2 |
+| X17 | `rc_spatial_filter_enabled` | **exposed** | working | Phase 2.5: F2 |
+| X18 | `ssgi_surface_reject` | **exposed** | working | Phase 2.5: F2 |
+| X19 | `energy_compensation_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
+| X20 | `specular_aa_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
+| X21 | `object_motion_vectors_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
+| X22 | `white_balance_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
+| X23 | `u_SunAngularRadius` dead uniform | **not dead** | working | Phase 2.5: used by `csm_sampling.glsl` |
 
 ---
 

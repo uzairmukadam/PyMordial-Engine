@@ -227,7 +227,14 @@ def create_default_environment(ctx: moderngl.Context, config: Any = None) -> Env
 
     try:
         from engine.modules.atmosphere import create_atmosphere_environment
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - degrade to flat sky, but say so
+        import logging
+
+        logging.getLogger("PyMordial").warning(
+            "Atmosphere module unavailable (%s); falling back to FlatEnvironment. "
+            "Sky lighting will be flat and unlit.",
+            exc,
+        )
         return FlatEnvironment(ctx)
 
     return create_atmosphere_environment(ctx, settings)

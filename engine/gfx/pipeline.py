@@ -265,6 +265,7 @@ class RenderPipeline:
         "render_features",
         "_render_services",
         "gpu_profiler",
+        "_aa_warning",
     )
 
     def __init__(
@@ -691,6 +692,7 @@ class RenderPipeline:
         # Non-blocking per-pass GPU timing. Timestamp queries are read from a
         # ring of older frames, so this never stalls the pipeline.
         self.gpu_profiler = GpuPassProfiler(self.ctx)
+        self._aa_warning: str | None = None
 
         # Automatically synchronize framebuffers with window resolution changes
         subscribe_event(WindowResizeEvent, self._on_window_resize, priority=90)
@@ -858,9 +860,29 @@ class RenderPipeline:
         """Clears all active deferred decals."""
         self.decal_pass.clear()
 
+    def _enforce_aa_exclusivity(self, config: RenderConfig) -> None:
+        """Normalises AA state so temporal and spatial AA never both execute.
+
+        ``aa_mode`` is the authoritative AA selector. ``taa_enabled`` is a
+        derived flag: it is true only when ``aa_mode == "TAA"``. A config that
+        sets a spatial mode (FXAA/SMAA) while leaving ``taa_enabled`` true would
+        otherwise run TAA *and* the spatial pass, double-filtering the image.
+        """
+        aa_mode = str(getattr(config, "aa_mode", "OFF")).upper()
+        wants_taa = aa_mode == "TAA"
+        if bool(getattr(config, "taa_enabled", False)) != wants_taa:
+            config.taa_enabled = wants_taa
+        if aa_mode not in ("OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA"):
+            self._aa_warning = f"Unknown aa_mode {aa_mode!r}; falling back to OFF."
+            config.aa_mode = "OFF"
+            config.taa_enabled = False
+        else:
+            self._aa_warning = None
+
     def apply_config(self, new_config: RenderConfig) -> None:
         """Applies dynamic graphics quality configuration changes."""
         self.config = new_config
+        self._enforce_aa_exclusivity(new_config)
         self.csm.resize_atlas(new_config.shadow_resolution)
         self.spot_shadow_map.resize_atlas(getattr(new_config, "spot_shadow_resolution", 2048))
         self.csm.update_splits(
@@ -1129,7 +1151,9 @@ class RenderPipeline:
 
         jitter_x, jitter_y = 0.0, 0.0
         aa_mode = getattr(self.config, "aa_mode", "OFF")
-        if aa_mode == "TAA" or getattr(self.config, "taa_enabled", False):
+        # TAA is selected by aa_mode alone; taa_enabled is a derived flag so a
+        # spatial mode can never run alongside the temporal stage.
+        if aa_mode == "TAA":
             jitter_x, jitter_y = self.taa_pass.get_jitter(w, h)
         elif aa_mode in ("SMAA_2X", "SMAA_4X"):
             jitter_x, jitter_y = self.smaa_pass.get_jitter(w, h, aa_mode)
@@ -1759,7 +1783,7 @@ class RenderPipeline:
 
         # ---- PASS 7.9: Temporal Anti-Aliasing (TAA in linear HDR space before Tonemapping) ----
         aa_mode = getattr(self.config, "aa_mode", "OFF")
-        taa_active = aa_mode == "TAA" or getattr(self.config, "taa_enabled", False)
+        taa_active = aa_mode == "TAA"
         if taa_active:
             ctx.resources["hdr_color"] = self.post_process.hdr_fbo.color_attachments[0]
             ctx.resources["g_buffer"] = self.g_buffer
@@ -1832,6 +1856,99 @@ class RenderPipeline:
     def output_texture_id(self) -> int:
         """Exposes OpenGL texture handle for ImGui viewport dock."""
         return self.post_process.output_texture_id
+
+    # ---------------- Active feature state (diagnostics) ----------------
+
+    def active_aa_stages(self) -> tuple[str, ...]:
+        """Returns the anti-aliasing stages that actually execute this frame.
+
+        TAA is a pre-tonemap temporal stage; FXAA/SMAA are post-tonemap spatial
+        stages. They are mutually exclusive by design, so this returns at most
+        one entry (plus ``"TAA"`` only when no spatial AA is selected).
+        """
+        aa_mode = str(getattr(self.config, "aa_mode", "OFF")).upper()
+        taa_active = aa_mode == "TAA" or bool(getattr(self.config, "taa_enabled", False))
+        if aa_mode == "FXAA":
+            return ("FXAA",)
+        if aa_mode in ("SMAA_1X", "SMAA_2X", "SMAA_4X"):
+            return (aa_mode,)
+        if taa_active:
+            return ("TAA",)
+        return ()
+
+    def feature_state(self) -> dict[str, object]:
+        """Returns the actual active graphics state for debug/benchmark tooling.
+
+        Every value is read from the live pass objects, not from configuration,
+        so a requested-but-unavailable backend is reported as a fallback rather
+        than as the requested value.
+        """
+        cfg = self.config
+        gi_mode = str(getattr(cfg, "gi_mode", "OFF")).upper()
+        if gi_mode == "RADIANCE_CASCADES":
+            gi_pass = self.rc_pass
+        elif gi_mode == "SSGI":
+            gi_pass = self.ssgi_pass
+        else:
+            gi_pass = None
+
+        # "IBL" is not a screen-space GI technique: it means "no SSGI/RC, rely on
+        # the always-on split-sum IBL". Report it as such rather than as OFF.
+        if gi_mode == "IBL":
+            active_gi_mode = "IBL" if bool(getattr(cfg, "ibl_enabled", True)) else "OFF"
+        elif gi_pass is not None:
+            active_gi_mode = gi_mode
+        else:
+            active_gi_mode = "OFF"
+
+        return {
+            "gi": {
+                "requested_mode": gi_mode,
+                "active_mode": active_gi_mode,
+                "requested_backend": getattr(gi_pass, "requested_backend", None),
+                "active_backend": getattr(gi_pass, "active_backend", None),
+                "fallback_reason": getattr(gi_pass, "fallback_reason", None),
+                "temporal_enabled": bool(getattr(cfg, "ssgi_temporal_enabled", False))
+                if gi_mode == "SSGI"
+                else bool(getattr(cfg, "rc_temporal_enabled", False)),
+                "resolution_scale": float(
+                    getattr(cfg, "ssgi_resolution_scale", 1.0)
+                    if gi_mode == "SSGI"
+                    else getattr(cfg, "rc_resolution_scale", 1.0)
+                ),
+            },
+            "ao": {
+                "mode": str(getattr(cfg, "ao_mode", "OFF")).upper(),
+                "requested_backend": getattr(self.ao_pass, "requested_backend", None),
+                "active_backend": getattr(self.ao_pass, "active_backend", None),
+                "fallback_reason": getattr(self.ao_pass, "fallback_reason", None),
+                "resolution_scale": float(getattr(cfg, "ao_resolution_scale", 1.0)),
+            },
+            "ssr": {
+                "enabled": bool(getattr(cfg, "ssr_enabled", False)),
+                "requested_backend": getattr(self.ssr_pass, "requested_backend", None),
+                "active_backend": getattr(self.ssr_pass, "active_backend", None),
+                "fallback_reason": getattr(self.ssr_pass, "fallback_reason", None),
+                "resolution_scale": float(getattr(cfg, "ssr_resolution_scale", 1.0)),
+            },
+            "aa": {
+                "requested_mode": str(getattr(cfg, "aa_mode", "OFF")).upper(),
+                "active_stages": self.active_aa_stages(),
+            },
+            "shadows": {
+                "filter": str(getattr(cfg, "shadow_filter_mode", "PCF")).upper(),
+                "cascades": int(getattr(cfg, "csm_cascades", 4)),
+                "resolution": int(getattr(cfg, "shadow_resolution", 8192)),
+            },
+            "fog": {
+                "enabled": bool(getattr(cfg, "volumetric_fog_enabled", False)),
+                "froxel_resolution": str(getattr(cfg, "fog_resolution", "HIGH")).upper(),
+            },
+            "environment": {
+                "provider": type(self.environment).__name__,
+                "atmosphere_enabled": bool(getattr(self.environment, "enabled", False)),
+            },
+        }
 
     def destroy(self) -> None:
         unsubscribe_event(WindowResizeEvent, self._on_window_resize)

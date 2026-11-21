@@ -112,7 +112,10 @@ class RenderConfig:
     ssgi_surface_reject: bool = False  # reject hits on the receiver's own surface ID
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
-    rc_cascades: int = 3
+    # NOTE: the cascade count is fixed by the explicit cascade layout in
+    # ``engine.gfx.passes.rc_cascade`` (three intervals: 0-6, 6-20, 20-40 m).
+    # There is no runtime knob for it; ``rc_interval_c0/c1/c2`` control the
+    # legacy raymarch band boundaries instead.
     rc_ray_count: int = 16
     rc_interval_c0: float = 0.40
     rc_interval_c1: float = 2.50
@@ -286,7 +289,7 @@ class RenderConfig:
     motion_blur_intensity: float = 1.5  # Shutter angle / blur strength scale
     motion_blur_max_radius: float = 48.0  # Max blur vector in pixels
     motion_blur_tile_size: int = 16  # Tile footprint (px) for the tile-max reduction
-    motion_blur_max_samples: int = 32  # Upper bound on gather taps per pixel
+    motion_blur_max_samples: int = 32  # Legacy hard cap; motion_blur_samples takes precedence
 
     # Anamorphic Lens Flare & Ghost Reflections
     lens_flare_enabled: bool = True

@@ -103,7 +103,7 @@ but it leaks GPU memory across app lifetimes.
 | Feature | Requires | Soft | Conflicts | Breaks if missing |
 |---|---|---|---|---|
 | Split-sum IBL | env map, BRDF LUT | sky LUTs | — | black ambient |
-| `gi_mode="IBL"` | — | — | — | **⚠ behaves as `OFF`** |
+| `gi_mode="IBL"` | — | — | — | **⚠ Phase 2.5**: reported as `active_mode="IBL"` when `ibl_enabled`; no GI pass runs (by design) |
 
 ### 3.5 Shadows
 
@@ -207,10 +207,11 @@ message**. See [open_questions.md](../audit/open_questions.md) Q17.
 | SMAA | LDR | — | ⊗ FXAA/TAA | — |
 | No AA | LDR | — | — | — |
 
-**⚠ Note**: TAA is gated by `taa_active` (from `aa_mode=="TAA"` or `taa_enabled`), while FXAA/SMAA
-are gated by `aa_mode` inside post-process. Setting `aa_mode="FXAA"` **and** `taa_enabled=True`
-would run both — the exclusivity is by convention, not enforced. This is a new finding from Phase 2
-and is recorded here rather than in the Phase 1 question list.
+**⚠ Note**: TAA is gated by `aa_mode == "TAA"` only. `taa_enabled` is a **derived** flag
+(`taa_enabled == (aa_mode == "TAA")`), normalised by `RenderPipeline._enforce_aa_exclusivity()` on
+every `apply_config`. A contradictory config (`aa_mode="FXAA"` + `taa_enabled=True`) is corrected, so
+TAA and FXAA/SMAA can no longer both execute. Verified by
+`tests/test_feature_activation.py::TestAAExclusivity`.
 
 ### 3.15 Resolution Scaling
 
@@ -333,18 +334,19 @@ crevices can go black. This is a tuning interaction, not a bug, but it is the mo
 
 | Missing dependency | Silent fallback? | Visible symptom | Detectable by |
 |---|---|---|---|
-| `hiz_bounds_texture` | **yes** (falls back to LEGACY) | none — feature silently degrades | comparing GPU ms; debug view 17–22 |
+| `hiz_bounds_texture` | **yes** (falls back to LEGACY) | none — feature silently degrades | `feature_state()["ao"/"gi"/"ssr"]["fallback_reason"]`; debug view 17–22 |
 | `hiz_texture` | **yes** (mip=1, linear march) | slower SSR/SSGI | GPU ms |
-| atmosphere module | **yes** (`FlatEnvironment`) | flat sky, no log | visual only |
+| atmosphere module | **yes** (`FlatEnvironment`) | flat sky; **now logs a warning** | log + `feature_state()["environment"]["provider"]` |
 | `GL_ARB_tessellation_shader` | no (program creation fails) | startup exception | log |
 | `GL_ARB_multi_draw_indirect` | **yes** (per-command path) | slower | GPU ms |
 | compute capability | no (program creation fails) | startup exception | log |
 | `max_entities` mismatch | **no** | silent corruption | visual only |
 | `direct_radiance_texture` | no (GI reads black) | no indirect light | GI debug view |
 
-**⚠ The three silent fallbacks** (`hiz_bounds`, `hiz`, atmosphere) are the highest-risk items for
-manual verification: a feature can appear "working" while actually running its legacy path. The
-manual matrix must A/B against the legacy backend to detect this.
+**⚠ Phase 2.5**: the three silent fallbacks (`hiz_bounds`, `hiz`, atmosphere) are now **observable**.
+Each switchable pass reports `requested_backend` / `active_backend` / `fallback_reason`, aggregated by
+`RenderPipeline.feature_state()`. The atmosphere fallback additionally logs a warning. A benchmark can
+therefore detect that it measured the wrong backend.
 
 ---
 

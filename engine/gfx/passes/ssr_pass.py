@@ -35,6 +35,10 @@ class SSRPass(RenderPass):
     ) -> None:
         super().__init__(name="SSRPass", enabled=True)
         self.ctx = ctx
+        # Observable backend state: what was requested vs what actually ran.
+        self.requested_backend = "LEGACY"
+        self.active_backend = "LEGACY"
+        self.fallback_reason: str | None = None
         self.resolution_scale = min(max(resolution_scale, 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
         self.height = max(int(round(height * self.resolution_scale)), 1)
@@ -131,12 +135,17 @@ class SSRPass(RenderPass):
         self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
+        self.requested_backend = str(getattr(context.config, "ssr_backend", "LEGACY")).upper()
+        self.fallback_reason = None
         if not getattr(context.config, "ssr_enabled", True):
+            self.active_backend = "OFF"
             context.resources["ssr_texture"] = self.black_fallback
             return
 
         g_buffer = context.resources.get("g_buffer")
         if g_buffer is None:
+            self.active_backend = "OFF"
+            self.fallback_reason = "no G-buffer"
             context.resources["ssr_texture"] = self.black_fallback
             return
 
@@ -160,8 +169,12 @@ class SSRPass(RenderPass):
         use_hiz_bounds = backend == "HIZ_BOUNDS" and hiz_bounds_tex is not None
 
         if use_hiz_bounds:
+            self.active_backend = "HIZ_BOUNDS"
             self._render_hiz_bounds(context, g_buffer, hiz_bounds_tex)
         else:
+            self.active_backend = "LEGACY"
+            if backend == "HIZ_BOUNDS":
+                self.fallback_reason = "missing Hi-Z bounds texture"
             self._render_legacy(context, g_buffer)
 
         # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo

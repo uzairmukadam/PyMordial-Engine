@@ -89,10 +89,11 @@ class TestRemovedShadowMachinery:
 
     def test_shader_has_no_pcss_uniforms(self) -> None:
         source = _resolve_source()
+        # u_SunAngularRadius is intentionally retained: csm_sampling.glsl uses it
+        # to derive a physically-based penumbra from the sun's solid angle.
         for removed in (
             "u_ShadowMode",
             "u_ShadowSoftness",
-            "u_SunAngularRadius",
             "u_ShadowPenumbraScale",
             "u_ShadowOffset",
             "POISSON_DISK",
