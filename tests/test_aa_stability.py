@@ -226,3 +226,56 @@ class TestFxaaEdgeDirection:
             "FXAA edge-direction test is inverted; a vertical edge must set "
             "is_horizontal = false so the raymarch runs along the edge."
         )
+
+
+class TestTaaJitterReprojection:
+    """Phase 3.4 regression: TAA history lookup must not double-count jitter.
+
+    The primary history lookup used `(v_UV + curr_jitter) - velocity`, which
+    sampled the history buffer offset by 2*jitter from the correct texel. Because
+    the Halton jitter cycles through 8 phases, that produced a visible 8-frame
+    periodic wobble even with a completely static camera and scene.
+
+    Measured on a static camera + static scene (320x240, 80 frames):
+        before: mean frame delta 0.5024, tail std 0.4482
+        after : mean frame delta 0.0474, tail std 0.0637
+    """
+
+    def test_static_scene_does_not_wobble(self, render_ctx: RenderContext) -> None:
+        pipeline = RenderPipeline(render_ctx)
+        pipeline.config.aa_mode = "TAA"
+        pipeline.config.taa_enabled = True
+        # Film grain re-seeds at 24 Hz by design and would dominate the metric.
+        pipeline.config.film_grain_enabled = False
+        ecs = _build_scene()
+        try:
+            # 40 frames = 5 complete 8-frame Halton cycles; measure the last 16
+            # so the history has fully warmed up.
+            frames = _render_frames(pipeline, ecs, 40)
+            deltas = [
+                float(np.mean(np.abs(frames[i + 1] - frames[i])))
+                for i in range(24, len(frames) - 1)
+            ]
+            mean_delta = float(np.mean(deltas))
+            max_delta = float(np.max(deltas))
+
+            # Corrected engine measures ~0.05; the old +jitter behaviour was
+            # ~0.50. A 0.20 threshold separates them with wide margin.
+            assert mean_delta < 0.20, (
+                f"TAA wobbles with a static camera: mean frame delta {mean_delta:.4f} "
+                f"(max {max_delta:.4f}). The history lookup is likely double-counting "
+                "projection jitter."
+            )
+        finally:
+            pipeline.destroy()
+
+    def test_history_lookup_subtracts_jitter(self) -> None:
+        """Guard the exact expression so the sign cannot silently regress."""
+        from engine.gfx.shader_utils import load_shader
+
+        src = load_shader("taa.frag")
+        assert "vec2 histUV = (v_UV - curr_jitter) - velocity;" in src, (
+            "TAA history lookup must subtract curr_jitter; adding it samples the "
+            "history buffer 2*jitter away from the correct texel and causes an "
+            "8-frame periodic wobble."
+        )

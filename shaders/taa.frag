@@ -216,7 +216,7 @@ void main() {
     // The rasterised UV is offset by -jitter from the nominal position, so the
     // nominal current UV is (v_UV + curr_jitter); the nominal previous UV is that
     // minus the geometric velocity.
-    vec2 histUV = (v_UV + curr_jitter) - velocity;
+    vec2 histUV = (v_UV - curr_jitter) - velocity;
 
     // Rejection on screen edges
     if (any(lessThan(histUV, vec2(0.0))) || any(greaterThan(histUV, vec2(1.0)))) {
