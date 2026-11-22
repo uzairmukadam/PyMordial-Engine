@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import moderngl
 import numpy as np
@@ -1072,6 +1072,163 @@ class RenderPipeline:
         on_screen = 0.0 <= u <= 1.0 and 0.0 <= v <= 1.0
         return (u, v), on_screen
 
+    def _run_deferred_resolve(
+        self,
+        ctx: RenderGraphContext,
+        w: int,
+        h: int,
+        env: Any,
+        true_sun_dir: Any,
+        target_fbo: moderngl.Framebuffer,
+        ssr_enabled: bool,
+    ) -> None:
+        """Runs the consolidated deferred resolve into ``target_fbo``.
+
+        ``ssr_enabled`` controls only whether the SSR texture contributes to
+        the specular term. The pipeline resolves twice when SSR is active:
+        once with SSR off into ``base_hdr_texture`` so SSR can trace against
+        current-frame radiance, then again with SSR on into ``hdr_texture``.
+        """
+        # Consolidated deferred resolve into `target_fbo`.
+        target_fbo.use()
+        self.ctx.viewport = (0, 0, w, h)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
+
+        # Bind all required texture units
+        self.g_buffer.bind_textures(base_unit=0)  # 0: AlbedoRough, 1: NormalMetal, 2: Depth
+        self.csm.depth_texture.use(location=3)  # 3: ShadowAtlas (raw depth)
+        # 9: ShadowAtlas through a hardware depth-comparison sampler. Same
+        # texture, different sampler state, so the filter gets bilinear PCF for
+        # free while the blocker search keeps raw depth access.
+        self.csm.compare_sampler.use(location=9)
+
+        ao_tex = ctx.resources.get("ao_texture", self.ao_pass.white_fallback)
+        ao_tex.use(location=4)
+
+        ssgi_tex = ctx.resources.get("ssgi_texture", self.ssgi_pass.black_fallback)
+        ssgi_tex.use(location=5)
+
+        self.ibl_pass.lut_tex.use(location=6)
+        self.ibl_pass.env_tex.use(location=7)
+
+        # The base resolve must not contain SSR, so it binds the black fallback
+        # rather than whatever the previous frame left in `ssr_texture`. That
+        # also avoids reading a released texture on the first frame after a
+        # resize, before SSR has republished its target.
+        if ssr_enabled:
+            ssr_tex = ctx.resources.get("ssr_texture", self.ssr_pass.black_fallback)
+        else:
+            ssr_tex = self.ssr_pass.black_fallback
+        ssr_tex.use(location=8)
+
+        env.bind_luts(10, 11)
+        self.spot_shadow_map.depth_texture.use(location=12)
+        self.spot_shadow_map.compare_sampler.use(location=16)
+        self.ibl_pass.irradiance_tex.use(location=13)
+        self.hiz_pass.hiz_texture.use(location=14)
+
+        rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
+        rc_tex.use(location=15)
+
+        # RG32F linear-view-depth bounds hierarchy (debug visualization only).
+        hiz_bounds_tex = ctx.resources.get("hiz_bounds_texture", None)
+        if hiz_bounds_tex is not None:
+            hiz_bounds_tex.use(location=17)
+
+        # Current-frame direct radiance (debug visualization).
+        direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
+        if direct_radiance_tex is not None:
+            direct_radiance_tex.use(location=18)
+
+        # Set resolve uniforms
+        if self._u_shadow_bias is not None:
+            self._u_shadow_bias.value = float(self.config.shadow_bias)
+        if self._u_shadow_normal_bias is not None:
+            self._u_shadow_normal_bias.value = float(getattr(self.config, "shadow_normal_bias", 0.0010))
+        if self._u_shadow_bias_slope is not None:
+            self._u_shadow_bias_slope.value = float(getattr(self.config, "shadow_bias_slope_scale", 2.0))
+        if self._u_shadow_bias_min is not None:
+            self._u_shadow_bias_min.value = float(getattr(self.config, "shadow_bias_min_scale", 0.5))
+        if self._u_shadow_bias_max is not None:
+            self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
+        if self._u_shadow_filter_mode is not None:
+            mode = str(getattr(self.config, "shadow_filter_mode", "PCF")).upper()
+            self._u_shadow_filter_mode.value = {"HARD": 0, "PCF": 1, "PCSS": 2}.get(mode, 1)
+        if self._u_pcf_cascade_limit is not None:
+            self._u_pcf_cascade_limit.value = int(getattr(self.config, "pcf_cascade_limit", 3))
+        if self._u_pcf_samples is not None:
+            self._u_pcf_samples.value = int(getattr(self.config, "pcf_samples", 16))
+        if self._u_pcf_radius is not None:
+            self._u_pcf_radius.value = float(getattr(self.config, "pcf_radius", 1.5))
+        if self._u_pcf_falloff is not None:
+            self._u_pcf_falloff.value = float(getattr(self.config, "pcf_falloff", 2.0))
+        if self._u_pcss_cascade_limit is not None:
+            self._u_pcss_cascade_limit.value = int(getattr(self.config, "pcss_cascade_limit", 1))
+        if self._u_pcss_search_samples is not None:
+            self._u_pcss_search_samples.value = int(getattr(self.config, "pcss_search_samples", 16))
+        if self._u_pcss_search_radius is not None:
+            self._u_pcss_search_radius.value = float(getattr(self.config, "pcss_search_radius", 8.0))
+        if self._u_pcss_light_size is not None:
+            self._u_pcss_light_size.value = float(getattr(self.config, "pcss_light_size", 0.02))
+        if self._u_pcss_samples is not None:
+            self._u_pcss_samples.value = int(getattr(self.config, "pcss_samples", 24))
+        if self._u_pcss_falloff is not None:
+            self._u_pcss_falloff.value = float(getattr(self.config, "pcss_falloff", 2.0))
+        if self._u_pcss_max_radius is not None:
+            self._u_pcss_max_radius.value = float(getattr(self.config, "pcss_max_radius", 96.0))
+        if self._u_pcss_closest_weight is not None:
+            self._u_pcss_closest_weight.value = float(getattr(self.config, "pcss_closest_blocker_weight", 1.0))
+        if self._u_cascade_count is not None:
+            self._u_cascade_count.value = self.config.csm_cascades
+        if self._u_cascade_atlas_rect is not None:
+            self._u_cascade_atlas_rect.write(self.csm.cascade_rect_uv_array.tobytes())
+        if self._u_gbuffer_debug is not None:
+            self._u_gbuffer_debug.value = self.config.debug_gbuffer
+        if self._u_hiz_debug_mip is not None:
+            self._u_hiz_debug_mip.value = int(getattr(self.config, "hiz_debug_mip", 0))
+
+        # Set Phase 5 Feature Toggles
+        if self._u_ao_enabled is not None:
+            self._u_ao_enabled.value = 1 if self.config.ao_mode != "OFF" else 0
+
+        gi_enum_val = 0
+        if self.config.gi_mode == "SSGI":
+            gi_enum_val = 1
+        elif self.config.gi_mode == "RADIANCE_CASCADES":
+            gi_enum_val = 4
+        if self._u_gi_enabled is not None:
+            self._u_gi_enabled.value = gi_enum_val
+
+        if self._u_ibl_enabled is not None:
+            self._u_ibl_enabled.value = 1 if self.config.ibl_enabled else 0
+        if self._u_ssr_enabled is not None:
+            self._u_ssr_enabled.value = 1 if ssr_enabled else 0
+        if self._u_energy_compensation_enabled is not None:
+            self._u_energy_compensation_enabled.value = (
+                1 if getattr(self.config, "energy_compensation_enabled", True) else 0
+            )
+        if self._u_point_light_count is not None:
+            self._u_point_light_count.value = ctx.resources.get("point_light_count", 0)
+        if self._u_spot_light_count is not None:
+            self._u_spot_light_count.value = ctx.resources.get("spot_light_count", 0)
+        if self._u_spot_shadow_enabled is not None:
+            self._u_spot_shadow_enabled.value = 1 if getattr(self.config, "spot_shadows_enabled", True) else 0
+        if self._u_spot_vp is not None:
+            for i, mat in enumerate(self.spot_shadow_map.spot_matrices):
+                self._spot_matrices_bytes[i * 64 : (i + 1) * 64] = mat.tobytes()
+            self._u_spot_vp.write(self._spot_matrices_bytes)
+
+        # Upload environment uniforms (provider-owned, internally cached)
+        env.apply_resolve_uniforms(self.resolve_prog)
+        env.apply_sun_direction(self.resolve_prog, true_sun_dir)
+
+        profiler = self.gpu_profiler
+        profiler.begin("Deferred resolve")
+        self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
+        profiler.end()
+
     def render_frame(
         self,
         ecs: EntityManager,
@@ -1564,10 +1721,8 @@ class RenderPipeline:
             self.rc_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
 
-        # ---- PASS 6: Image-Based Lighting & Screen-Space Reflections (SSR) ----
+        # ---- PASS 6: Image-Based Lighting (SSR now runs after the base resolve) ----
         self.ibl_pass.execute(ctx)
-        with profiler.region("SSR"):
-            self.ssr_pass.execute(ctx)
 
         # ---- PASS 6.5: Environment Sky & Atmosphere (provider-owned) ----
         env.render_sky(
@@ -1578,136 +1733,29 @@ class RenderPipeline:
         )
 
         # ---- PASS 7: Consolidated Deferred Resolve ----
-        self.post_process.hdr_fbo.use()
-        self.ctx.viewport = (0, 0, w, h)
-        self.ctx.disable(moderngl.DEPTH_TEST)
-        self.ctx.disable(moderngl.CULL_FACE)
-        self.ctx.disable(moderngl.BLEND)
-
-        # Bind all required texture units
-        self.g_buffer.bind_textures(base_unit=0)  # 0: AlbedoRough, 1: NormalMetal, 2: Depth
-        self.csm.depth_texture.use(location=3)  # 3: ShadowAtlas (raw depth)
-        # 9: ShadowAtlas through a hardware depth-comparison sampler. Same
-        # texture, different sampler state, so the filter gets bilinear PCF for
-        # free while the blocker search keeps raw depth access.
-        self.csm.compare_sampler.use(location=9)
-
-        ao_tex = ctx.resources.get("ao_texture", self.ao_pass.white_fallback)
-        ao_tex.use(location=4)
-
-        ssgi_tex = ctx.resources.get("ssgi_texture", self.ssgi_pass.black_fallback)
-        ssgi_tex.use(location=5)
-
-        self.ibl_pass.lut_tex.use(location=6)
-        self.ibl_pass.env_tex.use(location=7)
-
-        ssr_tex = ctx.resources.get("ssr_texture", self.ssr_pass.black_fallback)
-        ssr_tex.use(location=8)
-
-        env.bind_luts(10, 11)
-        self.spot_shadow_map.depth_texture.use(location=12)
-        self.spot_shadow_map.compare_sampler.use(location=16)
-        self.ibl_pass.irradiance_tex.use(location=13)
-        self.hiz_pass.hiz_texture.use(location=14)
-
-        rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
-        rc_tex.use(location=15)
-
-        # RG32F linear-view-depth bounds hierarchy (debug visualization only).
-        hiz_bounds_tex = ctx.resources.get("hiz_bounds_texture", None)
-        if hiz_bounds_tex is not None:
-            hiz_bounds_tex.use(location=17)
-
-        # Current-frame direct radiance (debug visualization).
-        direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
-        if direct_radiance_tex is not None:
-            direct_radiance_tex.use(location=18)
-
-        # Set resolve uniforms
-        if self._u_shadow_bias is not None:
-            self._u_shadow_bias.value = float(self.config.shadow_bias)
-        if self._u_shadow_normal_bias is not None:
-            self._u_shadow_normal_bias.value = float(getattr(self.config, "shadow_normal_bias", 0.0010))
-        if self._u_shadow_bias_slope is not None:
-            self._u_shadow_bias_slope.value = float(getattr(self.config, "shadow_bias_slope_scale", 2.0))
-        if self._u_shadow_bias_min is not None:
-            self._u_shadow_bias_min.value = float(getattr(self.config, "shadow_bias_min_scale", 0.5))
-        if self._u_shadow_bias_max is not None:
-            self._u_shadow_bias_max.value = float(getattr(self.config, "shadow_bias_max_scale", 6.0))
-        if self._u_shadow_filter_mode is not None:
-            mode = str(getattr(self.config, "shadow_filter_mode", "PCF")).upper()
-            self._u_shadow_filter_mode.value = {"HARD": 0, "PCF": 1, "PCSS": 2}.get(mode, 1)
-        if self._u_pcf_cascade_limit is not None:
-            self._u_pcf_cascade_limit.value = int(getattr(self.config, "pcf_cascade_limit", 3))
-        if self._u_pcf_samples is not None:
-            self._u_pcf_samples.value = int(getattr(self.config, "pcf_samples", 16))
-        if self._u_pcf_radius is not None:
-            self._u_pcf_radius.value = float(getattr(self.config, "pcf_radius", 1.5))
-        if self._u_pcf_falloff is not None:
-            self._u_pcf_falloff.value = float(getattr(self.config, "pcf_falloff", 2.0))
-        if self._u_pcss_cascade_limit is not None:
-            self._u_pcss_cascade_limit.value = int(getattr(self.config, "pcss_cascade_limit", 1))
-        if self._u_pcss_search_samples is not None:
-            self._u_pcss_search_samples.value = int(getattr(self.config, "pcss_search_samples", 16))
-        if self._u_pcss_search_radius is not None:
-            self._u_pcss_search_radius.value = float(getattr(self.config, "pcss_search_radius", 8.0))
-        if self._u_pcss_light_size is not None:
-            self._u_pcss_light_size.value = float(getattr(self.config, "pcss_light_size", 0.02))
-        if self._u_pcss_samples is not None:
-            self._u_pcss_samples.value = int(getattr(self.config, "pcss_samples", 24))
-        if self._u_pcss_falloff is not None:
-            self._u_pcss_falloff.value = float(getattr(self.config, "pcss_falloff", 2.0))
-        if self._u_pcss_max_radius is not None:
-            self._u_pcss_max_radius.value = float(getattr(self.config, "pcss_max_radius", 96.0))
-        if self._u_pcss_closest_weight is not None:
-            self._u_pcss_closest_weight.value = float(getattr(self.config, "pcss_closest_blocker_weight", 1.0))
-        if self._u_cascade_count is not None:
-            self._u_cascade_count.value = self.config.csm_cascades
-        if self._u_cascade_atlas_rect is not None:
-            self._u_cascade_atlas_rect.write(self.csm.cascade_rect_uv_array.tobytes())
-        if self._u_gbuffer_debug is not None:
-            self._u_gbuffer_debug.value = self.config.debug_gbuffer
-        if self._u_hiz_debug_mip is not None:
-            self._u_hiz_debug_mip.value = int(getattr(self.config, "hiz_debug_mip", 0))
-
-        # Set Phase 5 Feature Toggles
-        if self._u_ao_enabled is not None:
-            self._u_ao_enabled.value = 1 if self.config.ao_mode != "OFF" else 0
-
-        gi_enum_val = 0
-        if self.config.gi_mode == "SSGI":
-            gi_enum_val = 1
-        elif self.config.gi_mode == "RADIANCE_CASCADES":
-            gi_enum_val = 4
-        if self._u_gi_enabled is not None:
-            self._u_gi_enabled.value = gi_enum_val
-
-        if self._u_ibl_enabled is not None:
-            self._u_ibl_enabled.value = 1 if self.config.ibl_enabled else 0
-        if self._u_ssr_enabled is not None:
-            self._u_ssr_enabled.value = 1 if self.config.ssr_enabled else 0
-        if self._u_energy_compensation_enabled is not None:
-            self._u_energy_compensation_enabled.value = (
-                1 if getattr(self.config, "energy_compensation_enabled", True) else 0
+        # SSR traces against this frame's depth, so it must sample this
+        # frame's radiance. Resolve once with SSR disabled into the base HDR
+        # target, run SSR against that, then resolve again with SSR enabled.
+        ssr_active = bool(getattr(self.config, "ssr_enabled", False))
+        if ssr_active:
+            self._run_deferred_resolve(
+                ctx, w, h, env, true_sun_dir,
+                target_fbo=self.post_process.base_hdr_fbo,
+                ssr_enabled=False,
             )
-        if self._u_point_light_count is not None:
-            self._u_point_light_count.value = ctx.resources.get("point_light_count", 0)
-        if self._u_spot_light_count is not None:
-            self._u_spot_light_count.value = ctx.resources.get("spot_light_count", 0)
-        if self._u_spot_shadow_enabled is not None:
-            self._u_spot_shadow_enabled.value = 1 if getattr(self.config, "spot_shadows_enabled", True) else 0
-        if self._u_spot_vp is not None:
-            for i, mat in enumerate(self.spot_shadow_map.spot_matrices):
-                self._spot_matrices_bytes[i * 64 : (i + 1) * 64] = mat.tobytes()
-            self._u_spot_vp.write(self._spot_matrices_bytes)
+            ctx.resources["scene_color"] = self.post_process.base_hdr_texture
+            with profiler.region("SSR"):
+                self.ssr_pass.execute(ctx)
+        else:
+            # Still run the pass so it publishes its black fallback and reports
+            # active_backend == "OFF"; its output is not consumed below.
+            self.ssr_pass.execute(ctx)
 
-        # Upload environment uniforms (provider-owned, internally cached)
-        env.apply_resolve_uniforms(self.resolve_prog)
-        env.apply_sun_direction(self.resolve_prog, true_sun_dir)
-
-        profiler.begin("Deferred resolve")
-        self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
-        profiler.end()
+        self._run_deferred_resolve(
+            ctx, w, h, env, true_sun_dir,
+            target_fbo=self.post_process.hdr_fbo,
+            ssr_enabled=ssr_active,
+        )
 
         env.render_clouds(
             hdr_fbo=self.post_process.hdr_fbo,

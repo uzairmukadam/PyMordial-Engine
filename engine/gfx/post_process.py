@@ -18,6 +18,8 @@ class PostProcessPipeline:
         "config",
         "hdr_texture",
         "hdr_fbo",
+        "base_hdr_texture",
+        "base_hdr_fbo",
         "final_texture",
         "final_fbo",
         "program",
@@ -115,6 +117,16 @@ class PostProcessPipeline:
         self.hdr_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
         self.hdr_fbo = self.ctx.framebuffer(color_attachments=[self.hdr_texture])
 
+        # Current-frame base HDR resolve WITHOUT screen-space reflections.
+        # SSR traces against this frame's depth but must sample this frame's
+        # radiance, so the pipeline resolves once into this target with SSR
+        # disabled, runs SSR against it, then resolves again into hdr_texture
+        # with SSR enabled. Same format and dimensions as hdr_texture so the
+        # two resolves are interchangeable.
+        self.base_hdr_texture = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.base_hdr_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.base_hdr_fbo = self.ctx.framebuffer(color_attachments=[self.base_hdr_texture])
+
         # Final Resolved Texture (Passed to screen or ImGui Viewport texture handle)
         self.final_texture = self.ctx.texture((self.width, self.height), 4, dtype="f1")
         self.final_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -138,6 +150,12 @@ class PostProcessPipeline:
         if self.hdr_texture is not None:
             self.hdr_texture.release()
             self.hdr_texture = None
+        if self.base_hdr_fbo is not None:
+            self.base_hdr_fbo.release()
+            self.base_hdr_fbo = None
+        if self.base_hdr_texture is not None:
+            self.base_hdr_texture.release()
+            self.base_hdr_texture = None
 
     def resize(self, new_width: int, new_height: int) -> None:
         if new_width <= 0 or new_height <= 0:
