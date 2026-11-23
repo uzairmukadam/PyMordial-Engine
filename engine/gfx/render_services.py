@@ -1,4 +1,4 @@
-"""Stable Renderer Surface Exposed to Render Feature Modules.
+﻿"""Stable Renderer Surface Exposed to Render Feature Modules.
 
 A render feature must never reach into ``RenderPipeline`` internals. This module
 defines the narrow, documented surface a feature may use: the GL context, the
@@ -36,7 +36,7 @@ RESERVED_TEXTURE_UNITS: dict[int, str] = {
     12: "u_SpotShadowAtlas",
     13: "u_IrradianceMap",
     14: "u_HiZTexture",
-    15: "u_RCTexture",
+    15: "u_RMGITexture",
 }
 
 # Texture units a render feature may claim.

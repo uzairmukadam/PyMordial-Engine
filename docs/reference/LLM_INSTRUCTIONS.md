@@ -112,8 +112,8 @@ Python's garbage collector pauses cause severe frame drops and stutter. Adhere s
 
 Avoid common hallucinated imports:
 - **Application & Host**: `from engine.app.project_app import ProjectApp` and `from engine.app.config import ProjectConfig`.
-- **Quality Presets & GI Modes**: `from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, GIMode, get_quality_preset` (NOT `engine.config`). `GIMode` enum values: `OFF`, `IBL`, `SSGI`, `RADIANCE_CASCADES`.
-- **Radiance Cascades Pass**: `from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass`.
+- **Quality Presets & GI Modes**: `from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, GIMode, get_quality_preset` (NOT `engine.config`). `GIMode` enum values: `OFF`, `IBL`, `SSGI`, `RMGI`.
+- **Ray-Marched Global Illumination Pass**: `from engine.gfx.passes.rmgi_pass import RMGIPass`.
 - **Render Context & Window**: `from engine.gfx.context import RenderContext` and `from engine.window.window import WindowMode, VSyncMode`.
 - **Material Flags & Displacement**: `from engine.gfx.texture_atlas import DisplacementMode, encode_mat_flags, decode_material_folder`.
 - **Cameras**: `from engine.camera.follow_camera import FollowCamera, FollowCameraConfig` and `from engine.camera.free_camera import FreeFlyCamera`.
@@ -161,9 +161,9 @@ Avoid common hallucinated imports:
 ## Rule 10: Global Illumination Pipeline Architecture
 
 1. **GI Modes are Mutually Exclusive**:
-   - The engine supports four GI modes via `RenderConfig.gi_mode` (string values from `GIMode` enum): `OFF`, `IBL`, `SSGI`, and `RADIANCE_CASCADES` (SSRC + FFPC).
-   - `RADIANCE_CASCADES` and the classic `SSGI` path are **mutually exclusive** in the render pipeline (Pass 5). Only one GI path executes per frame.
-2. **Radiance Cascades Texture Binding**:
-   - `RadianceCascadesPass` outputs to `u_RCTexture` bound at texture location **15** in `deferred_resolve.frag`. Do not reassign this binding slot.
+   - The engine supports four GI modes via `RenderConfig.gi_mode` (string values from `GIMode` enum): `OFF`, `IBL`, `SSGI`, and `RMGI` (SSRC + FFPC).
+   - `RMGI` and the classic `SSGI` path are **mutually exclusive** in the render pipeline (Pass 5). Only one GI path executes per frame.
+2. **Ray-Marched Global Illumination Texture Binding**:
+   - `RMGIPass` outputs to `u_RMGITexture` bound at texture location **15** in `deferred_resolve.frag`. Do not reassign this binding slot.
 3. **EngineTweaks RC Parameters**:
-   - Radiance Cascades tuning parameters (`rc_cascade_count`, `rc_rays_per_probe`, `rc_interval_length`, `rc_intensity`, `rc_temporal_blend`) are registered in `EngineTweaks.__slots__` and serialized. Any new RC parameters must follow this pattern.
+   - Ray-Marched Global Illumination tuning parameters (`rc_cascade_count`, `rc_rays_per_probe`, `rc_interval_length`, `rmgi_intensity`, `rmgi_temporal_blend`) are registered in `EngineTweaks.__slots__` and serialized. Any new RC parameters must follow this pattern.

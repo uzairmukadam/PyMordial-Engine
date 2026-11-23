@@ -1,4 +1,4 @@
-"""Explore five compact connected water chambers with skylight and colored GI."""
+﻿"""Explore five compact connected water chambers with skylight and colored GI."""
 
 from __future__ import annotations
 
@@ -141,7 +141,7 @@ def build_scene(app) -> None:
     app.pipeline.load_materials("assets/materials", resolution=2048)
 
     config = app.pipeline.config
-    config.gi_mode = "RADIANCE_CASCADES"
+    config.gi_mode = "RMGI"
     config.ao_mode = "GTAO"
     config.ssr_enabled = True
     config.ssr_resolution_scale = 1.0

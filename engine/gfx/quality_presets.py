@@ -1,4 +1,4 @@
-"""AAA-Style Graphics Quality Presets and Tunable Render Settings for PyMordial Engine."""
+﻿"""AAA-Style Graphics Quality Presets and Tunable Render Settings for PyMordial Engine."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class GIMode(str, Enum):
     OFF = "OFF"
     IBL = "IBL"
     SSGI = "SSGI"
-    RADIANCE_CASCADES = "RADIANCE_CASCADES"
+    RMGI = "RMGI"
 
 
 FROXEL_RESOLUTIONS: dict[str, tuple[int, int, int]] = {
@@ -91,8 +91,8 @@ class RenderConfig:
     ao_backend: str = "LEGACY"
     ao_debug_view: int = 0  # 0=final, 1=mip, 2=occupancy, 3=rejected, 4=refined
 
-    # Global Illumination (SSGI vs Radiance Cascades)
-    gi_mode: str = "RADIANCE_CASCADES"  # "OFF", "IBL", "SSGI", "RADIANCE_CASCADES"
+    # Global Illumination (SSGI vs Ray-Marched Global Illumination)
+    gi_mode: str = "RMGI"  # "OFF", "IBL", "SSGI", "RMGI"
     ssgi_steps: int = 16
     ssgi_rays: int = 8
     ssgi_ray_distance: float = 3.0
@@ -111,17 +111,17 @@ class RenderConfig:
     ssgi_debug_view: int = 0  # 0=off, 1=raw, 2=hit UV, 3=hit dist, 4=hit ratio, 5=iters, 6=miss, 7=self, 8=surface
     ssgi_surface_reject: bool = False  # reject hits on the receiver's own surface ID
 
-    # Hybrid Radiance Cascades (SSRC + FFPC)
-    rc_ray_count: int = 16
-    rc_interval_c0: float = 0.40
-    rc_interval_c1: float = 2.50
-    rc_interval_c2: float = 40.0
-    rc_steps_c0: int = 8
-    rc_steps_c1: int = 12
-    rc_thickness: float = 0.15
-    rc_intensity: float = 1.0
-    rc_temporal_blend: float = 0.96
-    rc_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # Ray-Marched Global Illumination (RMGI)
+    rmgi_ray_count: int = 16
+    rmgi_interval_c0: float = 0.40
+    rmgi_interval_c1: float = 2.50
+    rmgi_interval_c2: float = 40.0
+    rmgi_steps_c0: int = 8
+    rmgi_steps_c1: int = 12
+    rmgi_thickness: float = 0.15
+    rmgi_intensity: float = 1.0
+    rmgi_temporal_blend: float = 0.96
+    rmgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
@@ -318,7 +318,7 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         shadow_filter_mode="HARD",
         ao_mode="SSAO",
         gi_mode="OFF",
-        rc_ray_count=8,
+        rmgi_ray_count=8,
         ibl_enabled=True,
         ssr_enabled=False,
         aa_mode="FXAA",
@@ -363,8 +363,8 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         gi_mode="SSGI",
         ssgi_steps=8,
         ssgi_resolution_scale=1.0,
-        rc_ray_count=12,
-        rc_resolution_scale=1.0,
+        rmgi_ray_count=12,
+        rmgi_resolution_scale=1.0,
         ibl_enabled=True,
         ssr_enabled=False,
         ssr_resolution_scale=1.0,
@@ -415,9 +415,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pcss_falloff=2.0,
         pcss_max_radius=96.0,
         ao_mode="GTAO",
-        gi_mode="RADIANCE_CASCADES",
-        rc_ray_count=16,
-        rc_resolution_scale=1.0,
+        gi_mode="RMGI",
+        rmgi_ray_count=16,
+        rmgi_resolution_scale=1.0,
         ssgi_steps=12,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,
@@ -477,9 +477,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pcss_falloff=2.0,
         pcss_max_radius=128.0,
         ao_mode="GTAO",
-        gi_mode="RADIANCE_CASCADES",
-        rc_ray_count=24,
-        rc_resolution_scale=1.0,
+        gi_mode="RMGI",
+        rmgi_ray_count=24,
+        rmgi_resolution_scale=1.0,
         ssgi_steps=16,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,
@@ -539,9 +539,9 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         pcss_falloff=2.0,
         pcss_max_radius=160.0,
         ao_mode="GTAO",
-        gi_mode="RADIANCE_CASCADES",
-        rc_ray_count=32,
-        rc_resolution_scale=1.0,
+        gi_mode="RMGI",
+        rmgi_ray_count=32,
+        rmgi_resolution_scale=1.0,
         ssgi_steps=24,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,

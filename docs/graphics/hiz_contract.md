@@ -104,7 +104,6 @@ A child is valid when `nearest <= farthest`; empty children are skipped naturall
 |---|---|---|
 | SSR HIZ_BOUNDS (`ssr_hiz.frag` → `TraceHiZ`) | hierarchical ray march | yes |
 | SSGI HIZ_BOUNDS (`ssgi_trace.frag`) | hierarchical ray march | yes |
-| RC CASCADES (`rc_trace_intervals.comp`) | interval tracing | yes |
 | AO HIZ_BOUNDS (`gtao_hiz.frag`) | horizon search | yes |
 | Debug views 17–22 | visualization | yes |
 
@@ -205,7 +204,7 @@ A racy pyramid shows mip-dependent noise that does not match the raw depth.
 `engine/gfx/passes/hiz_pass.py`, `shaders/hiz_copy.comp`, `shaders/hiz_downsample.comp`,
 `shaders/hiz_bounds_copy.comp`, `shaders/hiz_bounds_downsample.comp`,
 `shaders/common/{hiz_bounds,hiz_trace,depth}.glsl`, `shaders/cull_indirect.comp`,
-`shaders/{ssr,ssr_hiz,ssgi,ssgi_trace,gtao_hiz}.frag`, `shaders/rc_trace_intervals.comp`.
+`shaders/{ssr,ssr_hiz,ssgi,ssgi_trace,gtao_hiz}.frag`.
 
 ## 9. Files Changed
 

@@ -7,7 +7,7 @@
 
 ## 1. Executive Summary & Strategic Objectives
 
-PyMordial Engine is a high-performance 3D engine built on **Python 3.11+**, **ModernGL / OpenGL 4.5 Core Profile**, and **Rapier3D**. Its current alpha foundation features Multi-Draw Indirect (MDI) via a unified `MegaBuffer`, zero-allocation contiguous NumPy Structure-of-Arrays (SoA) ECS mirroring directly into OpenGL SSBOs, Reversed-Z floating-point depth, Radiance Cascades, Clustered Forward+ local lighting, and decoupled fixed-timestep physics.
+PyMordial Engine is a high-performance 3D engine built on **Python 3.11+**, **ModernGL / OpenGL 4.5 Core Profile**, and **Rapier3D**. Its current alpha foundation features Multi-Draw Indirect (MDI) via a unified `MegaBuffer`, zero-allocation contiguous NumPy Structure-of-Arrays (SoA) ECS mirroring directly into OpenGL SSBOs, Reversed-Z floating-point depth, Ray-Marched Global Illumination, Clustered Forward+ local lighting, and decoupled fixed-timestep physics.
 
 The purpose of this Master Roadmap is to transition PyMordial Engine from an exploratory **Alpha Base** to a production-grade, highly cohesive **Beta Architecture**:
 1. **Decima Engine Inspiration**: Replicate the core strengths of Guerrilla's Decima Engine (*Horizon Zero Dawn / Forbidden West*, *Death Stranding*)—vast living open worlds, procedural clutter/foliage, seamless LOD, rock-solid frame pacing, and physical atmosphere.
@@ -16,7 +16,7 @@ The purpose of this Master Roadmap is to transition PyMordial Engine from an exp
    - **ModernGL / OpenGL 4.5 Core Profile**: Persistent mapped buffers, compute shaders, SSBOs, and indirect GPU dispatches.
    - **Rapier3D Physics**: Decoupled 60 Hz fixed simulation ticks with interpolation alpha ($\alpha$) for sub-frame visual rendering.
 3. **Multi-Tier Hardware Scalability (The Counterpart Principle)**:
-   - **Target Benchmark (Mid-to-High Systems)**: Stunning AAA visual fidelity (Radiance Cascades, PCSS soft shadows, GTAO, Froxel fog, TAA).
+   - **Target Benchmark (Mid-to-High Systems)**: Stunning AAA visual fidelity (Ray-Marched Global Illumination, PCSS soft shadows, GTAO, Froxel fog, TAA).
    - **Steam Deck & Steam Machine Target (15W TDP, 60 FPS)**: Highly efficient, bandwidth-conscious fallbacks that preserve visual depth at $1280 \times 800$.
    - **Low-End PC & Integrated GPU Fallback**: Clean, artifact-free presentation using lightweight counterparts rather than degraded or broken rendering.
 4. **Decisive System Pruning**: Strip redundant prototypes, unmaintained experiments, and bandwidth-heavy dead weight (HBAO, LPV, SSCS, SMAA 2X/4X) to establish clean, predictable boundaries before building post-beta developer tools and distribution pipelines.
@@ -31,7 +31,7 @@ Rather than stripping low-fidelity features, PyMordial maintains **mathematicall
 ┌────────────────────────────┬─────────────────────────────┬──────────────────────────────┐
 │ High / Ultra Tier (Mid+)   │ Steam Deck / Medium Tier    │ Low-End / Integrated GPU     │
 ├────────────────────────────┼─────────────────────────────┼──────────────────────────────┤
-│ Radiance Cascades (SSRC)   │ SSGI (Half-res, 8 steps)    │ Baked IBL + Split-Sum Env    │
+│ Ray-Marched Global Illumination (RMGI)   │ SSGI (Half-res, 8 steps)    │ Baked IBL + Split-Sum Env    │
 │ GTAO (Full-res, 2 slices)  │ GTAO (Half-res bilateral)   │ SSAO (Fast 8-sample disc)    │
 │ PCSS Variable Penumbra     │ Vogel PCF (16 taps)         │ Hard / 4-tap PCF (2 cascades)│
 │ TAA + CAS Sharpening       │ TAA (Minimal jitter)        │ FXAA (Single-pass edge)      │
@@ -118,7 +118,7 @@ Rather than stripping low-fidelity features, PyMordial maintains **mathematicall
 
 #### 3.2.3 Global Illumination (GI) Consolidation
 * **What to Keep**:
-  - **High/Ultra**: **Radiance Cascades (SSRC + FFPC)**. Multi-interval raymarching with probe cascades for rich, multi-bounce indirect diffuse light.
+  - **High/Ultra**: **Ray-Marched Global Illumination (RMGI)**. Multi-interval raymarching with probe cascades for rich, multi-bounce indirect diffuse light.
   - **Steam Deck / Medium**: **Screen-Space GI (SSGI)** at half-resolution (8 ray steps). Great real-time bounce for on-screen geometry with low arithmetic cost on RDNA2 APUs.
   - **Low-End**: **IBL Split-Sum** with prefiltered environment radiance map. Instant indirect ambient fill at essentially zero GPU compute cost.
 * **What to Remove**:
@@ -228,7 +228,7 @@ Rather than stripping low-fidelity features, PyMordial maintains **mathematicall
 ```
 [SYSTEM]                     [RETAINED FOR PRODUCTION]                      [PRUNED / DEPRECATED]
 Ambient Occlusion     ──>    GTAO (High/Deck) + SSAO (Low)          ──>     HBAO (hbao.frag), SSCS
-Global Illumination   ──>    Radiance Cascades, SSGI, IBL           ──>     3D LPV (lpv_pass.py, lpv_propagate.comp)
+Global Illumination   ──>    Ray-Marched Global Illumination, SSGI, IBL           ──>     3D LPV (lpv_pass.py, lpv_propagate.comp)
 Anti-Aliasing         ──>    TAA (High/Deck) + FXAA (Low)           ──>     SMAA 2X/4X multi-sample buffers
 Shadow Mapping        ──>    PCSS, Vogel PCF, Hard PCF              ──>     SSCS uniforms / raymarching
 Scatter / Clutter     ──>    GPU-Driven Indirect Scatter            ──>     Individual ECS entities for foliage
@@ -249,7 +249,7 @@ PyMordial-Engine/
 │   ├── core/                # EngineLoop, SoA EntityManager, EntityPool, Math utilities
 │   ├── debug/               # Central Profiler, DebugDraw, F1-F3 Subsystem (Dev-only)
 │   ├── gfx/
-│   │   ├── passes/          # GTAO, SSAO, Radiance Cascades, SSGI, Clustered Lights, TAA, Fog
+│   │   ├── passes/          # GTAO, SSAO, Ray-Marched Global Illumination, SSGI, Clustered Lights, TAA, Fog
 │   │   ├── pipeline.py      # Master Render Graph Coordinator
 │   │   ├── mega_buffer.py   # Unified vertex/index allocations & MDI dispatch
 │   │   ├── g_buffer.py      # High-efficiency MRT targets & Reversed-Z depth

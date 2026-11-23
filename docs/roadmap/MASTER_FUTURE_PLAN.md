@@ -34,7 +34,7 @@ Every high-end visual technique has a mathematically sound, lightweight counterp
 
 | Subsystem | High / Ultra Tier (Mid+) | Steam Deck / Medium Tier (15W) | Low-End / Integrated GPU |
 |---|---|---|---|
-| **Global Illumination** | Radiance Cascades (SSRC + FFPC) | SSGI (Half-res, 8 ray steps) | Baked IBL Split-Sum Env Radiance |
+| **Global Illumination** | Ray-Marched Global Illumination (RMGI) | SSGI (Half-res, 8 ray steps) | Baked IBL Split-Sum Env Radiance |
 | **Ambient Occlusion** | GTAO (Full-res, 2 directions) | GTAO (Half-res bilateral blur) | SSAO (Fast 8-sample Poisson disc) |
 | **Shadow Filtering** | PCSS Variable Penumbra | Vogel PCF (16 taps) | Hard / 4-tap PCF (2 cascades) |
 | **Anti-Aliasing** | TAA + CAS Sharpening | TAA (Minimal jitter) | FXAA (Single-pass edge) |
@@ -61,9 +61,9 @@ Every high-end visual technique has a mathematically sound, lightweight counterp
   - **Scope**:
     - Remove redundant 3D Light Propagation Volumes (`lpv_pass.py`, `lpv_propagate.comp`) to eliminate VRAM bandwidth leaks.
     - Remove obsolete HBAO (`hbao.frag`) and SSCS uniforms from `RenderPipeline` and `RenderConfig`.
-    - Consolidate `GIMode` into: `OFF`, `IBL`, `SSGI`, `RADIANCE_CASCADES`.
+    - Consolidate `GIMode` into: `OFF`, `IBL`, `SSGI`, `RMGI`.
     - Update `quality_presets.py` to match the Multi-Tier Hardware Matrix.
-  - **Verification Gate**: `pytest tests/test_render_pipeline.py tests/test_radiance_cascades.py` passes; no lingering LPV/HBAO references in `engine/` or `shaders/`.
+  - **Verification Gate**: `pytest tests/test_render_pipeline.py tests/test_rmgi.py` passes; no lingering LPV/HBAO references in `engine/` or `shaders/`.
   - **Notes / Log**: Deleted `engine/gfx/passes/lpv_pass.py` and `shaders/lpv_propagate.comp` (dead code — `LPVPass` was never instantiated and `u_LPVVolume` existed in no shader). Removed `GIMode.LPV`/`GIMode.HYBRID` aliases, `lpv_intensity` from `RenderConfig` and `EngineTweaks`, the `u_LPVVolume` texture unit, the `DebugView.LPV` enum, and HBAO/SSCS docstring references. Updated `examples/06_graphics_benchmark.py` to use `SSGI` instead of the removed `HYBRID`.
   - **Follow-up fix (audit)**: The original claim of "zero hits" was false. `scripts/run_validation.py` and `scripts/run_pom_plane.py` still assigned `EngineTweaks.sscs_*` / `lpv_intensity` (raising `AttributeError` at runtime, since `EngineTweaks` uses `__slots__`) and advertised removed `--ao-mode hbao`, `--gi-mode lpv|hybrid`, and `--gbuffer-debug 9` (LPV) choices. All stale script references, argparse choices, help strings, and the benchmark summary line were purged. `README.md`, `docs/reference/LLM_INSTRUCTIONS.md`, `docs/reference/ENGINE_FEATURES.md`, `docs/roadmap/ANDROID_SUPPORT.md`, and `docs/roadmap/MODULAR_ENGINE_*.md` were updated to the four-mode `GIMode`. `engine/`, `shaders/`, and `scripts/` are now clean of `lpv|hbao|sscs` (only historical `docs/roadmap/PYMORDIAL_UPGRADE_ROADMAP.md` retains them as rationale).
 

@@ -623,7 +623,7 @@ All passes are constructed by `RenderPipeline.__init__` and executed by `render_
 | IBL | `ibl.py` | `execute(ctx)` | BRDF LUT, env map, irradiance | always | `test_energy_brdf.py` |
 | AO | `ao_pass.py` | `execute(ctx)` | AO mask | `ao_mode` | `test_phase5_graphics.py` |
 | SSGI | `ssgi_pass.py` | `execute(ctx)` | GI texture | `gi_mode=="SSGI"` | `test_ssgi_reconstruction.py` |
-| Radiance cascades | `radiance_cascades_pass.py` + `rc_cascade.py` | `execute(ctx)` | irradiance | `gi_mode=="RADIANCE_CASCADES"` | `test_radiance_cascades.py`, `test_rc_cascades.py`, `test_rc_intervals.py` |
+| Radiance cascades | `rmgi_pass.py` + `rc_cascade.py` | `execute(ctx)` | irradiance | `gi_mode=="RMGI"` | `test_rmgi.py`, `test_rmgi_cascades.py`, `test_rc_intervals.py` |
 | SSR | `ssr_pass.py` | `execute(ctx)` | reflections | `ssr_enabled` | `test_phase5_graphics.py` |
 | SSDM | `ssdm_pass.py` | `execute(...)` | RT3 displacement | `ssdm_enabled` | `test_phase5_graphics.py` |
 | Decals | `decal_pass.py` | `execute(ctx, g_buffer)` | HDR | always | `test_phase5_graphics.py` |
@@ -1053,7 +1053,6 @@ not re-exported. This is fine but means there is no single place listing all pas
 | `atmosphere.glsl` | included by `deferred_resolve.frag` |
 | `hillaire_common.glsl` | included by `atmosphere.glsl` and `hillaire_*.frag` |
 | `frame_data.glsl` | included by `camera_optics.frag`, `motion_blur_gather.frag`, `particle_render.*`, `solar_flare.frag` |
-| `rc_direction.glsl` | included by `rc_angular_filter.comp`, `rc_merge_cascades.comp`, `rc_reconstruct.comp`, `rc_trace_intervals.comp` |
 
 These are **not** dead — they are include libraries. No orphaned shader was found.
 
@@ -1075,7 +1074,7 @@ Test files by area:
 | App | `test_horizon1_foundation`, `test_horizon2_manifest`, `test_horizon2_registry`, `test_project_framework_and_packaging`, `test_playground_project`, `test_horizon2_reference_project` |
 | Graphics | `test_render_pipeline`, `test_phase5_graphics`, `test_horizon2_render_graph`, `test_horizon2_golden`, `test_golden` |
 | Shadows | `test_shadow_csm`, `test_csm_stabilization`, `test_horizon2_csm`, `test_spot_lights` |
-| GI/AO/SSR | `test_ssgi_reconstruction`, `test_radiance_cascades`, `test_rc_cascades`, `test_rc_intervals`, `test_hiz_*` (5 files) |
+| GI/AO/SSR | `test_ssgi_reconstruction`, `test_rmgi`, `test_hiz_*` (3 files) |
 | AA/Post | `test_taa`, `test_temporal_pingpong`, `test_aa_stability`, `test_tonemap`, `test_exposure`, `test_blur_common`, `test_motion_blur`, `test_motion_vectors` |
 | Optics | `test_camera_optics`, `test_solar_flare` |
 | Atmosphere | `test_atmosphere`, `test_horizon2_atmosphere_module`, `test_sky_atmosphere_pass`, `test_sun_kinematics` |

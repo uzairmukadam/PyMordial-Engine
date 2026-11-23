@@ -1,7 +1,7 @@
-﻿"""Radiance Cascades Pass for PyMordial Engine.
+﻿"""Ray-Marched Global Illumination (RMGI) Pass for PyMordial Engine.
 
-Per-pixel raymarch + bilateral/temporal merge (``rc_raymarch.comp`` +
-``rc_merge.comp``).
+Per-pixel raymarch + bilateral/temporal merge (``rmgi_raymarch.comp`` +
+``rmgi_merge.comp``).
 """
 
 from __future__ import annotations
@@ -12,15 +12,15 @@ from engine.gfx.render_graph import RenderGraphContext, RenderPass
 from engine.gfx.shader_utils import load_shader
 
 
-class RadianceCascadesPass(RenderPass):
-    """Screen-space radiance cascades (per-pixel raymarch)."""
+class RMGIPass(RenderPass):
+    """Ray-Marched Global Illumination (per-pixel raymarch)."""
 
     __slots__ = (
         "ctx",
         "width",
         "height",
         "resolution_scale",
-        "raw_rc_tex",
+        "raw_rmgi_tex",
         "tex_a",
         "tex_b",
         "_current_filtered",
@@ -52,7 +52,7 @@ class RadianceCascadesPass(RenderPass):
         height: int,
         resolution_scale: float = 1.0,
     ) -> None:
-        super().__init__(name="RadianceCascadesPass", enabled=True)
+        super().__init__(name="RMGIPass", enabled=True)
         self.ctx = ctx
         self.resolution_scale = min(max(float(resolution_scale), 0.25), 1.0)
         self.width = max(int(round(width * self.resolution_scale)), 1)
@@ -60,10 +60,10 @@ class RadianceCascadesPass(RenderPass):
         self._target_res_tuple = (float(self.width), float(self.height))
 
         # 1. RGBA16F intermediate textures at the configured render scale
-        self.raw_rc_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.raw_rc_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.raw_rc_tex.repeat_x = False
-        self.raw_rc_tex.repeat_y = False
+        self.raw_rmgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.raw_rmgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.raw_rmgi_tex.repeat_x = False
+        self.raw_rmgi_tex.repeat_y = False
 
         self.tex_a = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.tex_a.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -82,22 +82,22 @@ class RadianceCascadesPass(RenderPass):
         self.black_fallback = self.ctx.texture((1, 1), 4, data=b"\x00" * 8, dtype="f2")
 
         # 2. Compile Compute Shaders
-        raymarch_src = load_shader("rc_raymarch.comp")
-        merge_src = load_shader("rc_merge.comp")
+        raymarch_src = load_shader("rmgi_raymarch.comp")
+        merge_src = load_shader("rmgi_merge.comp")
 
         self.raymarch_prog = self.ctx.compute_shader(raymarch_src)
         self.merge_prog = self.ctx.compute_shader(merge_src)
 
         # 3. Cache Uniform Handles
         self._u_rm_target_res = self.raymarch_prog.get("u_TargetResolution", None)
-        self._u_rm_interval_c0 = self.raymarch_prog.get("u_RC_IntervalC0", None)
-        self._u_rm_interval_c1 = self.raymarch_prog.get("u_RC_IntervalC1", None)
-        self._u_rm_interval_c2 = self.raymarch_prog.get("u_RC_IntervalC2", None)
-        self._u_rm_ray_count = self.raymarch_prog.get("u_RC_RayCount", None)
-        self._u_rm_steps_c0 = self.raymarch_prog.get("u_RC_StepsC0", None)
-        self._u_rm_steps_c1 = self.raymarch_prog.get("u_RC_StepsC1", None)
-        self._u_rm_thickness = self.raymarch_prog.get("u_RC_Thickness", None)
-        self._u_rm_intensity = self.raymarch_prog.get("u_RC_Intensity", None)
+        self._u_rm_interval_c0 = self.raymarch_prog.get("u_RMGI_IntervalC0", None)
+        self._u_rm_interval_c1 = self.raymarch_prog.get("u_RMGI_IntervalC1", None)
+        self._u_rm_interval_c2 = self.raymarch_prog.get("u_RMGI_IntervalC2", None)
+        self._u_rm_ray_count = self.raymarch_prog.get("u_RMGI_RayCount", None)
+        self._u_rm_steps_c0 = self.raymarch_prog.get("u_RMGI_StepsC0", None)
+        self._u_rm_steps_c1 = self.raymarch_prog.get("u_RMGI_StepsC1", None)
+        self._u_rm_thickness = self.raymarch_prog.get("u_RMGI_Thickness", None)
+        self._u_rm_intensity = self.raymarch_prog.get("u_RMGI_Intensity", None)
 
         self._u_merge_target_res = self.merge_prog.get("u_TargetResolution", None)
         self._u_merge_temporal_blend = self.merge_prog.get("u_TemporalBlend", None)
@@ -122,14 +122,14 @@ class RadianceCascadesPass(RenderPass):
         self.height = new_h
         self._target_res_tuple = (float(self.width), float(self.height))
 
-        self.raw_rc_tex.release()
+        self.raw_rmgi_tex.release()
         self.tex_a.release()
         self.tex_b.release()
 
-        self.raw_rc_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
-        self.raw_rc_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
-        self.raw_rc_tex.repeat_x = False
-        self.raw_rc_tex.repeat_y = False
+        self.raw_rmgi_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.raw_rmgi_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.raw_rmgi_tex.repeat_x = False
+        self.raw_rmgi_tex.repeat_y = False
 
         self.tex_a = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.tex_a.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -154,15 +154,15 @@ class RadianceCascadesPass(RenderPass):
     # ------------------------------------------------------------------
 
     def execute(self, context: RenderGraphContext) -> None:
-        gi_mode = getattr(context.config, "gi_mode", "RADIANCE_CASCADES")
-        if gi_mode != "RADIANCE_CASCADES":
-            context.resources["rc_texture"] = self.black_fallback
+        gi_mode = getattr(context.config, "gi_mode", "RMGI")
+        if gi_mode != "RMGI":
+            context.resources["rmgi_texture"] = self.black_fallback
             self.invalidate_history()
             return
 
         g_buffer = context.resources.get("g_buffer", None)
         if g_buffer is None:
-            context.resources["rc_texture"] = self.black_fallback
+            context.resources["rmgi_texture"] = self.black_fallback
             self.invalidate_history()
             return
 
@@ -174,7 +174,7 @@ class RadianceCascadesPass(RenderPass):
 
     def _execute_legacy(self, context: RenderGraphContext, g_buffer) -> None:
         # 1. Dispatch Stage 1: SSRC + FFPC Interval Raymarching
-        self.raw_rc_tex.bind_to_image(0, read=False, write=True)
+        self.raw_rmgi_tex.bind_to_image(0, read=False, write=True)
 
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
@@ -184,21 +184,21 @@ class RadianceCascadesPass(RenderPass):
         if self._u_rm_target_res is not None:
             self._u_rm_target_res.value = self._target_res_tuple
         if self._u_rm_interval_c0 is not None:
-            self._u_rm_interval_c0.value = float(getattr(context.config, "rc_interval_c0", 0.40))
+            self._u_rm_interval_c0.value = float(getattr(context.config, "rmgi_interval_c0", 0.40))
         if self._u_rm_interval_c1 is not None:
-            self._u_rm_interval_c1.value = float(getattr(context.config, "rc_interval_c1", 2.50))
+            self._u_rm_interval_c1.value = float(getattr(context.config, "rmgi_interval_c1", 2.50))
         if self._u_rm_interval_c2 is not None:
-            self._u_rm_interval_c2.value = float(getattr(context.config, "rc_interval_c2", 40.0))
+            self._u_rm_interval_c2.value = float(getattr(context.config, "rmgi_interval_c2", 40.0))
         if self._u_rm_ray_count is not None:
-            self._u_rm_ray_count.value = max(4, min(32, int(getattr(context.config, "rc_ray_count", 16))))
+            self._u_rm_ray_count.value = max(4, min(32, int(getattr(context.config, "rmgi_ray_count", 16))))
         if self._u_rm_steps_c0 is not None:
-            self._u_rm_steps_c0.value = int(getattr(context.config, "rc_steps_c0", 8))
+            self._u_rm_steps_c0.value = int(getattr(context.config, "rmgi_steps_c0", 8))
         if self._u_rm_steps_c1 is not None:
-            self._u_rm_steps_c1.value = int(getattr(context.config, "rc_steps_c1", 12))
+            self._u_rm_steps_c1.value = int(getattr(context.config, "rmgi_steps_c1", 12))
         if self._u_rm_thickness is not None:
-            self._u_rm_thickness.value = float(getattr(context.config, "rc_thickness", 0.15))
+            self._u_rm_thickness.value = float(getattr(context.config, "rmgi_thickness", 0.15))
         if self._u_rm_intensity is not None:
-            self._u_rm_intensity.value = float(getattr(context.config, "rc_intensity", 1.0))
+            self._u_rm_intensity.value = float(getattr(context.config, "rmgi_intensity", 1.0))
 
         gx = (self.width + 7) // 8
         gy = (self.height + 7) // 8
@@ -207,7 +207,7 @@ class RadianceCascadesPass(RenderPass):
         # 2. Dispatch Stage 2: Bilateral Merge and Temporal History Accumulation
         self._current_filtered.bind_to_image(0, read=False, write=True)
 
-        self.raw_rc_tex.use(location=1)
+        self.raw_rmgi_tex.use(location=1)
         g_buffer.depth_texture.use(location=2)
         g_buffer.normal_metallic_texture.use(location=3)
         self._current_history.use(location=4)
@@ -222,26 +222,26 @@ class RadianceCascadesPass(RenderPass):
         self._first_frame = False
 
         if self._u_merge_temporal_blend is not None:
-            blend_val = float(getattr(context.config, "rc_temporal_blend", 0.96))
+            blend_val = float(getattr(context.config, "rmgi_temporal_blend", 0.96))
             self._u_merge_temporal_blend.value = blend_val
         if self._u_merge_history_valid is not None:
             self._u_merge_history_valid.value = int(history_valid)
         if self._u_merge_prev_view is not None:
             previous_view = context.resources.get("prev_view")
             if previous_view is None:
-                raise RuntimeError("Radiance Cascades requires the previous frame view matrix.")
+                raise RuntimeError("Ray-Marched Global Illumination requires the previous frame view matrix.")
             self._u_merge_prev_view.write(previous_view.tobytes())
 
         self.merge_prog.run(group_x=gx, group_y=gy, group_z=1)
 
         # Publish filtered irradiance texture
-        context.resources["rc_texture"] = self._current_filtered
+        context.resources["rmgi_texture"] = self._current_filtered
 
         # Ping-pong history buffers
         self._current_filtered, self._current_history = self._current_history, self._current_filtered
 
     def destroy(self) -> None:
-        self.raw_rc_tex.release()
+        self.raw_rmgi_tex.release()
         self.tex_a.release()
         self.tex_b.release()
         self.black_fallback.release()

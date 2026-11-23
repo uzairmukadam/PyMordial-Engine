@@ -74,7 +74,7 @@ Official modules are reusable engine capabilities distributed and supported with
 |---|---|---|
 | **Sky and Atmosphere** | Atmospheric scattering, celestial bodies, stars/space backgrounds, and cloud rendering | A useful first extraction candidate; should provide sky lighting data through a renderer contract. |
 | **Water** | Water surfaces, waves, optical settings, reflection/refraction, and foam | Surface creation/configuration should be explicit; avoid hidden global water planes. |
-| **Global Illumination** | Selectable GI implementations such as SSGI and Radiance Cascades | May be one package with selectable strategies or several modules behind a common GI interface. |
+| **Global Illumination** | Selectable GI implementations such as SSGI and Ray-Marched Global Illumination | May be one package with selectable strategies or several modules behind a common GI interface. |
 | **Post-Processing** | Tone mapping, bloom, exposure, color grading, motion blur, depth of field, and related effects | Effects should declare ordering and resource requirements. |
 | **Anti-Aliasing** | TAA, FXAA, and SMAA strategies | Coordinate with motion vectors, temporal history, and render resolution. |
 | **Ambient Occlusion** | GTAO/SSAO and reconstruction/filtering | Can be grouped with GI if the implementation shares substantial infrastructure. |

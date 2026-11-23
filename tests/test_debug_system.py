@@ -1,4 +1,4 @@
-"""Unit tests for the dedicated 3-Tiered Debug System."""
+﻿"""Unit tests for the dedicated 3-Tiered Debug System."""
 
 import time
 
@@ -84,7 +84,7 @@ class TestDebugSystem:
         assert g1 != g0
         assert isinstance(g1, GBufferDebugMode)
         assert GBufferDebugMode.SPOT_LIGHTS == 12
-        assert GBufferDebugMode.RADIANCE_CASCADES == 13
+        assert GBufferDebugMode.RMGI == 13
 
         # Shadow properties
         assert tweaks.shadow_resolution in (1024, 2048, 4096, 8192)
@@ -320,10 +320,10 @@ class TestDebugSystem:
         tweaks.aa_mode = "SMAA_1X"
         tweaks.tonemap_mode = "AgX"
         tweaks.exposure = 1.65
-        tweaks.rc_ray_count = 20
-        tweaks.rc_interval_c2 = 72.0
-        tweaks.rc_steps_c0 = 11
-        tweaks.rc_steps_c1 = 19
+        tweaks.rmgi_ray_count = 20
+        tweaks.rmgi_interval_c2 = 72.0
+        tweaks.rmgi_steps_c0 = 11
+        tweaks.rmgi_steps_c1 = 19
         tweaks.ssr_max_distance = 55.0
         tweaks.sky_mode = "SPACE"
         tweaks.cloud_enabled = False
@@ -352,10 +352,10 @@ class TestDebugSystem:
         assert pipeline.config.aa_mode == "SMAA_1X"
         assert pipeline.config.tonemap_mode == "AgX"
         assert pipeline.config.exposure == 1.65
-        assert pipeline.config.rc_ray_count == 20
-        assert pipeline.config.rc_interval_c2 == 72.0
-        assert pipeline.config.rc_steps_c0 == 11
-        assert pipeline.config.rc_steps_c1 == 19
+        assert pipeline.config.rmgi_ray_count == 20
+        assert pipeline.config.rmgi_interval_c2 == 72.0
+        assert pipeline.config.rmgi_steps_c0 == 11
+        assert pipeline.config.rmgi_steps_c1 == 19
         assert pipeline.config.ssr_max_distance == 55.0
         assert pipeline.config.fxaa_subpixel == 0.55
         assert pipeline.config.fxaa_edge_threshold == 0.08

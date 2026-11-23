@@ -1,4 +1,4 @@
-"""System monitoring, CPU/GPU profiling, and renderer resource diagnostics."""
+﻿"""System monitoring, CPU/GPU profiling, and renderer resource diagnostics."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Repeatable graphics stress scene with live FPS and pipeline mode controls."""
+﻿"""Repeatable graphics stress scene with live FPS and pipeline mode controls."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class BenchmarkOverlay(ProjectModule):
 
     def on_update(self, app, dt: float) -> None:
         if app.input_manager.is_action_pressed("benchmark_next_gi"):
-            modes = ("OFF", "SSGI", "RADIANCE_CASCADES")
+            modes = ("OFF", "SSGI", "RMGI")
             self._gpu_mode = modes[(modes.index(self._gpu_mode) + 1) % len(modes)]
             app.pipeline.config.gi_mode = self._gpu_mode
             app.pipeline.apply_config(app.pipeline.config)
@@ -83,7 +83,7 @@ class BenchmarkOverlay(ProjectModule):
         if event.type != pygame.KEYDOWN:
             return False
         if event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
-            modes = {pygame.K_1: "OFF", pygame.K_2: "SSGI", pygame.K_3: "RADIANCE_CASCADES"}
+            modes = {pygame.K_1: "OFF", pygame.K_2: "SSGI", pygame.K_3: "RMGI"}
             self._gpu_mode = modes[event.key]
             config = app.pipeline.config
             config.gi_mode = self._gpu_mode

@@ -140,7 +140,7 @@ So HARD/PCF/PCSS are not strictly global-exclusive — they are layered by casca
 | RC debug | RC cascades | — | — | n/a |
 
 **⚠ Note**: `gi_mode` is strictly exclusive — `render_frame` branches on exactly one of
-`"RADIANCE_CASCADES"` / `"SSGI"` / else. There is no "both".
+`"RMGI"` / `"SSGI"` / else. There is no "both".
 
 ### 3.8 Reflections
 
@@ -295,7 +295,7 @@ enforced by pass order, not by a guard.
 | TAA history | prev VP, motion vectors | — | — | ghosting |
 | SSGI history | prev view | — | — | ghosting |
 | RC history | prev view | — | — | ghosting |
-| RC cascades temporal | `rc_temporal_enabled` | — | — | **⚠ default False** |
+| RC cascades temporal | `rmgi_temporal_enabled` | — | — | **⚠ default False** |
 | Motion vectors | prev VP, prev transforms | — | — | no blur |
 
 ### 3.24 Culling

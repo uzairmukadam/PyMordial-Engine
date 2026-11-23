@@ -25,7 +25,7 @@ layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light
 layout (binding = 16) uniform sampler2DShadow u_SpotShadowAtlasCmp;
 layout (binding = 13) uniform sampler2D u_IrradianceMap;       // Diffuse environment irradiance
 layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
-layout (binding = 15) uniform sampler2D u_RCTexture;           // Hybrid Radiance Cascades (SSRC + FFPC)
+layout (binding = 15) uniform sampler2D u_RMGITexture;           // Ray-Marched Global Illumination (RMGI)
 // RG32F linear-view-depth bounds hierarchy (R = nearest, G = farthest).
 // Bound to unit 17 so the legacy scalar pyramid on unit 14 stays untouched.
 layout (binding = 17) uniform sampler2D u_HiZBoundsTexture;
@@ -73,7 +73,7 @@ layout (std430, binding = 3) buffer LightBuffer {
 
 // Configurable quality & feature uniforms
 uniform int u_CascadeCount = 4;  // 1 to 4
-uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 8=SSGI, 10=IndirectDiffuse, 11=HiZ, 12=SpotLights, 13=RadianceCascades, 14=CascadeIndex, 15=CascadeCoverage, 17..22=HiZ bounds
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 8=SSGI, 10=IndirectDiffuse, 11=HiZ, 12=SpotLights, 13=RMGI, 14=CascadeIndex, 15=CascadeCoverage, 17..22=HiZ bounds
 uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug == 11 or 17..22
 
 // Hi-Z bounds debug modes (u_GBufferDebug values).
@@ -131,7 +131,7 @@ uniform vec4 u_CascadeAtlasRect[4] = vec4[4](
 
 // Phase 5 Toggles & Settings
 uniform int u_AOEnabled = 1;
-uniform int u_GIEnabled = 4;     // 0=Off/IBL, 1=SSGI, 4=Radiance Cascades (SSRC+FFPC)
+uniform int u_GIEnabled = 4;     // 0=Off/IBL, 1=SSGI, 4=Ray-Marched Global Illumination (RMGI)
 uniform int u_IBLEnabled = 1;
 uniform int u_SSREnabled = 1;
 uniform int u_EnergyCompensationEnabled = 1;
@@ -557,22 +557,22 @@ void main() {
         return;
     }
 
-    // Global Illumination (SSGI vs Radiance Cascades)
+    // Global Illumination (SSGI vs RMGI)
     vec3 indirect_diffuse = vec3(0.0);
     vec4 ssgi_sample = vec4(0.0);
-    vec4 rc_sample = vec4(0.0);
+    vec4 rmgi_sample = vec4(0.0);
 
     if (u_GIEnabled == 4) {
-        // Next-Gen Hybrid Radiance Cascades (SSRC + FFPC)
-        rc_sample = texture(u_RCTexture, v_UV);
-        if (isnan(rc_sample.r) || isnan(rc_sample.g) || isnan(rc_sample.b) ||
-            isinf(rc_sample.r) || isinf(rc_sample.g) || isinf(rc_sample.b)) {
-            rc_sample = vec4(0.0);
+        // Ray-Marched Global Illumination (RMGI)
+        rmgi_sample = texture(u_RMGITexture, v_UV);
+        if (isnan(rmgi_sample.r) || isnan(rmgi_sample.g) || isnan(rmgi_sample.b) ||
+            isinf(rmgi_sample.r) || isinf(rmgi_sample.g) || isinf(rmgi_sample.b)) {
+            rmgi_sample = vec4(0.0);
         }
-        // The CASCADES backend publishes incident diffuse irradiance, so the
+        // RMGI publishes incident diffuse irradiance, so the
         // receiver's Lambertian BRDF (albedo / PI) is applied exactly once here.
-        vec3 rc_diffuse = clamp(rc_sample.rgb, vec3(0.0), vec3(30.0)) * (albedo / PI) * (1.0 - metallic);
-        indirect_diffuse += rc_diffuse;
+        vec3 rmgi_diffuse = clamp(rmgi_sample.rgb, vec3(0.0), vec3(30.0)) * (albedo / PI) * (1.0 - metallic);
+        indirect_diffuse += rmgi_diffuse;
     } else if (u_GIEnabled == 1 || u_GIEnabled == 2 || u_GIEnabled == 3) {
         // SSGI (Screen-Space Near-Field Indirect Diffuse Bounce & Contact Color Bleed)
         ssgi_sample = texture(u_SSGITexture, v_UV);
@@ -592,7 +592,7 @@ void main() {
         out_HDRColor = vec4(indirect_diffuse, 1.0);
         return;
     } else if (u_GBufferDebug == 13) {
-        out_HDRColor = vec4(rc_sample.rgb, 1.0);
+        out_HDRColor = vec4(rmgi_sample.rgb, 1.0);
         return;
     }
 

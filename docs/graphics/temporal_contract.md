@@ -156,7 +156,7 @@ by screen size where they need pixels. **Correct.**
 |---|---|
 | Resize | `taa_pass.resize` resets `frame_idx` |
 | First frame | `_first_frame` flag |
-| GI mode switch | `ssgi_pass.invalidate_history()`, `rc_pass.invalidate_history()` |
+| GI mode switch | `ssgi_pass.invalidate_history()`, `rmgi_pass.invalidate_history()` |
 | Explicit | `invalidate_history()` |
 
 **Correct.**

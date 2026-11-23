@@ -1,4 +1,4 @@
-"""Comprehensive Unit and Integration Tests for Phase 5 High-End Graphics.
+﻿"""Comprehensive Unit and Integration Tests for Phase 5 High-End Graphics.
 
 Covers RenderGraph architecture, IBL split-sum BRDF LUT, GTAO, SSGI,
 Clustered local lights (SSBO 3), SSR, and TAA subpixel jittering.
@@ -147,7 +147,7 @@ class TestGTAOAndBilateralBlur:
         try:
             assert pipeline.ao_pass.raw_ao_tex.size == (320, 240)
             assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
-            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.rmgi_pass.raw_rmgi_tex.size == (320, 240)
             assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
             assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
             assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
@@ -160,25 +160,25 @@ class TestGTAOAndBilateralBlur:
         pipeline = RenderPipeline(render_ctx)
         try:
             pipeline.config.ssgi_resolution_scale = 0.5
-            pipeline.config.rc_resolution_scale = 0.5
+            pipeline.config.rmgi_resolution_scale = 0.5
             pipeline.config.ssr_resolution_scale = 0.5
             pipeline.config.lens_flare_resolution_scale = 0.5
             pipeline.apply_config(pipeline.config)
 
             assert pipeline.ssgi_pass.raw_ssgi_tex.size == (160, 120)
-            assert pipeline.rc_pass.raw_rc_tex.size == (160, 120)
+            assert pipeline.rmgi_pass.raw_rmgi_tex.size == (160, 120)
             assert pipeline.ssr_pass.raw_ssr_tex.size == (160, 120)
             assert pipeline.camera_optics_pass.flare_texture.size == (160, 120)
             assert pipeline.solar_flare_pass.flare_texture.size == (160, 120)
 
             pipeline.config.ssgi_resolution_scale = 1.0
-            pipeline.config.rc_resolution_scale = 1.0
+            pipeline.config.rmgi_resolution_scale = 1.0
             pipeline.config.ssr_resolution_scale = 1.0
             pipeline.config.lens_flare_resolution_scale = 1.0
             pipeline.apply_config(pipeline.config)
 
             assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
-            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.rmgi_pass.raw_rmgi_tex.size == (320, 240)
             assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
             assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
             assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
@@ -191,13 +191,13 @@ class TestGTAOAndBilateralBlur:
         cfg = pipeline.config
         saved = (
             cfg.ssgi_resolution_scale,
-            cfg.rc_resolution_scale,
+            cfg.rmgi_resolution_scale,
             cfg.ssr_resolution_scale,
             cfg.lens_flare_resolution_scale,
         )
         try:
             cfg.ssgi_resolution_scale = 0.5
-            cfg.rc_resolution_scale = 0.5
+            cfg.rmgi_resolution_scale = 0.5
             cfg.ssr_resolution_scale = 0.5
             cfg.lens_flare_resolution_scale = 0.5
             pipeline.apply_config(cfg)
@@ -205,7 +205,7 @@ class TestGTAOAndBilateralBlur:
             pipeline.resize(640, 480)
 
             assert pipeline.ssgi_pass.raw_ssgi_tex.size == (320, 240)
-            assert pipeline.rc_pass.raw_rc_tex.size == (320, 240)
+            assert pipeline.rmgi_pass.raw_rmgi_tex.size == (320, 240)
             assert pipeline.ssr_pass.raw_ssr_tex.size == (320, 240)
             assert pipeline.camera_optics_pass.flare_texture.size == (320, 240)
             assert pipeline.solar_flare_pass.flare_texture.size == (320, 240)
@@ -216,7 +216,7 @@ class TestGTAOAndBilateralBlur:
             # later tests see the defaults they assert on.
             (
                 cfg.ssgi_resolution_scale,
-                cfg.rc_resolution_scale,
+                cfg.rmgi_resolution_scale,
                 cfg.ssr_resolution_scale,
                 cfg.lens_flare_resolution_scale,
             ) = saved
@@ -483,7 +483,7 @@ class TestQualityPresetsAndGIMode:
         assert med.aa_mode == "TAA"
 
         high = get_quality_preset(GraphicsQuality.HIGH)
-        assert high.gi_mode == "RADIANCE_CASCADES"
+        assert high.gi_mode == "RMGI"
         assert high.ao_mode == "GTAO"
         assert high.ssr_enabled is True
         assert high.ssr_resolution_scale == 1.0
@@ -492,14 +492,14 @@ class TestQualityPresetsAndGIMode:
         assert high.aa_mode == "TAA"
 
         ultra = get_quality_preset(GraphicsQuality.ULTRA)
-        assert ultra.gi_mode == "RADIANCE_CASCADES"
+        assert ultra.gi_mode == "RMGI"
         assert ultra.ao_mode == "GTAO"
         assert ultra.ssr_enabled is True
         assert ultra.taa_enabled is True
         assert ultra.aa_mode == "TAA"
 
         cinematic = get_quality_preset(GraphicsQuality.CINEMATIC)
-        assert cinematic.gi_mode == "RADIANCE_CASCADES"
+        assert cinematic.gi_mode == "RMGI"
         assert cinematic.ssgi_steps > ultra.ssgi_steps
         assert cinematic.ssr_steps > ultra.ssr_steps
         assert cinematic.ssr_resolution_scale == 1.0

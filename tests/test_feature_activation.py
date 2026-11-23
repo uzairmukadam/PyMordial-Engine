@@ -1,8 +1,8 @@
-"""Activation tests for graphics feature state (Phase 2.5).
+﻿"""Activation tests for graphics feature state (Phase 2.5).
 
 These are NOT visual-quality tests. Each test requests a feature variant, applies
 the configuration, renders enough frames for initialization, and then asserts that
-the *actual* active state matches the request — or that an explicit fallback was
+the *actual* active state matches the request â€” or that an explicit fallback was
 reported. They exist so a benchmark can prove which backend actually executed.
 """
 
@@ -122,12 +122,12 @@ class TestGIActivation:
         assert state["requested_backend"] == "HIZ_BOUNDS"
         assert state["active_backend"] == "HIZ_BOUNDS" or state["fallback_reason"] is not None
 
-    def test_rc_legacy(self, pipeline, ecs):
-        pipeline.config.gi_mode = "RADIANCE_CASCADES"
+    def test_rmgi(self, pipeline, ecs):
+        pipeline.config.gi_mode = "RMGI"
         pipeline.apply_config(pipeline.config)
         _render_frames(pipeline, ecs)
         state = pipeline.feature_state()["gi"]
-        assert state["active_mode"] == "RADIANCE_CASCADES"
+        assert state["active_mode"] == "RMGI"
 
 
 class TestSSRActivation:

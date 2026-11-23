@@ -1,4 +1,4 @@
-"""Unified Master Render Graph Coordinator for PyMordial Engine.
+﻿"""Unified Master Render Graph Coordinator for PyMordial Engine.
 
 Coordinates the full ModernGL 4.5 MDI geometry pass, Reversed-Z depth, Cascaded Shadow Maps,
 Image-Based Lighting (IBL), GTAO, SSGI, Clustered Local Lighting, SSR, TAA, and Tone-Mapping.
@@ -39,7 +39,7 @@ from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
-from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
+from engine.gfx.passes.rmgi_pass import RMGIPass
 from engine.gfx.passes.smaa_pass import SMAAPass
 from engine.gfx.passes.solar_flare_pass import SolarFlarePass
 from engine.gfx.passes.ssdm_pass import SSDMPass
@@ -99,7 +99,7 @@ class RenderPipeline:
         "ibl_pass",
         "ao_pass",
         "ssgi_pass",
-        "rc_pass",
+        "rmgi_pass",
         "lights_pass",
         "ssr_pass",
         "taa_pass",
@@ -345,11 +345,11 @@ class RenderPipeline:
             h,
             resolution_scale=getattr(self.config, "ssgi_resolution_scale", 1.0),
         )
-        self.rc_pass = RadianceCascadesPass(
+        self.rmgi_pass = RMGIPass(
             self.ctx,
             w,
             h,
-            resolution_scale=getattr(self.config, "rc_resolution_scale", 1.0),
+            resolution_scale=getattr(self.config, "rmgi_resolution_scale", 1.0),
         )
         self.lights_pass = ClusteredLightingPass(
             self.ctx,
@@ -497,7 +497,7 @@ class RenderPipeline:
             "u_SpotShadowAtlas": 12,
             "u_IrradianceMap": 13,
             "u_HiZTexture": 14,
-            "u_RCTexture": 15,
+            "u_RMGITexture": 15,
         }
         for name, unit in tex_uniforms.items():
             if name in self.resolve_prog:
@@ -929,11 +929,11 @@ class RenderPipeline:
                 self.ctx_wrapper.height,
                 getattr(new_config, "ssgi_resolution_scale", 1.0),
             )
-        if self.rc_pass is not None:
-            self.rc_pass.resize(
+        if self.rmgi_pass is not None:
+            self.rmgi_pass.resize(
                 self.ctx_wrapper.width,
                 self.ctx_wrapper.height,
-                getattr(new_config, "rc_resolution_scale", 1.0),
+                getattr(new_config, "rmgi_resolution_scale", 1.0),
             )
         if self.camera_optics_pass is not None:
             self.camera_optics_pass.resize(
@@ -969,10 +969,10 @@ class RenderPipeline:
             height,
             getattr(self.config, "ssgi_resolution_scale", 1.0),
         )
-        self.rc_pass.resize(
+        self.rmgi_pass.resize(
             width,
             height,
-            getattr(self.config, "rc_resolution_scale", 1.0),
+            getattr(self.config, "rmgi_resolution_scale", 1.0),
         )
         self.ssr_pass.resize(
             width,
@@ -1129,7 +1129,7 @@ class RenderPipeline:
         self.ibl_pass.irradiance_tex.use(location=13)
         self.hiz_pass.hiz_texture.use(location=14)
 
-        rc_tex = ctx.resources.get("rc_texture", self.rc_pass.black_fallback)
+        rc_tex = ctx.resources.get("rmgi_texture", self.rmgi_pass.black_fallback)
         rc_tex.use(location=15)
 
         # RG32F linear-view-depth bounds hierarchy (debug visualization only).
@@ -1196,7 +1196,7 @@ class RenderPipeline:
         gi_enum_val = 0
         if self.config.gi_mode == "SSGI":
             gi_enum_val = 1
-        elif self.config.gi_mode == "RADIANCE_CASCADES":
+        elif self.config.gi_mode == "RMGI":
             gi_enum_val = 4
         if self._u_gi_enabled is not None:
             self._u_gi_enabled.value = gi_enum_val
@@ -1701,24 +1701,24 @@ class RenderPipeline:
 
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
-        # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs Radiance Cascades) ----
+        # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs RMGI) ----
         ctx.resources["scene_color"] = (
             getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         )
         ctx.resources["sky_view_lut"] = env.sky_view_lut
-        if self.config.gi_mode == "RADIANCE_CASCADES":
+        if self.config.gi_mode == "RMGI":
             ctx.resources["prev_view"] = self._prev_view_mat
             self.ssgi_pass.invalidate_history()
             with profiler.region("RC total"):
-                self.rc_pass.execute(ctx)
+                self.rmgi_pass.execute(ctx)
         elif self.config.gi_mode == "SSGI":
-            self.rc_pass.invalidate_history()
+            self.rmgi_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
             ctx.resources["prev_jitter"] = self._prev_jitter
             with profiler.region("SSGI total"):
                 self.ssgi_pass.execute(ctx)
         else:
-            self.rc_pass.invalidate_history()
+            self.rmgi_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
 
         # ---- PASS 6: Image-Based Lighting (SSR now runs after the base resolve) ----
@@ -1946,8 +1946,8 @@ class RenderPipeline:
         """
         cfg = self.config
         gi_mode = str(getattr(cfg, "gi_mode", "OFF")).upper()
-        if gi_mode == "RADIANCE_CASCADES":
-            gi_pass = self.rc_pass
+        if gi_mode == "RMGI":
+            gi_pass = self.rmgi_pass
         elif gi_mode == "SSGI":
             gi_pass = self.ssgi_pass
         else:
@@ -1975,7 +1975,7 @@ class RenderPipeline:
                 "resolution_scale": float(
                     getattr(cfg, "ssgi_resolution_scale", 1.0)
                     if gi_mode == "SSGI"
-                    else getattr(cfg, "rc_resolution_scale", 1.0)
+                    else getattr(cfg, "rmgi_resolution_scale", 1.0)
                 ),
             },
             "ao": {
@@ -2026,7 +2026,7 @@ class RenderPipeline:
         self.ibl_pass.destroy()
         self.ao_pass.destroy()
         self.ssgi_pass.destroy()
-        self.rc_pass.destroy()
+        self.rmgi_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
         self.taa_pass.destroy()

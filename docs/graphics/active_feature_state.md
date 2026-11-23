@@ -38,7 +38,7 @@ Implemented on:
 - `AmbientOcclusionPass` — `"SSAO"`, `"LEGACY"`, `"HIZ_BOUNDS"`, `"OFF"`
 - `SSGIPass` — `"LEGACY"`, `"HIZ_BOUNDS"`, `"OFF"`
 - `SSRPass` — `"LEGACY"`, `"HIZ_BOUNDS"`, `"OFF"`
-- `RadianceCascadesPass` — `"LEGACY"`, `"CASCADES"`, `"OFF"`
+- `RMGIPass` — `"LEGACY"`, `"CASCADES"`, `"OFF"`
 
 ### 2.2 Pipeline aggregate
 
@@ -155,7 +155,7 @@ An unknown `aa_mode` falls back to `"OFF"` and sets `pipeline._aa_warning`.
 | GI | `SSGI`/`LEGACY` | `SSGI`/`LEGACY` | `test_ssgi_legacy` |
 | GI | `SSGI`/`HIZ_BOUNDS` | `HIZ_BOUNDS` or fallback | `test_ssgi_hiz_bounds_or_fallback` |
 | GI | `RC`/`LEGACY` | `LEGACY` | `test_rc_legacy` |
-| GI | `RC`/`CASCADES` | `CASCADES` | `test_rc_cascades` |
+| GI | `RC`/`CASCADES` | `CASCADES` | `test_rmgi_cascades` |
 | SSR | `OFF` | `OFF` | `test_ssr_off` |
 | SSR | `LEGACY` | `LEGACY` | `test_ssr_legacy` |
 | SSR | `HIZ_BOUNDS` | `HIZ_BOUNDS` or fallback | `test_ssr_hiz_bounds_or_fallback` |

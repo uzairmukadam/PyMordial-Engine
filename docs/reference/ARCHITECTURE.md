@@ -143,7 +143,7 @@ Resizing only the viewport is a bug: the passes keep their old dimensions, so th
 | 2.8 | Direct radiance | GI source | Current-frame direct diffuse + emissive for SSGI |
 | 3 | Ambient Occlusion | AO mask | GTAO or SSAO per `ao_mode` |
 | 4 | Local lights | HDR | Clustered forward+ evaluation |
-| 5 | **GI (exclusive)** | HDR | `SSGI` **or** `RADIANCE_CASCADES` — never both || 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
+| 5 | **GI (exclusive)** | HDR | `SSGI` **or** `RMGI` — never both || 6 | IBL + SSR | HDR | Split-sum specular, screen-space reflections |
 | 6.5 | Sky & Atmosphere | HDR | Hillaire scattering — provided by the `pymordial.atmosphere` engine module via `EnvironmentProvider` |
 | 7 | Deferred resolve | HDR | Combines all lighting into final radiance |
 | 7.1 | Auto-exposure | 1×1 EV | Log-luminance histogram + temporal adaptation (`auto_exposure_enabled`) |
@@ -161,11 +161,11 @@ Resizing only the viewport is a bug: the passes keep their old dimensions, so th
 - Pass 5 runs exactly one GI path. `gi_mode` selects it; there is no "both".
 - Pass 8 runs exactly one anti-aliasing path. TAA (7.9) and FXAA/SMAA (8) are mutually exclusive.
 - Motion blur (7.95) runs **after** TAA so the temporal filter accumulates a sharp image before the blur is applied once. Running it before TAA double-blurs.
-- `u_RCTexture` is bound at texture unit **15** in `deferred_resolve.frag`. Do not reassign it.
+- `u_RMGITexture` is bound at texture unit **15** in `deferred_resolve.frag`. Do not reassign it.
 - The Hi-Z pyramid is published as `hiz_texture` / `hiz_mip_count` and consumed by SSR (unit 4) and SSGI (unit 4). Both fall back to the depth texture with a mip count of 1 when the pyramid is unavailable, which disables the accelerated path.
 - A second hierarchy, `hiz_bounds_texture` / `hiz_bounds_mip_count`, stores RG32F positive linear-view-depth bounds (R = nearest, G = farthest, empty = nearest > farthest). It is built in the same pass and is currently consumed only by the debug views and the experimental SSR backend. The legacy scalar pyramid is untouched, so existing consumers keep working.
 - Pass 2.8 publishes `direct_radiance_texture`: current-frame directional diffuse (with CSM shadows), clustered point/spot diffuse (with spot shadows) and emissive. It excludes all indirect and specular terms, so SSGI sampling it cannot create a recursive feedback loop through the HDR history.
-- Radiance Cascades uses a per-pixel raymarch (`rc_raymarch.comp`) followed by a bilateral/temporal merge (`rc_merge.comp`). Its published output is incident irradiance, so the resolve applies receiver albedo exactly once.
+- Ray-Marched Global Illumination uses a per-pixel raymarch (`rmgi_raymarch.comp`) followed by a bilateral/temporal merge (`rmgi_merge.comp`). Its published output is incident irradiance, so the resolve applies receiver albedo exactly once.
 - Pass 6.5 is owned by the environment provider. `RenderPipeline` calls `env.render_sky()` /
   `env.render_clouds()` and never reads atmosphere config directly. Disabling
   `ProjectConfig.atmosphere_enabled` swaps in `FlatEnvironment`, which still binds valid LUTs.
@@ -286,7 +286,7 @@ Violating any of these produces silent visual corruption rather than an exceptio
 - [ ] Reversed-Z: depth clear is `0.0`, depth func is `GL_GREATER`, near = 1.0.
 - [ ] Exactly one GI path runs per frame.
 - [ ] Exactly one AA path runs per frame.
-- [ ] `u_RCTexture` stays on texture unit 15.
+- [ ] `u_RMGITexture` stays on texture unit 15.
 - [ ] Vertex stride stays 32 bytes (`VERTEX_DTYPE.itemsize` is asserted at import).
 - [ ] No `list`/`dict`/`set`/`ndarray` allocation inside `on_fixed_update`, `on_update`, `on_render`.
 - [ ] Physics only steps in `on_fixed_update`, never in `on_update`.

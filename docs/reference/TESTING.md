@@ -91,7 +91,7 @@ finally:
 | `test_config_ini_export.py` | INI settings round-trip, section layout, per-project opt-in |
 | `test_shadow_csm.py` | Hard-shadow CSM: cascade distance, atlas layout, fitting stability, removal of filter modes |
 | `test_spot_lights.py` | Spot light packing, shadow matrix, quadrant viewport |
-| `test_radiance_cascades.py` | RC pass wiring and parameters |
+| `test_rmgi.py` | RC pass wiring and parameters |
 | `test_taa.py` | Temporal accumulation, jitter, history invalidation |
 | `test_ecs_memory.py` | SoA layout, free-list recycling, capacity |
 | `test_loop_determinism.py` | Fixed-step accumulator, sub-tick counts |

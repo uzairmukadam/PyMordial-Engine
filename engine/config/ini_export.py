@@ -1,4 +1,4 @@
-"""INI export and import for engine and project configuration.
+﻿"""INI export and import for engine and project configuration.
 
 The engine's debug tweaks are a flat dictionary of primitives. This module turns
 that dictionary into a human-editable ``.ini`` file and back again, so a project
@@ -26,7 +26,7 @@ from typing import Any
 # specific prefixes must come before broader ones.
 SECTION_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("shadows", ("shadow_", "csm_", "pcf_", "pcss_")),
-    ("lighting", ("ao_", "gi_", "ssgi_", "rc_", "ssr_", "ibl_", "spot_", "point_")),
+    ("lighting", ("ao_", "gi_", "ssgi_", "rmgi_", "ssr_", "ibl_", "spot_", "point_")),
     ("antialiasing", ("aa_", "taa_", "fxaa_", "smaa_")),
     ("optics", ("dof_", "motion_blur_", "lens_flare_", "solar_flare_", "chromatic_", "vignette_", "film_grain_")),
     ("postprocess", ("bloom_", "tonemap_", "exposure")),

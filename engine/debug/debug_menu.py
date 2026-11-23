@@ -1,4 +1,4 @@
-"""Native Dear ImGui Debug System for PyMordial Engine.
+﻿"""Native Dear ImGui Debug System for PyMordial Engine.
 
 Provides independent, non-intrusive debug panels:
 - F1: Performance & Resource Profiler (Multi-Style: Compact HUD -> Expanded Profiler -> Closed)
@@ -696,8 +696,8 @@ class DebugMenu:
             if imgui.collapsing_header(
                 "Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value
             ):
-                # GI Mode (OFF, IBL, SSGI, RADIANCE_CASCADES)
-                gi_modes = ["OFF", "IBL", "SSGI", "RADIANCE_CASCADES"]
+                # GI Mode (OFF, IBL, SSGI, RMGI)
+                gi_modes = ["OFF", "IBL", "SSGI", "RMGI"]
                 curr_gi_idx = gi_modes.index(et.gi_mode) if et.gi_mode in gi_modes else 3
                 gi_changed, new_gi_idx = imgui.combo("GI Mode", curr_gi_idx, gi_modes)
                 if gi_changed and new_gi_idx != curr_gi_idx:
@@ -793,71 +793,71 @@ class DebugMenu:
                             et.ssgi_surface_reject = ssgi_sr_val
                             et.mark_custom()
 
-                if et.gi_mode == "RADIANCE_CASCADES":
-                    rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
-                    if rc_ray_count_changed:
-                        et.rc_ray_count = rc_ray_count
+                if et.gi_mode == "RMGI":
+                    rmgi_ray_count_changed, rmgi_ray_count = imgui.slider_int("RMGI Ray Count", et.rmgi_ray_count, 4, 32)
+                    if rmgi_ray_count_changed:
+                        et.rmgi_ray_count = rmgi_ray_count
                         et.mark_custom()
 
-                    rc_in_changed, rc_in_val = imgui.slider_float(
-                        "RC Intensity", getattr(et, "rc_intensity", 1.0), 0.1, 3.0, "%.2f"
+                    rmgi_in_changed, rmgi_in_val = imgui.slider_float(
+                        "RMGI Intensity", getattr(et, "rmgi_intensity", 1.0), 0.1, 3.0, "%.2f"
                     )
-                    if rc_in_changed:
-                        et.rc_intensity = rc_in_val
+                    if rmgi_in_changed:
+                        et.rmgi_intensity = rmgi_in_val
                         et.mark_custom()
 
-                    rc_c0_changed, rc_c0_val = imgui.slider_float(
-                        "RC C0 Range", getattr(et, "rc_interval_c0", 0.40), 0.1, 1.0, "%.2fm"
+                    rmgi_c0_changed, rmgi_c0_val = imgui.slider_float(
+                        "RMGI C0 Range", getattr(et, "rmgi_interval_c0", 0.40), 0.1, 1.0, "%.2fm"
                     )
-                    if rc_c0_changed:
-                        et.rc_interval_c0 = rc_c0_val
+                    if rmgi_c0_changed:
+                        et.rmgi_interval_c0 = rmgi_c0_val
                         et.mark_custom()
 
-                    rc_c1_changed, rc_c1_val = imgui.slider_float(
-                        "RC C1 Range", getattr(et, "rc_interval_c1", 2.50), 1.0, 6.0, "%.1fm"
+                    rmgi_c1_changed, rmgi_c1_val = imgui.slider_float(
+                        "RMGI C1 Range", getattr(et, "rmgi_interval_c1", 2.50), 1.0, 6.0, "%.1fm"
                     )
-                    if rc_c1_changed:
-                        et.rc_interval_c1 = rc_c1_val
+                    if rmgi_c1_changed:
+                        et.rmgi_interval_c1 = rmgi_c1_val
                         et.mark_custom()
 
-                    rc_c2_changed, rc_c2_val = imgui.slider_float("RC C2 Range", et.rc_interval_c2, 6.0, 100.0, "%.1fm")
-                    if rc_c2_changed:
-                        et.rc_interval_c2 = rc_c2_val
+                    rmgi_c2_changed, rmgi_c2_val = imgui.slider_float("RMGI C2 Range", et.rmgi_interval_c2, 6.0, 100.0, "%.1fm")
+                    if rmgi_c2_changed:
+                        et.rmgi_interval_c2 = rmgi_c2_val
                         et.mark_custom()
 
-                    rc_steps_c0_changed, rc_steps_c0 = imgui.slider_int("RC C0 Steps", et.rc_steps_c0, 1, 32)
-                    if rc_steps_c0_changed:
-                        et.rc_steps_c0 = rc_steps_c0
+                    rmgi_steps_c0_changed, rmgi_steps_c0 = imgui.slider_int("RMGI C0 Steps", et.rmgi_steps_c0, 1, 32)
+                    if rmgi_steps_c0_changed:
+                        et.rmgi_steps_c0 = rmgi_steps_c0
                         et.mark_custom()
 
-                    rc_steps_c1_changed, rc_steps_c1 = imgui.slider_int("RC C1 Steps", et.rc_steps_c1, 1, 32)
-                    if rc_steps_c1_changed:
-                        et.rc_steps_c1 = rc_steps_c1
+                    rmgi_steps_c1_changed, rmgi_steps_c1 = imgui.slider_int("RMGI C1 Steps", et.rmgi_steps_c1, 1, 32)
+                    if rmgi_steps_c1_changed:
+                        et.rmgi_steps_c1 = rmgi_steps_c1
                         et.mark_custom()
 
-                    rc_thickness_changed, rc_thickness = imgui.slider_float(
-                        "RC Thickness", et.rc_thickness, 0.01, 1.0, "%.2fm"
+                    rmgi_thickness_changed, rmgi_thickness = imgui.slider_float(
+                        "RMGI Thickness", et.rmgi_thickness, 0.01, 1.0, "%.2fm"
                     )
-                    if rc_thickness_changed:
-                        et.rc_thickness = rc_thickness
+                    if rmgi_thickness_changed:
+                        et.rmgi_thickness = rmgi_thickness
                         et.mark_custom()
 
-                    rc_blend_changed, rc_blend_val = imgui.slider_float(
-                        "RC Temporal Blend", getattr(et, "rc_temporal_blend", 0.96), 0.0, 0.98, "%.2f"
+                    rmgi_blend_changed, rmgi_blend_val = imgui.slider_float(
+                        "RMGI Temporal Blend", getattr(et, "rmgi_temporal_blend", 0.96), 0.0, 0.98, "%.2f"
                     )
-                    if rc_blend_changed:
-                        et.rc_temporal_blend = rc_blend_val
+                    if rmgi_blend_changed:
+                        et.rmgi_temporal_blend = rmgi_blend_val
                         et.mark_custom()
 
-                    rc_res_changed, rc_res_val = imgui.slider_float(
-                        "RC Resolution Scale",
-                        float(getattr(et, "rc_resolution_scale", 1.0)),
+                    rmgi_res_changed, rmgi_res_val = imgui.slider_float(
+                        "RMGI Resolution Scale",
+                        float(getattr(et, "rmgi_resolution_scale", 1.0)),
                         0.25,
                         1.0,
                         "%.2f",
                     )
-                    if rc_res_changed:
-                        et.rc_resolution_scale = rc_res_val
+                    if rmgi_res_changed:
+                        et.rmgi_resolution_scale = rmgi_res_val
                         et.mark_custom()
 
                 # AO Mode (OFF, SSAO, GTAO)
@@ -2122,7 +2122,7 @@ class DebugMenu:
             r = col[0] / 255.0 if col[0] > 1.0 else col[0]
             g = col[1] / 255.0 if col[1] > 1.0 else col[1]
             b = col[2] / 255.0 if col[2] > 1.0 else col[2]
-            imgui.text_colored(imgui.ImVec4(r, g, b, 1.0), f"• {msg}")
+            imgui.text_colored(imgui.ImVec4(r, g, b, 1.0), f"â€¢ {msg}")
         imgui.end()
 
     # --------------------------------------------------------------------------

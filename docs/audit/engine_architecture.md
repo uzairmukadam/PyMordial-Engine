@@ -179,7 +179,7 @@ from actual call sites, not from documentation.
 | 2.7 | Hi-Z | 1498 | always |
 | 2.8 | Direct radiance | 1505 | always |
 | 3 | AO (GTAO/SSAO) | 1509 | always (mode may be OFF) |
-| 5 | GI — `rc_pass` **or** `ssgi_pass` | 1522 / 1527 | `gi_mode == "RADIANCE_CASCADES"` else SSGI |
+| 5 | GI — `rmgi_pass` **or** `ssgi_pass` | 1522 / 1527 | `gi_mode == "RMGI"` else SSGI |
 | 6 | IBL | 1533 | always |
 | 6 | SSR | 1535 | always (internally gated) |
 | 6.5 | `environment.render_sky` / `render_clouds` | 1537 | provider-owned |
@@ -285,7 +285,7 @@ which a project opts into user-editable settings.
 | Atmosphere tuning | `ProjectConfig.atmosphere_settings` | `create_atmosphere_environment` | preset + field overrides |
 | Particles | `ProjectConfig.particles_enabled` | `ProjectApp.__init__` | forces `particle_mode="OFF"` |
 | Debug subsystem | `ProjectConfig.enable_debug` + `headless` | `ProjectApp.__init__` | both required |
-| GI mode | `RenderConfig.gi_mode` | `render_frame` 1518 | `OFF`/`IBL`/`SSGI`/`RADIANCE_CASCADES` |
+| GI mode | `RenderConfig.gi_mode` | `render_frame` 1518 | `OFF`/`IBL`/`SSGI`/`RMGI` |
 | AO mode | `RenderConfig.ao_mode` | `ao_pass` | `OFF`/`SSAO`/`GTAO` |
 | AA mode | `RenderConfig.aa_mode` | `post_process` | `OFF`/`FXAA`/`SMAA` |
 | TAA | `RenderConfig.taa_enabled` | `render_frame` 1763 | independent of `aa_mode` |
@@ -367,7 +367,7 @@ Both are documentation/test drift, not runtime bugs. Recorded here and **not fix
   Shader *bindings* were traced statically, not observed at runtime.
 - `engine/debug/debug_menu.py` (102 KB) and `engine/debug/engine_tweaks.py` (64 KB) were inspected
   at their API surface and specific call sites, not line-by-line.
-- `engine/gfx/passes/radiance_cascades_pass.py` (29 KB) and `rc_cascade.py` were inspected at the
+- `engine/gfx/passes/rmgi_pass.py` (29 KB) and `rc_cascade.py` were inspected at the
   pass-scheduling level only; internal cascade math was not audited.
 - `native/pymordial_rapier/src/lib.rs` (27 KB) was not audited; only its Python-facing
   `PhysicsManager` wrapper was.

@@ -76,7 +76,7 @@ At engine start-up the GL context is examined:
 | Feature | Desktop implementation | Mobile fallback |
 |---|---|---|
 | Multi-draw-indirect | `glMultiDrawElementsIndirect` (single call) | Simple per-object `glDrawElements` loop |
-| Compute-shader GI (SSGI/Radiance Cascades) | Compute shaders | Baked light-map textures (generated offline) |
+| Compute-shader GI (SSGI/Ray-Marched Global Illumination) | Compute shaders | Baked light-map textures (generated offline) |
 | High-resolution cascaded shadow maps | 4 cascades @ 2048px | 1-2 cascades @ 1024px (controlled via `RenderConfig`) |
 | Screen-Space Reflections (SSR) | Full-screen ray-march | Disabled (can be re-enabled manually on powerful devices) |
 
@@ -93,7 +93,7 @@ class RenderConfig:
     max_shadow_cascades: int = 2  # 1-2 cascades are safe on most phones
     shadow_map_resolution: int = 1024  # 1024 px square per cascade
     enable_multi_draw: bool = False  # Use simple draw loop when EXT_multi_draw_indirect missing
-    gi_mode: str = "OFF"  # Options: OFF, IBL, SSGI, RADIANCE_CASCADES – disabled by default
+    gi_mode: str = "OFF"  # Options: OFF, IBL, SSGI, RMGI – disabled by default
     enable_ssr: bool = False  # Turn on only on high-end devices
     # existing fields (e.g., enable_taa, quality_preset) remain unchanged
 ```

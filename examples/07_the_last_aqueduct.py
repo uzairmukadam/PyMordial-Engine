@@ -1,4 +1,4 @@
-"""Explore a detailed cliffside ruin platformer built from level data."""
+﻿"""Explore a detailed cliffside ruin platformer built from level data."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def build_level(app, level_path: Path = LEVEL_PATH) -> dict[str, Any]:
         level = json.load(level_file)
 
     config = app.pipeline.config
-    config.gi_mode = "RADIANCE_CASCADES"
+    config.gi_mode = "RMGI"
     config.ao_mode = "GTAO"
     config.ssr_enabled = True
     config.volumetric_fog_enabled = True

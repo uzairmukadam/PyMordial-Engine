@@ -1,4 +1,4 @@
-"""Unified Master Validation Demo for PyMordial Engine.
+﻿"""Unified Master Validation Demo for PyMordial Engine.
 
 Comprehensive, unified interactive showcase testing all engine subsystems in a single playground scene:
 - Phase 1: High-Performance C-RAM, SIMD Rapier3D physics, sub-frame NLERP, instant PIE snapshot/restore
@@ -312,7 +312,7 @@ def main() -> None:
         "--gbuffer-debug",
         type=int,
         default=0,
-        help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RadianceCascades)",
+        help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RMGI)",
     )
     parser.add_argument(
         "--ao-mode",
@@ -325,8 +325,8 @@ def main() -> None:
         "--gi-mode",
         type=str,
         default="",
-        choices=["", "off", "ibl", "ssgi", "radiance_cascades"],
-        help="GI mode override (off, ibl, ssgi, radiance_cascades)",
+        choices=["", "off", "ibl", "ssgi", "RMGI"],
+        help="GI mode override (off, ibl, ssgi, RMGI)",
     )
     parser.add_argument(
         "--aa-mode",
@@ -392,7 +392,7 @@ def main() -> None:
     render_ctx = RenderContext(
         width=width,
         height=height,
-        title="PyMordial Engine — Master Validation Playground",
+        title="PyMordial Engine â€” Master Validation Playground",
         hidden=args.headless,
         config=get_quality_preset(initial_preset_enum),
     )
@@ -653,7 +653,7 @@ def main() -> None:
         ]
     )
 
-    # E. East Wing — Material & Micro-Geometry Gallery
+    # E. East Wing â€” Material & Micro-Geometry Gallery
     gal_floor = spawn_static_box(
         ecs, physics, (14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1
     )
@@ -704,7 +704,7 @@ def main() -> None:
     ecs.material_data[d_tess, 6] = float(l_tess)
     ecs.material_data[d_tess, 7] = encode_mat_flags(l_tess > 0, DisplacementMode.TESSELLATION)
 
-    # F. West Wing — Gameplay Parkour & Obstacle Zone
+    # F. West Wing â€” Gameplay Parkour & Obstacle Zone
     pk_floor = spawn_static_box(
         ecs, physics, (-14.0, 0.025, -11.0), (12.0, 0.05, 24.0), color=(0.20, 0.22, 0.26), roughness=0.5, metallic=0.1
     )
@@ -738,7 +738,7 @@ def main() -> None:
         ]
     )
 
-    # 3 Slope Testing Ramps (20° Green Walkable, 38° Yellow Medium, 52° Red Sliding)
+    # 3 Slope Testing Ramps (20Â° Green Walkable, 38Â° Yellow Medium, 52Â° Red Sliding)
     q_ramp_20 = make_quat_rot_x(math.radians(-20.0))
     ramp_20 = spawn_static_box(
         ecs,
@@ -1283,7 +1283,7 @@ def main() -> None:
     game_tweaks.add_watch("Camera", "Distance", lambda: f"{cam.current_distance:.1f} m")
 
     toast.show(
-        "PyMordial PAMT Ready — F1 (Perf), F2 (Graphics), F4-F6 (Cameras), F9 (Mouse Grab)",
+        "PyMordial PAMT Ready â€” F1 (Perf), F2 (Graphics), F4-F6 (Cameras), F9 (Mouse Grab)",
         duration=4.5,
         color=(56, 189, 248),
     )

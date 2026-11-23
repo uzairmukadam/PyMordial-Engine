@@ -1,4 +1,4 @@
-"""Tier 2 Debug Subsystem: Engine Graphics, G-Buffer & Pipeline Tweaks.
+﻿"""Tier 2 Debug Subsystem: Engine Graphics, G-Buffer & Pipeline Tweaks.
 
 Provides standardized controls for runtime quality presets, tonemapping operators,
 G-Buffer inspection modes, visual 3D wireframes, and shadow parameters.
@@ -30,7 +30,7 @@ class GBufferDebugMode(IntEnum):
     GI_TOTAL = 10  # Consolidated Total Indirect Diffuse
     HIZ = 11  # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
     SPOT_LIGHTS = 12  # Accumulated dynamic spot-light contribution
-    RADIANCE_CASCADES = 13  # Radiance Cascades indirect diffuse
+    RMGI = 13  # Ray-Marched Global Illumination indirect diffuse
     CASCADE_INDEX = 14  # Selected CSM cascade index (false colour)
     CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
     CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
@@ -99,16 +99,16 @@ class EngineTweaks:
         "ssgi_resolution_scale",
         "ssgi_temporal_enabled",
         "ssgi_temporal_blend",
-        "rc_ray_count",
-        "rc_intensity",
-        "rc_interval_c0",
-        "rc_interval_c1",
-        "rc_interval_c2",
-        "rc_steps_c0",
-        "rc_steps_c1",
-        "rc_thickness",
-        "rc_temporal_blend",
-        "rc_resolution_scale",
+        "rmgi_ray_count",
+        "rmgi_intensity",
+        "rmgi_interval_c0",
+        "rmgi_interval_c1",
+        "rmgi_interval_c2",
+        "rmgi_steps_c0",
+        "rmgi_steps_c1",
+        "rmgi_thickness",
+        "rmgi_temporal_blend",
+        "rmgi_resolution_scale",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
@@ -354,16 +354,16 @@ class EngineTweaks:
         self.ssgi_resolution_scale = 1.0
         self.ssgi_temporal_enabled = True
         self.ssgi_temporal_blend = 0.90
-        self.rc_ray_count = 16
-        self.rc_intensity = 1.0
-        self.rc_interval_c0 = 0.40
-        self.rc_interval_c1 = 2.50
-        self.rc_interval_c2 = 40.0
-        self.rc_steps_c0 = 8
-        self.rc_steps_c1 = 12
-        self.rc_thickness = 0.15
-        self.rc_temporal_blend = 0.96
-        self.rc_resolution_scale = 1.0
+        self.rmgi_ray_count = 16
+        self.rmgi_intensity = 1.0
+        self.rmgi_interval_c0 = 0.40
+        self.rmgi_interval_c1 = 2.50
+        self.rmgi_interval_c2 = 40.0
+        self.rmgi_steps_c0 = 8
+        self.rmgi_steps_c1 = 12
+        self.rmgi_thickness = 0.15
+        self.rmgi_temporal_blend = 0.96
+        self.rmgi_resolution_scale = 1.0
         # Tracing backends. LEGACY preserves the pre-existing implementation;
         # the alternative selects the shared Hi-Z tracer.
         self.ssgi_backend = "LEGACY"
@@ -754,16 +754,16 @@ class EngineTweaks:
             p_cfg.ssgi_resolution_scale = float(self.ssgi_resolution_scale)
             p_cfg.ssgi_temporal_enabled = bool(self.ssgi_temporal_enabled)
             p_cfg.ssgi_temporal_blend = float(self.ssgi_temporal_blend)
-            p_cfg.rc_ray_count = int(self.rc_ray_count)
-            p_cfg.rc_intensity = float(self.rc_intensity)
-            p_cfg.rc_interval_c0 = float(self.rc_interval_c0)
-            p_cfg.rc_interval_c1 = float(self.rc_interval_c1)
-            p_cfg.rc_interval_c2 = float(self.rc_interval_c2)
-            p_cfg.rc_steps_c0 = int(self.rc_steps_c0)
-            p_cfg.rc_steps_c1 = int(self.rc_steps_c1)
-            p_cfg.rc_thickness = float(self.rc_thickness)
-            p_cfg.rc_temporal_blend = float(self.rc_temporal_blend)
-            p_cfg.rc_resolution_scale = float(self.rc_resolution_scale)
+            p_cfg.rmgi_ray_count = int(self.rmgi_ray_count)
+            p_cfg.rmgi_intensity = float(self.rmgi_intensity)
+            p_cfg.rmgi_interval_c0 = float(self.rmgi_interval_c0)
+            p_cfg.rmgi_interval_c1 = float(self.rmgi_interval_c1)
+            p_cfg.rmgi_interval_c2 = float(self.rmgi_interval_c2)
+            p_cfg.rmgi_steps_c0 = int(self.rmgi_steps_c0)
+            p_cfg.rmgi_steps_c1 = int(self.rmgi_steps_c1)
+            p_cfg.rmgi_thickness = float(self.rmgi_thickness)
+            p_cfg.rmgi_temporal_blend = float(self.rmgi_temporal_blend)
+            p_cfg.rmgi_resolution_scale = float(self.rmgi_resolution_scale)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
@@ -1037,16 +1037,16 @@ class EngineTweaks:
             "ssgi_resolution_scale",
             "ssgi_temporal_enabled",
             "ssgi_temporal_blend",
-            "rc_ray_count",
-            "rc_intensity",
-            "rc_interval_c0",
-            "rc_interval_c1",
-            "rc_interval_c2",
-            "rc_steps_c0",
-            "rc_steps_c1",
-            "rc_thickness",
-            "rc_temporal_blend",
-            "rc_resolution_scale",
+            "rmgi_ray_count",
+            "rmgi_intensity",
+            "rmgi_interval_c0",
+            "rmgi_interval_c1",
+            "rmgi_interval_c2",
+            "rmgi_steps_c0",
+            "rmgi_steps_c1",
+            "rmgi_thickness",
+            "rmgi_temporal_blend",
+            "rmgi_resolution_scale",
             "ao_mode",
             "ao_intensity",
             "ao_radius",
@@ -1264,16 +1264,16 @@ class EngineTweaks:
             "ssgi_resolution_scale": float(self.ssgi_resolution_scale),
             "ssgi_temporal_enabled": bool(self.ssgi_temporal_enabled),
             "ssgi_temporal_blend": float(self.ssgi_temporal_blend),
-            "rc_ray_count": int(self.rc_ray_count),
-            "rc_intensity": float(self.rc_intensity),
-            "rc_interval_c0": float(self.rc_interval_c0),
-            "rc_interval_c1": float(self.rc_interval_c1),
-            "rc_interval_c2": float(self.rc_interval_c2),
-            "rc_steps_c0": int(self.rc_steps_c0),
-            "rc_steps_c1": int(self.rc_steps_c1),
-            "rc_thickness": float(self.rc_thickness),
-            "rc_temporal_blend": float(self.rc_temporal_blend),
-            "rc_resolution_scale": float(self.rc_resolution_scale),
+            "rmgi_ray_count": int(self.rmgi_ray_count),
+            "rmgi_intensity": float(self.rmgi_intensity),
+            "rmgi_interval_c0": float(self.rmgi_interval_c0),
+            "rmgi_interval_c1": float(self.rmgi_interval_c1),
+            "rmgi_interval_c2": float(self.rmgi_interval_c2),
+            "rmgi_steps_c0": int(self.rmgi_steps_c0),
+            "rmgi_steps_c1": int(self.rmgi_steps_c1),
+            "rmgi_thickness": float(self.rmgi_thickness),
+            "rmgi_temporal_blend": float(self.rmgi_temporal_blend),
+            "rmgi_resolution_scale": float(self.rmgi_resolution_scale),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),

@@ -388,7 +388,7 @@ Conservative. **No defect.**
 | F3 | Scalar Hi-Z pyramid missing memory barriers | **P0** | 4, 6 |
 | F4 | Jitter sign inverted in velocity + TAA/SMAA reprojection | **P0** | 5 |
 | F5 | SSDM writes `gl_FragDepth` to an FBO with no depth attachment | P1 | (silent) |
-| F6 | `rc_interval_c0/c1/c2` unused by CASCADES backend | P2 | (documented) |
+| F6 | `rmgi_interval_c0/c1/c2` unused by CASCADES backend | P2 | (documented) |
 | — | AABB transform | EXPECTED | none |
 | — | Depth convention | EXPECTED | none |
 | — | Bounds hierarchy | EXPECTED | none |

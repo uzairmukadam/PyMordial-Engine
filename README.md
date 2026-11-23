@@ -1,4 +1,4 @@
-# PyMordial Engine (v0.1.0 Alpha)
+﻿# PyMordial Engine (v0.1.0 Alpha)
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -12,7 +12,7 @@
 Designed to bridge the gap between high-level Python productivity and AAA-grade visual fidelity, PyMordial combines an expressive component and module lifecycle with a zero-allocation, contiguous data-oriented execution core.
 
 > [!NOTE]
-> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. Its core subsystems—including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and debug suite—are covered by automated unit, integration, and regression tests.
+> **Alpha Status**: PyMordial Engine is currently in active **Alpha (v0.1.0 Alpha)**. Its core subsystemsâ€”including the ModernGL 4.5 deferred rendering pipeline, Rapier3D physics integration, responsive 2D UI canvas scaler, audio engine, asset cooker, and debug suiteâ€”are covered by automated unit, integration, and regression tests.
 
 ---
 
@@ -36,7 +36,7 @@ Designed to bridge the gap between high-level Python productivity and AAA-grade 
 - **Ground Truth Ambient Occlusion (GTAO) & SSAO**: Horizon-based ambient occlusion with bilateral cross-bilateral blur for contact shadows and depth shading.
 - **Screen-Space Reflections (SSR)**: Traces glossy and rough reflections across G-Buffer surfaces with edge fading, roughness blur, and multi-object line-of-sight support for complex scene geometry and water planes.
 - **Screen-Space Global Illumination (SSGI)**: Dynamic indirect diffuse bounces gathered from the G-Buffer.
-- **Radiance Cascades (SSRC + FFPC)**: Screen-Space Radiance Cascades and Far-Field Probe Cascades for high-quality, multi-scale global illumination with interval raymarching and bilateral/temporal resolve. Runtime-switchable via `GIMode` enum (`OFF`, `IBL`, `SSGI`, `RADIANCE_CASCADES`).
+- **Ray-Marched Global Illumination (RMGI)**: Screen-Space Ray-Marched Global Illumination and Far-Field Probe Cascades for high-quality, multi-scale global illumination with interval raymarching and bilateral/temporal resolve. Runtime-switchable via `GIMode` enum (`OFF`, `IBL`, `SSGI`, `RMGI`).
 - **Clustered Forward+ Local Lighting**: 3D screen frustum cluster binning evaluating hundreds of dynamic point and spot lights simultaneously.
 - **Physical Sky & Atmosphere**: Precomputed Rayleigh and Mie atmospheric scattering with ozone absorption and real-time sun/moon solar cycles.
 - **Volumetric Fog & Light Shafts**: 3D Froxel grid integration through anisotropic participating media.
@@ -94,35 +94,35 @@ Designed to bridge the gap between high-level Python productivity and AAA-grade 
 
 ```
 PyMordial-Engine/
-├── engine/                       # Core engine systems (Rendering, Physics, ECS, Audio, VFS)
-│   ├── app/                      # Application host, configuration, and ProjectModule protocol
-│   ├── assets/                   # Asset cooker, formats (.pm_mesh, .pm_tex), and VFS (.pak)
-│   ├── audio/                    # 3D spatialized audio engine and procedural sound synth
-│   ├── camera/                   # Virtual cameras (FollowCamera, FreeCamera, OrbitCamera, Optics)
-│   ├── core/                     # Loop, ECS, contiguous memory tables, input, math
-│   ├── debug/                    # Central debug suite (F1 Profiler, F2 G-Buffer Visualizer, F3 Tweaks)
-│   ├── events/                   # Synchronous event bus and window/input event types
-│   ├── gfx/                      # ModernGL 4.5 MDI pipeline, passes, and shader management
-│   ├── input/                    # Action mapping, device contexts, haptics, rebinding
-│   ├── logging/                  # Thread-safe structured logging with sinks
-│   ├── physics/                  # Rapier3D Rust integration, character motor, raycast vehicle
-│   ├── ui/                       # Native ModernGL 2D SDF UI subsystem & canvas scaler
-│   └── tools/                    # Packager and distribution bundlers
-├── examples/                     # Progressive standalone API examples and showcases
-│   ├── README.md                 # Example list and run instructions
-│   ├── 01_shapes_flycam.py       # Built-in shapes, PBR values, and free camera
-│   ├── 02_physics_player.py     # Rapier bodies and controllable capsule player
-│   ├── 03_water_lighting_lab.py # Water, skylight, local lighting, and GI
-│   └── ...                       # Platformer, menu flow, and graphics benchmark
-├── projects/                     # Standalone game projects directory (git-ignored for user games)
-│   └── shotgun_beat_the_speed/   # Example arcade muscle racer project
-├── shaders/                      # Consolidated GLSL 4.5 core shaders
-├── tests/                        # Unit, integration, and regression test suite
-└── docs/                         # Specifications, guides, and LLM coding instructions
-    ├── DEVELOPER_GUIDE.md        # Architecture overview and developer workflows
-    ├── ENGINE_FEATURES.md        # Technical subsystem specification
-    ├── LLM_INSTRUCTIONS.md       # AI agent pair programming rules and constraints
-    └── UI_AND_STATE_MANAGEMENT.md # UI system, widgets, and state machine guide
+â”œâ”€â”€ engine/                       # Core engine systems (Rendering, Physics, ECS, Audio, VFS)
+â”‚   â”œâ”€â”€ app/                      # Application host, configuration, and ProjectModule protocol
+â”‚   â”œâ”€â”€ assets/                   # Asset cooker, formats (.pm_mesh, .pm_tex), and VFS (.pak)
+â”‚   â”œâ”€â”€ audio/                    # 3D spatialized audio engine and procedural sound synth
+â”‚   â”œâ”€â”€ camera/                   # Virtual cameras (FollowCamera, FreeCamera, OrbitCamera, Optics)
+â”‚   â”œâ”€â”€ core/                     # Loop, ECS, contiguous memory tables, input, math
+â”‚   â”œâ”€â”€ debug/                    # Central debug suite (F1 Profiler, F2 G-Buffer Visualizer, F3 Tweaks)
+â”‚   â”œâ”€â”€ events/                   # Synchronous event bus and window/input event types
+â”‚   â”œâ”€â”€ gfx/                      # ModernGL 4.5 MDI pipeline, passes, and shader management
+â”‚   â”œâ”€â”€ input/                    # Action mapping, device contexts, haptics, rebinding
+â”‚   â”œâ”€â”€ logging/                  # Thread-safe structured logging with sinks
+â”‚   â”œâ”€â”€ physics/                  # Rapier3D Rust integration, character motor, raycast vehicle
+â”‚   â”œâ”€â”€ ui/                       # Native ModernGL 2D SDF UI subsystem & canvas scaler
+â”‚   â””â”€â”€ tools/                    # Packager and distribution bundlers
+â”œâ”€â”€ examples/                     # Progressive standalone API examples and showcases
+â”‚   â”œâ”€â”€ README.md                 # Example list and run instructions
+â”‚   â”œâ”€â”€ 01_shapes_flycam.py       # Built-in shapes, PBR values, and free camera
+â”‚   â”œâ”€â”€ 02_physics_player.py     # Rapier bodies and controllable capsule player
+â”‚   â”œâ”€â”€ 03_water_lighting_lab.py # Water, skylight, local lighting, and GI
+â”‚   â””â”€â”€ ...                       # Platformer, menu flow, and graphics benchmark
+â”œâ”€â”€ projects/                     # Standalone game projects directory (git-ignored for user games)
+â”‚   â””â”€â”€ shotgun_beat_the_speed/   # Example arcade muscle racer project
+â”œâ”€â”€ shaders/                      # Consolidated GLSL 4.5 core shaders
+â”œâ”€â”€ tests/                        # Unit, integration, and regression test suite
+â””â”€â”€ docs/                         # Specifications, guides, and LLM coding instructions
+    â”œâ”€â”€ DEVELOPER_GUIDE.md        # Architecture overview and developer workflows
+    â”œâ”€â”€ ENGINE_FEATURES.md        # Technical subsystem specification
+    â”œâ”€â”€ LLM_INSTRUCTIONS.md       # AI agent pair programming rules and constraints
+    â””â”€â”€ UI_AND_STATE_MANAGEMENT.md # UI system, widgets, and state machine guide
 ```
 
 ---
@@ -194,12 +194,12 @@ Game projects in PyMordial are completely decoupled from the core engine:
 
 ```
 projects/my_game/
-├── config.py             # Project configuration (title, resolution, presets)
-├── modules/              # Reusable game features (weapons, abilities, AI)
-│   └── nitro.py
-├── world/                # Level builders & geometry generators
-│   └── level.py
-└── main.py               # Game entry point
+â”œâ”€â”€ config.py             # Project configuration (title, resolution, presets)
+â”œâ”€â”€ modules/              # Reusable game features (weapons, abilities, AI)
+â”‚   â””â”€â”€ nitro.py
+â”œâ”€â”€ world/                # Level builders & geometry generators
+â”‚   â””â”€â”€ level.py
+â””â”€â”€ main.py               # Game entry point
 ```
 
 ### 1. Define `config.py`
@@ -301,20 +301,20 @@ python -m pytest tests/test_examples.py
 
 ## Documentation Links
 
-Start at the [documentation hub](docs/README.md) — it routes you by what you are trying to do.
+Start at the [documentation hub](docs/README.md) â€” it routes you by what you are trying to do.
 
 **Building a game**
-- [docs/guides/DEVELOPER_GUIDE.md](docs/guides/DEVELOPER_GUIDE.md) — Projects, modules, worlds, and packaging.
-- [docs/guides/UI_AND_STATE_MANAGEMENT.md](docs/guides/UI_AND_STATE_MANAGEMENT.md) — ModernGL 2D UI widgets, canvas scaler, and `GameStateManager`.
+- [docs/guides/DEVELOPER_GUIDE.md](docs/guides/DEVELOPER_GUIDE.md) â€” Projects, modules, worlds, and packaging.
+- [docs/guides/UI_AND_STATE_MANAGEMENT.md](docs/guides/UI_AND_STATE_MANAGEMENT.md) â€” ModernGL 2D UI widgets, canvas scaler, and `GameStateManager`.
 
 **Working on the engine**
-- [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) — Layer boundaries, per-frame data flow, render pass order, and invariants.
-- [docs/reference/ENGINE_FEATURES.md](docs/reference/ENGINE_FEATURES.md) — Full technical specifications for all rendering, physics, and ECS subsystems.
-- [docs/reference/TESTING.md](docs/reference/TESTING.md) — Test layout, headless GL testing, and conventions.
-- [docs/reference/LLM_INSTRUCTIONS.md](docs/reference/LLM_INSTRUCTIONS.md) — Strict architectural, zero-allocation, and pair programming rules for AI agents.
+- [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) â€” Layer boundaries, per-frame data flow, render pass order, and invariants.
+- [docs/reference/ENGINE_FEATURES.md](docs/reference/ENGINE_FEATURES.md) â€” Full technical specifications for all rendering, physics, and ECS subsystems.
+- [docs/reference/TESTING.md](docs/reference/TESTING.md) â€” Test layout, headless GL testing, and conventions.
+- [docs/reference/LLM_INSTRUCTIONS.md](docs/reference/LLM_INSTRUCTIONS.md) â€” Strict architectural, zero-allocation, and pair programming rules for AI agents.
 
 **Future plans**
-- [docs/roadmap/](docs/roadmap/) — Horizon tracker, modular architecture, world streaming, and platform proposals. Nothing here describes current behaviour unless its status banner says so.
+- [docs/roadmap/](docs/roadmap/) â€” Horizon tracker, modular architecture, world streaming, and platform proposals. Nothing here describes current behaviour unless its status banner says so.
 
 ---
 

@@ -22,7 +22,7 @@
 > **Phase 2.5 update**: several Phase 2 classifications were corrected after independent
 > re-confirmation. See [configuration_audit.md](./configuration_audit.md) §3. In particular
 > `ssr_mode` and `ssr_debug_view` **are** consumed (now exposed in F2), `motion_blur_samples` is now
-> consumed, `u_SunAngularRadius` is **not** dead, and `rc_cascades` was removed. Backend fallbacks
+> consumed, `u_SunAngularRadius` is **not** dead, and `rmgi_cascades` was removed. Backend fallbacks
 > are now observable via `RenderPipeline.feature_state()`.
 
 ---
@@ -444,7 +444,7 @@ deferred/forward hybrid switch.
 | Test scene | S5 |
 | Camera | any |
 | Expected | IBL ambient only, no SSGI/RC |
-| Known artifacts | **`"IBL"` is not a distinct branch.** `render_frame` only branches on `"RADIANCE_CASCADES"` and `"SSGI"`; everything else (including `"IBL"` and `"OFF"`) falls to the `else` that invalidates both GI histories. `u_GIEnabled` is set to 0 for both. IBL itself is controlled independently by `ibl_enabled`. So `gi_mode="IBL"` ≡ `gi_mode="OFF"` for GI purposes. |
+| Known artifacts | **`"IBL"` is not a distinct branch.** `render_frame` only branches on `"RMGI"` and `"SSGI"`; everything else (including `"IBL"` and `"OFF"`) falls to the `else` that invalidates both GI histories. `u_GIEnabled` is set to 0 for both. IBL itself is controlled independently by `ibl_enabled`. So `gi_mode="IBL"` ≡ `gi_mode="OFF"` for GI purposes. |
 | Debug view | GI_TOTAL (10) should be black |
 | Pass/fail | confirm `IBL` and `OFF` produce identical GI (expected: yes) |
 | Perf testable | no |
@@ -704,7 +704,7 @@ deferred/forward hybrid switch.
 | Outputs | `ssgi_resolved` |
 | Temporal | ping-pong history (`ssgi_temporal_enabled`, blend 0.90) |
 | Depends on | direct radiance pass |
-| Excludes | mutually exclusive with Radiance Cascades |
+| Excludes | mutually exclusive with Ray-Marched Global Illumination |
 | Quality params | `ssgi_steps` (16), `ssgi_rays` (8), `ssgi_ray_distance` (3.0), `ssgi_thickness` (0.35), `ssgi_intensity` (1.5), `ssgi_resolution_scale`, `ssgi_temporal_blend` |
 | Intended result | near-field indirect diffuse + color bleed |
 | Test scene | S1 (indoor color bleed), S8 |
@@ -762,61 +762,61 @@ deferred/forward hybrid switch.
 | Perf testable | no |
 | **Note** | In `EngineTweaks`, **not in `DebugMenu`** (0 hits). Config-only. |
 
-### 7.4 Radiance Cascades — legacy backend
+### 7.4 Ray-Marched Global Illumination — legacy backend
 | Field | Value |
 |---|---|
-| Variant | `gi_mode="RADIANCE_CASCADES"`, `rc_backend="LEGACY"` (default) |
+| Variant | `gi_mode="RMGI"`, `rmgi_backend="LEGACY"` (default) |
 | Status | **working** |
 | Activation | `RenderConfig.gi_mode`; F2 GI Mode |
-| Python | [radiance_cascades_pass.py:239](../../engine/gfx/passes/radiance_cascades_pass.py:239) |
-| Shaders | `rc_raymarch.comp`, `rc_merge.comp` |
+| Python | [rmgi_pass.py:239](../../engine/gfx/passes/rmgi_pass.py:239) |
+| Shaders | `rmgi_raymarch.comp`, `rmgi_merge.comp` |
 | Inputs | G-Buffer, direct radiance |
-| Outputs | `rc_texture` |
-| Temporal | `rc_merge.comp` temporal blend (`rc_temporal_blend` 0.96) |
+| Outputs | `rmgi_texture` |
+| Temporal | `rmgi_merge.comp` temporal blend (`rmgi_temporal_blend` 0.96) |
 | Depends on | direct radiance pass |
 | Excludes | mutually exclusive with SSGI |
-| Quality params | `rc_ray_count` (16), `rc_thickness` (0.15), `rc_intensity` (1.0), `rc_resolution_scale`, `rc_temporal_blend` |
+| Quality params | `rmgi_ray_count` (16), `rmgi_thickness` (0.15), `rmgi_intensity` (1.0), `rmgi_resolution_scale`, `rmgi_temporal_blend` |
 | Intended result | per-pixel raymarched indirect diffuse |
 | Test scene | S1, S8 |
 | Camera | any |
 | Expected | indirect diffuse, no light leaks |
 | Known artifacts | noise; temporal smear |
-| Debug view | RADIANCE_CASCADES (13), GI_TOTAL (10) |
+| Debug view | RMGI (13), GI_TOTAL (10) |
 | Pass/fail | indirect light present; no leaks through walls |
 | Perf testable | yes |
 
-### 7.5 Radiance Cascades — explicit cascades backend
+### 7.5 Ray-Marched Global Illumination — explicit cascades backend
 | Field | Value |
 |---|---|
-| Variant | `rc_backend="CASCADES"` |
+| Variant | `rmgi_backend="CASCADES"` |
 | Status | **working** |
 | Activation | F2 RC Backend combo |
-| Python | [radiance_cascades_pass.py](../../engine/gfx/passes/radiance_cascades_pass.py), [rc_cascade.py](../../engine/gfx/passes/rc_cascade.py) |
-| Shaders | `rc_trace_intervals.comp`, `rc_merge_cascades.comp`, `rc_reconstruct.comp`, `rc_spatial_filter.comp`, `rc_temporal.comp`, `rc_angular_filter.comp` |
+| Python | [rmgi_pass.py](../../engine/gfx/passes/rmgi_pass.py), [rc_cascade.py](../../engine/gfx/passes/rc_cascade.py) |
+| Shaders | `rmgi_raymarch.comp`, `rmgi_merge.comp` |
 | Inputs | G-Buffer, Hi-Z bounds |
 | Outputs | incident irradiance → resolved |
-| Temporal | `rc_temporal.comp` (`rc_temporal_enabled`, default **False**) |
+| Temporal | `rc_temporal.comp` (`rmgi_temporal_enabled`, default **False**) |
 | Depends on | Hi-Z bounds, `build_cascades` |
 | Excludes | mutually exclusive with SSGI |
-| Quality params | `rc_merge_max_cascade` (2), `rc_angular_filter_enabled` (True), `rc_hiz_max_iterations` (64) |
+| Quality params | `rmgi_merge_max_cascade` (2), `rmgi_angular_filter_enabled` (True), `rmgi_hiz_max_iterations` (64) |
 | Intended result | explicit probe/direction cascades, merged far→near |
 | Test scene | S1, S8 |
 | Camera | any |
 | Expected | smooth indirect irradiance, contact detail |
 | Known artifacts | probe-grid banding; angular filter cost |
-| Debug view | RADIANCE_CASCADES (13) |
+| Debug view | RMGI (13) |
 | Pass/fail | irradiance smooth; contact darkening correct |
 | Perf testable | yes |
-| **Note** | `rc_cascades` config field is **not consumed** — cascade intervals are hardcoded `(0–6, 6–20, 20–40)` m with spacings `(4, 8, 16)` px and directions `(64, 64, 256)`. **Phase 2.5: the dead field was removed.** |
+| **Note** | `rmgi_cascades` config field is **not consumed** — cascade intervals are hardcoded `(0–6, 6–20, 20–40)` m with spacings `(4, 8, 16)` px and directions `(64, 64, 256)`. **Phase 2.5: the dead field was removed.** |
 
 ### 7.6 RC debug views
 | Field | Value |
 |---|---|
-| Variant | `rc_debug_view` 0–3, `rc_temporal_debug_view` 0–4 |
+| Variant | `rmgi_debug_view` 0–3, `rmgi_temporal_debug_view` 0–4 |
 | Status | **unreachable** |
-| Activation | `RenderConfig.rc_debug_view` / `rc_temporal_debug_view` only |
-| Python | [radiance_cascades_pass.py](../../engine/gfx/passes/radiance_cascades_pass.py) |
-| Shaders | `rc_reconstruct.comp`, `rc_temporal.comp` |
+| Activation | `RenderConfig.rmgi_debug_view` / `rmgi_temporal_debug_view` only |
+| Python | [rmgi_pass.py](../../engine/gfx/passes/rmgi_pass.py) |
+| Shaders | `rmgi_raymarch.comp`, `rmgi_merge.comp` |
 | Inputs | n/a |
 | Outputs | debug visualization |
 | Temporal | n/a |
@@ -1506,7 +1506,7 @@ bilinearly.
 |---|---|---|---|---|
 | AO scale | `ao_resolution_scale` | 0.25–1.0 | working | F2 |
 | SSGI scale | `ssgi_resolution_scale` | 0.25–1.0 | working | F2 |
-| RC scale | `rc_resolution_scale` | 0.25–1.0 | working | F2 |
+| RC scale | `rmgi_resolution_scale` | 0.25–1.0 | working | F2 |
 | SSR scale | `ssr_resolution_scale` | 0.25–1.0 | working | F2 |
 | Lens flare scale | `lens_flare_resolution_scale` | 0.25–1.0 | working | F2 |
 
@@ -1740,7 +1740,7 @@ by grep. No full-frame render-scale (e.g. 0.75× then upscale) exists.
 
 Modes: `DISABLED(0)`, `ALBEDO(1)`, `NORMALS(2)`, `MATERIAL(3)`, `DEPTH(4)`, `SHADOW_ATLAS(5)`,
 `SHADOW_MASK(6)`, `AO(7)`, `SSGI(8)`, `GI_TOTAL(10)`, `HIZ(11)`, `SPOT_LIGHTS(12)`,
-`RADIANCE_CASCADES(13)`, `CASCADE_INDEX(14)`, `CASCADE_COVERAGE(15)`, `CASCADE_BOUNDS(16)`,
+`RMGI(13)`, `CASCADE_INDEX(14)`, `CASCADE_COVERAGE(15)`, `CASCADE_BOUNDS(16)`,
 `HIZ_BOUNDS_NEAREST(17)`, `HIZ_BOUNDS_FARTHEST(18)`, `HIZ_BOUNDS_SPAN(19)`, `HIZ_BOUNDS_MASK(20)`,
 `HIZ_BOUNDS_INVALID(21)`, `HIZ_BOUNDS_RAW(22)`, `DIRECT_RADIANCE(23)`.
 
@@ -1801,10 +1801,10 @@ Modes: `DISABLED(0)`, `ALBEDO(1)`, `NORMALS(2)`, `MATERIAL(3)`, `DEPTH(4)`, `SHA
 | TAA | ping-pong RGBA16F | working | resize |
 | SSGI temporal | ping-pong + `invalidate_history()` | working | GI mode switch |
 | RC temporal (legacy merge) | history tex | working | GI mode switch |
-| RC temporal (cascades) | history tex | **partially working** — `rc_temporal_enabled` default **False** and not exposed in F2 | GI mode switch |
+| RC temporal (cascades) | history tex | **partially working** — `rmgi_temporal_enabled` default **False** and not exposed in F2 | GI mode switch |
 | Motion vectors | prev VP + prev transforms | working | first frame |
 
-**Confirmed**: `ssgi_pass.invalidate_history()` and `rc_pass.invalidate_history()` are called on
+**Confirmed**: `ssgi_pass.invalidate_history()` and `rmgi_pass.invalidate_history()` are called on
 every GI mode switch, so switching GI does not blend stale history.
 
 ---
@@ -1894,16 +1894,16 @@ every GI mode switch, so switching GI does not blend stale history.
 | `WaypointGraph` | unwired | stub | none | `ProjectApp.waypoint_graph` always None |
 | `CVarRegistry` | unwired | stub | tests only | no runtime consumer |
 | `gi_mode="IBL"` | misleading | partial | F2 | behaves like `OFF` |
-| `rc_cascades` | unused field | **removed** | — | Phase 2.5: dead field deleted |
+| `rmgi_cascades` | unused field | **removed** | — | Phase 2.5: dead field deleted |
 | `motion_blur_samples` | now consumed | working | F2 | Phase 2.5: pass reads it first |
 | `ssr_mode` | now exposed | working | F2 | Phase 2.5: was consumed, now reachable |
 | `ssr_debug_view` | now exposed | working | F2 | Phase 2.5: was consumed, now reachable |
 | `ao_debug_view` | now exposed | working | F2 | Phase 2.5 |
 | `ssgi_debug_view` | now exposed | working | F2 | Phase 2.5 |
-| `rc_debug_view` | now exposed | working | F2 | Phase 2.5 |
-| `rc_temporal_debug_view` | now exposed | working | F2 | Phase 2.5 |
-| `rc_temporal_enabled` | now exposed | working | F2 | Phase 2.5 |
-| `rc_spatial_filter_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `rmgi_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `rmgi_temporal_debug_view` | now exposed | working | F2 | Phase 2.5 |
+| `rmgi_temporal_enabled` | now exposed | working | F2 | Phase 2.5 |
+| `rmgi_spatial_filter_enabled` | now exposed | working | F2 | Phase 2.5 |
 | `ssgi_surface_reject` | now exposed | working | F2 | Phase 2.5 |
 | `energy_compensation_enabled` | now exposed | working | F2 | Phase 2.5 |
 | `specular_aa_enabled` | now exposed | working | F2 | Phase 2.5 |
@@ -1938,7 +1938,7 @@ Static analysis only. No runtime test was executed in this phase (documentation-
 - **Confirmed absent**: mesh LOD, temporal upscaling (FSR/DLSS/TSR), general alpha-blended
   transparent geometry, heightmap terrain.
 - **Confirmed unreachable from UI** (config-only): 12 parameters, listed in §26.
-- **Confirmed unused fields** (no consumer at all): `rc_cascades`, `motion_blur_samples`.
+- **Confirmed unused fields** (no consumer at all): `rmgi_cascades`, `motion_blur_samples`.
 - **Confirmed misleading**: `gi_mode="IBL"` behaves identically to `"OFF"`.
 
 ## 31. Known Limitations

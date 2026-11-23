@@ -1,10 +1,10 @@
-"""Unit and Integration Tests for Next-Gen Hybrid Radiance Cascades (SSRC + FFPC).
+﻿"""Unit and Integration Tests for Ray-Marched Global Illumination (RMGI).
 
 Verifies:
-1. RadianceCascadesPass lifecycle, compute shader compilation, texture allocation, and resize.
+1. RMGIPass lifecycle, compute shader compilation, texture allocation, and resize.
 2. Execution of SSRC interval raymarching with FFPC far-field probe integration.
-3. Strict mutual exclusivity between SSGI and Radiance Cascades (SSRC+FFPC).
-4. Full render pipeline frame pass with G-Buffer debug mode 13 (Radiance Cascades visualization).
+3. Strict mutual exclusivity between SSGI and Ray-Marched Global Illumination (RMGI).
+4. Full render pipeline frame pass with G-Buffer debug mode 13 (RMGI visualization).
 """
 
 import numpy as np
@@ -12,7 +12,7 @@ import pytest
 
 from engine.core.ecs import EntityManager
 from engine.gfx.context import RenderContext
-from engine.gfx.passes.radiance_cascades_pass import RadianceCascadesPass
+from engine.gfx.passes.rmgi_pass import RMGIPass
 from engine.gfx.pipeline import RenderPipeline
 from engine.gfx.quality_presets import GIMode, GraphicsQuality, get_quality_preset
 
@@ -24,37 +24,37 @@ def render_ctx():
     ctx.destroy()
 
 
-class TestRadianceCascadesPass:
+class TestRMGIPass:
     def test_pass_initialization_and_textures(self, render_ctx: RenderContext):
         ctx = render_ctx.ctx
-        rc_pass = RadianceCascadesPass(ctx, width=320, height=240)
+        rmgi_pass = RMGIPass(ctx, width=320, height=240)
 
         # Full resolution by default
-        assert rc_pass.width == 320
-        assert rc_pass.height == 240
-        assert rc_pass.raw_rc_tex.size == (320, 240)
-        assert rc_pass.tex_a.size == (320, 240)
-        assert rc_pass.tex_b.size == (320, 240)
-        assert rc_pass.raw_rc_tex.dtype == "f2"
+        assert rmgi_pass.width == 320
+        assert rmgi_pass.height == 240
+        assert rmgi_pass.raw_rmgi_tex.size == (320, 240)
+        assert rmgi_pass.tex_a.size == (320, 240)
+        assert rmgi_pass.tex_b.size == (320, 240)
+        assert rmgi_pass.raw_rmgi_tex.dtype == "f2"
 
         # Resize test
-        rc_pass.resize(640, 480)
-        assert rc_pass.width == 640
-        assert rc_pass.height == 480
-        assert rc_pass.raw_rc_tex.size == (640, 480)
+        rmgi_pass.resize(640, 480)
+        assert rmgi_pass.width == 640
+        assert rmgi_pass.height == 480
+        assert rmgi_pass.raw_rmgi_tex.size == (640, 480)
 
         # Explicit downscale still honoured
-        rc_pass.resize(640, 480, 0.5)
-        assert rc_pass.width == 320
-        assert rc_pass.height == 240
-        assert rc_pass.raw_rc_tex.size == (320, 240)
+        rmgi_pass.resize(640, 480, 0.5)
+        assert rmgi_pass.width == 320
+        assert rmgi_pass.height == 240
+        assert rmgi_pass.raw_rmgi_tex.size == (320, 240)
 
-        rc_pass.destroy()
+        rmgi_pass.destroy()
 
     def test_pass_execution_in_pipeline(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
-        pipeline.config.gi_mode = GIMode.RADIANCE_CASCADES.value
-        pipeline.config.rc_ray_count = 12
+        pipeline.config.gi_mode = GIMode.RMGI.value
+        pipeline.config.rmgi_ray_count = 12
 
         ecs = EntityManager(max_entities=10)
         # Create floor box
@@ -79,14 +79,14 @@ class TestRadianceCascadesPass:
             time_elapsed=0.1,
             # Pin the sun so the red cube's camera-facing side is lit. Without this
             # the assertion below would depend on the atmosphere's solar arc, which
-            # is a separate concern from radiance-cascade colour bleed.
+            # is a separate concern from RMGI colour bleed.
             sun_dir=(0.3, -0.85, -0.4),
         )
 
         # Verify filtered RC texture has data
-        assert pipeline.rc_pass._u_rm_ray_count.value == 12
-        rc_tex = pipeline.rc_pass._current_history
-        data = rc_tex.read()
+        assert pipeline.rmgi_pass._u_rm_ray_count.value == 12
+        rmgi_tex = pipeline.rmgi_pass._current_history
+        data = rmgi_tex.read()
         assert len(data) == 320 * 240 * 4 * 2  # RGBA16F (2 bytes per component)
         pixel_array = np.frombuffer(data, dtype=np.float16).reshape(240, 320, 4)
         assert np.any(pixel_array > 0.0)
@@ -97,7 +97,7 @@ class TestRadianceCascadesPass:
         assert np.any(surface_ids == 2.0)
 
         raw_frames = [
-            np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
+            np.frombuffer(pipeline.rmgi_pass.raw_rmgi_tex.read(), dtype=np.float16)
             .reshape(240, 320, 4)[..., :3]
             .astype(np.float32)
         ]
@@ -120,12 +120,12 @@ class TestRadianceCascadesPass:
                 time_elapsed=0.1 + frame / 30.0,
             )
             raw_frames.append(
-                np.frombuffer(pipeline.rc_pass.raw_rc_tex.read(), dtype=np.float16)
+                np.frombuffer(pipeline.rmgi_pass.raw_rmgi_tex.read(), dtype=np.float16)
                 .reshape(240, 320, 4)[..., :3]
                 .astype(np.float32)
             )
             filtered_frames.append(
-                np.frombuffer(pipeline.rc_pass._current_history.read(), dtype=np.float16)
+                np.frombuffer(pipeline.rmgi_pass._current_history.read(), dtype=np.float16)
                 .reshape(240, 320, 4)[..., :3]
                 .astype(np.float32)
             )
@@ -134,7 +134,7 @@ class TestRadianceCascadesPass:
         filtered_frame_delta = np.mean(np.abs(filtered_frames[-1] - filtered_frames[-2]))
         assert filtered_frame_delta < raw_frame_delta * 0.5
 
-        # Test debug mode 13 (Radiance Cascades visualization)
+        # Test debug mode 13 (RMGI visualization)
         pipeline.config.debug_gbuffer = 13
         pipeline.render_frame(
             ecs=ecs,
@@ -148,20 +148,20 @@ class TestRadianceCascadesPass:
 
         pipeline.destroy()
 
-    def test_quality_presets_scale_rc_ray_count(self):
-        assert get_quality_preset(GraphicsQuality.LOW).rc_ray_count == 8
-        assert get_quality_preset(GraphicsQuality.MEDIUM).rc_ray_count == 12
-        assert get_quality_preset(GraphicsQuality.HIGH).rc_ray_count == 16
-        assert get_quality_preset(GraphicsQuality.ULTRA).rc_ray_count == 24
-        assert get_quality_preset(GraphicsQuality.CINEMATIC).rc_ray_count == 32
+    def test_quality_presets_scale_rmgi_ray_count(self):
+        assert get_quality_preset(GraphicsQuality.LOW).rmgi_ray_count == 8
+        assert get_quality_preset(GraphicsQuality.MEDIUM).rmgi_ray_count == 12
+        assert get_quality_preset(GraphicsQuality.HIGH).rmgi_ray_count == 16
+        assert get_quality_preset(GraphicsQuality.ULTRA).rmgi_ray_count == 24
+        assert get_quality_preset(GraphicsQuality.CINEMATIC).rmgi_ray_count == 32
 
     def test_mutual_exclusivity(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         ecs = EntityManager(max_entities=5)
         ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.8, 0.4, 0.2))
 
-        # 1. In RADIANCE_CASCADES mode:
-        pipeline.config.gi_mode = GIMode.RADIANCE_CASCADES.value
+        # 1. In RMGI mode:
+        pipeline.config.gi_mode = GIMode.RMGI.value
         pipeline.render_frame(
             ecs=ecs,
             camera_pos=(0.0, 2.0, 4.0),
@@ -169,8 +169,8 @@ class TestRadianceCascadesPass:
             time_elapsed=0.1,
         )
         assert pipeline._u_gi_enabled.value == 4
-        # Verify Radiance Cascades ran
-        assert pipeline.rc_pass._first_frame is False
+        # Verify RMGI ran
+        assert pipeline.rmgi_pass._first_frame is False
 
         # 2. In SSGI mode:
         pipeline.config.gi_mode = GIMode.SSGI.value
@@ -191,6 +191,6 @@ class TestRadianceCascadesPass:
             time_elapsed=0.3,
         )
         assert pipeline._u_gi_enabled.value == 0
-        assert pipeline.rc_pass._first_frame is True
+        assert pipeline.rmgi_pass._first_frame is True
 
         pipeline.destroy()

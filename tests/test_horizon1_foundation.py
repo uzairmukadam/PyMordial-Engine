@@ -1,4 +1,4 @@
-"""Regression tests for Horizon 1 foundation fixes.
+﻿"""Regression tests for Horizon 1 foundation fixes.
 
 Covers the MDI command packing contract, spot-shadow MDI population, the
 RenderConfig shape used by EngineTweaks, and project validation edge cases.
@@ -200,7 +200,7 @@ class TestRenderConfigShape:
         assert second.max_entities != 123
 
     def test_gi_mode_has_no_removed_modes(self):
-        assert {m.value for m in GIMode} == {"OFF", "IBL", "SSGI", "RADIANCE_CASCADES"}
+        assert {m.value for m in GIMode} == {"OFF", "IBL", "SSGI", "RMGI"}
 
     def test_gbuffer_debug_has_no_lpv_slot(self):
         assert 9 not in {int(m) for m in GBufferDebugMode}

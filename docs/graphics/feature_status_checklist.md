@@ -95,9 +95,9 @@
 | GI1 | SSGI legacy | `ssgi_backend="LEGACY"` | working | S1 | | | |
 | GI2 | SSGI Hi-Z | `ssgi_backend="HIZ_BOUNDS"` | working | S1 | | | |
 | GI3 | SSGI debug | `ssgi_debug_view` 1–8 | working (F2) | S1 | | | |
-| GI4 | RC legacy | `rc_backend="LEGACY"` | working | S1 | | | |
-| GI5 | RC cascades | `rc_backend="CASCADES"` | working | S1 | | | |
-| GI6 | RC debug | `rc_debug_view` | working (F2) | S1 | | | |
+| GI4 | RC legacy | `rmgi_backend="LEGACY"` | working | S1 | | | |
+| GI5 | RC cascades | `rmgi_backend="CASCADES"` | working | S1 | | | |
+| GI6 | RC debug | `rmgi_debug_view` | working (F2) | S1 | | | |
 | GI7 | GI backend fallback | `ssgi_backend="HIZ_BOUNDS"` | observable | S1 | | | |
 
 ## 8. Reflections
@@ -175,7 +175,7 @@
 |---|---|---|---|---|---|---|---|
 | RS1 | AO scale | `ao_resolution_scale` | working | S8 | | | |
 | RS2 | SSGI scale | `ssgi_resolution_scale` | working | S1 | | | |
-| RS3 | RC scale | `rc_resolution_scale` | working | S1 | | | |
+| RS3 | RC scale | `rmgi_resolution_scale` | working | S1 | | | |
 | RS4 | SSR scale | `ssr_resolution_scale` | working | S5 | | | |
 | RS5 | Flare scale | `lens_flare_resolution_scale` | working | S6 | | | |
 
@@ -242,7 +242,7 @@
 | DB9 | Debug mode 10 | GI_TOTAL | working | S1 | | | |
 | DB10 | Debug mode 11 | HIZ | working | S1 | | | |
 | DB11 | Debug mode 12 | SPOT_LIGHTS | working | S7 | | | |
-| DB12 | Debug mode 13 | RADIANCE_CASCADES | working | S1 | | | |
+| DB12 | Debug mode 13 | RMGI | working | S1 | | | |
 | DB13 | Debug mode 14 | CASCADE_INDEX | working | S6 | | | |
 | DB14 | Debug mode 15 | CASCADE_COVERAGE | working | S6 | | | |
 | DB15 | Debug mode 16 | CASCADE_BOUNDS | working | S6 | | | |
@@ -263,7 +263,7 @@
 | TP1 | TAA history | ping-pong | working | S4 | | | |
 | TP2 | SSGI history | ping-pong | working | S1 | | | |
 | TP3 | RC history (legacy) | history tex | working | S1 | | | |
-| TP4 | RC cascades temporal | `rc_temporal_enabled` | working (F2) | S1 | | | |
+| TP4 | RC cascades temporal | `rmgi_temporal_enabled` | working (F2) | S1 | | | |
 | TP5 | Motion vectors | prev VP | working | S4 | | | |
 
 ## 25. Culling / LOD
@@ -285,16 +285,16 @@
 | X5 | `VolumetricSettings` | stub | stub | | |
 | X6 | `WaypointGraph` | stub | stub | | |
 | X7 | `CVarRegistry` | stub | stub | | |
-| X8 | `rc_cascades` unused | **removed** | removed | Phase 2.5: dead field deleted |
+| X8 | `rmgi_cascades` unused | **removed** | removed | Phase 2.5: dead field deleted |
 | X9 | `motion_blur_samples` unused | **fixed** | working | Phase 2.5: now consumed |
 | X10 | `ssr_mode` | **exposed** | working | Phase 2.5: F2 "SSR March Mode" |
 | X11 | `ssr_debug_view` | **exposed** | working | Phase 2.5: F2 |
 | X12 | `ao_debug_view` | **exposed** | working | Phase 2.5: F2 |
 | X13 | `ssgi_debug_view` | **exposed** | working | Phase 2.5: F2 |
-| X14 | `rc_debug_view` | **exposed** | working | Phase 2.5: F2 |
-| X15 | `rc_temporal_debug_view` | **exposed** | working | Phase 2.5: F2 |
-| X16 | `rc_temporal_enabled` | **exposed** | working | Phase 2.5: F2 |
-| X17 | `rc_spatial_filter_enabled` | **exposed** | working | Phase 2.5: F2 |
+| X14 | `rmgi_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X15 | `rmgi_temporal_debug_view` | **exposed** | working | Phase 2.5: F2 |
+| X16 | `rmgi_temporal_enabled` | **exposed** | working | Phase 2.5: F2 |
+| X17 | `rmgi_spatial_filter_enabled` | **exposed** | working | Phase 2.5: F2 |
 | X18 | `ssgi_surface_reject` | **exposed** | working | Phase 2.5: F2 |
 | X19 | `energy_compensation_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
 | X20 | `specular_aa_enabled` | **exposed** | working | Phase 2.5: F2 Diagnostics |
@@ -317,7 +317,7 @@ Record **median** and **p95** frame time in ms. Never FPS.
 | PF5 | PCSS | Resolve | `pcss_samples` 12→32 | | | | |
 | PF6 | AO | AO | `ao_resolution_scale` 1.0→0.5 | | | | |
 | PF7 | SSGI | SSGI total | `ssgi_steps` 8→32 | | | | |
-| PF8 | RC | RC total | `rc_ray_count` 8→32 | | | | |
+| PF8 | RC | RC total | `rmgi_ray_count` 8→32 | | | | |
 | PF9 | SSR | SSR | `ssr_steps` 24→64 | | | | |
 | PF10 | Fog | Volumetric fog | `fog_resolution` LOW→CINEMATIC | | | | |
 | PF11 | Bloom | Bloom | `bloom_iterations` 3→6 | | | | |

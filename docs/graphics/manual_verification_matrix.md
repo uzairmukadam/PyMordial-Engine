@@ -248,9 +248,9 @@ Each row is one verification. "Toggle" means the exact config field to change.
 | GI1 | SSGI legacy | S1 | C-static | `gi_mode="SSGI"`, `ssgi_backend="LEGACY"` | color bleed | red/blue bleed visible |
 | GI2 | SSGI Hi-Z | S1 | C-static | `ssgi_backend="HIZ_BOUNDS"` | ≈ legacy | A/B no gross difference |
 | GI3 | SSGI debug | S1 | C-static | set `ssgi_debug_view` 1–8 (F2, HIZ_BOUNDS) | debug images | each mode distinct |
-| GI4 | RC legacy | S1 | C-static | `gi_mode="RADIANCE_CASCADES"`, `rc_backend="LEGACY"` | indirect diffuse | no light leaks through walls |
-| GI5 | RC cascades | S1 | C-static | `rc_backend="CASCADES"` | smooth irradiance | contact detail correct |
-| GI6 | RC debug | S1 | C-static | set `rc_debug_view` (F2, CASCADES) | debug images | each mode distinct |
+| GI4 | RC legacy | S1 | C-static | `gi_mode="RMGI"`, `rmgi_backend="LEGACY"` | indirect diffuse | no light leaks through walls |
+| GI5 | RC cascades | S1 | C-static | `rmgi_backend="CASCADES"` | smooth irradiance | contact detail correct |
+| GI6 | RC debug | S1 | C-static | set `rmgi_debug_view` (F2, CASCADES) | debug images | each mode distinct |
 
 ### 3.8 Reflections
 
@@ -319,7 +319,7 @@ Each row is one verification. "Toggle" means the exact config field to change.
 |---|---|---|---|---|---|---|
 | RS1 | AO scale | S8 | C-static | `ao_resolution_scale` 1.0→0.5 | softer AO | visible softening, no blockiness |
 | RS2 | SSGI scale | S1 | C-static | `ssgi_resolution_scale` 1.0→0.5 | softer GI | visible softening |
-| RS3 | RC scale | S1 | C-static | `rc_resolution_scale` 1.0→0.5 | softer GI | visible softening |
+| RS3 | RC scale | S1 | C-static | `rmgi_resolution_scale` 1.0→0.5 | softer GI | visible softening |
 | RS4 | SSR scale | S5 | C-graze | `ssr_resolution_scale` 1.0→0.5 | softer reflections | visible softening |
 | RS5 | Flare scale | S6 | C-static | `lens_flare_resolution_scale` 1.0→0.5 | softer flare | visible softening |
 
@@ -385,8 +385,8 @@ Each row is one verification. "Toggle" means the exact config field to change.
 |---|---|---|---|---|---|---|
 | TP1 | TAA history | S4 | C-disocclude | `aa_mode="TAA"` | no ghost | clean after 5 frames |
 | TP2 | SSGI history | S1 | C-disocclude | `gi_mode="SSGI"` | no ghost | clean after 5 frames |
-| TP3 | RC history | S1 | C-disocclude | `gi_mode="RADIANCE_CASCADES"` | no ghost | clean after 5 frames |
-| TP4 | RC cascades temporal | S1 | C-disocclude | `rc_temporal_enabled=True` (F2, CASCADES) | no ghost | clean after 5 frames |
+| TP3 | RC history | S1 | C-disocclude | `gi_mode="RMGI"` | no ghost | clean after 5 frames |
+| TP4 | RC cascades temporal | S1 | C-disocclude | `rmgi_temporal_enabled=True` (F2, CASCADES) | no ghost | clean after 5 frames |
 | TP5 | Motion vectors | S4 | C-pan-fast | render | correct velocity | blur direction matches |
 
 ### 3.24 Culling
@@ -418,7 +418,7 @@ Only features marked "perf testable" in the inventory may be used for performanc
 | PCSS | Deferred resolve | `pcss_samples` 12 → 32 |
 | AO | AO | `ao_resolution_scale` 1.0 → 0.5 |
 | SSGI | SSGI total | `ssgi_steps` 8 → 32 |
-| RC | RC total | `rc_ray_count` 8 → 32 |
+| RC | RC total | `rmgi_ray_count` 8 → 32 |
 | SSR | SSR | `ssr_steps` 24 → 64 |
 | Volumetric fog | Volumetric fog | `fog_resolution` LOW → CINEMATIC |
 | Bloom | Bloom | `bloom_iterations` 3 → 6 |

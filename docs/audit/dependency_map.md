@@ -278,10 +278,7 @@ graph TD
     DEPTH[common/depth.glsl] --> DR[deferred_resolve.frag]
     DEPTH --> GTAOH[gtao_hiz.frag]
     DEPTH --> HBC[hiz_bounds_copy.comp]
-    DEPTH --> RCR[rc_reconstruct.comp]
-    DEPTH --> RCS[rc_spatial_filter.comp]
     DEPTH --> RCT[rc_temporal.comp]
-    DEPTH --> RCTI[rc_trace_intervals.comp]
     DEPTH --> SSGIT[ssgi_trace.frag]
     DEPTH --> SSRH[ssr_hiz.frag]
     DEPTH --> DUT[depth_util_test.comp]
@@ -322,11 +319,8 @@ graph TD
     VOL --> VFI[volumetric_fog_inject.comp]
     VOL --> VFIN[volumetric_fog_integrate.comp]
     TONEMAP[common/tonemap.glsl] --> PP[post_process.frag]
-    RCD[common/rc_direction.glsl] --> RCAF[rc_angular_filter.comp]
-    RCD --> RCMC[rc_merge_cascades.comp]
     RCD --> RCR
     RCD --> RCTI
-    RCC[common/rc_composite.glsl] --> RCAF
     RCC --> RCMC
     ATMO[atmosphere.glsl] --> DR
     HILL[hillaire_common.glsl] --> ATMO
@@ -336,7 +330,7 @@ graph TD
 ```
 
 **Confirmed**: no orphaned shader. The four files not named in Python (`atmosphere.glsl`,
-`hillaire_common.glsl`, `frame_data.glsl`, `rc_direction.glsl`) are include libraries.
+`hillaire_common.glsl`, `frame_data.glsl`) are include libraries.
 
 **Confirmed**: `deferred_resolve.frag` is the single largest dependency sink — it includes
 `atmosphere.glsl`, `csm_sampling.glsl`, `depth.glsl`, `hiz_bounds.glsl`, `pbr_brdf.glsl`, and
@@ -358,7 +352,7 @@ graph TD
 | CSM | `test_shadow_csm`, `test_csm_stabilization`, `test_horizon2_csm` | strong |
 | Spot shadows | `test_spot_lights` | strong |
 | Hi-Z | `test_hiz_pass`, `test_hiz_bounds`, `test_hiz_bounds_api`, `test_hiz_integration`, `test_hiz_tracer` | strong |
-| GI | `test_ssgi_reconstruction`, `test_radiance_cascades`, `test_rc_cascades`, `test_rc_intervals` | strong |
+| GI | `test_ssgi_reconstruction`, `test_rmgi` | strong |
 | AA | `test_taa`, `test_temporal_pingpong`, `test_aa_stability` | strong |
 | Post | `test_tonemap`, `test_exposure`, `test_blur_common` | strong |
 | Optics | `test_camera_optics`, `test_solar_flare` | strong (1 stale assertion) |

@@ -44,7 +44,7 @@ Legend — **Runtime reachable**: a pass reads it. **Debug reachable**: an F2 wi
 
 | Setting | Configured value | Actual consumer | Runtime reachable? | Debug reachable? | Actually changes execution? | Fallback behavior | Action taken | Remaining issue |
 |---|---|---|---|---|---|---|---|---|
-| `gi_mode` | `"RADIANCE_CASCADES"` | `pipeline.render_frame` 1518/1523, `u_GIEnabled` | yes | yes (F2 combo) | yes | `"IBL"`/`"OFF"` → no SSGI/RC | **Fixed** `"IBL"` semantics in `feature_state()` | `"IBL"` still ≡ `"OFF"` for GI passes (by design: IBL is always-on) |
+| `gi_mode` | `"RMGI"` | `pipeline.render_frame` 1518/1523, `u_GIEnabled` | yes | yes (F2 combo) | yes | `"IBL"`/`"OFF"` → no SSGI/RC | **Fixed** `"IBL"` semantics in `feature_state()` | `"IBL"` still ≡ `"OFF"` for GI passes (by design: IBL is always-on) |
 | `gi_mode="IBL"` | `"IBL"` | none (no branch) | **no** | yes | **no** | n/a | **Reclassified**: intentional — IBL is controlled by `ibl_enabled`, not `gi_mode`. Now reported as `active_mode="IBL"` when `ibl_enabled` | Documented; no code path added |
 | `ao_mode` | `"GTAO"` | `ao_pass.execute` | yes | yes | yes | `OFF` → white fallback | none | — |
 | `ao_backend` | `"LEGACY"` | `ao_pass.execute` 146 | yes | yes | yes | **silent** → LEGACY if no bounds tex | **Fixed**: `active_backend` + `fallback_reason` | — |
@@ -52,13 +52,13 @@ Legend — **Runtime reachable**: a pass reads it. **Debug reachable**: an F2 wi
 | `ssgi_backend` | `"LEGACY"` | `ssgi_pass._trace` 233 | yes | yes | yes | **silent** → LEGACY | **Fixed**: `active_backend` + `fallback_reason` | — |
 | `ssgi_debug_view` | `0` | `ssgi_pass` 246 | yes | **no** | yes | n/a | **Exposed** in F2 (HIZ_BOUNDS only) | — |
 | `ssgi_surface_reject` | `False` | `ssgi_pass` 248 | yes | **no** | yes | n/a | **Exposed** in F2 (HIZ_BOUNDS only) | — |
-| `rc_backend` | `"LEGACY"` | `rc_pass.execute` | yes | yes | yes | none (both compiled) | **Fixed**: `active_backend` | — |
-| `rc_cascades` | `3` | **none** | **no** | no | **no** | n/a | **Removed** (dead field) | Cascade count is fixed by `rc_cascade.py` layout |
-| `rc_interval_c0/c1/c2` | `0.40/2.50/40.0` | `rc_raymarch.comp` (legacy) | yes | yes | yes (legacy only) | n/a | none | Not used by CASCADES backend (documented) |
-| `rc_temporal_enabled` | `False` | `rc_pass` 600 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
-| `rc_spatial_filter_enabled` | `False` | `rc_pass` 564 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
-| `rc_debug_view` | `0` | `rc_pass` 555 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
-| `rc_temporal_debug_view` | `0` | `rc_pass` 602 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
+| `rmgi_backend` | `"LEGACY"` | `rmgi_pass.execute` | yes | yes | yes | none (both compiled) | **Fixed**: `active_backend` | — |
+| `rmgi_cascades` | `3` | **none** | **no** | no | **no** | n/a | **Removed** (dead field) | Cascade count is fixed by `rc_cascade.py` layout |
+| `rmgi_interval_c0/c1/c2` | `0.40/2.50/40.0` | `rmgi_raymarch.comp` (legacy) | yes | yes | yes (legacy only) | n/a | none | Not used by CASCADES backend (documented) |
+| `rmgi_temporal_enabled` | `False` | `rmgi_pass` 600 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
+| `rmgi_spatial_filter_enabled` | `False` | `rmgi_pass` 564 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
+| `rmgi_debug_view` | `0` | `rmgi_pass` 555 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
+| `rmgi_temporal_debug_view` | `0` | `rmgi_pass` 602 | yes | **no** | yes | n/a | **Exposed** in F2 (CASCADES only) | — |
 | `ssr_enabled` | `True` | `ssr_pass.execute` | yes | yes | yes | `OFF` → black fallback | **Fixed**: `active_backend="OFF"` | — |
 | `ssr_backend` | `"LEGACY"` | `ssr_pass.execute` 161 | yes | yes | yes | **silent** → LEGACY | **Fixed**: `active_backend` + `fallback_reason` | — |
 | `ssr_mode` | `"HIZ"` | `ssr_pass` 211 (`u_SSR_Mode`) | **yes** | **no** | yes | n/a | **Exposed** in F2 ("SSR March Mode") | Phase 2 wrongly called this dead |
@@ -86,7 +86,7 @@ Legend — **Runtime reachable**: a pass reads it. **Debug reachable**: an F2 wi
 | `ssr_debug_view` is config-only / dead | **Consumed** by `ssr_pass.py:232` → `u_SSRDebugView` | grep: `ssr_pass.py:232` |
 | `motion_blur_samples` has no runtime consumer | It had **no consumer**, but it **was** exposed in F2 (`debug_menu.py:1412`) and set by every preset. Phase 2 said "not exposed in F2" — wrong on both counts. | grep: `debug_menu.py:1412`, `quality_presets.py:401` |
 | `u_SunAngularRadius` is a dead uniform | **Used** by `csm_sampling.glsl:278` (included by `deferred_resolve.frag`) to derive a physical penumbra | Removing it broke shader compilation: `error C1503: undefined variable "u_SunAngularRadius"` |
-| `rc_cascades` has no consumer | **Correct** — confirmed zero consumers | grep: only `quality_presets.py:115` |
+| `rmgi_cascades` has no consumer | **Correct** — confirmed zero consumers | grep: only `quality_presets.py:115` |
 
 ---
 
@@ -128,7 +128,7 @@ pass.active_backend      # what actually ran
 pass.fallback_reason     # None, or a short human-readable cause
 ```
 
-Implemented on: `AmbientOcclusionPass`, `SSGIPass`, `SSRPass`, `RadianceCascadesPass`.
+Implemented on: `AmbientOcclusionPass`, `SSGIPass`, `SSRPass`, `RMGIPass`.
 
 Aggregated by `RenderPipeline.feature_state()`, which returns a nested dict:
 
@@ -162,8 +162,8 @@ These are **not** exposed in F2, deliberately:
 
 | Setting | Why config-only |
 |---|---|
-| `rc_interval_c0/c1/c2` | Already exposed (legacy RC ranges). Not duplicated. |
-| `rc_hiz_max_iterations` | Internal tracer budget; no verification value. |
+| `rmgi_interval_c0/c1/c2` | Already exposed (legacy RC ranges). Not duplicated. |
+| `rmgi_hiz_max_iterations` | Internal tracer budget; no verification value. |
 | `ssgi_hiz_max_iterations` | Same. |
 | `ssr_hiz_max_iterations` | Same. |
 | `motion_blur_max_samples` | Legacy cap; superseded by `motion_blur_samples`. |
@@ -182,10 +182,10 @@ These are **not** exposed in F2, deliberately:
 | `engine/gfx/passes/ao_pass.py` | Added `requested_backend`/`active_backend`/`fallback_reason`; set per branch |
 | `engine/gfx/passes/ssgi_pass.py` | Same |
 | `engine/gfx/passes/ssr_pass.py` | Same |
-| `engine/gfx/passes/radiance_cascades_pass.py` | Same (+ `__slots__` entries) |
+| `engine/gfx/passes/rmgi_pass.py` | Same (+ `__slots__` entries) |
 | `engine/gfx/passes/motion_blur_pass.py` | Now reads `motion_blur_samples` first |
 | `engine/gfx/pipeline.py` | `feature_state()`, `active_aa_stages()`, `_enforce_aa_exclusivity()`, `_aa_warning`; TAA gated on `aa_mode` only |
-| `engine/gfx/quality_presets.py` | Removed dead `rc_cascades`; documented `motion_blur_max_samples` as legacy |
+| `engine/gfx/quality_presets.py` | Removed dead `rmgi_cascades`; documented `motion_blur_max_samples` as legacy |
 | `engine/gfx/environment.py` | Atmosphere fallback now logs a warning |
 | `engine/debug/engine_tweaks.py` | Added 9 fields (slots/defaults/apply/to_dict); `taa_enabled` derived |
 | `engine/debug/debug_menu.py` | Exposed SSR mode, AO/SSGI/RC debug views, RC temporal/spatial, surface reject, energy comp, specular AA, object motion vectors, white balance; added live "Active Feature State" readout |
@@ -194,7 +194,7 @@ These are **not** exposed in F2, deliberately:
 | `tests/test_shadow_csm.py` | Corrected stale `u_SunAngularRadius` removal expectation |
 
 **Not changed**: no shader math, no pass ordering, no visual parameter, no quality preset values
-(except removing the dead `rc_cascades` field).
+(except removing the dead `rmgi_cascades` field).
 
 ---
 
@@ -202,7 +202,7 @@ These are **not** exposed in F2, deliberately:
 
 1. `gi_mode="IBL"` still does not select a distinct GI pass — it is reported correctly now, but the
    name remains slightly misleading. Renaming is a public-API change and was not approved.
-2. `rc_interval_c0/c1/c2` affect only the LEGACY RC backend; the CASCADES backend uses hardcoded
+2. `rmgi_interval_c0/c1/c2` affect only the LEGACY RC backend; the CASCADES backend uses hardcoded
    intervals. Documented, not changed.
 3. `motion_blur_max_samples` is retained as a fallback for configs that never set
    `motion_blur_samples`. It could be removed in a later cleanup.

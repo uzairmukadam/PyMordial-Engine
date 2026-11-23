@@ -97,8 +97,8 @@ Hard directional shadows only. The system is deliberately narrow: one orthograph
   - **Temporal denoiser** (`RenderConfig.ssgi_temporal_enabled`, default on): a single-frame SSGI estimate is inherently noisy ? a handful of rays per pixel cannot resolve a smooth irradiance field, and spatial filtering alone either leaves the noise or blurs across geometry. Accumulating across frames is what converges it and keeps it stable while the camera moves.
   - **`ssgi_temporal_blend`** (default 0.90): history weight. Higher accumulates more and converges further, at the cost of slower response to lighting changes.
   - Reprojection uses the G-buffer velocity buffer, so both camera and object motion are handled. Three guards prevent ghosting: depth validation (the reprojected world position must match the depth the history stored), a neighbourhood clamp (history is bounded to a band around the current spatial result), and motion confidence (fast screen-space motion drops the history weight). History is invalidated on resize and when the GI mode changes.
-- **Radiance Cascades (SSRC + FFPC)**: Cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. Renders at full resolution by default (`RenderConfig.rc_resolution_scale = 1.0`). G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges; temporal confidence is reduced for fast screen-space motion and history depth is checked in the previous camera view to limit ghosting. History is invalidated when RC is disabled. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI path.
-- **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `IBL`, `SSGI`, and `RADIANCE_CASCADES` (SSRC + FFPC).
+- **Ray-Marched Global Illumination (RMGI)**: Cosine-weighted screen-space ray marching gathers neighboring surfaces' emissive, sun-lit, and ambient radiance for colored diffuse bounce. Renders at full resolution by default (`RenderConfig.rmgi_resolution_scale = 1.0`). G-buffer entity IDs reject same-object hits on the same local surface to reduce self-bleed while preserving bounce from other faces and objects. Normal/depth-aware filtering and motion-reprojected temporal accumulation reduce noise and preserve edges; temporal confidence is reduced for fast screen-space motion and history depth is checked in the previous camera view to limit ghosting. History is invalidated when RC is disabled. Screen-space visibility remains limited to on-screen geometry; mutually exclusive with the classic SSGI path.
+- **GI Mode Selection (`GIMode`)**: Runtime-switchable global illumination pipeline via `RenderConfig.gi_mode` — supports `OFF`, `IBL`, `SSGI`, and `RMGI` (SSRC + FFPC).
 - **Clustered Forward+ Local Lights (`engine.gfx.passes.clustered_lights.ClusteredLightingPass`)**: Computes 3D screen frustum grid clusters to evaluate hundreds of dynamic point and spot lights simultaneously.
 - **Screen-Space Reflections (SSR)**: Full-resolution view-space reflection tracing with tight depth intersection and subpixel refinement (`RenderConfig.ssr_resolution_scale = 1.0` by default). Rough surfaces use depth/normal-aware reflection reconstruction, and missing screen-space hits fade into prefiltered HDR IBL. SSR remains limited to camera-visible geometry. `RenderConfig.ssr_mode` selects `HIZ` (default, hierarchical-Z accelerated march that strides empty space in coarse mips and refines on contact) or `LINEAR` (legacy fixed-step march). Both modes share the same hit validation, so they agree on which hits are accepted.
 - **Image-Based Lighting (IBL)**: Split-sum GGX specular lighting with a runtime sun-driven linear HDR sky, solid-angle-aware roughness prefiltering across the full mip chain, cosine-convolved diffuse irradiance, and a BRDF integration LUT.
@@ -144,7 +144,7 @@ Every screen-space effect owns its own render scale, so quality can be traded fo
 | --- | --- |
 | `ao_resolution_scale` | GTAO / SSAO |
 | `ssgi_resolution_scale` | Screen-space GI |
-| `rc_resolution_scale` | Radiance Cascades |
+| `rmgi_resolution_scale` | Ray-Marched Global Illumination |
 | `ssr_resolution_scale` | Screen-space reflections |
 | `lens_flare_resolution_scale` | Anamorphic and solar flares |
 
@@ -160,7 +160,7 @@ Scales are clamped to `[0.25, 1.0]` and re-applied on both `RenderPipeline.apply
 | `Hi-Z` | `HiZPass.execute` (copy + downsample chain) |
 | `AO` | `AmbientOcclusionPass.execute` (raw AO + bilateral blur) |
 | `SSGI total` | `SSGIPass.execute` (trace + H/V filter + history copy) |
-| `RC total` | `RadianceCascadesPass.execute` (raymarch + merge) |
+| `RC total` | `RMGIPass.execute` (raymarch + merge) |
 | `SSR` | `SSRPass.execute` |
 | `Deferred resolve` | `resolve_vao.render` |
 

@@ -1,4 +1,4 @@
-"""Walk a detailed multi-section platformer assembled from JSON data."""
+﻿"""Walk a detailed multi-section platformer assembled from JSON data."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def build_level(app, level_path: Path = LEVEL_PATH) -> dict:
     with level_path.open(encoding="utf-8") as level_file:
         level = json.load(level_file)
 
-    app.pipeline.config.gi_mode = "RADIANCE_CASCADES"
+    app.pipeline.config.gi_mode = "RMGI"
     app.pipeline.config.bloom_enabled = True
     app.pipeline.config.volumetric_fog_enabled = False
     app.pipeline.apply_config(app.pipeline.config)

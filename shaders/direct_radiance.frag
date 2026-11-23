@@ -3,7 +3,7 @@
 //  Direct Radiance Pass
 //
 //  Produces the current-frame GI source radiance consumed by SSGI (and, later,
-//  Radiance Cascades). It is deliberately NOT the final composition: it exists
+//  Ray-Marched Global Illumination). It is deliberately NOT the final composition: it exists
 //  so screen-space GI never samples a stale or previously composited HDR frame.
 //
 //  CONTRACT — what this texture contains:

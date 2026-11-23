@@ -1,4 +1,4 @@
-"""Tests for the debug-menu plumbing of the new tracing backends.
+﻿"""Tests for the debug-menu plumbing of the new tracing backends.
 
 Pins the properties that make the F2 panel usable:
 
@@ -116,7 +116,7 @@ class TestBackendRendering:
             ecs = EntityManager(max_entities=10)
             self._scene(ecs)
 
-            for gi_mode in ("SSGI", "RADIANCE_CASCADES"):
+            for gi_mode in ("SSGI", "RMGI"):
                 et.gi_mode = gi_mode
                 et.apply_to_pipeline(pipeline, force=True)
                 for i in range(3):

@@ -1,4 +1,4 @@
-# PyMordial examples
+﻿# PyMordial examples
 
 Run the interactive samples from the repository root with Python 3.11+ and the
 engine dependencies installed:
@@ -17,7 +17,7 @@ to select a preset explicitly.
 | --- | --- |
 | `01_shapes_flycam.py` | Cube, sphere, plane, capsule, cylinder, cone, water, materials, and free flight |
 | `02_physics_player.py` | Fixed geometry, dynamic rigid bodies, a controllable capsule, and an entity-attached ember/smoke fire |
-| `03_water_lighting_lab.py` | Five compact connected chambers, pools, a skylight, colored bounce, practical lights, and Radiance Cascades GI |
+| `03_water_lighting_lab.py` | Five compact connected chambers, pools, a skylight, colored bounce, practical lights, and Ray-Marched Global Illumination GI |
 | `04_data_driven_platformer.py` | The multi-section Sunken Observatory platformer, loaded from JSON and traversed with a capsule player; fall or press R to reset |
 | `05_menu_system.py` | Main menu, controls screen, level start, pause/resume, and return-to-menu flow |
 | `06_graphics_benchmark.py` | Reproducible scene with configurable entity count, camera flight, FPS/frame-time sampling, and live GI/SSR controls |
@@ -125,7 +125,7 @@ Existing water entities can be tuned through
   activate a button, and **Start** to start, pause, or resume.
 - In the menu sample, the cursor is free in the menu and captured automatically
   when the level starts.
-- In the benchmark, **1 / 2 / 3** selects GI off / hybrid / Radiance Cascades;
+- In the benchmark, **1 / 2 / 3** selects GI off / hybrid / Ray-Marched Global Illumination;
   **4** toggles SSR. **RB** cycles GI modes and **Y** toggles SSR; flycam
   controls remain active.
 
