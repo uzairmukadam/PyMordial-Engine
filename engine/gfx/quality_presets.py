@@ -122,6 +122,15 @@ class RenderConfig:
     rmgi_intensity: float = 1.0
     rmgi_temporal_blend: float = 0.96
     rmgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # Traversal backend: "LINEAR" (fixed interval march, default) or "HIZ"
+    # (shared hierarchical depth-bounds tracer). Both share the same downstream
+    # radiance evaluation, temporal accumulation and filtering.
+    rmgi_traversal_mode: str = "LINEAR"
+    rmgi_hiz_max_iterations: int = 64  # iteration budget for the Hi-Z tracer
+    rmgi_hiz_start_mip: int = 0  # starting mip for Hi-Z traversal (0 = reference)
+    rmgi_hiz_multi_ascent: int = 0  # consecutive proven-empty ascents/iter (0 = reference)
+    # Debug-only: collect per-ray Hi-Z iteration statistics (off = no cost).
+    rmgi_stats_enabled: bool = False
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

@@ -148,6 +148,7 @@ void main() {
     request.thickness = u_SSR_Thickness;
     request.startMip = 0;
     request.maxIterations = u_SSR_MaxIterations;
+    request.multiAscent = 0;
 
     HiZTraceHit hit = TraceHiZ(u_HiZTexture, u_GBufferDepth, request);
 

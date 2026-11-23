@@ -44,6 +44,8 @@ class RenderGraphContext:
     fovy_deg: float = 60.0
     draw_batches: list[Any] | None = None
     debug_draw: DebugDraw | None = None
+    # Optional GPU pass profiler (debug-only; None disables sub-region timing).
+    profiler: Any = None
     # Shared blackboard for inter-pass texture/buffer resource exchange
     resources: dict[str, Any] = field(default_factory=dict)
 

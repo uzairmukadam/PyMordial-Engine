@@ -80,6 +80,27 @@ ivec2 HiZCellFromUV(sampler2D hizTexture, vec2 uv, int mip) {
 }
 
 // ----------------------------------------------------------------------------
+//  Precomputed-size variants (for hot traversal loops)
+//
+//  These take an already-clamped `level` and its `size` so a caller that walks
+//  many cells at one mip does not re-query textureQueryLevels/textureSize every
+//  iteration. Behaviour is identical to the sampler-based helpers above.
+// ----------------------------------------------------------------------------
+
+// Cell index for `uv` at a known level size.
+ivec2 HiZCellFromUVSize(vec2 uv, ivec2 size) {
+    ivec2 cell = ivec2(floor(clamp(uv, vec2(0.0), vec2(1.0)) * vec2(size)));
+    return clamp(cell, ivec2(0), max(size - 1, ivec2(0)));
+}
+
+// Bounds of one exact cell at a known level and size.
+HiZDepthBounds LoadHiZBoundsSize(sampler2D hizTexture, ivec2 cell, int level, ivec2 size) {
+    ivec2 clamped = clamp(cell, ivec2(0), max(size - 1, ivec2(0)));
+    vec2 raw = texelFetch(hizTexture, clamped, level).rg;
+    return HiZDepthBounds(raw.x, raw.y);
+}
+
+// ----------------------------------------------------------------------------
 //  Interval comparison
 // ----------------------------------------------------------------------------
 

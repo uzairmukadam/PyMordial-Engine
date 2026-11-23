@@ -696,6 +696,7 @@ class RenderPipeline:
         # Non-blocking per-pass GPU timing. Timestamp queries are read from a
         # ring of older frames, so this never stalls the pipeline.
         self.gpu_profiler = GpuPassProfiler(self.ctx)
+        self._graph_context.profiler = self.gpu_profiler
         self._aa_warning: str | None = None
 
         # Automatically synchronize framebuffers with window resolution changes

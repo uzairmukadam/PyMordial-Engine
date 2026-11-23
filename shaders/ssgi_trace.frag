@@ -146,6 +146,7 @@ void main() {
         request.thickness = u_SSGI_Thickness;
         request.startMip = 0;
         request.maxIterations = u_SSGI_MaxIterations;
+        request.multiAscent = 0;
 
         HiZTraceHit hit = TraceHiZ(u_HiZTexture, u_GBufferDepth, request);
         total_iterations += float(hit.iterations);

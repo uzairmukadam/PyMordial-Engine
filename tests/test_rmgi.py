@@ -194,3 +194,127 @@ class TestRMGIPass:
         assert pipeline.rmgi_pass._first_frame is True
 
         pipeline.destroy()
+
+class TestRMGITraversalBackends:
+    """Both traversal backends must run and share the same downstream output."""
+
+    @pytest.fixture
+    def render_ctx(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        yield ctx
+        ctx.destroy()
+
+    def _scene(self, ecs: EntityManager) -> None:
+        ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+        ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.2, 0.2))
+
+    def _render(self, pipeline, ecs, frames=4):
+        for i in range(frames):
+            pipeline.render_frame(
+                ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016 * (i + 1)
+            )
+
+    def test_default_traversal_is_linear(self):
+        assert get_quality_preset(GraphicsQuality.HIGH).rmgi_traversal_mode == "LINEAR"
+
+    def test_linear_mode_runs(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "RMGI"
+            pipeline.config.rmgi_traversal_mode = "LINEAR"
+            ecs = EntityManager(max_entities=10)
+            self._scene(ecs)
+            self._render(pipeline, ecs)
+            assert pipeline.rmgi_pass._first_frame is False
+            data = np.frombuffer(pipeline.rmgi_pass.raw_rmgi_tex.read(), dtype=np.float16)
+            assert np.all(np.isfinite(data))
+        finally:
+            pipeline.destroy()
+
+    def test_hiz_mode_runs(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "RMGI"
+            pipeline.config.rmgi_traversal_mode = "HIZ"
+            ecs = EntityManager(max_entities=10)
+            self._scene(ecs)
+            self._render(pipeline, ecs)
+            assert pipeline.rmgi_pass._first_frame is False
+            data = np.frombuffer(pipeline.rmgi_pass.raw_rmgi_tex.read(), dtype=np.float16)
+            assert np.all(np.isfinite(data))
+            assert data.max() >= 0.0
+        finally:
+            pipeline.destroy()
+
+    def test_hiz_mode_uses_shared_hiz_bounds(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "RMGI"
+            pipeline.config.rmgi_traversal_mode = "HIZ"
+            ecs = EntityManager(max_entities=10)
+            self._scene(ecs)
+            self._render(pipeline, ecs, frames=2)
+            # The shared bounds hierarchy must exist for RMGI to reuse.
+            assert pipeline.hiz_pass.hiz_bounds_texture is not None
+        finally:
+            pipeline.destroy()
+
+    def test_both_modes_share_downstream_output(self, render_ctx: RenderContext):
+        """Switching traversal must not recreate the merge/history resources."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "RMGI"
+            ecs = EntityManager(max_entities=10)
+            self._scene(ecs)
+
+            pipeline.config.rmgi_traversal_mode = "LINEAR"
+            self._render(pipeline, ecs, frames=2)
+            tex_a_id = id(pipeline.rmgi_pass.tex_a)
+            tex_b_id = id(pipeline.rmgi_pass.tex_b)
+            merge_id = id(pipeline.rmgi_pass.merge_prog)
+
+            pipeline.config.rmgi_traversal_mode = "HIZ"
+            self._render(pipeline, ecs, frames=2)
+            assert id(pipeline.rmgi_pass.tex_a) == tex_a_id
+            assert id(pipeline.rmgi_pass.tex_b) == tex_b_id
+            assert id(pipeline.rmgi_pass.merge_prog) == merge_id
+        finally:
+            pipeline.destroy()
+
+    def test_hiz_mode_handles_sky_pixels(self):
+        """Hi-Z must not introduce non-finite output on background pixels.
+
+        Compares against the linear backend in the same fresh context so the
+        assertion is independent of any shared-context test-ordering effects.
+        """
+        def _nonfinite(mode):
+            ctx = RenderContext.create_headless(width=320, height=240)
+            pipeline = RenderPipeline(ctx)
+            try:
+                pipeline.config.gi_mode = "RMGI"
+                pipeline.config.rmgi_traversal_mode = mode
+                ecs = EntityManager(max_entities=10)
+                # No geometry: every pixel is background.
+                self._render(pipeline, ecs, frames=2)
+                data = np.frombuffer(pipeline.rmgi_pass.raw_rmgi_tex.read(), dtype=np.float16)
+                return int(np.count_nonzero(~np.isfinite(data)))
+            finally:
+                pipeline.destroy()
+                ctx.destroy()
+
+        linear_bad = _nonfinite("LINEAR")
+        hiz_bad = _nonfinite("HIZ")
+        # Hi-Z must be no worse than the reference linear path on sky pixels.
+        assert hiz_bad <= linear_bad
+
+    def test_disabling_rmgi_unchanged(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "OFF"
+            pipeline.config.rmgi_traversal_mode = "HIZ"
+            ecs = EntityManager(max_entities=10)
+            self._scene(ecs)
+            self._render(pipeline, ecs, frames=1)
+            assert pipeline.rmgi_pass._first_frame is True
+        finally:
+            pipeline.destroy()

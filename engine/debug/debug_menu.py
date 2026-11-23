@@ -53,6 +53,7 @@ _HIZ_BOUNDS_MODES = frozenset(
 _SSGI_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
 _SSR_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
 _AO_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
+_RMGI_TRAVERSAL_MODES = ("LINEAR", "HIZ")
 
 
 def _backend_index(value: str, choices: tuple[str, ...]) -> int:
@@ -794,6 +795,15 @@ class DebugMenu:
                             et.mark_custom()
 
                 if et.gi_mode == "RMGI":
+                    rmgi_trav_changed, rmgi_trav_idx = imgui.combo(
+                        "RMGI Traversal", _backend_index(et.rmgi_traversal_mode, _RMGI_TRAVERSAL_MODES),
+                        _RMGI_TRAVERSAL_MODES
+                    )
+                    if rmgi_trav_changed:
+                        et.rmgi_traversal_mode = _RMGI_TRAVERSAL_MODES[rmgi_trav_idx]
+                        et.mark_custom()
+                        self.toast.show(f"RMGI Traversal: {et.rmgi_traversal_mode}", duration=2.0)
+
                     rmgi_ray_count_changed, rmgi_ray_count = imgui.slider_int("RMGI Ray Count", et.rmgi_ray_count, 4, 32)
                     if rmgi_ray_count_changed:
                         et.rmgi_ray_count = rmgi_ray_count

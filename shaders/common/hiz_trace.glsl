@@ -51,6 +51,9 @@ struct HiZTraceRequest {
     float thickness;
     int startMip;
     int maxIterations;
+    // When > 0, allow up to this many consecutive proven-empty parent ascents
+    // within a single iteration (0 = reference single-step ascent).
+    int multiAscent;
 };
 
 struct HiZTraceHit {
@@ -62,6 +65,10 @@ struct HiZTraceHit {
     int iterations;
     int finalMip;
     int missReason;
+    // Debug-only traversal diagnostics (populated only when the caller asks).
+    int highestMip;
+    int ascents;
+    int descents;
 };
 
 // Projects a view-space point to UV. Returns false when the point is behind
@@ -123,6 +130,9 @@ HiZTraceHit TraceHiZWithMatrices(
     result.iterations = 0;
     result.finalMip = 0;
     result.missReason = HIZ_MISS_NO_INTERSECTION;
+    result.highestMip = 0;
+    result.ascents = 0;
+    result.descents = 0;
 
     float rayLength = length(request.directionView);
     if (rayLength <= 1e-8) {
@@ -140,6 +150,7 @@ HiZTraceHit TraceHiZWithMatrices(
 
     int maxMip = max(textureQueryLevels(hizTexture) - 1, 0);
     int mip = clamp(request.startMip, 0, maxMip);
+    result.highestMip = mip;
     int iterationBudget = max(request.maxIterations, 1);
 
     float t = tStart;
@@ -164,15 +175,20 @@ HiZTraceHit TraceHiZWithMatrices(
         }
 
         ivec2 cellSize = textureSize(hizTexture, mip);
-        ivec2 cell = HiZCellFromUV(hizTexture, uv, mip);
-        HiZDepthBounds bounds = LoadHiZBounds(hizTexture, cell, mip);
+        ivec2 cell = HiZCellFromUVSize(uv, cellSize);
+        HiZDepthBounds bounds = LoadHiZBoundsSize(hizTexture, cell, mip, cellSize);
 
         // Parametric exit from this cell. A tiny forward probe gives d(uv)/dt.
+        // The same d(uv)/dt is reused by the ascent look-ahead below, since the
+        // direction of UV motion is independent of the mip level.
         float probeT = t + max((tEnd - t) * 1e-3, 1e-4);
         vec2 probeUV;
+        vec2 uvPerUnitT = vec2(0.0);
+        bool haveUVPerUnitT = false;
         float tExit = tEnd;
         if (HiZProjectToUV(request.originView + rayDir * probeT, projection, probeUV)) {
-            vec2 uvPerUnitT = (probeUV - uv) / (probeT - t);
+            uvPerUnitT = (probeUV - uv) / (probeT - t);
+            haveUVPerUnitT = true;
             tExit = HiZCellExitDistance(uv, uvPerUnitT, cellSize, t, tEnd);
         }
         tExit = clamp(tExit, t, tEnd);
@@ -214,23 +230,24 @@ HiZTraceHit TraceHiZWithMatrices(
                 if (HiZProjectToUV(nextPosition, projection, nextUV) && IsUVInBounds(nextUV)) {
                     int parentMip = mip + 1;
                     ivec2 parentCellSize = textureSize(hizTexture, parentMip);
-                    ivec2 parentCell = HiZCellFromUV(hizTexture, nextUV, parentMip);
-                    HiZDepthBounds parentBounds = LoadHiZBounds(hizTexture, parentCell, parentMip);
+                    ivec2 parentCell = HiZCellFromUVSize(nextUV, parentCellSize);
+                    HiZDepthBounds parentBounds = LoadHiZBoundsSize(hizTexture, parentCell, parentMip, parentCellSize);
 
-                    float parentProbeT = t + max((tEnd - t) * 1e-3, 1e-4);
-                    vec2 parentProbeUV;
+                    // Reuse the already-computed d(uv)/dt: the parent probe would
+                    // project the same two ray points, so its result is identical.
                     float parentExit = tEnd;
-                    if (HiZProjectToUV(request.originView + rayDir * parentProbeT, projection, parentProbeUV)) {
-                        vec2 parentUVPerUnitT = (parentProbeUV - nextUV) / (parentProbeT - t);
-                        parentExit = HiZCellExitDistance(nextUV, parentUVPerUnitT, parentCellSize, t, tEnd);
+                    if (haveUVPerUnitT) {
+                        parentExit = HiZCellExitDistance(nextUV, uvPerUnitT, parentCellSize, t, tEnd);
                     }
                     parentExit = clamp(parentExit, t, tEnd);
 
-                    float parentRayNearest = max(-(request.originView.z + rayDir.z * t), 0.0);
+                    // parentRayNearest is identical to rayNearest (same t).
                     float parentRayFarthest = max(-(request.originView.z + rayDir.z * parentExit), 0.0);
 
-                    if (!DepthIntervalsOverlap(parentRayNearest, parentRayFarthest, parentBounds, request.thickness)) {
+                    if (!DepthIntervalsOverlap(rayNearest, parentRayFarthest, parentBounds, request.thickness)) {
                         mip = parentMip;
+                        result.ascents += 1;
+                        result.highestMip = max(result.highestMip, mip);
                     }
                 }
             }
@@ -241,6 +258,7 @@ HiZTraceHit TraceHiZWithMatrices(
             // Possible intersection: descend without advancing so the region is
             // refined rather than skipped.
             mip -= 1;
+            result.descents += 1;
             continue;
         }
 

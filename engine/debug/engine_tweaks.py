@@ -109,6 +109,8 @@ class EngineTweaks:
         "rmgi_thickness",
         "rmgi_temporal_blend",
         "rmgi_resolution_scale",
+        "rmgi_traversal_mode",
+        "rmgi_hiz_max_iterations",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
@@ -364,6 +366,8 @@ class EngineTweaks:
         self.rmgi_thickness = 0.15
         self.rmgi_temporal_blend = 0.96
         self.rmgi_resolution_scale = 1.0
+        self.rmgi_traversal_mode = "LINEAR"
+        self.rmgi_hiz_max_iterations = 64
         # Tracing backends. LEGACY preserves the pre-existing implementation;
         # the alternative selects the shared Hi-Z tracer.
         self.ssgi_backend = "LEGACY"
@@ -764,6 +768,8 @@ class EngineTweaks:
             p_cfg.rmgi_thickness = float(self.rmgi_thickness)
             p_cfg.rmgi_temporal_blend = float(self.rmgi_temporal_blend)
             p_cfg.rmgi_resolution_scale = float(self.rmgi_resolution_scale)
+            p_cfg.rmgi_traversal_mode = str(self.rmgi_traversal_mode)
+            p_cfg.rmgi_hiz_max_iterations = int(self.rmgi_hiz_max_iterations)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
@@ -1047,6 +1053,8 @@ class EngineTweaks:
             "rmgi_thickness",
             "rmgi_temporal_blend",
             "rmgi_resolution_scale",
+            "rmgi_traversal_mode",
+            "rmgi_hiz_max_iterations",
             "ao_mode",
             "ao_intensity",
             "ao_radius",
@@ -1274,6 +1282,8 @@ class EngineTweaks:
             "rmgi_thickness": float(self.rmgi_thickness),
             "rmgi_temporal_blend": float(self.rmgi_temporal_blend),
             "rmgi_resolution_scale": float(self.rmgi_resolution_scale),
+            "rmgi_traversal_mode": str(self.rmgi_traversal_mode),
+            "rmgi_hiz_max_iterations": int(self.rmgi_hiz_max_iterations),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),

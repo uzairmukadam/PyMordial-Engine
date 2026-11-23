@@ -186,11 +186,17 @@ class HiZPass(RenderPass):
         if src_depth is None:
             return
 
+        profiler = getattr(ctx, "profiler", None)
+
         # 1. Level 0 Copy: Copy hardware/SSDM depth into Hi-Z mip 0
+        if profiler is not None:
+            profiler.begin("HiZ R32F copy")
         src_depth.use(location=0)
         self.hiz_texture.bind_to_image(0, read=False, write=True, level=0)
         gx0, gy0 = self.dispatch_groups[0]
         self.copy_prog.run(group_x=gx0, group_y=gy0)
+        if profiler is not None:
+            profiler.end()
 
         # The next dispatch samples mip 0 as a texture while it was just written
         # through an image binding, so the image writes must be visible to
@@ -198,6 +204,8 @@ class HiZPass(RenderPass):
         self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
 
         # 2. Downsample: Iteratively build mips 1..num_mips-1
+        if profiler is not None:
+            profiler.begin("HiZ R32F mips")
         self.hiz_texture.use(location=0)
 
         for k in range(1, self.num_mips):
@@ -213,6 +221,8 @@ class HiZPass(RenderPass):
                 self.ctx.memory_barrier(
                     moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
                 )
+        if profiler is not None:
+            profiler.end()
 
         # 3. Linear-view-depth bounds hierarchy (RG32F).
         self._build_bounds_hierarchy(ctx, src_depth)
@@ -233,18 +243,26 @@ class HiZPass(RenderPass):
             # so consumers fall back instead of reading garbage.
             return
 
+        profiler = getattr(ctx, "profiler", None)
+
         src_depth.use(location=0)
         if self._u_bounds_copy_inv_proj is not None:
             self._u_bounds_copy_inv_proj.write(inv_proj.tobytes())
 
+        if profiler is not None:
+            profiler.begin("HiZ RG32F copy")
         self.hiz_bounds_texture.bind_to_image(0, read=False, write=True, level=0)
         gx0, gy0 = self.dispatch_groups[0]
         self.bounds_copy_prog.run(group_x=gx0, group_y=gy0)
+        if profiler is not None:
+            profiler.end()
 
         # The next dispatch samples the mip just written, so the image writes
         # must be visible to texture fetches before it runs.
         self.ctx.memory_barrier(moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT)
 
+        if profiler is not None:
+            profiler.begin("HiZ RG32F mips")
         self.hiz_bounds_texture.use(location=0)
         for k in range(1, self.num_mips):
             if self._u_bounds_down_src_level is not None:
@@ -258,6 +276,8 @@ class HiZPass(RenderPass):
                 self.ctx.memory_barrier(
                     moderngl.TEXTURE_FETCH_BARRIER_BIT | moderngl.SHADER_IMAGE_ACCESS_BARRIER_BIT
                 )
+        if profiler is not None:
+            profiler.end()
 
         ctx.resources["hiz_bounds_texture"] = self.hiz_bounds_texture
         ctx.resources["hiz_bounds_mip_count"] = self.num_mips
