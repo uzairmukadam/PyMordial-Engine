@@ -124,20 +124,10 @@ class TestGIActivation:
 
     def test_rc_legacy(self, pipeline, ecs):
         pipeline.config.gi_mode = "RADIANCE_CASCADES"
-        pipeline.config.rc_backend = "LEGACY"
         pipeline.apply_config(pipeline.config)
         _render_frames(pipeline, ecs)
         state = pipeline.feature_state()["gi"]
         assert state["active_mode"] == "RADIANCE_CASCADES"
-        assert state["active_backend"] == "LEGACY"
-
-    def test_rc_cascades(self, pipeline, ecs):
-        pipeline.config.gi_mode = "RADIANCE_CASCADES"
-        pipeline.config.rc_backend = "CASCADES"
-        pipeline.apply_config(pipeline.config)
-        _render_frames(pipeline, ecs)
-        state = pipeline.feature_state()["gi"]
-        assert state["active_backend"] == "CASCADES"
 
 
 class TestSSRActivation:

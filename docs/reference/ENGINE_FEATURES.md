@@ -222,43 +222,13 @@ History is invalidated on resize, on the first frame, on explicit `invalidate_hi
 
 `RenderConfig.ao_backend` selects `LEGACY` (`gtao.frag`) or `HIZ_BOUNDS` (`gtao_hiz.frag`). The Hi-Z variant keeps the identical horizon model and adds one conservative step: each horizon tap queries the bounds hierarchy at the mip whose texel footprint matches the step's screen-space radius, and skips the full-resolution depth fetch when the ray's depth interval cannot reach the cell's geometry interval. `ao_debug_view` exposes the selected mip, bounds occupancy, rejected count and refined count.
 
-### 2.14 Explicit Screen-Space Radiance Cascades
-
-`RenderConfig.rc_backend` selects `LEGACY` (the original per-pixel raymarch, still the default) or `CASCADES`.
-
-**Cascade resources** (`engine/gfx/passes/rc_cascade.py`). Each cascade owns a probe grid and an RGBA16F texture array:
-
-| Cascade | Probe spacing | Directions | Interval (m) |
-| --- | --- | --- | --- |
-| C0 | 4 px | 8 | 0.00 – 0.40 |
-| C1 | 8 px | 16 | 0.40 – 2.50 |
-| C2 | 16 px | 32 | 2.50 – 40.0 |
-
-Texture contract: XY = probe grid coordinate, layer = direction index, RGB = interval radiance, A = remaining transmittance. Near cascades have denser probes; farther cascades have coarser probes and more directions.
-
-**Direction encoding** (`shaders/common/rc_direction.glsl`). Every cascade uses a prefix of the same 32-direction Fibonacci sphere, so near direction `d` is the same world direction as far direction `d`. This makes the near-to-far merge an exact index match with no resampling.
-
-**Pass order** (all inside `RadianceCascadesPass._execute_cascades`):
-
-1. Trace intervals — one invocation per probe/direction/cascade (`rc_trace_intervals.comp`).
-2. Merge far → near — C2 into C1, then merged C1 into C0 (`rc_merge_cascades.comp`). The deepest cascade has no merged texture, so its *interval* texture is the far source for the first merge.
-3. Reconstruct per-pixel irradiance from merged C0 (`rc_reconstruct.comp`).
-4. Edge-aware spatial filter (`rc_spatial_filter.comp`).
-5. Temporal resolve, exactly once (`rc_temporal.comp`).
-6. Publish `rc_texture` and copy into history.
-
-**Interval composition** (`shaders/common/rc_composite.glsl`): `merged.rgb = N.rgb + N.a * F.rgb`, `merged.a = N.a * F.a`. Radiance is clamped to `[0, 1e4]` and transmittance to `[0, 1]`; NaN/Inf inputs become a fully transparent, zero-radiance interval.
-
-**Output contract.** The published RC texture is *incident diffuse irradiance* — it contains no receiver albedo and no metallic suppression. `deferred_resolve.frag` applies `albedo * (1 - metallic)` exactly once, so albedo is never double-multiplied.
-
-### 2.15 Debug Menu Coverage
+### 2.14 Debug Menu Coverage
 
 Every new backend is switchable from the F2 panel, and the values persist through `EngineTweaks.to_dict()` / `from_dict()`:
 
 | Control | Location | Values |
 | --- | --- | --- |
 | `SSGI Backend` | F2 → Lighting (when GI = SSGI) | `LEGACY`, `HIZ_BOUNDS` |
-| `RC Backend` | F2 → Lighting (when GI = RADIANCE_CASCADES) | `LEGACY`, `CASCADES` |
 | `AO Backend` | F2 → Lighting (when AO = GTAO) | `LEGACY`, `HIZ_BOUNDS` |
 | `SSR Backend` | F2 → Image Quality (when SSR on) | `LEGACY`, `HIZ_BOUNDS` |
 | `Hi-Z Mip Level` | F2 → G-Buffer Debug (mode `HIZ`) | 0–10 |

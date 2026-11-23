@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from engine.core.ecs import EntityManager
-from engine.debug.debug_menu import _AO_BACKENDS, _RC_BACKENDS, _SSGI_BACKENDS, _SSR_BACKENDS, _backend_index
+from engine.debug.debug_menu import _AO_BACKENDS, _SSGI_BACKENDS, _SSR_BACKENDS, _backend_index
 from engine.debug.engine_tweaks import EngineTweaks, GBufferDebugMode
 from engine.gfx.context import RenderContext
 from engine.gfx.pipeline import RenderPipeline
@@ -26,7 +26,6 @@ class TestBackendToggles:
         assert et.ssgi_backend == "LEGACY"
         assert et.ssr_backend == "LEGACY"
         assert et.ao_backend == "LEGACY"
-        assert et.rc_backend == "LEGACY"
         assert et.hiz_debug_mip == 0
 
     def test_apply_to_pipeline_forwards_backends(self):
@@ -37,12 +36,9 @@ class TestBackendToggles:
             et.ssgi_backend = "HIZ_BOUNDS"
             et.ssr_backend = "HIZ_BOUNDS"
             et.ao_backend = "HIZ_BOUNDS"
-            et.rc_backend = "CASCADES"
             et.hiz_debug_mip = 2
             et.ssgi_debug_view = 6
             et.ao_debug_view = 3
-            et.rc_debug_view = 2
-            et.rc_temporal_debug_view = 4
             et.ssgi_surface_reject = True
             et.apply_to_pipeline(pipeline, force=True)
 
@@ -50,13 +46,10 @@ class TestBackendToggles:
             assert cfg.ssgi_backend == "HIZ_BOUNDS"
             assert cfg.ssr_backend == "HIZ_BOUNDS"
             assert cfg.ao_backend == "HIZ_BOUNDS"
-            assert cfg.rc_backend == "CASCADES"
             # Regression: hiz_debug_mip was declared but never forwarded.
             assert cfg.hiz_debug_mip == 2
             assert cfg.ssgi_debug_view == 6
             assert cfg.ao_debug_view == 3
-            assert cfg.rc_debug_view == 2
-            assert cfg.rc_temporal_debug_view == 4
             assert cfg.ssgi_surface_reject is True
         finally:
             pipeline.destroy()
@@ -67,7 +60,6 @@ class TestBackendToggles:
         et.ssgi_backend = "HIZ_BOUNDS"
         et.ssr_backend = "HIZ_BOUNDS"
         et.ao_backend = "HIZ_BOUNDS"
-        et.rc_backend = "CASCADES"
         et.hiz_debug_mip = 3
         et.ssgi_debug_view = 5
         et.ssgi_surface_reject = True
@@ -77,7 +69,6 @@ class TestBackendToggles:
         assert restored.ssgi_backend == "HIZ_BOUNDS"
         assert restored.ssr_backend == "HIZ_BOUNDS"
         assert restored.ao_backend == "HIZ_BOUNDS"
-        assert restored.rc_backend == "CASCADES"
         assert restored.hiz_debug_mip == 3
         assert restored.ssgi_debug_view == 5
         assert restored.ssgi_surface_reject is True
@@ -85,7 +76,6 @@ class TestBackendToggles:
     def test_backend_index_helper(self):
         assert _backend_index("LEGACY", _SSGI_BACKENDS) == 0
         assert _backend_index("HIZ_BOUNDS", _SSGI_BACKENDS) == 1
-        assert _backend_index("CASCADES", _RC_BACKENDS) == 1
         # Unknown or lowercase values fall back to LEGACY rather than raising.
         assert _backend_index("nonsense", _AO_BACKENDS) == 0
         assert _backend_index("hiz_bounds", _SSR_BACKENDS) == 1
@@ -121,7 +111,6 @@ class TestBackendRendering:
             et.ssgi_backend = "HIZ_BOUNDS"
             et.ssr_backend = "HIZ_BOUNDS"
             et.ao_backend = "HIZ_BOUNDS"
-            et.rc_backend = "CASCADES"
             et.apply_to_pipeline(pipeline, force=True)
 
             ecs = EntityManager(max_entities=10)

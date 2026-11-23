@@ -252,15 +252,8 @@ class EngineTweaks:
         "ssgi_backend",
         "ssr_backend",
         "ao_backend",
-        "rc_backend",
         "ssgi_debug_view",
         "ao_debug_view",
-        "rc_debug_view",
-        "rc_temporal_debug_view",
-        "rc_merge_max_cascade",
-        "rc_angular_filter_enabled",
-        "rc_temporal_enabled",
-        "rc_spatial_filter_enabled",
         "ssgi_surface_reject",
         "energy_compensation_enabled",
         "specular_aa_enabled",
@@ -372,20 +365,13 @@ class EngineTweaks:
         self.rc_temporal_blend = 0.96
         self.rc_resolution_scale = 1.0
         # Tracing backends. LEGACY preserves the pre-existing implementation;
-        # the alternative selects the shared Hi-Z tracer / explicit cascades.
+        # the alternative selects the shared Hi-Z tracer.
         self.ssgi_backend = "LEGACY"
         self.ssr_backend = "LEGACY"
         self.ao_backend = "LEGACY"
-        self.rc_backend = "LEGACY"
         # Per-pass debug views (0 = off).
         self.ssgi_debug_view = 0
         self.ao_debug_view = 0
-        self.rc_debug_view = 0
-        self.rc_temporal_debug_view = 0
-        self.rc_merge_max_cascade = 2
-        self.rc_angular_filter_enabled = True
-        self.rc_temporal_enabled = False
-        self.rc_spatial_filter_enabled = False
         self.ssgi_surface_reject = False
         self.energy_compensation_enabled = True
         self.specular_aa_enabled = True
@@ -785,15 +771,8 @@ class EngineTweaks:
             p_cfg.ssgi_backend = str(self.ssgi_backend)
             p_cfg.ssr_backend = str(self.ssr_backend)
             p_cfg.ao_backend = str(self.ao_backend)
-            p_cfg.rc_backend = str(self.rc_backend)
             p_cfg.ssgi_debug_view = int(self.ssgi_debug_view)
             p_cfg.ao_debug_view = int(self.ao_debug_view)
-            p_cfg.rc_debug_view = int(self.rc_debug_view)
-            p_cfg.rc_temporal_debug_view = int(self.rc_temporal_debug_view)
-            p_cfg.rc_merge_max_cascade = int(self.rc_merge_max_cascade)
-            p_cfg.rc_angular_filter_enabled = bool(self.rc_angular_filter_enabled)
-            p_cfg.rc_temporal_enabled = bool(self.rc_temporal_enabled)
-            p_cfg.rc_spatial_filter_enabled = bool(self.rc_spatial_filter_enabled)
             p_cfg.ssgi_surface_reject = bool(self.ssgi_surface_reject)
             p_cfg.energy_compensation_enabled = bool(self.energy_compensation_enabled)
             p_cfg.specular_aa_enabled = bool(self.specular_aa_enabled)
@@ -1302,15 +1281,8 @@ class EngineTweaks:
             "ssgi_backend": str(self.ssgi_backend),
             "ssr_backend": str(self.ssr_backend),
             "ao_backend": str(self.ao_backend),
-            "rc_backend": str(self.rc_backend),
             "ssgi_debug_view": int(self.ssgi_debug_view),
             "ao_debug_view": int(self.ao_debug_view),
-            "rc_debug_view": int(self.rc_debug_view),
-            "rc_temporal_debug_view": int(self.rc_temporal_debug_view),
-            "rc_merge_max_cascade": int(self.rc_merge_max_cascade),
-            "rc_angular_filter_enabled": bool(self.rc_angular_filter_enabled),
-            "rc_temporal_enabled": bool(self.rc_temporal_enabled),
-            "rc_spatial_filter_enabled": bool(self.rc_spatial_filter_enabled),
             "ssgi_surface_reject": bool(self.ssgi_surface_reject),
             "energy_compensation_enabled": bool(self.energy_compensation_enabled),
             "specular_aa_enabled": bool(self.specular_aa_enabled),

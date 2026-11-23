@@ -112,10 +112,6 @@ class RenderConfig:
     ssgi_surface_reject: bool = False  # reject hits on the receiver's own surface ID
 
     # Hybrid Radiance Cascades (SSRC + FFPC)
-    # NOTE: the cascade count is fixed by the explicit cascade layout in
-    # ``engine.gfx.passes.rc_cascade`` (three intervals: 0-6, 6-20, 20-40 m).
-    # There is no runtime knob for it; ``rc_interval_c0/c1/c2`` control the
-    # legacy raymarch band boundaries instead.
     rc_ray_count: int = 16
     rc_interval_c0: float = 0.40
     rc_interval_c1: float = 2.50
@@ -126,21 +122,6 @@ class RenderConfig:
     rc_intensity: float = 1.0
     rc_temporal_blend: float = 0.96
     rc_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
-    # Backend: "LEGACY" (per-pixel raymarch) or "CASCADES" (explicit probe cascades).
-    rc_backend: str = "LEGACY"
-    rc_hiz_max_iterations: int = 64  # iteration budget for cascade interval tracing
-    rc_temporal_enabled: bool = False
-    # Debug A/B: bypass rc_spatial_filter.comp and feed the raw reconstruction
-    # straight to the temporal/publish stage.
-    rc_spatial_filter_enabled: bool = False
-    # Angular filter on merged C0: smooths the coarse azimuth/z direction bins
-    # so a thin occluder does not become a hard radial wedge. Cheap (one pass
-    # over the C0 probe grid) and on by default for the cascade backend.
-    rc_angular_filter_enabled: bool = True
-    rc_debug_view: int = 0  # reconstruction: 0=irradiance, 1=irradiance, 2=confidence, 3=rejected
-    rc_temporal_debug_view: int = 0  # 0=resolved, 1=current, 2=depth conf, 3=motion conf, 4=history weight
-    # Cascade isolation for debugging: 0 = C0 only, 1 = C1 into C0, 2 = full chain.
-    rc_merge_max_cascade: int = 2
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

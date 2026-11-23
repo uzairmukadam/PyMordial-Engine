@@ -1971,7 +1971,7 @@ class RenderPipeline:
                 "fallback_reason": getattr(gi_pass, "fallback_reason", None),
                 "temporal_enabled": bool(getattr(cfg, "ssgi_temporal_enabled", False))
                 if gi_mode == "SSGI"
-                else bool(getattr(cfg, "rc_temporal_enabled", False)),
+                else False,
                 "resolution_scale": float(
                     getattr(cfg, "ssgi_resolution_scale", 1.0)
                     if gi_mode == "SSGI"

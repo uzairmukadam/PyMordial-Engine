@@ -53,7 +53,6 @@ _HIZ_BOUNDS_MODES = frozenset(
 _SSGI_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
 _SSR_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
 _AO_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
-_RC_BACKENDS = ("LEGACY", "CASCADES")
 
 
 def _backend_index(value: str, choices: tuple[str, ...]) -> int:
@@ -795,31 +794,9 @@ class DebugMenu:
                             et.mark_custom()
 
                 if et.gi_mode == "RADIANCE_CASCADES":
-                    rc_backend_changed, rc_backend_idx = imgui.combo(
-                        "RC Backend", _backend_index(et.rc_backend, _RC_BACKENDS), _RC_BACKENDS
-                    )
-                    if rc_backend_changed:
-                        et.rc_backend = _RC_BACKENDS[rc_backend_idx]
-                        et.mark_custom()
-                        self.toast.show(f"RC Backend: {et.rc_backend}", duration=2.0)
-
                     rc_ray_count_changed, rc_ray_count = imgui.slider_int("RC Ray Count", et.rc_ray_count, 4, 32)
                     if rc_ray_count_changed:
                         et.rc_ray_count = rc_ray_count
-                        et.mark_custom()
-
-                    rc_merge_changed, rc_merge_val = imgui.slider_int(
-                        "RC Cascade Isolation", int(getattr(et, "rc_merge_max_cascade", 2)), 0, 2
-                    )
-                    if rc_merge_changed:
-                        et.rc_merge_max_cascade = rc_merge_val
-                        et.mark_custom()
-
-                    rc_ang_changed, rc_ang_val = imgui.checkbox(
-                        "RC Angular Filter", bool(getattr(et, "rc_angular_filter_enabled", True))
-                    )
-                    if rc_ang_changed:
-                        et.rc_angular_filter_enabled = rc_ang_val
                         et.mark_custom()
 
                     rc_in_changed, rc_in_val = imgui.slider_float(
@@ -882,41 +859,6 @@ class DebugMenu:
                     if rc_res_changed:
                         et.rc_resolution_scale = rc_res_val
                         et.mark_custom()
-
-                    rc_temporal_changed, rc_temporal_val = imgui.checkbox(
-                        "RC Temporal Resolve", bool(getattr(et, "rc_temporal_enabled", False))
-                    )
-                    if rc_temporal_changed:
-                        et.rc_temporal_enabled = rc_temporal_val
-                        et.mark_custom()
-
-                    rc_spatial_changed, rc_spatial_val = imgui.checkbox(
-                        "RC Spatial Filter", bool(getattr(et, "rc_spatial_filter_enabled", False))
-                    )
-                    if rc_spatial_changed:
-                        et.rc_spatial_filter_enabled = rc_spatial_val
-                        et.mark_custom()
-
-                    if str(getattr(et, "rc_backend", "LEGACY")).upper() == "CASCADES":
-                        rc_dbg_changed, rc_dbg_val = imgui.slider_int(
-                            "RC Debug View (0=irradiance,1=irradiance,2=confidence,3=rejected)",
-                            int(getattr(et, "rc_debug_view", 0)),
-                            0,
-                            3,
-                        )
-                        if rc_dbg_changed:
-                            et.rc_debug_view = rc_dbg_val
-                            et.mark_custom()
-
-                        rc_tdbg_changed, rc_tdbg_val = imgui.slider_int(
-                            "RC Temporal Debug (0=resolved,1=current,2=depth,3=motion,4=history)",
-                            int(getattr(et, "rc_temporal_debug_view", 0)),
-                            0,
-                            4,
-                        )
-                        if rc_tdbg_changed:
-                            et.rc_temporal_debug_view = rc_tdbg_val
-                            et.mark_custom()
 
                 # AO Mode (OFF, SSAO, GTAO)
                 ao_modes = ["OFF", "SSAO", "GTAO"]
