@@ -23,6 +23,7 @@ class FrustumCuller:
         "_d_scratch",
         "_r_scratch",
         "_filtered_batches",
+        "_run_pad",
         "stats_visible_entities",
         "stats_culled_entities",
         "stats_visible_commands",
@@ -42,6 +43,9 @@ class FrustumCuller:
         self._d_scratch = np.zeros((max_entities, 6), dtype=np.float32)
         self._r_scratch = np.zeros((max_entities, 6), dtype=np.float32)
         self._filtered_batches: list[tuple] = []
+        # Scratch for vectorized contiguous-run detection: mask padded with a
+        # leading and trailing False so every run has a clean start/end edge.
+        self._run_pad = np.zeros(max_entities + 2, dtype=np.int8)
 
         # Telemetry statistics
         self.stats_visible_entities: int = 0
@@ -215,32 +219,24 @@ class FrustumCuller:
                 out_cmd_count += 1
                 continue
 
-            # 3. Partially visible: linear scan for contiguous visible runs without temporary array allocations
-            in_run = False
-            run_start = 0
-            for idx, vis in enumerate(sub):
-                if vis:
-                    if not in_run:
-                        in_run = True
-                        run_start = idx
-                else:
-                    if in_run:
-                        in_run = False
-                        run_len = idx - run_start
-                        if orig_len >= 5:
-                            self._filtered_batches.append(
-                                (mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow)
-                            )
-                        elif orig_len == 4:
-                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess))
-                        else:
-                            self._filtered_batches.append((mesh_item, run_len, base_inst + run_start))
-                        out_cmd_count += 1
-
-            if in_run:
-                run_len = len(sub) - run_start
+            # 3. Partially visible: vectorized contiguous-run detection.
+            # Pad the sub-mask with False on both sides so every visible run has
+            # an explicit start (0->1) and end (1->0) edge, then read the run
+            # boundaries from the diff. This replaces a per-entity Python scan.
+            sub_len = end_inst - base_inst
+            pad = self._run_pad
+            pad[1 : sub_len + 1] = sub
+            pad[0] = 0
+            pad[sub_len + 1] = 0
+            edges = np.diff(pad[: sub_len + 2])
+            starts = np.flatnonzero(edges == 1)
+            ends = np.flatnonzero(edges == -1)
+            for run_start, run_end in zip(starts.tolist(), ends.tolist()):
+                run_len = run_end - run_start
                 if orig_len >= 5:
-                    self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow))
+                    self._filtered_batches.append(
+                        (mesh_item, run_len, base_inst + run_start, is_tess, cast_shadow)
+                    )
                 elif orig_len == 4:
                     self._filtered_batches.append((mesh_item, run_len, base_inst + run_start, is_tess))
                 else:

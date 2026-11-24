@@ -335,12 +335,21 @@ class CascadedShadowMap:
         safe_aspect = max(float(aspect), 1e-4)
         split_near = CASCADE_NEAR
 
-        caster_centers: np.ndarray | None = None
-        caster_extents: np.ndarray | None = None
+        # Project every caster into light space once. The light basis is shared
+        # by all cascades, so these six dot products are cascade-independent and
+        # must not be recomputed inside the per-cascade loop.
+        caster_cx = caster_cy = caster_cz = None
+        caster_ex = caster_ey = caster_ez = None
         if aabbs is not None and active_count > 0:
             caster_count = min(int(active_count), len(aabbs))
             caster_centers = np.asarray(aabbs[:caster_count, :3], dtype=np.float64)
             caster_extents = np.asarray(aabbs[:caster_count, 3:6], dtype=np.float64)
+            caster_cx = caster_centers @ light_right
+            caster_cy = caster_centers @ light_up
+            caster_cz = caster_centers @ sun
+            caster_ex = caster_extents @ np.abs(light_right)
+            caster_ey = caster_extents @ np.abs(light_up)
+            caster_ez = caster_extents @ np.abs(sun)
 
         for cascade in range(count):
             split_far = self.split_distances[cascade]
@@ -385,13 +394,13 @@ class CascadedShadowMap:
             depth_min = sphere_center_z - radius
             depth_max = sphere_center_z + radius
 
-            if caster_centers is not None and caster_extents is not None:
-                cx = caster_centers @ light_right
-                cy = caster_centers @ light_up
-                cz = caster_centers @ sun
-                ex = caster_extents @ np.abs(light_right)
-                ey = caster_extents @ np.abs(light_up)
-                ez = caster_extents @ np.abs(sun)
+            if caster_cx is not None:
+                cx = caster_cx
+                cy = caster_cy
+                cz = caster_cz
+                ex = caster_ex
+                ey = caster_ey
+                ez = caster_ez
                 # Casters are selected against a slightly expanded XY footprint so
                 # a caster that grazes the border does not pop in and out as the
                 # camera turns. The expansion is a fixed fraction of the cascade
