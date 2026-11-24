@@ -13,6 +13,7 @@ Pick the row that matches what you are doing.
 | **Build a game** with the engine | [guides/DEVELOPER_GUIDE.md](./guides/DEVELOPER_GUIDE.md) |
 | **Write a module** (gameplay, render feature, tool) | [guides/MODULES.md](./guides/MODULES.md) |
 | Build **menus, HUDs, and pause screens** | [guides/UI_AND_STATE_MANAGEMENT.md](./guides/UI_AND_STATE_MANAGEMENT.md) |
+| **Benchmark graphics** (frame/pass timings) | [guides/BENCHMARKING.md](./guides/BENCHMARKING.md) |
 | Look up **what a subsystem does** | [reference/ENGINE_FEATURES.md](./reference/ENGINE_FEATURES.md) |
 | Understand **how the engine is wired** | [reference/ARCHITECTURE.md](./reference/ARCHITECTURE.md) |
 | **Run or write tests** | [reference/TESTING.md](./reference/TESTING.md) |
@@ -30,7 +31,8 @@ docs/
 ├── guides/                            Task-oriented: how to build things
 │   ├── DEVELOPER_GUIDE.md             Projects, modules, worlds, packaging
 │   ├── MODULES.md                     Module metadata, host, render features, engine modules
-│   └── UI_AND_STATE_MANAGEMENT.md     Native UI widgets + GameStateManager
+│   ├── UI_AND_STATE_MANAGEMENT.md     Native UI widgets + GameStateManager
+│   └── BENCHMARKING.md                Reproducible graphics benchmark tool
 │
 ├── reference/                         Lookup-oriented: how things work
 │   ├── ARCHITECTURE.md                Layer boundaries, frame flow, pass order, invariants
