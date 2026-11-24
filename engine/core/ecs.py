@@ -805,16 +805,28 @@ class EntityManager:
             np.copyto(self.rigid_body_state[0, :count], self.rigid_body_state[1, :count])
 
     def interpolate_render_transforms(self, alpha: float) -> None:
-        """Sub-frame NLERP interpolation from prev_state to curr_state into WorldTransforms."""
+        """Sub-frame NLERP interpolation from prev_state to curr_state into WorldTransforms.
+
+        Static entities occupy the contiguous prefix ``[0, static_count)``. Their
+        world transforms are produced once by ``recompute_matrix`` (at creation or
+        on an explicit transform change) and are not re-interpolated each frame.
+        Only the dynamic slice ``[static_count, active_count)`` is interpolated.
+        """
         count = self.pool.active_count
-        batch_nlerp_and_compose_mat4(
-            self.rigid_body_state[0],
-            self.rigid_body_state[1],
-            alpha,
-            self.world_transforms,
-            count,
-            scales=self.scales,
-        )
+        static_count = self.static_count
+        if static_count < 0 or static_count > count:
+            # Defensive: a corrupt partition falls back to full interpolation.
+            static_count = 0
+        dynamic_count = count - static_count
+        if dynamic_count > 0:
+            batch_nlerp_and_compose_mat4(
+                self.rigid_body_state[0, static_count:count],
+                self.rigid_body_state[1, static_count:count],
+                alpha,
+                self.world_transforms[static_count:count],
+                dynamic_count,
+                scales=self.scales[static_count:count],
+            )
 
         # Update dynamic entity AABBs from interpolated world transforms
         self.sync_dynamic_aabbs()
