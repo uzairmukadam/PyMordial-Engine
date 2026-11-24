@@ -6,7 +6,7 @@ Pins the architectural properties this change introduces:
 * the temporal resolve runs exactly once per frame,
 * SSGI samples the current-frame direct-radiance texture,
 * history invalidation survives resize, GI-mode switches and explicit calls,
-* the AO Hi-Z backend produces a valid AO mask.
+* the AO backend produces a valid AO mask.
 """
 
 from __future__ import annotations
@@ -134,29 +134,12 @@ class TestDirectRadiance:
             pipeline.destroy()
 
 
-class TestAOHiZBackend:
-    def test_hiz_backend_produces_valid_ao(self, render_ctx: RenderContext):
-        pipeline = RenderPipeline(render_ctx)
-        try:
-            ecs = EntityManager(max_entities=10)
-            _scene(ecs)
-            pipeline.config.ao_backend = "HIZ_BOUNDS"
-            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
-
-            ao = np.frombuffer(pipeline.ao_pass.raw_ao_tex.read(), dtype=np.uint8).astype(np.float32) / 255.0
-            assert np.all(np.isfinite(ao))
-            assert ao.min() >= 0.0 and ao.max() <= 1.0
-            # Sky pixels must stay fully unoccluded.
-            assert ao.max() > 0.9
-        finally:
-            pipeline.destroy()
-
+class TestAOBackend:
     def test_legacy_backend_still_available(self, render_ctx: RenderContext):
         pipeline = RenderPipeline(render_ctx)
         try:
             ecs = EntityManager(max_entities=10)
             _scene(ecs)
-            pipeline.config.ao_backend = "LEGACY"
             pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
             ao = np.frombuffer(pipeline.ao_pass.raw_ao_tex.read(), dtype=np.uint8)
             assert len(ao) == 320 * 240  # R8: one byte per pixel

@@ -61,35 +61,21 @@ class SSGIPass(RenderPass):
         # Compile Shaders
         quad_vert = load_shader("fullscreen_quad.vert")
         self.ssgi_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=load_shader("ssgi.frag"))
-        self.ssgi_hiz_prog = self.ctx.program(
-            vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_trace.frag")
-        )
         self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_blur.frag"))
         self.temporal_prog = self.ctx.program(
             vertex_shader=quad_vert, fragment_shader=load_shader("ssgi_temporal.frag")
         )
 
         self.ssgi_vao = self.ctx.vertex_array(self.ssgi_prog, [])
-        self.ssgi_hiz_vao = self.ctx.vertex_array(self.ssgi_hiz_prog, [])
         self.blur_vao = self.ctx.vertex_array(self.blur_prog, [])
         self.temporal_vao = self.ctx.vertex_array(self.temporal_prog, [])
 
-        # Uniform handles — legacy trace
+        # Uniform handles — trace
         self._u_steps = self.ssgi_prog.get("u_SSGI_Steps", None)
         self._u_rays = self.ssgi_prog.get("u_SSGI_RayCount", None)
         self._u_dist = self.ssgi_prog.get("u_SSGI_RayDistance", None)
         self._u_thickness = self.ssgi_prog.get("u_SSGI_Thickness", None)
-        self._u_hiz_mips = self.ssgi_prog.get("u_HiZMipCount", None)
         self._u_intensity = self.ssgi_prog.get("u_SSGI_Intensity", None)
-
-        # Uniform handles — shared Hi-Z trace
-        self._u_hiz_rays = self.ssgi_hiz_prog.get("u_SSGI_RayCount", None)
-        self._u_hiz_dist = self.ssgi_hiz_prog.get("u_SSGI_RayDistance", None)
-        self._u_hiz_thickness = self.ssgi_hiz_prog.get("u_SSGI_Thickness", None)
-        self._u_hiz_intensity = self.ssgi_hiz_prog.get("u_SSGI_Intensity", None)
-        self._u_hiz_max_iters = self.ssgi_hiz_prog.get("u_SSGI_MaxIterations", None)
-        self._u_hiz_debug = self.ssgi_hiz_prog.get("u_SSGIDebugView", None)
-        self._u_hiz_surface_reject = self.ssgi_hiz_prog.get("u_SSGI_SurfaceReject", None)
 
         # Uniform handles — spatial filter
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
@@ -180,7 +166,7 @@ class SSGIPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = getattr(context.config, "gi_mode", "SSGI")
-        self.requested_backend = str(getattr(context.config, "ssgi_backend", "LEGACY")).upper()
+        self.requested_backend = "LEGACY"
         self.fallback_reason = None
         if gi_mode != "SSGI":
             self.active_backend = "OFF"
@@ -223,7 +209,7 @@ class SSGIPass(RenderPass):
         self._first_frame = False
 
     def _trace(self, context: RenderGraphContext, g_buffer) -> None:
-        """Runs the selected tracer into ``raw_ssgi_tex``."""
+        """Runs the fixed-step marcher into ``raw_ssgi_tex``."""
         self.raw_fbo.use()
 
         g_buffer.albedo_roughness_texture.use(location=0)
@@ -237,44 +223,7 @@ class SSGIPass(RenderPass):
             radiance_tex = g_buffer.albedo_roughness_texture
         radiance_tex.use(location=3)
 
-        backend = str(getattr(context.config, "ssgi_backend", "LEGACY")).upper()
-        hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
-
-        if backend == "HIZ_BOUNDS" and hiz_bounds_tex is not None:
-            self.active_backend = "HIZ_BOUNDS"
-            hiz_bounds_tex.use(location=4)
-            if self._u_hiz_rays is not None:
-                self._u_hiz_rays.value = getattr(context.config, "ssgi_rays", 8)
-            if self._u_hiz_dist is not None:
-                self._u_hiz_dist.value = float(getattr(context.config, "ssgi_ray_distance", 3.0))
-            if self._u_hiz_thickness is not None:
-                self._u_hiz_thickness.value = float(getattr(context.config, "ssgi_thickness", 0.35))
-            if self._u_hiz_intensity is not None:
-                self._u_hiz_intensity.value = float(getattr(context.config, "ssgi_intensity", 1.5))
-            if self._u_hiz_max_iters is not None:
-                self._u_hiz_max_iters.value = int(getattr(context.config, "ssgi_hiz_max_iterations", 64))
-            if self._u_hiz_debug is not None:
-                self._u_hiz_debug.value = int(getattr(context.config, "ssgi_debug_view", 0))
-            if self._u_hiz_surface_reject is not None:
-                self._u_hiz_surface_reject.value = 1 if getattr(context.config, "ssgi_surface_reject", False) else 0
-            self.ssgi_hiz_vao.render(moderngl.TRIANGLES, vertices=3)
-            return
-
-        # Legacy fixed-step marcher. The Hi-Z pyramid (unit 4) is only used for
-        # empty-space skipping; falls back to the depth texture with a mip count
-        # of 1, which disables the skip in the shader.
         self.active_backend = "LEGACY"
-        if backend == "HIZ_BOUNDS":
-            self.fallback_reason = "missing Hi-Z bounds texture"
-        hiz_tex = context.resources.get("hiz_texture", None)
-        hiz_mips = int(context.resources.get("hiz_mip_count", 1))
-        if hiz_tex is not None:
-            hiz_tex.use(location=4)
-        else:
-            g_buffer.depth_texture.use(location=4)
-            hiz_mips = 1
-        if self._u_hiz_mips is not None:
-            self._u_hiz_mips.value = hiz_mips
 
         if self._u_steps is not None:
             self._u_steps.value = getattr(context.config, "ssgi_steps", 16)
@@ -331,10 +280,8 @@ class SSGIPass(RenderPass):
         self._release_targets()
         self.black_fallback.release()
         self.ssgi_vao.release()
-        self.ssgi_hiz_vao.release()
         self.blur_vao.release()
         self.temporal_vao.release()
         self.ssgi_prog.release()
-        self.ssgi_hiz_prog.release()
         self.blur_prog.release()
         self.temporal_prog.release()

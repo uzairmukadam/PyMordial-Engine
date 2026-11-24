@@ -1,6 +1,6 @@
 // ============================================================================
 //  Canonical Depth Utility
-//  Shared reconstruction / projection math for Hi-Z, SSR, SSGI, AO and RC.
+//  Shared reconstruction / projection math for SSR, SSGI, AO and RC.
 //
 //  CLIP-SPACE Z CONVENTION (must match the engine's projection matrices)
 //  ---------------------------------------------------------------------

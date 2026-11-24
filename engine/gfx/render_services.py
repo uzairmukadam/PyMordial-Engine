@@ -35,7 +35,6 @@ RESERVED_TEXTURE_UNITS: dict[int, str] = {
     11: "u_TransmittanceLUT",
     12: "u_SpotShadowAtlas",
     13: "u_IrradianceMap",
-    14: "u_HiZTexture",
     15: "u_RMGITexture",
 }
 

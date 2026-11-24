@@ -7,7 +7,6 @@ layout (binding = 0) uniform sampler2D u_GBufferAlbedoRoughness;
 layout (binding = 1) uniform sampler2D u_GBufferNormalMetallic;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;
 layout (binding = 3) uniform sampler2D u_SceneColor;
-layout (binding = 4) uniform sampler2D u_HiZTexture;   // Hierarchical-Z depth pyramid
 
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -33,8 +32,6 @@ uniform int u_SSR_Steps = 32;
 uniform float u_SSR_MaxDistance = 20.0;
 uniform float u_SSR_Thickness = 0.40;
 uniform float u_SSR_MaxRoughness = 0.65;
-uniform int u_SSR_Mode = 1;          // 0 = LINEAR march, 1 = Hi-Z accelerated march
-uniform int u_HiZMipCount = 1;       // Number of valid mip levels in u_HiZTexture
 // Resolution of the SSR target itself. Pixel-space ray math must use this rather
 // than the full viewport size, otherwise a downscaled SSR target mis-measures
 // ray lengths in pixels.
@@ -58,109 +55,6 @@ vec3 GetViewPos(vec2 uv, float depth) {
 // Jorge Jimenez's Interleaved Gradient Noise for uniform blue-noise spatial dithering
 float InterleavedGradientNoise(vec2 screen_pos) {
     return fract(52.9829189 * fract(dot(screen_pos, vec2(0.06711056, 0.00583715))));
-}
-
-// -----------------------------------------------------------------------------
-// Hi-Z accelerated screen-space ray march.
-//
-// Walks the ray in screen space, choosing a mip level from the ray's screen-space
-// step length so empty space is traversed in large strides. When the ray crosses
-// behind the conservative (furthest) depth stored in the current mip, the march
-// steps back one level to refine. This turns the O(N) linear search into roughly
-// O(log N) while preserving the same intersection test.
-//
-// Returns true on a hit, writing the hit UV and ray parameter.
-// -----------------------------------------------------------------------------
-bool MarchHiZ(
-    vec3 ray_origin,
-    vec3 ray_dir,
-    float max_distance,
-    float jitter,
-    out vec2 hit_uv,
-    out float hit_t
-) {
-    hit_uv = vec2(0.0);
-    hit_t = 0.0;
-
-    // Project the ray start and end into screen space to bound the march.
-    vec4 clip_start = u_Projection * vec4(ray_origin, 1.0);
-    if (clip_start.w <= 1e-5) return false;
-    vec2 uv_start = (clip_start.xy / clip_start.w) * 0.5 + 0.5;
-
-    vec3 ray_end = ray_origin + ray_dir * max_distance;
-    vec4 clip_end = u_Projection * vec4(ray_end, 1.0);
-    if (clip_end.w <= 1e-5) return false;
-    vec2 uv_end = (clip_end.xy / clip_end.w) * 0.5 + 0.5;
-
-    vec2 screen_delta = (uv_end - uv_start) * u_TargetResolution;
-    float screen_len = length(screen_delta);
-    if (screen_len < 1.0) return false;
-
-    int max_mip = max(0, u_HiZMipCount - 1);
-    int mip = 0;
-    float t = 0.0;
-    // Guard against pathological loops; each iteration advances at least one texel.
-    const int MAX_ITERATIONS = 96;
-
-    for (int i = 0; i < MAX_ITERATIONS; ++i) {
-        if (t >= max_distance) break;
-
-        vec3 p = ray_origin + ray_dir * t;
-        if (p.z >= -0.08) break; // Behind the near plane
-
-        vec4 clip_p = u_Projection * vec4(p, 1.0);
-        if (clip_p.w <= 1e-5) break;
-        vec2 uv = (clip_p.xy / clip_p.w) * 0.5 + 0.5;
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
-
-        // Conservative (furthest) depth at this mip level.
-        float hiz_depth = textureLod(u_HiZTexture, uv, float(mip)).r;
-        if (hiz_depth <= 0.000001) {
-            // Empty space at this level: take a larger stride.
-            mip = min(mip + 1, max_mip);
-            t += max_distance / float(max(u_SSR_Steps, 1)) * float(1 << mip);
-            continue;
-        }
-
-        vec3 scene_view = GetViewPos(uv, hiz_depth);
-        float ray_depth = -p.z;
-        float geo_depth = -scene_view.z;
-        float depth_diff = ray_depth - geo_depth;
-
-        float adaptive_thickness = clamp(
-            max(u_SSR_Thickness, (max_distance / float(max(u_SSR_Steps, 1))) * 0.20)
-                * (1.0 + ray_depth * 0.004),
-            0.03,
-            0.35
-        );
-
-        if (depth_diff >= 0.0 && depth_diff < adaptive_thickness) {
-            // Refine at full resolution before accepting the hit.
-            if (mip > 0) {
-                mip -= 1;
-                continue;
-            }
-            hit_uv = uv;
-            hit_t = t;
-            return true;
-        }
-
-        if (depth_diff < 0.0) {
-            // Ray is in front of the surface: step back a level to refine.
-            if (mip > 0) {
-                mip -= 1;
-                continue;
-            }
-            // At mip 0 the ray passed the surface without landing in the slab.
-            t += max_distance / float(max(u_SSR_Steps, 1));
-        } else {
-            // Ray is behind the surface: advance coarsely.
-            mip = min(mip + 1, max_mip);
-            t += max_distance / float(max(u_SSR_Steps, 1)) * float(1 << mip);
-        }
-    }
-
-    return false;
 }
 
 void main() {
@@ -210,36 +104,7 @@ void main() {
     float hit_dist = 0.0;
     vec3 final_hit_normal = vec3(0.0, 1.0, 0.0);
 
-    // ---- Hi-Z accelerated path ----
-    if (u_SSR_Mode == 1 && u_HiZMipCount > 1) {
-        vec2 hiz_uv;
-        float hiz_t;
-        if (MarchHiZ(ray_origin, R, u_SSR_MaxDistance, jitter, hiz_uv, hiz_t)) {
-            // Reuse the linear path's validation so both modes agree on hits.
-            float hit_depth = texture(u_GBufferDepth, hiz_uv).r;
-            if (hit_depth > 0.000001) {
-                vec3 hit_view_pos = GetViewPos(hiz_uv, hit_depth);
-                float plane_dist = dot(hit_view_pos - view_pos, view_normal);
-                vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, hiz_uv).rg);
-                vec3 hit_normal_view = normalize((u_View * vec4(hit_normal_world, 0.0)).xyz);
-
-                bool self_hit = dot(view_normal, hit_normal_view) > 0.65
-                    && (hiz_t < 2.5 || plane_dist < 1.5);
-                bool back_facing = dot(R, hit_normal_view) > -0.05;
-                bool too_close = length(hiz_uv - v_UV) < 0.008 || hiz_t < 0.05;
-
-                if (plane_dist > 0.02 && !self_hit && !back_facing && !too_close) {
-                    hit_uv = hiz_uv;
-                    hit_found = 1.0;
-                    hit_dist = hiz_t;
-                    final_hit_normal = hit_normal_world;
-                }
-            }
-        }
-    }
-
-    // ---- Linear march (fallback, and used when Hi-Z is unavailable) ----
-    if (hit_found <= 0.0) {
+    // ---- Linear march ----
     for (int s = 1; s <= steps; ++s) {
         // Dithered ray marching: eliminates uniform stepping bands
         float t = (float(s) - 0.5 + jitter) * step_len;
@@ -346,7 +211,6 @@ void main() {
             break;
         }
     }
-    } // end linear march fallback
 
     if (hit_found > 0.0) {
         // Screen edge vignette fade to eliminate hard boundary popping.

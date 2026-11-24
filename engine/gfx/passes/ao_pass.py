@@ -2,12 +2,6 @@
 
 Supports SSAO (Hemisphere sampling) and GTAO (Ground-Truth Ambient Occlusion)
 with an edge-preserving metric view-depth bilateral filter.
-
-GTAO has two backends:
-
-* ``LEGACY`` — ``gtao.frag``, the original horizon march.
-* ``HIZ_BOUNDS`` — ``gtao_hiz.frag``, the same horizon model with a
-  conservative depth-bounds rejection step at a footprint-matched Hi-Z mip.
 """
 
 from __future__ import annotations
@@ -57,15 +51,12 @@ class AmbientOcclusionPass(RenderPass):
         quad_vert = load_shader("fullscreen_quad.vert")
         ssao_frag = load_shader("ssao.frag")
         gtao_frag = load_shader("gtao.frag")
-        gtao_hiz_frag = load_shader("gtao_hiz.frag")
 
         self.ssao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssao_frag)
         self.gtao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=gtao_frag)
-        self.gtao_hiz_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=gtao_hiz_frag)
 
         self.ssao_vao = self.ctx.vertex_array(self.ssao_prog, [])
         self.gtao_vao = self.ctx.vertex_array(self.gtao_prog, [])
-        self.gtao_hiz_vao = self.ctx.vertex_array(self.gtao_hiz_prog, [])
 
         # Pre-cache uniform handles
         self._u_ssao_radius = self.ssao_prog.get("u_Radius", None)
@@ -73,10 +64,6 @@ class AmbientOcclusionPass(RenderPass):
 
         self._u_gtao_radius = self.gtao_prog.get("u_Radius", None)
         self._u_gtao_intensity = self.gtao_prog.get("u_Intensity", None)
-
-        self._u_gtao_hiz_radius = self.gtao_hiz_prog.get("u_Radius", None)
-        self._u_gtao_hiz_intensity = self.gtao_hiz_prog.get("u_Intensity", None)
-        self._u_gtao_hiz_debug = self.gtao_hiz_prog.get("u_AODebugView", None)
 
     @property
     def blur_ao_tex(self) -> moderngl.Texture:
@@ -133,7 +120,7 @@ class AmbientOcclusionPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         ao_mode = getattr(context.config, "ao_mode", "GTAO")
-        self.requested_backend = str(getattr(context.config, "ao_backend", "LEGACY")).upper()
+        self.requested_backend = "LEGACY"
         self.fallback_reason = None
         if ao_mode == "OFF":
             self.active_backend = "OFF"
@@ -151,30 +138,16 @@ class AmbientOcclusionPass(RenderPass):
         intensity = float(getattr(context.config, "ao_intensity", 1.0))
 
         # 1. Select AO program and VAO
-        hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
-        use_hiz_bounds = (
-            ao_mode == "GTAO"
-            and self.requested_backend == "HIZ_BOUNDS"
-            and hiz_bounds_tex is not None
-        )
-
         if ao_mode == "SSAO":
             vao = self.ssao_vao
             u_rad = self._u_ssao_radius
             u_int = self._u_ssao_intensity
             self.active_backend = "SSAO"
-        elif use_hiz_bounds:
-            vao = self.gtao_hiz_vao
-            u_rad = self._u_gtao_hiz_radius
-            u_int = self._u_gtao_hiz_intensity
-            self.active_backend = "HIZ_BOUNDS"
         else:  # "GTAO"
             vao = self.gtao_vao
             u_rad = self._u_gtao_radius
             u_int = self._u_gtao_intensity
             self.active_backend = "LEGACY"
-            if ao_mode == "GTAO" and self.requested_backend == "HIZ_BOUNDS":
-                self.fallback_reason = "missing Hi-Z bounds texture"
 
         # 2. Render Raw AO
         self.raw_fbo.use()
@@ -186,10 +159,6 @@ class AmbientOcclusionPass(RenderPass):
 
         g_buffer.depth_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)
-        if use_hiz_bounds:
-            hiz_bounds_tex.use(location=2)
-            if self._u_gtao_hiz_debug is not None:
-                self._u_gtao_hiz_debug.value = int(getattr(context.config, "ao_debug_view", 0))
 
         if u_rad is not None:
             u_rad.value = radius
@@ -210,7 +179,5 @@ class AmbientOcclusionPass(RenderPass):
         self.white_fallback.release()
         self.ssao_vao.release()
         self.gtao_vao.release()
-        self.gtao_hiz_vao.release()
         self.ssao_prog.release()
         self.gtao_prog.release()
-        self.gtao_hiz_prog.release()

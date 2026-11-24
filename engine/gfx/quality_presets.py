@@ -77,9 +77,7 @@ class RenderConfig:
 
     # Depth Precision & GPU Culling
     reverse_z: bool = True  # Reversed-Z 32F floating-point depth buffer
-    hiz_cull_enabled: bool = False  # GPU-Driven Hi-Z Occlusion Culling
     frustum_cull_enabled: bool = True  # CPU vectorized frustum culling of draw batches
-    hiz_debug_mip: int = 0  # Hi-Z debug visualization mip level (0 = off)
     max_entities: int = 100_000  # GPU entity capacity for SSBOs and culling scratch
 
     # Ambient Occlusion (GTAO / SSAO)
@@ -87,9 +85,6 @@ class RenderConfig:
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
     ao_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
-    # GTAO backend: "LEGACY" (horizon march) or "HIZ_BOUNDS" (bounds-rejected).
-    ao_backend: str = "LEGACY"
-    ao_debug_view: int = 0  # 0=final, 1=mip, 2=occupancy, 3=rejected, 4=refined
 
     # Global Illumination (SSGI vs Ray-Marched Global Illumination)
     gi_mode: str = "RMGI"  # "OFF", "IBL", "SSGI", "RMGI"
@@ -104,12 +99,6 @@ class RenderConfig:
     # the camera moves.
     ssgi_temporal_enabled: bool = True
     ssgi_temporal_blend: float = 0.90  # history weight (0 = off, 0.95 = heavy)
-    # Tracing backend: "LEGACY" (fixed-step marcher) or "HIZ_BOUNDS" (shared
-    # hierarchical tracer over the RG32F linear-depth bounds hierarchy).
-    ssgi_backend: str = "LEGACY"
-    ssgi_hiz_max_iterations: int = 64  # iteration budget for the shared tracer
-    ssgi_debug_view: int = 0  # 0=off, 1=raw, 2=hit UV, 3=hit dist, 4=hit ratio, 5=iters, 6=miss, 7=self, 8=surface
-    ssgi_surface_reject: bool = False  # reject hits on the receiver's own surface ID
 
     # Ray-Marched Global Illumination (RMGI)
     rmgi_ray_count: int = 16
@@ -122,26 +111,11 @@ class RenderConfig:
     rmgi_intensity: float = 1.0
     rmgi_temporal_blend: float = 0.96
     rmgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
-    # Traversal backend: "LINEAR" (fixed interval march, default) or "HIZ"
-    # (shared hierarchical depth-bounds tracer). Both share the same downstream
-    # radiance evaluation, temporal accumulation and filtering.
-    rmgi_traversal_mode: str = "LINEAR"
-    rmgi_hiz_max_iterations: int = 64  # iteration budget for the Hi-Z tracer
-    rmgi_hiz_start_mip: int = 0  # starting mip for Hi-Z traversal (0 = reference)
-    rmgi_hiz_multi_ascent: int = 0  # consecutive proven-empty ascents/iter (0 = reference)
-    # Debug-only: collect per-ray Hi-Z iteration statistics (off = no cost).
-    rmgi_stats_enabled: bool = False
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
     ssr_enabled: bool = True
     ssr_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
-    ssr_mode: str = "HIZ"  # "HIZ" (Hi-Z accelerated) or "LINEAR" (legacy march)
-    # Tracing backend: "LEGACY" (in-shader march) or "HIZ_BOUNDS" (shared
-    # hierarchical tracer over the RG32F linear-depth bounds hierarchy).
-    ssr_backend: str = "LEGACY"
-    ssr_hiz_max_iterations: int = 96  # iteration budget for the shared tracer
-    ssr_debug_view: int = 0  # 0=off, 1=hit UV, 2=distance, 3=iterations, 4=miss reason, 5=final mip
     ssr_steps: int = 48
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.12
@@ -240,7 +214,7 @@ class RenderConfig:
     fog_debug_mode: int = 0  # 0=Normal, 1=Inscattering Only, 2=Transmittance Only
 
     # Debug Visualization
-    debug_gbuffer: int = 0  # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage, 17..22=HiZ bounds
+    debug_gbuffer: int = 0  # 0=Disabled, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 14=CascadeIndex, 15=CascadeCoverage
     wireframe: bool = False  # ModernGL polygon line rasterization mode
 
     # Phase 6: Parallax Occlusion Mapping (POM)

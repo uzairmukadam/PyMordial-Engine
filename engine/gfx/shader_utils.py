@@ -136,13 +136,18 @@ def load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
     visited.add(path)
 
     cache_key = str(path)
+    # Cache the RAW file text, not the expanded text: expansion depends on the
+    # `visited` set (a file included after its own dependencies were already
+    # visited must not be cached without them), so caching expanded output would
+    # poison later standalone loads.
     if cache_key in _SHADER_CACHE:
-        return _SHADER_CACHE[cache_key]
+        raw = _SHADER_CACHE[cache_key]
+    else:
+        if not path.is_file():
+            raise FileNotFoundError(f"Shader file not found: {path} (from query '{rel_path}')")
+        raw = path.read_text(encoding="utf-8")
+        _SHADER_CACHE[cache_key] = raw
 
-    if not path.is_file():
-        raise FileNotFoundError(f"Shader file not found: {path} (from query '{rel_path}')")
-
-    raw = path.read_text(encoding="utf-8")
     lines: list[str] = []
     sdir = get_shader_dir()
 
@@ -163,9 +168,7 @@ def load_shader(rel_path: str | Path, visited: set[Path] | None = None) -> str:
                 continue
         lines.append(line)
 
-    expanded = "\n".join(lines)
-    _SHADER_CACHE[cache_key] = expanded
-    return expanded
+    return "\n".join(lines)
 
 
 def clear_shader_cache() -> None:

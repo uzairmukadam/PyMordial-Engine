@@ -28,18 +28,11 @@ class GBufferDebugMode(IntEnum):
     AO = 7  # Ambient Occlusion (SSAO / GTAO) mask
     SSGI = 8  # Screen-Space Global Illumination indirect diffuse
     GI_TOTAL = 10  # Consolidated Total Indirect Diffuse
-    HIZ = 11  # Hierarchical-Z (Hi-Z) Depth Pyramid Mip Level
     SPOT_LIGHTS = 12  # Accumulated dynamic spot-light contribution
     RMGI = 13  # Ray-Marched Global Illumination indirect diffuse
     CASCADE_INDEX = 14  # Selected CSM cascade index (false colour)
     CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
     CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
-    HIZ_BOUNDS_NEAREST = 17  # Hi-Z bounds: nearest linear view depth
-    HIZ_BOUNDS_FARTHEST = 18  # Hi-Z bounds: farthest linear view depth
-    HIZ_BOUNDS_SPAN = 19  # Hi-Z bounds: farthest - nearest
-    HIZ_BOUNDS_MASK = 20  # Hi-Z bounds: empty / occupied mask
-    HIZ_BOUNDS_INVALID = 21  # Hi-Z bounds: highlight corrupt cells
-    HIZ_BOUNDS_RAW = 22  # Hi-Z bounds: nearest (R) / farthest (G) / empty (B)
     DIRECT_RADIANCE = 23  # Current-frame direct diffuse + emissive (GI source)
 
 
@@ -109,8 +102,6 @@ class EngineTweaks:
         "rmgi_thickness",
         "rmgi_temporal_blend",
         "rmgi_resolution_scale",
-        "rmgi_traversal_mode",
-        "rmgi_hiz_max_iterations",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
@@ -118,8 +109,6 @@ class EngineTweaks:
         "ssr_max_roughness",
         "ssr_max_distance",
         "ssr_resolution_scale",
-        "ssr_mode",
-        "ssr_debug_view",
         "fxaa_subpixel",
         "fxaa_edge_threshold",
         "smaa_threshold",
@@ -150,7 +139,6 @@ class EngineTweaks:
         "tess_med_level",
         "tess_displacement_scale",
         "frustum_cull_enabled",
-        "hiz_cull_enabled",
         "ssdm_enabled",
         "ssdm_scale",
         "vsync_enabled",
@@ -250,13 +238,6 @@ class EngineTweaks:
         "vignette_smoothness",
         "film_grain_enabled",
         "film_grain_intensity",
-        "hiz_debug_mip",
-        "ssgi_backend",
-        "ssr_backend",
-        "ao_backend",
-        "ssgi_debug_view",
-        "ao_debug_view",
-        "ssgi_surface_reject",
         "energy_compensation_enabled",
         "specular_aa_enabled",
         "object_motion_vectors_enabled",
@@ -287,7 +268,6 @@ class EngineTweaks:
         self.exposure_adapt_speed_up = 1.5
         self.exposure_adapt_speed_down = 4.0
         self.gbuffer_debug = GBufferDebugMode.DISABLED
-        self.hiz_debug_mip = 0
 
         self.show_wireframe = False
         # Disabled by default per user request
@@ -313,7 +293,6 @@ class EngineTweaks:
         self.tess_med_level = 8.0
         self.tess_displacement_scale = 1.0
         self.frustum_cull_enabled = True
-        self.hiz_cull_enabled = False
 
         self.ssdm_enabled = True
         self.ssdm_scale = 1.0
@@ -366,17 +345,6 @@ class EngineTweaks:
         self.rmgi_thickness = 0.15
         self.rmgi_temporal_blend = 0.96
         self.rmgi_resolution_scale = 1.0
-        self.rmgi_traversal_mode = "LINEAR"
-        self.rmgi_hiz_max_iterations = 64
-        # Tracing backends. LEGACY preserves the pre-existing implementation;
-        # the alternative selects the shared Hi-Z tracer.
-        self.ssgi_backend = "LEGACY"
-        self.ssr_backend = "LEGACY"
-        self.ao_backend = "LEGACY"
-        # Per-pass debug views (0 = off).
-        self.ssgi_debug_view = 0
-        self.ao_debug_view = 0
-        self.ssgi_surface_reject = False
         self.energy_compensation_enabled = True
         self.specular_aa_enabled = True
         self.object_motion_vectors_enabled = True
@@ -389,8 +357,6 @@ class EngineTweaks:
         self.ssr_max_roughness = 0.65
         self.ssr_max_distance = 30.0
         self.ssr_resolution_scale = 1.0
-        self.ssr_mode = "HIZ"
-        self.ssr_debug_view = 0
         self.fxaa_subpixel = 0.75
         self.fxaa_edge_threshold = 0.125
         self.smaa_threshold = 0.08
@@ -768,18 +734,9 @@ class EngineTweaks:
             p_cfg.rmgi_thickness = float(self.rmgi_thickness)
             p_cfg.rmgi_temporal_blend = float(self.rmgi_temporal_blend)
             p_cfg.rmgi_resolution_scale = float(self.rmgi_resolution_scale)
-            p_cfg.rmgi_traversal_mode = str(self.rmgi_traversal_mode)
-            p_cfg.rmgi_hiz_max_iterations = int(self.rmgi_hiz_max_iterations)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
-            # Tracing backends and per-pass debug views.
-            p_cfg.ssgi_backend = str(self.ssgi_backend)
-            p_cfg.ssr_backend = str(self.ssr_backend)
-            p_cfg.ao_backend = str(self.ao_backend)
-            p_cfg.ssgi_debug_view = int(self.ssgi_debug_view)
-            p_cfg.ao_debug_view = int(self.ao_debug_view)
-            p_cfg.ssgi_surface_reject = bool(self.ssgi_surface_reject)
             p_cfg.energy_compensation_enabled = bool(self.energy_compensation_enabled)
             p_cfg.specular_aa_enabled = bool(self.specular_aa_enabled)
             p_cfg.object_motion_vectors_enabled = bool(self.object_motion_vectors_enabled)
@@ -794,8 +751,6 @@ class EngineTweaks:
             p_cfg.ssr_max_roughness = float(self.ssr_max_roughness)
             p_cfg.ssr_max_distance = float(self.ssr_max_distance)
             p_cfg.ssr_resolution_scale = float(self.ssr_resolution_scale)
-            p_cfg.ssr_mode = str(self.ssr_mode)
-            p_cfg.ssr_debug_view = int(self.ssr_debug_view)
             p_cfg.aa_mode = getattr(self, "aa_mode", "OFF")
             # taa_enabled is derived: TAA is selected by aa_mode alone, so a
             # spatial mode can never run alongside the temporal stage.
@@ -872,7 +827,6 @@ class EngineTweaks:
             p_cfg.tess_med_level = float(self.tess_med_level)
             p_cfg.tess_displacement_scale = float(self.tess_displacement_scale)
             p_cfg.frustum_cull_enabled = bool(self.frustum_cull_enabled)
-            p_cfg.hiz_cull_enabled = bool(self.hiz_cull_enabled)
             p_cfg.ssdm_enabled = bool(self.ssdm_enabled)
             p_cfg.ssdm_scale = float(self.ssdm_scale)
 
@@ -903,7 +857,6 @@ class EngineTweaks:
             # 10. Debug Displays & Sun
             p_cfg.wireframe = bool(self.show_wireframe)
             p_cfg.debug_gbuffer = int(self.gbuffer_debug)
-            p_cfg.hiz_debug_mip = int(self.hiz_debug_mip)
             p_cfg.sun_intensity = float(self.sun_lux)
 
             # Ensure post_process config is kept in lockstep
@@ -1053,8 +1006,6 @@ class EngineTweaks:
             "rmgi_thickness",
             "rmgi_temporal_blend",
             "rmgi_resolution_scale",
-            "rmgi_traversal_mode",
-            "rmgi_hiz_max_iterations",
             "ao_mode",
             "ao_intensity",
             "ao_radius",
@@ -1066,8 +1017,6 @@ class EngineTweaks:
             "ssr_max_roughness",
             "ssr_max_distance",
             "ssr_resolution_scale",
-            "ssr_mode",
-            "ssr_debug_view",
             "fxaa_subpixel",
             "fxaa_edge_threshold",
             "smaa_threshold",
@@ -1112,7 +1061,6 @@ class EngineTweaks:
             "tess_med_level",
             "tess_displacement_scale",
             "frustum_cull_enabled",
-            "hiz_cull_enabled",
             "ssdm_enabled",
             "ssdm_scale",
             "volumetric_fog_enabled",
@@ -1217,7 +1165,6 @@ class EngineTweaks:
             if hasattr(self.quality_preset, "value")
             else str(self.quality_preset),
             "show_wireframe": bool(self.show_wireframe),
-            "hiz_debug_mip": int(self.hiz_debug_mip),
             "vsync_enabled": bool(self.vsync_enabled),
             "tonemap_mode": str(self.tonemap_mode),
             "exposure": float(self.exposure),
@@ -1282,18 +1229,10 @@ class EngineTweaks:
             "rmgi_thickness": float(self.rmgi_thickness),
             "rmgi_temporal_blend": float(self.rmgi_temporal_blend),
             "rmgi_resolution_scale": float(self.rmgi_resolution_scale),
-            "rmgi_traversal_mode": str(self.rmgi_traversal_mode),
-            "rmgi_hiz_max_iterations": int(self.rmgi_hiz_max_iterations),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),
             "ao_resolution_scale": float(self.ao_resolution_scale),
-            "ssgi_backend": str(self.ssgi_backend),
-            "ssr_backend": str(self.ssr_backend),
-            "ao_backend": str(self.ao_backend),
-            "ssgi_debug_view": int(self.ssgi_debug_view),
-            "ao_debug_view": int(self.ao_debug_view),
-            "ssgi_surface_reject": bool(self.ssgi_surface_reject),
             "energy_compensation_enabled": bool(self.energy_compensation_enabled),
             "specular_aa_enabled": bool(self.specular_aa_enabled),
             "object_motion_vectors_enabled": bool(self.object_motion_vectors_enabled),
@@ -1306,8 +1245,6 @@ class EngineTweaks:
             "ssr_max_roughness": float(self.ssr_max_roughness),
             "ssr_max_distance": float(self.ssr_max_distance),
             "ssr_resolution_scale": float(self.ssr_resolution_scale),
-            "ssr_mode": str(self.ssr_mode),
-            "ssr_debug_view": int(self.ssr_debug_view),
             "fxaa_subpixel": float(self.fxaa_subpixel),
             "fxaa_edge_threshold": float(self.fxaa_edge_threshold),
             "smaa_threshold": float(self.smaa_threshold),
@@ -1408,7 +1345,6 @@ class EngineTweaks:
             "tess_med_level": float(self.tess_med_level),
             "tess_displacement_scale": float(self.tess_displacement_scale),
             "frustum_cull_enabled": bool(self.frustum_cull_enabled),
-            "hiz_cull_enabled": bool(self.hiz_cull_enabled),
             "ssdm_enabled": bool(self.ssdm_enabled),
             "ssdm_scale": float(self.ssdm_scale),
             "particles_enabled": bool(self.particles_enabled),

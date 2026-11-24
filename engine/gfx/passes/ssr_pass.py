@@ -3,14 +3,6 @@
 Ray-marches reflected view vectors against the G-Buffer depth buffer in view space
 with sub-texel IGN jitter, adaptive thickness, binary search refinement, and
 roughness-guided edge-preserving bilateral blur.
-
-Two tracing backends are available and can be compared side by side:
-
-* ``LEGACY`` — the original in-shader march (``ssr.frag``).
-* ``HIZ_BOUNDS`` — the shared hierarchical tracer over the RG32F linear-depth
-  bounds hierarchy (``ssr_hiz.frag`` + ``shaders/common/hiz_trace.glsl``).
-
-Both share the same bilateral denoise and the same output contract.
 """
 
 from __future__ import annotations
@@ -67,11 +59,6 @@ class SSRPass(RenderPass):
         self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssr_frag)
         self.vao = self.ctx.vertex_array(self.prog, [])
 
-        # Experimental shared-tracer backend. Compiled alongside the legacy path
-        # so switching backends never recompiles at runtime.
-        self.hiz_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=load_shader("ssr_hiz.frag"))
-        self.hiz_vao = self.ctx.vertex_array(self.hiz_prog, [])
-
         self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=blur_frag)
         self.blur_vao = self.ctx.vertex_array(self.blur_prog, [])
 
@@ -79,18 +66,8 @@ class SSRPass(RenderPass):
         self._u_max_dist = self.prog.get("u_SSR_MaxDistance", None)
         self._u_thickness = self.prog.get("u_SSR_Thickness", None)
         self._u_max_rough = self.prog.get("u_SSR_MaxRoughness", None)
-        self._u_mode = self.prog.get("u_SSR_Mode", None)
-        self._u_hiz_mips = self.prog.get("u_HiZMipCount", None)
         self._u_target_res = self.prog.get("u_TargetResolution", None)
         self._target_res_tuple = (float(self.width), float(self.height))
-
-        # Shared-tracer backend uniforms.
-        self._u_hiz_max_dist = self.hiz_prog.get("u_SSR_MaxDistance", None)
-        self._u_hiz_thickness = self.hiz_prog.get("u_SSR_Thickness", None)
-        self._u_hiz_max_rough = self.hiz_prog.get("u_SSR_MaxRoughness", None)
-        self._u_hiz_max_iters = self.hiz_prog.get("u_SSR_MaxIterations", None)
-        self._u_hiz_debug_view = self.hiz_prog.get("u_SSRDebugView", None)
-        self._u_hiz_target_res = self.hiz_prog.get("u_TargetResolution", None)
 
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
@@ -135,7 +112,7 @@ class SSRPass(RenderPass):
         self._blur_dir_v = (0.0, 1.0 / self.height)
 
     def execute(self, context: RenderGraphContext) -> None:
-        self.requested_backend = str(getattr(context.config, "ssr_backend", "LEGACY")).upper()
+        self.requested_backend = "LEGACY"
         self.fallback_reason = None
         if not getattr(context.config, "ssr_enabled", True):
             self.active_backend = "OFF"
@@ -164,19 +141,8 @@ class SSRPass(RenderPass):
         g_buffer.depth_texture.use(location=2)
         scene_tex.use(location=3)
 
-        backend = str(getattr(context.config, "ssr_backend", "LEGACY")).upper()
-        hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
-        use_hiz_bounds = backend == "HIZ_BOUNDS" and hiz_bounds_tex is not None
-
-        if use_hiz_bounds:
-            self.active_backend = "HIZ_BOUNDS"
-            self._render_hiz_bounds(context, g_buffer, hiz_bounds_tex)
-        else:
-            self.active_backend = "LEGACY"
-            if backend == "HIZ_BOUNDS":
-                self.fallback_reason = "missing Hi-Z bounds texture"
-            self._render_legacy(context, g_buffer)
-
+        self.active_backend = "LEGACY"
+        self._render_legacy(context, g_buffer)
         # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo
         self.blur_fbo.use()
         self.raw_ssr_tex.use(location=0)
@@ -200,18 +166,7 @@ class SSRPass(RenderPass):
         context.resources["ssr_texture"] = self.raw_ssr_tex
 
     def _render_legacy(self, context: RenderGraphContext, g_buffer) -> None:
-        """Original in-shader march against the scalar Hi-Z pyramid."""
-        # Hi-Z pyramid (unit 4). Falls back to the depth texture when the
-        # pyramid has not been built yet, so the shader always has a valid
-        # binding; u_HiZMipCount == 1 forces the linear march in that case.
-        hiz_tex = context.resources.get("hiz_texture", None)
-        hiz_mips = int(context.resources.get("hiz_mip_count", 1))
-        if hiz_tex is not None:
-            hiz_tex.use(location=4)
-        else:
-            g_buffer.depth_texture.use(location=4)
-            hiz_mips = 1
-
+        """In-shader linear screen-space march."""
         if self._u_steps is not None:
             self._u_steps.value = int(getattr(context.config, "ssr_steps", 48))
         if self._u_max_dist is not None:
@@ -220,32 +175,9 @@ class SSRPass(RenderPass):
             self._u_thickness.value = float(getattr(context.config, "ssr_thickness", 0.12))
         if self._u_max_rough is not None:
             self._u_max_rough.value = float(getattr(context.config, "ssr_max_roughness", 0.65))
-        if self._u_mode is not None:
-            mode = str(getattr(context.config, "ssr_mode", "HIZ")).upper()
-            self._u_mode.value = 1 if mode == "HIZ" else 0
-        if self._u_hiz_mips is not None:
-            self._u_hiz_mips.value = hiz_mips
         if self._u_target_res is not None:
             self._u_target_res.value = self._target_res_tuple
         self.vao.render(moderngl.TRIANGLES, vertices=3)
-
-    def _render_hiz_bounds(self, context: RenderGraphContext, g_buffer, hiz_bounds_tex) -> None:
-        """Experimental shared-tracer march over the RG32F bounds hierarchy."""
-        hiz_bounds_tex.use(location=4)
-
-        if self._u_hiz_max_dist is not None:
-            self._u_hiz_max_dist.value = float(getattr(context.config, "ssr_max_distance", 20.0))
-        if self._u_hiz_thickness is not None:
-            self._u_hiz_thickness.value = float(getattr(context.config, "ssr_thickness", 0.12))
-        if self._u_hiz_max_rough is not None:
-            self._u_hiz_max_rough.value = float(getattr(context.config, "ssr_max_roughness", 0.65))
-        if self._u_hiz_max_iters is not None:
-            self._u_hiz_max_iters.value = int(getattr(context.config, "ssr_hiz_max_iterations", 96))
-        if self._u_hiz_debug_view is not None:
-            self._u_hiz_debug_view.value = int(getattr(context.config, "ssr_debug_view", 0))
-        if self._u_hiz_target_res is not None:
-            self._u_hiz_target_res.value = self._target_res_tuple
-        self.hiz_vao.render(moderngl.TRIANGLES, vertices=3)
 
     def destroy(self) -> None:
         self.raw_fbo.release()
@@ -254,8 +186,6 @@ class SSRPass(RenderPass):
         self.blur_ssr_tex.release()
         self.black_fallback.release()
         self.vao.release()
-        self.hiz_vao.release()
         self.blur_vao.release()
         self.prog.release()
-        self.hiz_prog.release()
         self.blur_prog.release()

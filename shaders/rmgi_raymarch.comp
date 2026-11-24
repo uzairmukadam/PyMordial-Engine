@@ -7,7 +7,6 @@ layout(binding = 1) uniform sampler2D u_GBufferDepth;
 layout(binding = 2) uniform sampler2D u_GBufferNormalMetallic;
 layout(binding = 3) uniform sampler2D u_GBufferAlbedoRoughness;
 layout(binding = 4) uniform sampler2D u_GBufferSurfaceID;
-layout(binding = 5) uniform sampler2D u_HiZTexture;   // RG32F linear-depth bounds (Hi-Z traversal)
 
 layout(std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -26,8 +25,6 @@ layout(std140, binding = 0) uniform FrameData {
 };
 
 #include "shaders/common/depth.glsl"
-#include "shaders/common/hiz_bounds.glsl"
-#include "shaders/common/hiz_trace.glsl"
 
 uniform vec2 u_TargetResolution;
 uniform float u_RMGI_IntervalC0;
@@ -38,24 +35,6 @@ uniform int u_RMGI_StepsC0;
 uniform int u_RMGI_StepsC1;
 uniform float u_RMGI_Thickness;
 uniform float u_RMGI_Intensity;
-// Traversal backend: 0 = linear interval march (default), 1 = Hi-Z bounds trace.
-uniform int u_RMGI_TraversalMode = 0;
-uniform int u_RMGI_MaxIterations = 64;
-// Starting mip for the Hi-Z traversal (0 = reference; coarser skips empty space).
-uniform int u_RMGI_StartMip = 0;
-// Consecutive proven-empty parent ascents per iteration (0 = reference).
-uniform int u_RMGI_MultiAscent = 0;
-// Debug-only iteration statistics (0 = disabled, no SSBO writes).
-uniform int u_RMGI_StatsEnabled = 0;
-layout(std430, binding = 8) buffer RMGIStats {
-    // [0]=rays [1]=iters [2]=maxIter [3]=hits [4]=misses [5]=limit
-    // [6]=hitIters [7]=hitMax [8]=missIters [9]=missMax [10]=hitCount [11]=missCount
-    // Miss-reason counts: [12]=leftScreen [13]=exceededDist [14]=exceededIters
-    //   [15]=invalidProj [16]=noIntersection
-    // Traversal diagnostics: [17]=ascents [18]=descents [19]=highestMipSum
-    //   [20]=missDistSum [21]=missDistCount
-    uint u_Stats[22];
-};
 
 const float PI = 3.14159265359;
 const float GOLDEN_RATIO = 1.61803398875;
@@ -129,8 +108,7 @@ bool RMGISelfHit(vec2 hitUV, float hitDistance, vec3 origin, float originSurface
 }
 
 // Linear interval march (original RMGI traversal, unchanged).
-RMGIHit TraceLinear(vec3 origin, vec3 direction, vec2 uv, float noise,
-                    int nearSteps, int midSteps, int farSteps,
+RMGIHit TraceLinear(vec3 origin, vec3 direction, vec2 uv, float noise,                    int nearSteps, int midSteps, int farSteps,
                     float originSurfaceID, vec3 normalView) {
     RMGIHit result;
     result.hit = false;
@@ -185,74 +163,6 @@ RMGIHit TraceLinear(vec3 origin, vec3 direction, vec2 uv, float noise,
     return result;
 }
 
-// Hi-Z bounds traversal. Reuses the shared hierarchical tracer and applies the
-// same self-intersection rejection as the linear path.
-RMGIHit TraceHiZBackend(vec3 origin, vec3 direction, vec2 uv,
-                        float originSurfaceID, vec3 normalView) {
-    RMGIHit result;
-    result.hit = false;
-    result.uv = vec2(0.0);
-    result.distance = 0.0;
-
-    HiZTraceRequest request;
-    request.originView = origin;
-    request.directionView = direction;
-    // Match the linear path's near-field skip so the receiver's own surface is
-    // never accepted as an immediate hit.
-    request.minDistance = max(u_RMGI_IntervalC0 * 0.5, 0.08);
-    request.maxDistance = max(u_RMGI_IntervalC2, request.minDistance + 1e-3);
-    request.thickness = u_RMGI_Thickness;
-    request.startMip = u_RMGI_StartMip;
-    request.maxIterations = max(u_RMGI_MaxIterations, 1);
-    request.multiAscent = u_RMGI_MultiAscent;
-
-    HiZTraceHit hit = TraceHiZ(u_HiZTexture, u_GBufferDepth, request);
-    if (u_RMGI_StatsEnabled != 0) {
-        uint it = uint(hit.iterations);
-        atomicAdd(u_Stats[0], 1u);
-        atomicAdd(u_Stats[1], it);
-        atomicMax(u_Stats[2], it);
-        if (hit.hit) {
-            atomicAdd(u_Stats[3], 1u);
-            atomicAdd(u_Stats[6], it);
-            atomicMax(u_Stats[7], it);
-            atomicAdd(u_Stats[10], 1u);
-        } else {
-            atomicAdd(u_Stats[4], 1u);
-            if (hit.missReason == HIZ_MISS_EXCEEDED_ITERS) {
-                atomicAdd(u_Stats[5], 1u);
-            }
-            atomicAdd(u_Stats[8], it);
-            atomicMax(u_Stats[9], it);
-            atomicAdd(u_Stats[11], 1u);
-            // Miss-reason classification.
-            if (hit.missReason == HIZ_MISS_LEFT_SCREEN) atomicAdd(u_Stats[12], 1u);
-            else if (hit.missReason == HIZ_MISS_EXCEEDED_DIST) atomicAdd(u_Stats[13], 1u);
-            else if (hit.missReason == HIZ_MISS_EXCEEDED_ITERS) atomicAdd(u_Stats[14], 1u);
-            else if (hit.missReason == HIZ_MISS_INVALID_PROJ) atomicAdd(u_Stats[15], 1u);
-            else atomicAdd(u_Stats[16], 1u);
-            atomicAdd(u_Stats[20], 0u);
-            atomicAdd(u_Stats[21], 1u);
-        }
-        atomicAdd(u_Stats[17], uint(hit.ascents));
-        atomicAdd(u_Stats[18], uint(hit.descents));
-        atomicAdd(u_Stats[19], uint(hit.highestMip));
-    }
-    if (!hit.hit) {
-        return result;
-    }
-    if (distance(hit.uv, uv) < 0.006) {
-        return result;
-    }
-    if (RMGISelfHit(hit.uv, hit.rayDistance, origin, originSurfaceID, normalView)) {
-        return result;
-    }
-    result.hit = true;
-    result.uv = hit.uv;
-    result.distance = hit.rayDistance;
-    return result;
-}
-
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 outputSize = imageSize(u_OutputRadiance);
@@ -284,13 +194,8 @@ void main() {
     for (int ray = 0; ray < rayCount; ++ray) {
         vec3 direction = CosineHemisphereRay(ray, rayCount, normalView, noise);
 
-        RMGIHit trace;
-        if (u_RMGI_TraversalMode == 1) {
-            trace = TraceHiZBackend(origin, direction, uv, originSurfaceID, normalView);
-        } else {
-            trace = TraceLinear(origin, direction, uv, noise, nearSteps, midSteps, farSteps,
-                                originSurfaceID, normalView);
-        }
+        RMGIHit trace = TraceLinear(origin, direction, uv, noise, nearSteps, midSteps, farSteps,
+                                    originSurfaceID, normalView);
 
         if (trace.hit) {
             vec3 hitNormal = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, trace.uv).rg));

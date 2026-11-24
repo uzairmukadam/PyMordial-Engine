@@ -35,7 +35,6 @@ from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.direct_radiance_pass import DirectRadiancePass
 from engine.gfx.passes.exposure_pass import ExposurePass
 from engine.gfx.passes.fxaa_pass import FXAAPass
-from engine.gfx.passes.hiz_pass import HiZPass
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
@@ -130,7 +129,6 @@ class RenderPipeline:
         "material_registry",
         "ssdm_pass",
         "decal_pass",
-        "hiz_pass",
         "direct_radiance_pass",
         "culler",
         "stats_visible_entities",
@@ -183,7 +181,6 @@ class RenderPipeline:
         "_u_cascade_atlas_rect",
         "_u_cascade_count",
         "_u_gbuffer_debug",
-        "_u_hiz_debug_mip",
         "_u_gbuffer_prev_vp",
         "_u_gbuffer_object_motion",
         "_u_gbuffer_tess_object_motion",
@@ -469,9 +466,6 @@ class RenderPipeline:
         # Screen-Space Deferred Decal Pass (Phase 9)
         self.decal_pass = DecalPass(self.ctx, w, h)
 
-        # Hierarchical-Z (Hi-Z) Depth Pyramid Pass
-        self.hiz_pass = HiZPass(self.ctx, w, h, reverse_z=self.config.reverse_z)
-
         # Current-frame direct radiance (GI source for SSGI / future RC)
         self.direct_radiance_pass = DirectRadiancePass(self.ctx, w, h)
 
@@ -496,7 +490,6 @@ class RenderPipeline:
             "u_TransmittanceLUT": 11,
             "u_SpotShadowAtlas": 12,
             "u_IrradianceMap": 13,
-            "u_HiZTexture": 14,
             "u_RMGITexture": 15,
         }
         for name, unit in tex_uniforms.items():
@@ -533,7 +526,6 @@ class RenderPipeline:
         self._u_cascade_atlas_rect = self.resolve_prog.get("u_CascadeAtlasRect", None)
         self._u_cascade_count = self.resolve_prog.get("u_CascadeCount", None)
         self._u_gbuffer_debug = self.resolve_prog.get("u_GBufferDebug", None)
-        self._u_hiz_debug_mip = self.resolve_prog.get("u_HiZDebugMip", None)
         self._u_gbuffer_prev_vp = self.gbuffer_prog.get("u_PrevViewProjection", None)
         self._u_gbuffer_object_motion = self.gbuffer_prog.get("u_ObjectMotionVectors", None)
         self._u_gbuffer_tess_object_motion = self.gbuffer_tess_prog.get("u_ObjectMotionVectors", None)
@@ -731,7 +723,6 @@ class RenderPipeline:
             _BuiltinPass("GBuffer", inputs=("g_buffer",), outputs=("gbuffer_depth",)),
             _BuiltinPass("SSDM", inputs=("g_buffer",), outputs=("ssdm_output",)),
             _BuiltinPass("Decals", inputs=("g_buffer",), outputs=("decal_output",)),
-            _BuiltinPass("HiZ", inputs=("g_buffer",), outputs=("hiz_texture",)),
             _BuiltinPass("AmbientOcclusion", inputs=("g_buffer",), outputs=("ao_texture",)),
             _BuiltinPass("GlobalIllumination", inputs=("g_buffer", "scene_color"), outputs=("gi_texture",)),
             _BuiltinPass("IBL", outputs=("ibl_lut", "ibl_env_map", "ibl_irradiance")),
@@ -749,7 +740,6 @@ class RenderPipeline:
                     "ssr_texture",
                     "sky_view_lut",
                     "transmittance_lut",
-                    "hiz_texture",
                     "hdr_fbo",
                 ),
                 outputs=("hdr_color",),
@@ -962,7 +952,6 @@ class RenderPipeline:
         self.g_buffer.resize(width, height)
         self.ssdm_pass.resize(width, height)
         self.decal_pass.resize(width, height)
-        self.hiz_pass.resize(width, height)
         self.direct_radiance_pass.resize(width, height)
         self.ao_pass.resize(width, height)
         self.ssgi_pass.resize(
@@ -1128,15 +1117,9 @@ class RenderPipeline:
         self.spot_shadow_map.depth_texture.use(location=12)
         self.spot_shadow_map.compare_sampler.use(location=16)
         self.ibl_pass.irradiance_tex.use(location=13)
-        self.hiz_pass.hiz_texture.use(location=14)
 
         rc_tex = ctx.resources.get("rmgi_texture", self.rmgi_pass.black_fallback)
         rc_tex.use(location=15)
-
-        # RG32F linear-view-depth bounds hierarchy (debug visualization only).
-        hiz_bounds_tex = ctx.resources.get("hiz_bounds_texture", None)
-        if hiz_bounds_tex is not None:
-            hiz_bounds_tex.use(location=17)
 
         # Current-frame direct radiance (debug visualization).
         direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
@@ -1187,8 +1170,6 @@ class RenderPipeline:
             self._u_cascade_atlas_rect.write(self.csm.cascade_rect_uv_array.tobytes())
         if self._u_gbuffer_debug is not None:
             self._u_gbuffer_debug.value = self.config.debug_gbuffer
-        if self._u_hiz_debug_mip is not None:
-            self._u_hiz_debug_mip.value = int(getattr(self.config, "hiz_debug_mip", 0))
 
         # Set Phase 5 Feature Toggles
         if self._u_ao_enabled is not None:
@@ -1253,8 +1234,6 @@ class RenderPipeline:
 
         w, h = self.ctx_wrapper.width, self.ctx_wrapper.height
         aspect = w / (h if h > 0 else 1)
-        if w != self.hiz_pass.width or h != self.hiz_pass.height:
-            self.hiz_pass.resize(w, h)
 
         # 1. Update SSBO 1 & SSBO 2 from ECS contiguous memory tables
         # Phase 4: Static / Dynamic Entity Upload Optimization
@@ -1439,28 +1418,13 @@ class RenderPipeline:
                     alloc = self.mega_buffer.allocations[mesh_item] if isinstance(mesh_item, str) else mesh_item
                     self.shadow_mdi.add_command(alloc, instance_count=count, base_instance=base_inst)
 
-        # Phase 3: Culling for Camera MDI Draw Calls (Vectorized CPU Frustum + GPU Hi-Z Occlusion)
+        # Phase 3: Culling for Camera MDI Draw Calls (Vectorized CPU Frustum)
         frustum_cull_active = getattr(self.config, "frustum_cull_enabled", True)
-        hiz_cull_active = getattr(self.config, "hiz_cull_enabled", False)
 
-        if (frustum_cull_active or hiz_cull_active) and draw_batches:
+        if frustum_cull_active and draw_batches:
             active_aabbs = ecs.get_active_aabbs_view()
-            if hiz_cull_active and hasattr(self, "hiz_pass") and self.hiz_pass is not None:
-                # The Hi-Z pyramid is built from the previous frame's depth, so the
-                # occlusion test must run in the previous frame's VP space. Expand the
-                # AABB by the camera translation so the stale footprint stays conservative.
-                cam_delta = self._cam_pos - self._prev_cam_pos
-                visible_mask = self.hiz_pass.cull_aabbs_gpu(
-                    aabbs=active_aabbs,
-                    active_count=active_count,
-                    vp_matrix=self._vp_mat,
-                    screen_size=(w, h),
-                    prev_vp_matrix=self._prev_vp_mat,
-                    camera_delta=cam_delta,
-                )
-            else:
-                self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
-                visible_mask = self.culler.cull_aabbs(active_aabbs, active_count)
+            self.culler.extract_planes(self._vp_mat, reverse_z=self.config.reverse_z)
+            visible_mask = self.culler.cull_aabbs(active_aabbs, active_count)
 
             batches_to_render = self.culler.filter_draw_batches(draw_batches, visible_mask)
             self.stats_visible_entities = self.culler.stats_visible_entities
@@ -1685,13 +1649,9 @@ class RenderPipeline:
         # ---- PASS 2.6: Screen-Space Deferred Decals (Phase 9) ----
         self.decal_pass.execute(ctx, self.g_buffer)
 
-        # ---- PASS 2.7: Hierarchical-Z (Hi-Z) Depth Pyramid Pass ----
-        with profiler.region("Hi-Z"):
-            self.hiz_pass.execute(ctx)
-
         # ---- PASS 2.8: Current-Frame Direct Radiance (GI source) ----
-        # Runs after shadows and Hi-Z so SSGI samples this frame's direct
-        # diffuse + emissive instead of a stale composited HDR frame.
+        # Runs after shadows so SSGI samples this frame's direct diffuse +
+        # emissive instead of a stale composited HDR frame.
         ctx.resources["spot_shadow_map"] = self.spot_shadow_map
         with profiler.region("Direct radiance"):
             self.direct_radiance_pass.execute(ctx)
@@ -2056,7 +2016,6 @@ class RenderPipeline:
         self.texture_atlas.destroy()
         self.ssdm_pass.destroy()
         self.decal_pass.destroy()
-        self.hiz_pass.destroy()
         self.direct_radiance_pass.destroy()
         self.tess_mdi.destroy()
         self.gbuffer_tess_prog.release()

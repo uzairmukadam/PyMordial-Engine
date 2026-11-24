@@ -179,7 +179,7 @@ class TestRenderConfigShape:
 
     @pytest.mark.parametrize(
         "field",
-        ["frustum_cull_enabled", "hiz_cull_enabled", "hiz_debug_mip", "max_entities"],
+        ["frustum_cull_enabled", "max_entities"],
     )
     def test_declared_fields_exist(self, field):
         assert field in RenderConfig.__dataclass_fields__
@@ -188,10 +188,8 @@ class TestRenderConfigShape:
         cfg = get_quality_preset(GraphicsQuality.HIGH)
         tweaks = EngineTweaks()
         tweaks.frustum_cull_enabled = False
-        tweaks.hiz_cull_enabled = True
         tweaks.apply_to_pipeline(SimpleNamespace(config=cfg), force=True)
         assert cfg.frustum_cull_enabled is False
-        assert cfg.hiz_cull_enabled is True
 
     def test_preset_copy_is_independent(self):
         first = get_quality_preset(GraphicsQuality.HIGH)

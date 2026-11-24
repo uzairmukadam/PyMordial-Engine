@@ -24,11 +24,7 @@ layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light
 // Hardware depth-compare view of the spot atlas (see u_ShadowAtlasCmp).
 layout (binding = 16) uniform sampler2DShadow u_SpotShadowAtlasCmp;
 layout (binding = 13) uniform sampler2D u_IrradianceMap;       // Diffuse environment irradiance
-layout (binding = 14) uniform sampler2D u_HiZTexture;          // Hierarchical-Z Depth Pyramid Mip Chain
 layout (binding = 15) uniform sampler2D u_RMGITexture;           // Ray-Marched Global Illumination (RMGI)
-// RG32F linear-view-depth bounds hierarchy (R = nearest, G = farthest).
-// Bound to unit 17 so the legacy scalar pyramid on unit 14 stays untouched.
-layout (binding = 17) uniform sampler2D u_HiZBoundsTexture;
 // Current-frame direct diffuse + emissive radiance (GI source). Bound to unit 18.
 layout (binding = 18) uniform sampler2D u_DirectRadianceTexture;
 
@@ -73,16 +69,7 @@ layout (std430, binding = 3) buffer LightBuffer {
 
 // Configurable quality & feature uniforms
 uniform int u_CascadeCount = 4;  // 1 to 4
-uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 8=SSGI, 10=IndirectDiffuse, 11=HiZ, 12=SpotLights, 13=RMGI, 14=CascadeIndex, 15=CascadeCoverage, 17..22=HiZ bounds
-uniform int u_HiZDebugMip = 0;   // Mip level to visualize when u_GBufferDebug == 11 or 17..22
-
-// Hi-Z bounds debug modes (u_GBufferDebug values).
-#define HIZ_DEBUG_NEAREST   17
-#define HIZ_DEBUG_FARTHEST  18
-#define HIZ_DEBUG_SPAN      19
-#define HIZ_DEBUG_MASK      20
-#define HIZ_DEBUG_INVALID   21
-#define HIZ_DEBUG_RAW       22
+uniform int u_GBufferDebug = 0;  // 0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=ShadowAtlas, 6=ShadowMask, 8=SSGI, 10=IndirectDiffuse, 12=SpotLights, 13=RMGI, 14=CascadeIndex, 15=CascadeCoverage
 
 // Hard-shadow parametrization
 uniform float u_ShadowBias = 0.0015;   // Base world-space shadow depth bias (meters)
@@ -145,47 +132,6 @@ uniform mat4 u_SpotLightViewProjection[4];
 #include "shaders/common/shadows.glsl"
 #include "shaders/common/pbr_brdf.glsl"
 #include "shaders/common/depth.glsl"
-#include "shaders/common/hiz_bounds.glsl"
-
-// Distance-readable mapping for metric depth: log2(1 + d) compresses the huge
-// dynamic range of a 0.1..2000 m view frustum into a visible ramp while keeping
-// near-field differences legible.
-float HiZDebugDepthRamp(float linearDepth) {
-    return clamp(log2(1.0 + max(linearDepth, 0.0)) / log2(1.0 + 2000.0), 0.0, 1.0);
-}
-
-// Renders the RG32F bounds hierarchy for the selected debug mode.
-// Returns the colour to write; never falls through to deferred lighting.
-vec3 HiZBoundsDebugColor(int mode, int mip) {
-    vec2 bounds = textureLod(u_HiZBoundsTexture, v_UV, float(mip)).rg;
-    HiZDepthBounds b = HiZDepthBounds(bounds.x, bounds.y);
-    bool empty = HiZBoundsEmpty(b);
-    // A cell that claims geometry but has nearest > farthest is corrupt.
-    bool invalid = !empty && (b.nearest < 0.0 || b.farthest < b.nearest);
-
-    if (mode == HIZ_DEBUG_NEAREST) {
-        return empty ? vec3(0.02, 0.02, 0.06) : vec3(HiZDebugDepthRamp(b.nearest));
-    }
-    if (mode == HIZ_DEBUG_FARTHEST) {
-        return empty ? vec3(0.02, 0.02, 0.06) : vec3(HiZDebugDepthRamp(b.farthest));
-    }
-    if (mode == HIZ_DEBUG_SPAN) {
-        if (empty) return vec3(0.02, 0.02, 0.06);
-        float span = max(b.farthest - b.nearest, 0.0);
-        // Magenta ramp: black = zero span (single surface), bright = wide span.
-        return vec3(HiZDebugDepthRamp(span), 0.0, HiZDebugDepthRamp(span));
-    }
-    if (mode == HIZ_DEBUG_MASK) {
-        return empty ? vec3(0.05, 0.05, 0.10) : vec3(0.15, 0.85, 0.35);
-    }
-    if (mode == HIZ_DEBUG_INVALID) {
-        if (invalid) return vec3(1.0, 0.0, 0.0);
-        return empty ? vec3(0.05, 0.05, 0.10) : vec3(0.10, 0.10, 0.10);
-    }
-    // HIZ_DEBUG_RAW: nearest in red, farthest in green, empty in blue.
-    if (empty) return vec3(0.0, 0.0, 0.6);
-    return vec3(HiZDebugDepthRamp(b.nearest), HiZDebugDepthRamp(b.farthest), 0.0);
-}
 
 // Jorge Jimenez's Interleaved Gradient Noise (IGN) for uniform blue-noise spatial distribution
 float InterleavedGradientNoise(vec2 screen_pos) {
@@ -283,14 +229,6 @@ void main() {
 
     if (u_GBufferDebug == 4) {
         out_HDRColor = vec4(vec3(raw_depth), 1.0);
-        return;
-    } else if (u_GBufferDebug == 11) {
-        float hiz_d = textureLod(u_HiZTexture, v_UV, float(u_HiZDebugMip)).r;
-        out_HDRColor = vec4(vec3(hiz_d), 1.0);
-        return;
-    } else if (u_GBufferDebug >= HIZ_DEBUG_NEAREST && u_GBufferDebug <= HIZ_DEBUG_RAW) {
-        // Hi-Z bounds hierarchy debug: bypasses all deferred lighting work.
-        out_HDRColor = vec4(HiZBoundsDebugColor(u_GBufferDebug, u_HiZDebugMip), 1.0);
         return;
     } else if (u_GBufferDebug == 23) {
         // Current-frame direct radiance (GI source) debug view.

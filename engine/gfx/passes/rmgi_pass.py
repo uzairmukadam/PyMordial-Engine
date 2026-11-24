@@ -38,13 +38,6 @@ class RMGIPass(RenderPass):
         "_u_rm_steps_c1",
         "_u_rm_thickness",
         "_u_rm_intensity",
-        "_u_rm_traversal_mode",
-        "_u_rm_max_iterations",
-        "_u_rm_start_mip",
-        "_u_rm_multi_ascent",
-        "_u_rm_stats_enabled",
-        "_stats_ssbo",
-        "_stats_scratch",
         "_u_merge_target_res",
         "_u_merge_temporal_blend",
         "_u_merge_history_valid",
@@ -106,14 +99,6 @@ class RMGIPass(RenderPass):
         self._u_rm_steps_c1 = self.raymarch_prog.get("u_RMGI_StepsC1", None)
         self._u_rm_thickness = self.raymarch_prog.get("u_RMGI_Thickness", None)
         self._u_rm_intensity = self.raymarch_prog.get("u_RMGI_Intensity", None)
-        self._u_rm_traversal_mode = self.raymarch_prog.get("u_RMGI_TraversalMode", None)
-        self._u_rm_max_iterations = self.raymarch_prog.get("u_RMGI_MaxIterations", None)
-        self._u_rm_start_mip = self.raymarch_prog.get("u_RMGI_StartMip", None)
-        self._u_rm_multi_ascent = self.raymarch_prog.get("u_RMGI_MultiAscent", None)
-        self._u_rm_stats_enabled = self.raymarch_prog.get("u_RMGI_StatsEnabled", None)
-        # Debug-only iteration statistics buffer (22 uint32 counters).
-        self._stats_ssbo = self.ctx.buffer(reserve=22 * 4)
-        self._stats_scratch = np.zeros(22, dtype=np.uint32)
 
         self._u_merge_target_res = self.merge_prog.get("u_TargetResolution", None)
         self._u_merge_temporal_blend = self.merge_prog.get("u_TemporalBlend", None)
@@ -197,36 +182,6 @@ class RMGIPass(RenderPass):
         g_buffer.albedo_roughness_texture.use(location=3)
         g_buffer.surface_id_texture.use(location=4)
 
-        # Hi-Z bounds hierarchy (built in PASS 2.7). Only the Hi-Z traversal
-        # backend samples it; the linear backend ignores this binding.
-        hiz_bounds_tex = context.resources.get("hiz_bounds_texture", None)
-        if hiz_bounds_tex is not None:
-            hiz_bounds_tex.use(location=5)
-        else:
-            g_buffer.depth_texture.use(location=5)
-
-        traversal_mode = str(getattr(context.config, "rmgi_traversal_mode", "LINEAR")).upper()
-        if self._u_rm_traversal_mode is not None:
-            self._u_rm_traversal_mode.value = 1 if traversal_mode == "HIZ" else 0
-        if self._u_rm_max_iterations is not None:
-            self._u_rm_max_iterations.value = int(getattr(context.config, "rmgi_hiz_max_iterations", 64))
-        if self._u_rm_start_mip is not None:
-            self._u_rm_start_mip.value = int(getattr(context.config, "rmgi_hiz_start_mip", 0))
-        if self._u_rm_multi_ascent is not None:
-            self._u_rm_multi_ascent.value = int(getattr(context.config, "rmgi_hiz_multi_ascent", 0))
-
-        # Debug-only iteration statistics. Off by default so normal rendering is
-        # byte-identical; when enabled the counters are zeroed and bound.
-        stats_enabled = bool(getattr(context.config, "rmgi_stats_enabled", False))
-        if self._u_rm_stats_enabled is not None:
-            self._u_rm_stats_enabled.value = 1 if stats_enabled else 0
-        # The stats buffer block is always declared in the shader, so it must be
-        # bound even when disabled (an unbound declared SSBO is undefined).
-        if stats_enabled:
-            self._stats_scratch[:] = 0
-            self._stats_ssbo.write(self._stats_scratch.tobytes())
-        self._stats_ssbo.bind_to_storage_buffer(8)
-
         if self._u_rm_target_res is not None:
             self._u_rm_target_res.value = self._target_res_tuple
         if self._u_rm_interval_c0 is not None:
@@ -286,54 +241,6 @@ class RMGIPass(RenderPass):
         # Ping-pong history buffers
         self._current_filtered, self._current_history = self._current_history, self._current_filtered
 
-    def read_stats(self) -> dict[str, float]:
-        """Reads the debug iteration counters (requires ``rmgi_stats_enabled``)."""
-        raw = self._stats_ssbo.read()
-        vals = np.frombuffer(raw, dtype=np.uint32)
-        rays = int(vals[0])
-        iters = int(vals[1])
-        max_iter = int(vals[2])
-        hits = int(vals[3])
-        misses = int(vals[4])
-        limit = int(vals[5])
-        hit_iters = int(vals[6])
-        hit_max = int(vals[7])
-        miss_iters = int(vals[8])
-        miss_max = int(vals[9])
-        hit_count = int(vals[10])
-        miss_count = int(vals[11])
-        left_screen = int(vals[12])
-        exceeded_dist = int(vals[13])
-        exceeded_iters = int(vals[14])
-        invalid_proj = int(vals[15])
-        no_intersection = int(vals[16])
-        ascents = int(vals[17])
-        descents = int(vals[18])
-        highest_mip_sum = int(vals[19])
-        miss_dist_sum = int(vals[20])
-        miss_dist_count = int(vals[21])
-        return {
-            "rays": rays,
-            "avg_iterations": (iters / rays) if rays else 0.0,
-            "max_iterations": max_iter,
-            "hit_pct": (100.0 * hits / rays) if rays else 0.0,
-            "miss_pct": (100.0 * misses / rays) if rays else 0.0,
-            "limit_pct": (100.0 * limit / rays) if rays else 0.0,
-            "hit_avg_iterations": (hit_iters / hit_count) if hit_count else 0.0,
-            "hit_max_iterations": hit_max,
-            "miss_avg_iterations": (miss_iters / miss_count) if miss_count else 0.0,
-            "miss_max_iterations": miss_max,
-            "miss_left_screen": left_screen,
-            "miss_exceeded_dist": exceeded_dist,
-            "miss_exceeded_iters": exceeded_iters,
-            "miss_invalid_proj": invalid_proj,
-            "miss_no_intersection": no_intersection,
-            "avg_ascents": (ascents / rays) if rays else 0.0,
-            "avg_descents": (descents / rays) if rays else 0.0,
-            "avg_highest_mip": (highest_mip_sum / rays) if rays else 0.0,
-            "miss_avg_distance": (miss_dist_sum / 1000.0 / miss_dist_count) if miss_dist_count else 0.0,
-        }
-
     def destroy(self) -> None:
         self.raw_rmgi_tex.release()
         self.tex_a.release()
@@ -341,4 +248,3 @@ class RMGIPass(RenderPass):
         self.black_fallback.release()
         self.raymarch_prog.release()
         self.merge_prog.release()
-        self._stats_ssbo.release()

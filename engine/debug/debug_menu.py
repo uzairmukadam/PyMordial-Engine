@@ -35,25 +35,11 @@ except ImportError:
     gl = None
 
 
-# Hi-Z bounds debug modes (see GBufferDebugMode). These read the shared
-# u_HiZDebugMip uniform, so the mip selector applies to them too.
-_HIZ_BOUNDS_MODES = frozenset(
-    {
-        GBufferDebugMode.HIZ_BOUNDS_NEAREST,
-        GBufferDebugMode.HIZ_BOUNDS_FARTHEST,
-        GBufferDebugMode.HIZ_BOUNDS_SPAN,
-        GBufferDebugMode.HIZ_BOUNDS_MASK,
-        GBufferDebugMode.HIZ_BOUNDS_INVALID,
-        GBufferDebugMode.HIZ_BOUNDS_RAW,
-    }
-)
-
-# Tracing backend choices. LEGACY is the pre-existing implementation; the
-# alternative selects the shared Hi-Z tracer / explicit cascade model.
-_SSGI_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
-_SSR_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
-_AO_BACKENDS = ("LEGACY", "HIZ_BOUNDS")
-_RMGI_TRAVERSAL_MODES = ("LINEAR", "HIZ")
+# Tracing backend choices. LEGACY is the pre-existing implementation.
+_SSGI_BACKENDS = ("LEGACY",)
+_SSR_BACKENDS = ("LEGACY",)
+_AO_BACKENDS = ("LEGACY",)
+_RMGI_TRAVERSAL_MODES = ("LINEAR",)
 
 
 def _backend_index(value: str, choices: tuple[str, ...]) -> int:
@@ -684,16 +670,6 @@ class DebugMenu:
                     et.gbuffer_debug = GBufferDebugMode[gbuf_names[new_g_idx]]
                     self.toast.show(f"G-Buffer Mode: {et.gbuffer_debug.name}", duration=2.0)
 
-                if et.gbuffer_debug == GBufferDebugMode.HIZ:
-                    hiz_changed, new_hiz_mip = imgui.slider_int("Hi-Z Mip Level", et.hiz_debug_mip, 0, 10)
-                    if hiz_changed:
-                        et.hiz_debug_mip = new_hiz_mip
-                elif et.gbuffer_debug in _HIZ_BOUNDS_MODES:
-                    # The bounds hierarchy debug views read the same mip uniform.
-                    hiz_changed, new_hiz_mip = imgui.slider_int("Hi-Z Bounds Mip Level", et.hiz_debug_mip, 0, 10)
-                    if hiz_changed:
-                        et.hiz_debug_mip = new_hiz_mip
-
             if imgui.collapsing_header(
                 "Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value
             ):
@@ -707,14 +683,6 @@ class DebugMenu:
                     self.toast.show(f"GI Mode: {et.gi_mode}", duration=2.0)
 
                 if et.gi_mode == "SSGI":
-                    ssgi_backend_changed, ssgi_backend_idx = imgui.combo(
-                        "SSGI Backend", _backend_index(et.ssgi_backend, _SSGI_BACKENDS), _SSGI_BACKENDS
-                    )
-                    if ssgi_backend_changed:
-                        et.ssgi_backend = _SSGI_BACKENDS[ssgi_backend_idx]
-                        et.mark_custom()
-                        self.toast.show(f"SSGI Backend: {et.ssgi_backend}", duration=2.0)
-
                     ssgi_st_changed, ssgi_st_val = imgui.slider_int("SSGI Steps", et.ssgi_steps, 4, 32)
                     if ssgi_st_changed:
                         et.ssgi_steps = ssgi_st_val
@@ -776,34 +744,7 @@ class DebugMenu:
                             et.ssgi_temporal_blend = ssgi_tb_val
                             et.mark_custom()
 
-                    if str(getattr(et, "ssgi_backend", "LEGACY")).upper() == "HIZ_BOUNDS":
-                        ssgi_dbg_changed, ssgi_dbg_val = imgui.slider_int(
-                            "SSGI Debug View (0=off,1=raw,2=hitUV,3=dist,4=ratio,5=iters,6=miss,7=self,8=surface)",
-                            int(getattr(et, "ssgi_debug_view", 0)),
-                            0,
-                            8,
-                        )
-                        if ssgi_dbg_changed:
-                            et.ssgi_debug_view = ssgi_dbg_val
-                            et.mark_custom()
-
-                        ssgi_sr_changed, ssgi_sr_val = imgui.checkbox(
-                            "SSGI Surface Reject", bool(getattr(et, "ssgi_surface_reject", False))
-                        )
-                        if ssgi_sr_changed:
-                            et.ssgi_surface_reject = ssgi_sr_val
-                            et.mark_custom()
-
                 if et.gi_mode == "RMGI":
-                    rmgi_trav_changed, rmgi_trav_idx = imgui.combo(
-                        "RMGI Traversal", _backend_index(et.rmgi_traversal_mode, _RMGI_TRAVERSAL_MODES),
-                        _RMGI_TRAVERSAL_MODES
-                    )
-                    if rmgi_trav_changed:
-                        et.rmgi_traversal_mode = _RMGI_TRAVERSAL_MODES[rmgi_trav_idx]
-                        et.mark_custom()
-                        self.toast.show(f"RMGI Traversal: {et.rmgi_traversal_mode}", duration=2.0)
-
                     rmgi_ray_count_changed, rmgi_ray_count = imgui.slider_int("RMGI Ray Count", et.rmgi_ray_count, 4, 32)
                     if rmgi_ray_count_changed:
                         et.rmgi_ray_count = rmgi_ray_count
@@ -880,15 +821,6 @@ class DebugMenu:
                     self.toast.show(f"AO Mode: {et.ao_mode}", duration=2.0)
 
                 if et.ao_mode != "OFF":
-                    if et.ao_mode == "GTAO":
-                        ao_backend_changed, ao_backend_idx = imgui.combo(
-                            "AO Backend", _backend_index(et.ao_backend, _AO_BACKENDS), _AO_BACKENDS
-                        )
-                        if ao_backend_changed:
-                            et.ao_backend = _AO_BACKENDS[ao_backend_idx]
-                            et.mark_custom()
-                            self.toast.show(f"AO Backend: {et.ao_backend}", duration=2.0)
-
                     ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 3.0, "%.2f")
                     if ao_in_changed:
                         et.ao_intensity = ao_in_val
@@ -906,17 +838,6 @@ class DebugMenu:
                         et.ao_resolution_scale = ao_res_val
                         et.mark_custom()
 
-                    if et.ao_mode == "GTAO" and str(getattr(et, "ao_backend", "LEGACY")).upper() == "HIZ_BOUNDS":
-                        ao_dbg_changed, ao_dbg_val = imgui.slider_int(
-                            "AO Debug View (0=final,1=mip,2=occupancy,3=rejected,4=refined)",
-                            int(getattr(et, "ao_debug_view", 0)),
-                            0,
-                            4,
-                        )
-                        if ao_dbg_changed:
-                            et.ao_debug_view = ao_dbg_val
-                            et.mark_custom()
-
             if imgui.collapsing_header("Image Quality, Reflections & Local Lights"):
                 # IBL
                 ibl_changed, ibl_val = imgui.checkbox("Image-Based Lighting (IBL)", et.ibl_enabled)
@@ -933,14 +854,6 @@ class DebugMenu:
                     self.toast.show(f"SSR: {'ON' if ssr_val else 'OFF'}", duration=1.5)
 
                 if et.ssr_enabled:
-                    ssr_backend_changed, ssr_backend_idx = imgui.combo(
-                        "SSR Backend", _backend_index(et.ssr_backend, _SSR_BACKENDS), _SSR_BACKENDS
-                    )
-                    if ssr_backend_changed:
-                        et.ssr_backend = _SSR_BACKENDS[ssr_backend_idx]
-                        et.mark_custom()
-                        self.toast.show(f"SSR Backend: {et.ssr_backend}", duration=2.0)
-
                     ssr_st_changed, ssr_st_val = imgui.slider_int("SSR Steps", et.ssr_steps, 24, 128)
                     if ssr_st_changed:
                         et.ssr_steps = ssr_st_val
@@ -977,16 +890,6 @@ class DebugMenu:
                     if ssr_res_changed:
                         et.ssr_resolution_scale = ssr_res_val
                         et.mark_custom()
-
-                    ssr_modes = ["HIZ", "LINEAR"]
-                    ssr_mode_idx = ssr_modes.index(str(getattr(et, "ssr_mode", "HIZ")).upper()) if str(
-                        getattr(et, "ssr_mode", "HIZ")
-                    ).upper() in ssr_modes else 0
-                    ssr_mode_changed, ssr_mode_new = imgui.combo("SSR March Mode", ssr_mode_idx, ssr_modes)
-                    if ssr_mode_changed and ssr_mode_new != ssr_mode_idx:
-                        et.ssr_mode = ssr_modes[ssr_mode_new]
-                        et.mark_custom()
-                        self.toast.show(f"SSR March: {et.ssr_mode}", duration=1.5)
 
                 # Anti-Aliasing Mode (Mutually Exclusive: OFF, FXAA, SMAA 1x, SMAA 2x, SMAA 4x, TAA)
                 aa_modes = ["OFF", "FXAA", "SMAA 1x", "SMAA 2x", "SMAA 4x", "TAA"]
@@ -1714,11 +1617,6 @@ class DebugMenu:
                 fc_c, fc_v = imgui.checkbox("Vectorized Frustum Culling", et.frustum_cull_enabled)
                 if fc_c:
                     et.frustum_cull_enabled = fc_v
-                    et.mark_custom()
-
-                hiz_c, hiz_v = imgui.checkbox("GPU Hi-Z Occlusion Culling", getattr(et, "hiz_cull_enabled", False))
-                if hiz_c:
-                    et.hiz_cull_enabled = hiz_v
                     et.mark_custom()
 
                 pipe = getattr(self.app, "pipeline", None) if self.app is not None else None

@@ -312,7 +312,7 @@ def main() -> None:
         "--gbuffer-debug",
         type=int,
         default=0,
-        help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 11=HiZ, 12=SpotLights, 13=RMGI)",
+        help="G-Buffer / Shadow / GI debug mode (0=Off, 1=Albedo, 2=Normals, 3=Material, 4=Depth, 5=Atlas, 6=ShadowMask, 7=AO, 8=SSGI, 10=GI_Total, 12=SpotLights, 13=RMGI)",
     )
     parser.add_argument(
         "--ao-mode",

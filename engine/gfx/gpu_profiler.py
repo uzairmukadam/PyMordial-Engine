@@ -18,16 +18,16 @@ Usage::
 
     profiler.begin_frame()
 
-    with profiler.region("HiZ"):
-        hiz_pass.execute(ctx)
+    with profiler.region("SSR"):
+        ssr_pass.execute(ctx)
 
-    profiler.begin("SSR")
-    ssr_pass.execute(ctx)
+    profiler.begin("AO")
+    ao_pass.execute(ctx)
     profiler.end()
 
     profiler.end_frame()
 
-    ms = profiler.get_ms("HiZ")          # None until the ring has wrapped
+    ms = profiler.get_ms("SSR")          # None until the ring has wrapped
     for name, ms in profiler.results().items():
         ...
 

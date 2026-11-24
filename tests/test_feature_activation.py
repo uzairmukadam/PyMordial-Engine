@@ -61,23 +61,11 @@ class TestAOActivation:
 
     def test_gtao_legacy(self, pipeline, ecs):
         pipeline.config.ao_mode = "GTAO"
-        pipeline.config.ao_backend = "LEGACY"
         pipeline.apply_config(pipeline.config)
         _render_frames(pipeline, ecs)
         state = pipeline.feature_state()["ao"]
-        assert state["requested_backend"] == "LEGACY"
         assert state["active_backend"] == "LEGACY"
         assert state["fallback_reason"] is None
-
-    def test_gtao_hiz_bounds_or_explicit_fallback(self, pipeline, ecs):
-        pipeline.config.ao_mode = "GTAO"
-        pipeline.config.ao_backend = "HIZ_BOUNDS"
-        pipeline.apply_config(pipeline.config)
-        _render_frames(pipeline, ecs)
-        state = pipeline.feature_state()["ao"]
-        assert state["requested_backend"] == "HIZ_BOUNDS"
-        # Either the Hi-Z bounds backend ran, or a fallback was explicitly reported.
-        assert state["active_backend"] == "HIZ_BOUNDS" or state["fallback_reason"] is not None
 
     def test_ao_off(self, pipeline, ecs):
         pipeline.config.ao_mode = "OFF"
@@ -106,21 +94,11 @@ class TestGIActivation:
 
     def test_ssgi_legacy(self, pipeline, ecs):
         pipeline.config.gi_mode = "SSGI"
-        pipeline.config.ssgi_backend = "LEGACY"
         pipeline.apply_config(pipeline.config)
         _render_frames(pipeline, ecs)
         state = pipeline.feature_state()["gi"]
         assert state["active_mode"] == "SSGI"
         assert state["active_backend"] == "LEGACY"
-
-    def test_ssgi_hiz_bounds_or_fallback(self, pipeline, ecs):
-        pipeline.config.gi_mode = "SSGI"
-        pipeline.config.ssgi_backend = "HIZ_BOUNDS"
-        pipeline.apply_config(pipeline.config)
-        _render_frames(pipeline, ecs)
-        state = pipeline.feature_state()["gi"]
-        assert state["requested_backend"] == "HIZ_BOUNDS"
-        assert state["active_backend"] == "HIZ_BOUNDS" or state["fallback_reason"] is not None
 
     def test_rmgi(self, pipeline, ecs):
         pipeline.config.gi_mode = "RMGI"
@@ -139,21 +117,11 @@ class TestSSRActivation:
 
     def test_ssr_legacy(self, pipeline, ecs):
         pipeline.config.ssr_enabled = True
-        pipeline.config.ssr_backend = "LEGACY"
         pipeline.apply_config(pipeline.config)
         _render_frames(pipeline, ecs)
         state = pipeline.feature_state()["ssr"]
         assert state["active_backend"] == "LEGACY"
         assert state["fallback_reason"] is None
-
-    def test_ssr_hiz_bounds_or_fallback(self, pipeline, ecs):
-        pipeline.config.ssr_enabled = True
-        pipeline.config.ssr_backend = "HIZ_BOUNDS"
-        pipeline.apply_config(pipeline.config)
-        _render_frames(pipeline, ecs)
-        state = pipeline.feature_state()["ssr"]
-        assert state["requested_backend"] == "HIZ_BOUNDS"
-        assert state["active_backend"] == "HIZ_BOUNDS" or state["fallback_reason"] is not None
 
 
 class TestAAExclusivity:
