@@ -18,6 +18,7 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
         "04_data_driven_platformer.py",
         "05_menu_system.py",
         "06_graphics_benchmark.py",
+        "08_gi_validation_lab.py",
     ],
 )
 def test_example_headless_execution(example_script: str) -> None:

@@ -22,6 +22,7 @@ to select a preset explicitly.
 | `05_menu_system.py` | Main menu, controls screen, level start, pause/resume, and return-to-menu flow |
 | `06_graphics_benchmark.py` | Reproducible scene with configurable entity count, camera flight, FPS/frame-time sampling, and live GI/SSR controls |
 | `07_the_last_aqueduct.py` | A high-detail cliffside ruin demo with a rising jump route, ancient aqueduct, lantern-lit temple, flooded ravine, and per-surface water |
+| `08_gi_validation_lab.py` | Deterministic GI validation lab: neutral/RGB/local-light/shadow/emissive/thin-geometry zones, near/mid/far courtyard, doorway mixed view, motion/disocclusion, and GI Off/SSGI/RMGI/AMRGI comparison controls |
 
 Run the demo with `python examples/07_the_last_aqueduct.py`. Its
 `last_aqueduct_level.json` data defines the collidable traversal route, rotated
