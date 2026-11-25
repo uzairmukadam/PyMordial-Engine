@@ -267,10 +267,11 @@ void main() {
             float edgeConf = edge.x * edge.y;
             float distConf = clamp(1.0 - hit.distance / max(u_FarEnd, 1e-3), 0.0, 1.0);
 
-            // Documented HDR/firefly control (Karis-style soft compression).
+            // Firefly control: hue-preserving soft knee that is IDENTITY below the
+            // threshold. Only genuine outliers (lum > u_RadianceClamp) are scaled
+            // down; ordinary bright surfaces keep their full physical radiance.
             float lum = dot(L, vec3(0.2126, 0.7152, 0.0722));
-            L *= 1.0 / (1.0 + lum * 0.75);
-            L = clamp(L, vec3(0.0), vec3(u_RadianceClamp));
+            if (lum > u_RadianceClamp) L *= u_RadianceClamp / lum;
 
             // Physical radiance: only edge validity gates it (a genuinely invalid
             // screen-edge hit). Distance is NOT a physical attenuation of indirect

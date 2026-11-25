@@ -154,8 +154,23 @@ class TestAMRGIShaderContracts:
     def test_composition_convention(self):
         src = load_shader("deferred_resolve.frag")
         assert "u_AMRGITexture" in src
-        # AMRGI applies albedo/PI exactly once (incoming radiance convention).
         assert "amrgi_diffuse" in src
+
+    def test_composition_applies_receiver_brdf_once(self):
+        src = load_shader("deferred_resolve.frag")
+        # The trace already returns a cosine-weighted mean of incoming radiance
+        # (irradiance/PI). Cosine-weighted sampling cancels cos/pdf, so the
+        # receiver BRDF is albedo only -- a second /PI would darken by PI.
+        assert "amrgi_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic)" in src
+        assert "amrgi_sample.rgb * (albedo / PI)" not in src
+        assert "amrgi_sample.rgb * albedo / PI" not in src
+
+    def test_firefly_knee_is_identity_below_threshold(self):
+        src = load_shader("amrgi_trace.comp")
+        # Firefly control must be a soft knee that leaves ordinary radiance
+        # untouched; an unconditional 1/(1+lum*k) compresses every sample.
+        assert "if (lum > u_RadianceClamp) L *= u_RadianceClamp / lum;" in src
+        assert "1.0 / (1.0 + lum * 0.75)" not in src
 
     def test_diagnostic_views_present(self):
         src = load_shader("deferred_resolve.frag")

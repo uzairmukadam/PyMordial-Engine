@@ -513,9 +513,12 @@ void main() {
             isinf(amrgi_sample.r) || isinf(amrgi_sample.g) || isinf(amrgi_sample.b)) {
             amrgi_sample = vec4(0.0);
         }
-        // AMRGI publishes incoming indirect diffuse radiance; apply the
-        // receiver's Lambertian BRDF (albedo / PI) exactly once.
-        vec3 amrgi_diffuse = clamp(amrgi_sample.rgb, vec3(0.0), vec3(30.0)) * (albedo / PI) * (1.0 - metallic);
+        // AMRGI raw is a cosine-weighted mean of incoming radiance Li, i.e.
+        // irradiance/PI. Cosine-weighted sampling already cancels the cos/pdf
+        // term, so the receiver's Lambertian response is just albedo (NOT
+        // albedo/PI — that would apply 1/PI twice). Convention B: raw stores
+        // pre-BRDF incoming radiance; the receiver BRDF is applied here once.
+        vec3 amrgi_diffuse = clamp(amrgi_sample.rgb, vec3(0.0), vec3(30.0)) * albedo * (1.0 - metallic);
         indirect_diffuse += amrgi_diffuse;
     } else if (u_GIEnabled == 4) {
         // Ray-Marched Global Illumination (RMGI)
