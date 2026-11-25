@@ -96,7 +96,8 @@ class AMRGIPass(RenderPass):
             for name in (
                 "u_TargetResolution", "u_NearEnd", "u_MidEnd", "u_FarEnd",
                 "u_NearSteps", "u_MidSteps", "u_FarSteps", "u_RefineIters",
-                "u_Thickness", "u_Intensity", "u_HistoryValid", "u_MidRate", "u_FarRate",
+                "u_Thickness", "u_Intensity", "u_RayCount", "u_RadianceClamp",
+                "u_HistoryValid", "u_MidRate", "u_FarRate",
             )
         }
         self._u_recon = {
@@ -104,6 +105,7 @@ class AMRGIPass(RenderPass):
             for name in (
                 "u_FullResolution", "u_HalfResolution", "u_TemporalBlend",
                 "u_HistoryValid", "u_PrevView", "u_PrevJitter",
+                "u_SpatialStrength", "u_DepthEdge", "u_NormalEdge",
             )
         }
 
@@ -212,30 +214,38 @@ class AMRGIPass(RenderPass):
         u = self._u_trace
         if u["u_TargetResolution"] is not None:
             u["u_TargetResolution"].value = self._target_res_tuple
+        # Range boundaries: enforce 0 < near < mid < far with safe ordering.
+        near_end = max(float(getattr(cfg, "amrgi_near_end", 3.0)), 0.1)
+        mid_end = max(float(getattr(cfg, "amrgi_mid_end", 12.0)), near_end + 0.1)
+        far_end = max(float(getattr(cfg, "amrgi_far_end", 40.0)), mid_end + 0.1)
         if u["u_NearEnd"] is not None:
-            u["u_NearEnd"].value = float(getattr(cfg, "amrgi_near_end", 3.0))
+            u["u_NearEnd"].value = near_end
         if u["u_MidEnd"] is not None:
-            u["u_MidEnd"].value = float(getattr(cfg, "amrgi_mid_end", 12.0))
+            u["u_MidEnd"].value = mid_end
         if u["u_FarEnd"] is not None:
-            u["u_FarEnd"].value = float(getattr(cfg, "amrgi_far_end", 40.0))
+            u["u_FarEnd"].value = far_end
         if u["u_NearSteps"] is not None:
-            u["u_NearSteps"].value = int(getattr(cfg, "amrgi_near_steps", 7))
+            u["u_NearSteps"].value = max(1, min(32, int(getattr(cfg, "amrgi_near_steps", 7))))
         if u["u_MidSteps"] is not None:
-            u["u_MidSteps"].value = int(getattr(cfg, "amrgi_mid_steps", 5))
+            u["u_MidSteps"].value = max(1, min(32, int(getattr(cfg, "amrgi_mid_steps", 5))))
         if u["u_FarSteps"] is not None:
-            u["u_FarSteps"].value = int(getattr(cfg, "amrgi_far_steps", 4))
+            u["u_FarSteps"].value = max(1, min(32, int(getattr(cfg, "amrgi_far_steps", 4))))
         if u["u_RefineIters"] is not None:
-            u["u_RefineIters"].value = int(getattr(cfg, "amrgi_refine_iters", 3))
+            u["u_RefineIters"].value = max(0, min(8, int(getattr(cfg, "amrgi_near_refine_steps", 3))))
         if u["u_Thickness"] is not None:
             u["u_Thickness"].value = float(getattr(cfg, "amrgi_thickness", 0.30))
         if u["u_Intensity"] is not None:
             u["u_Intensity"].value = float(getattr(cfg, "amrgi_intensity", 1.0))
+        if u["u_RayCount"] is not None:
+            u["u_RayCount"].value = max(1, min(4, int(getattr(cfg, "amrgi_ray_count", 1))))
+        if u["u_RadianceClamp"] is not None:
+            u["u_RadianceClamp"].value = max(0.1, float(getattr(cfg, "amrgi_radiance_clamp", 4.0)))
         if u["u_HistoryValid"] is not None:
             u["u_HistoryValid"].value = 0 if self._first_frame else 1
         if u["u_MidRate"] is not None:
-            u["u_MidRate"].value = int(getattr(cfg, "amrgi_mid_rate", 2))
+            u["u_MidRate"].value = max(1, int(getattr(cfg, "amrgi_mid_rate", 2)))
         if u["u_FarRate"] is not None:
-            u["u_FarRate"].value = int(getattr(cfg, "amrgi_far_rate", 4))
+            u["u_FarRate"].value = max(1, int(getattr(cfg, "amrgi_far_rate", 4)))
 
         gx = (self.width + 7) // 8
         gy = (self.height + 7) // 8
@@ -268,6 +278,12 @@ class AMRGIPass(RenderPass):
         if u["u_PrevJitter"] is not None:
             prev_jitter = context.resources.get("prev_jitter", (0.0, 0.0))
             u["u_PrevJitter"].value = (float(prev_jitter[0]), float(prev_jitter[1]))
+        if u["u_SpatialStrength"] is not None:
+            u["u_SpatialStrength"].value = max(0.0, min(1.0, float(getattr(cfg, "amrgi_spatial_strength", 1.0))))
+        if u["u_DepthEdge"] is not None:
+            u["u_DepthEdge"].value = max(0.1, float(getattr(cfg, "amrgi_depth_edge", 1.0)))
+        if u["u_NormalEdge"] is not None:
+            u["u_NormalEdge"].value = max(1.0, float(getattr(cfg, "amrgi_normal_edge", 16.0)))
 
         gx = (self.full_width + 7) // 8
         gy = (self.full_height + 7) // 8

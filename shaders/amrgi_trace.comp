@@ -58,6 +58,8 @@ uniform int u_FarSteps;            // coarse
 uniform int u_RefineIters;         // near-hit refinement iterations
 uniform float u_Thickness;         // base thickness (m)
 uniform float u_Intensity;
+uniform int u_RayCount;            // rays per active sample (1..4)
+uniform float u_RadianceClamp;     // stabilization clamp on hit radiance
 uniform int u_HistoryValid;        // 0 on first frame / after reset
 uniform int u_MidRate;             // 1 in N pixels trace mid when not requested
 uniform int u_FarRate;             // 1 in N pixels trace far when not requested
@@ -223,47 +225,65 @@ void main() {
 
     vec3 dir = CosineHemisphereRay(normalView, rot);
 
-    Hit hit = MarchRange(origin, dir, uv, noise, 0.0, u_NearEnd, u_NearSteps, 1,
-                         originSurfaceID, normalView, true);
-    if (!hit.hit && wantMid) {
-        hit = MarchRange(origin, dir, uv, noise, u_NearEnd, u_MidEnd, u_MidSteps, 2,
-                         originSurfaceID, normalView, false);
-    }
-    if (!hit.hit && wantFar) {
-        hit = MarchRange(origin, dir, uv, noise, u_MidEnd, u_FarEnd, u_FarSteps, 3,
-                         originSurfaceID, normalView, false);
-    }
-
+    // ---- Multi-ray accumulation (distinct low-discrepancy directions) ----
+    int rayCount = clamp(u_RayCount, 1, 4);
     vec3 radiance = vec3(0.0);
     float confidence = 0.0;
     float hitDist = 0.0;
     int rangeClass = 0;
+    float nearestHit = 1e20;
+    int hits = 0;
 
-    if (hit.hit) {
-        vec3 L = texture(u_DirectRadiance, hit.uv).rgb;
-        if (any(isnan(L)) || any(isinf(L))) L = vec3(0.0);
+    for (int r = 0; r < rayCount; ++r) {
+        // Distinct direction per ray: offset the rotation by the golden ratio.
+        float rayRot = fract(rot + float(r) * 0.61803398875);
+        vec3 rdir = (r == 0) ? dir : CosineHemisphereRay(normalView, rayRot);
 
-        // Edge confidence.
-        vec2 edge = smoothstep(vec2(0.0), vec2(0.06), hit.uv) * (1.0 - smoothstep(vec2(0.94), vec2(1.0), hit.uv));
-        float edgeConf = edge.x * edge.y;
-        // Distance confidence (far hits contribute less per sample).
-        float distConf = clamp(1.0 - hit.distance / max(u_FarEnd, 1e-3), 0.0, 1.0);
-        confidence = edgeConf * mix(1.0, distConf, 0.5);
+        Hit hit = MarchRange(origin, rdir, uv, noise, 0.0, u_NearEnd, u_NearSteps, 1,
+                             originSurfaceID, normalView, true);
+        if (!hit.hit && wantMid) {
+            hit = MarchRange(origin, rdir, uv, noise, u_NearEnd, u_MidEnd, u_MidSteps, 2,
+                             originSurfaceID, normalView, false);
+        }
+        if (!hit.hit && wantFar) {
+            hit = MarchRange(origin, rdir, uv, noise, u_MidEnd, u_FarEnd, u_FarSteps, 3,
+                             originSurfaceID, normalView, false);
+        }
 
-        // Documented HDR/firefly control (Karis-style soft compression).
-        float lum = dot(L, vec3(0.2126, 0.7152, 0.0722));
-        L *= 1.0 / (1.0 + lum * 0.75);
-        L = clamp(L, vec3(0.0), vec3(4.0));
+        if (hit.hit) {
+            vec3 L = texture(u_DirectRadiance, hit.uv).rgb;
+            if (any(isnan(L)) || any(isinf(L))) L = vec3(0.0);
 
-        radiance = L * confidence * u_Intensity;
-        hitDist = hit.distance;
-        rangeClass = hit.rangeClass;
+            vec2 edge = smoothstep(vec2(0.0), vec2(0.06), hit.uv) * (1.0 - smoothstep(vec2(0.94), vec2(1.0), hit.uv));
+            float edgeConf = edge.x * edge.y;
+            float distConf = clamp(1.0 - hit.distance / max(u_FarEnd, 1e-3), 0.0, 1.0);
+            float conf = edgeConf * mix(1.0, distConf, 0.5);
+
+            // Documented HDR/firefly control (Karis-style soft compression).
+            float lum = dot(L, vec3(0.2126, 0.7152, 0.0722));
+            L *= 1.0 / (1.0 + lum * 0.75);
+            L = clamp(L, vec3(0.0), vec3(u_RadianceClamp));
+
+            radiance += L * conf;
+            confidence += conf;
+            hits += 1;
+            if (hit.distance < nearestHit) {
+                nearestHit = hit.distance;
+                hitDist = hit.distance;
+                rangeClass = hit.rangeClass;
+            }
+        }
     }
+
+    // Normalize by the launched ray count so more rays converge to the same
+    // brightness rather than becoming brighter.
+    radiance = radiance / float(rayCount) * u_Intensity;
+    confidence = confidence / float(rayCount);
 
     if (any(isnan(radiance)) || any(isinf(radiance))) radiance = vec3(0.0);
     radiance = clamp(radiance, vec3(0.0), vec3(40.0));
 
-    float newStreak = hit.hit ? 0.0 : min(missStreak + 0.25, 1.0);
+    float newStreak = hits > 0 ? 0.0 : min(missStreak + 0.25, 1.0);
 
     imageStore(u_OutputRadiance, pixel, vec4(radiance, confidence));
     imageStore(u_OutputAux, pixel, vec4(hitDist, float(rangeClass), confidence, newStreak));

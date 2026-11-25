@@ -811,6 +811,84 @@ class DebugMenu:
                         et.rmgi_resolution_scale = rmgi_res_val
                         et.mark_custom()
 
+                if et.gi_mode == "AMRGI":
+                    if imgui.tree_node("AMRGI Quality"):
+                        c, v = imgui.slider_float("Resolution Scale", float(getattr(et, "amrgi_resolution_scale", 0.5)), 0.25, 1.0, "%.2f")
+                        if c:
+                            et.amrgi_resolution_scale = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Rays / Sample", int(getattr(et, "amrgi_ray_count", 1)), 1, 4)
+                        if c:
+                            et.amrgi_ray_count = v
+                            et.mark_custom()
+                        imgui.tree_pop()
+                    if imgui.tree_node("AMRGI Range"):
+                        c, v = imgui.slider_float("Near End", float(getattr(et, "amrgi_near_end", 3.0)), 0.5, 10.0, "%.1fm")
+                        if c:
+                            et.amrgi_near_end = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Mid End", float(getattr(et, "amrgi_mid_end", 12.0)), 2.0, 30.0, "%.1fm")
+                        if c:
+                            et.amrgi_mid_end = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Far End", float(getattr(et, "amrgi_far_end", 40.0)), 10.0, 120.0, "%.1fm")
+                        if c:
+                            et.amrgi_far_end = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Near Steps", int(getattr(et, "amrgi_near_steps", 7)), 1, 32)
+                        if c:
+                            et.amrgi_near_steps = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Mid Steps", int(getattr(et, "amrgi_mid_steps", 5)), 1, 32)
+                        if c:
+                            et.amrgi_mid_steps = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Far Steps", int(getattr(et, "amrgi_far_steps", 4)), 1, 32)
+                        if c:
+                            et.amrgi_far_steps = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Near Refine", int(getattr(et, "amrgi_near_refine_steps", 3)), 0, 8)
+                        if c:
+                            et.amrgi_near_refine_steps = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Mid Rate (1/N)", int(getattr(et, "amrgi_mid_rate", 2)), 1, 16)
+                        if c:
+                            et.amrgi_mid_rate = v
+                            et.mark_custom()
+                        c, v = imgui.slider_int("Far Rate (1/N)", int(getattr(et, "amrgi_far_rate", 4)), 1, 16)
+                        if c:
+                            et.amrgi_far_rate = v
+                            et.mark_custom()
+                        imgui.tree_pop()
+                    if imgui.tree_node("AMRGI Reconstruction"):
+                        c, v = imgui.slider_float("Temporal Blend", float(getattr(et, "amrgi_temporal_blend", 0.90)), 0.0, 0.95, "%.2f")
+                        if c:
+                            et.amrgi_temporal_blend = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Spatial Strength", float(getattr(et, "amrgi_spatial_strength", 1.0)), 0.0, 1.0, "%.2f")
+                        if c:
+                            et.amrgi_spatial_strength = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Depth Edge", float(getattr(et, "amrgi_depth_edge", 1.0)), 0.1, 4.0, "%.2f")
+                        if c:
+                            et.amrgi_depth_edge = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Normal Edge", float(getattr(et, "amrgi_normal_edge", 16.0)), 1.0, 64.0, "%.0f")
+                        if c:
+                            et.amrgi_normal_edge = v
+                            et.mark_custom()
+                        imgui.tree_pop()
+                    if imgui.tree_node("AMRGI Lighting"):
+                        c, v = imgui.slider_float("Intensity", float(getattr(et, "amrgi_intensity", 1.0)), 0.1, 3.0, "%.2f")
+                        if c:
+                            et.amrgi_intensity = v
+                            et.mark_custom()
+                        c, v = imgui.slider_float("Radiance Clamp", float(getattr(et, "amrgi_radiance_clamp", 4.0)), 0.5, 16.0, "%.1f")
+                        if c:
+                            et.amrgi_radiance_clamp = v
+                            et.mark_custom()
+                        imgui.tree_pop()
+
                 # AO Mode (OFF, SSAO, GTAO)
                 ao_modes = ["OFF", "SSAO", "GTAO"]
                 curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 3

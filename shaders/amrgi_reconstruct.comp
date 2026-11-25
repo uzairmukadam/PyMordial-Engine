@@ -47,6 +47,9 @@ uniform float u_TemporalBlend;
 uniform int u_HistoryValid;
 uniform mat4 u_PrevView;
 uniform vec2 u_PrevJitter;
+uniform float u_SpatialStrength;   // 0 = nearest tap only, 1 = full bilateral
+uniform float u_DepthEdge;         // depth edge sensitivity (larger = softer)
+uniform float u_NormalEdge;        // normal edge sensitivity (larger = softer)
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -75,7 +78,8 @@ void main() {
 
     // ---- Edge-aware spatial upscale from half-res trace ----
     vec2 halfTexel = 1.0 / u_HalfResolution;
-    float depthSigma = max(0.08, abs(centerPos.z) * 0.012);
+    float depthSigma = max(0.08, abs(centerPos.z) * 0.012) * u_DepthEdge;
+    float normalPow = max(u_NormalEdge, 1.0);
     vec3 spatial = vec3(0.0);
     float wsum = 0.0;
     vec3 nmin = vec3(1e20);
@@ -90,7 +94,7 @@ void main() {
             vec3 sn = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, suv).rg));
             float sid = texture(u_GBufferSurfaceID, suv).r;
             float planeDist = abs(dot(centerN, sp - centerPos));
-            float nw = pow(max(dot(centerN, sn), 0.0), 16.0);
+            float nw = pow(max(dot(centerN, sn), 0.0), normalPow);
             float idw = (abs(sid - centerID) < 0.25 || centerID <= 0.0) ? 1.0 : 0.0;
             float w = exp(-planeDist / depthSigma) * nw * idw;
             vec4 s = texture(u_RawRadiance, suv);
@@ -100,7 +104,10 @@ void main() {
             nmax = max(nmax, s.rgb);
         }
     }
-    vec3 current = wsum > 1e-5 ? spatial / wsum : texture(u_RawRadiance, uv).rgb;
+    vec3 centerTap = texture(u_RawRadiance, uv).rgb;
+    vec3 filtered = wsum > 1e-5 ? spatial / wsum : centerTap;
+    // Spatial strength blends between the raw center tap and the bilateral result.
+    vec3 current = mix(centerTap, filtered, clamp(u_SpatialStrength, 0.0, 1.0));
 
     // ---- Temporal reconstruction ----
     if (u_HistoryValid != 0) {

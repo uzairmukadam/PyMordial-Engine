@@ -103,6 +103,23 @@ class EngineTweaks:
         "rmgi_thickness",
         "rmgi_temporal_blend",
         "rmgi_resolution_scale",
+        "amrgi_resolution_scale",
+        "amrgi_ray_count",
+        "amrgi_near_end",
+        "amrgi_mid_end",
+        "amrgi_far_end",
+        "amrgi_near_steps",
+        "amrgi_mid_steps",
+        "amrgi_far_steps",
+        "amrgi_near_refine_steps",
+        "amrgi_mid_rate",
+        "amrgi_far_rate",
+        "amrgi_temporal_blend",
+        "amrgi_spatial_strength",
+        "amrgi_depth_edge",
+        "amrgi_normal_edge",
+        "amrgi_intensity",
+        "amrgi_radiance_clamp",
         "ibl_enabled",
         "ssr_enabled",
         "ssr_steps",
@@ -346,6 +363,23 @@ class EngineTweaks:
         self.rmgi_thickness = 0.15
         self.rmgi_temporal_blend = 0.96
         self.rmgi_resolution_scale = 1.0
+        self.amrgi_resolution_scale = 0.5
+        self.amrgi_ray_count = 1
+        self.amrgi_near_end = 3.0
+        self.amrgi_mid_end = 12.0
+        self.amrgi_far_end = 40.0
+        self.amrgi_near_steps = 7
+        self.amrgi_mid_steps = 5
+        self.amrgi_far_steps = 4
+        self.amrgi_near_refine_steps = 3
+        self.amrgi_mid_rate = 2
+        self.amrgi_far_rate = 4
+        self.amrgi_temporal_blend = 0.90
+        self.amrgi_spatial_strength = 1.0
+        self.amrgi_depth_edge = 1.0
+        self.amrgi_normal_edge = 16.0
+        self.amrgi_intensity = 1.0
+        self.amrgi_radiance_clamp = 4.0
         self.energy_compensation_enabled = True
         self.specular_aa_enabled = True
         self.object_motion_vectors_enabled = True
@@ -735,6 +769,23 @@ class EngineTweaks:
             p_cfg.rmgi_thickness = float(self.rmgi_thickness)
             p_cfg.rmgi_temporal_blend = float(self.rmgi_temporal_blend)
             p_cfg.rmgi_resolution_scale = float(self.rmgi_resolution_scale)
+            p_cfg.amrgi_resolution_scale = float(self.amrgi_resolution_scale)
+            p_cfg.amrgi_ray_count = int(self.amrgi_ray_count)
+            p_cfg.amrgi_near_end = float(self.amrgi_near_end)
+            p_cfg.amrgi_mid_end = float(self.amrgi_mid_end)
+            p_cfg.amrgi_far_end = float(self.amrgi_far_end)
+            p_cfg.amrgi_near_steps = int(self.amrgi_near_steps)
+            p_cfg.amrgi_mid_steps = int(self.amrgi_mid_steps)
+            p_cfg.amrgi_far_steps = int(self.amrgi_far_steps)
+            p_cfg.amrgi_near_refine_steps = int(self.amrgi_near_refine_steps)
+            p_cfg.amrgi_mid_rate = int(self.amrgi_mid_rate)
+            p_cfg.amrgi_far_rate = int(self.amrgi_far_rate)
+            p_cfg.amrgi_temporal_blend = float(self.amrgi_temporal_blend)
+            p_cfg.amrgi_spatial_strength = float(self.amrgi_spatial_strength)
+            p_cfg.amrgi_depth_edge = float(self.amrgi_depth_edge)
+            p_cfg.amrgi_normal_edge = float(self.amrgi_normal_edge)
+            p_cfg.amrgi_intensity = float(self.amrgi_intensity)
+            p_cfg.amrgi_radiance_clamp = float(self.amrgi_radiance_clamp)
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
@@ -1007,6 +1058,23 @@ class EngineTweaks:
             "rmgi_thickness",
             "rmgi_temporal_blend",
             "rmgi_resolution_scale",
+            "amrgi_resolution_scale",
+            "amrgi_ray_count",
+            "amrgi_near_end",
+            "amrgi_mid_end",
+            "amrgi_far_end",
+            "amrgi_near_steps",
+            "amrgi_mid_steps",
+            "amrgi_far_steps",
+            "amrgi_near_refine_steps",
+            "amrgi_mid_rate",
+            "amrgi_far_rate",
+            "amrgi_temporal_blend",
+            "amrgi_spatial_strength",
+            "amrgi_depth_edge",
+            "amrgi_normal_edge",
+            "amrgi_intensity",
+            "amrgi_radiance_clamp",
             "ao_mode",
             "ao_intensity",
             "ao_radius",
@@ -1230,6 +1298,23 @@ class EngineTweaks:
             "rmgi_thickness": float(self.rmgi_thickness),
             "rmgi_temporal_blend": float(self.rmgi_temporal_blend),
             "rmgi_resolution_scale": float(self.rmgi_resolution_scale),
+            "amrgi_resolution_scale": float(self.amrgi_resolution_scale),
+            "amrgi_ray_count": int(self.amrgi_ray_count),
+            "amrgi_near_end": float(self.amrgi_near_end),
+            "amrgi_mid_end": float(self.amrgi_mid_end),
+            "amrgi_far_end": float(self.amrgi_far_end),
+            "amrgi_near_steps": int(self.amrgi_near_steps),
+            "amrgi_mid_steps": int(self.amrgi_mid_steps),
+            "amrgi_far_steps": int(self.amrgi_far_steps),
+            "amrgi_near_refine_steps": int(self.amrgi_near_refine_steps),
+            "amrgi_mid_rate": int(self.amrgi_mid_rate),
+            "amrgi_far_rate": int(self.amrgi_far_rate),
+            "amrgi_temporal_blend": float(self.amrgi_temporal_blend),
+            "amrgi_spatial_strength": float(self.amrgi_spatial_strength),
+            "amrgi_depth_edge": float(self.amrgi_depth_edge),
+            "amrgi_normal_edge": float(self.amrgi_normal_edge),
+            "amrgi_intensity": float(self.amrgi_intensity),
+            "amrgi_radiance_clamp": float(self.amrgi_radiance_clamp),
             "ao_mode": str(self.ao_mode),
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),

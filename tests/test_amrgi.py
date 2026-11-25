@@ -112,6 +112,7 @@ class TestAMRGIIntegration:
         pipeline = RenderPipeline(render_ctx)
         try:
             pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_resolution_scale = 0.5
             state = pipeline.feature_state()
             assert state["gi"]["requested_mode"] == "AMRGI"
             assert state["gi"]["active_mode"] == "AMRGI"
@@ -163,7 +164,9 @@ class TestAMRGIPresets:
         cine = get_quality_preset(GraphicsQuality.CINEMATIC)
         assert low.amrgi_near_steps < cine.amrgi_near_steps
         assert low.amrgi_far_rate > cine.amrgi_far_rate  # sparser far at low quality
-        assert low.amrgi_resolution_scale == 0.5
+        assert low.amrgi_resolution_scale == 0.25
+        assert cine.amrgi_resolution_scale == 1.0
+        assert low.amrgi_ray_count < cine.amrgi_ray_count
 
     def test_amrgi_not_default(self):
         for q in (GraphicsQuality.LOW, GraphicsQuality.MEDIUM, GraphicsQuality.HIGH,
@@ -172,3 +175,79 @@ class TestAMRGIPresets:
 
     def test_gimode_enum_has_amrgi(self):
         assert GIMode.AMRGI.value == "AMRGI"
+
+
+class TestAMRGIParameterIndependence:
+    """Vary one parameter at a time; verify intended effect and no coupling."""
+
+    def _render(self, render_ctx, **overrides):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            for k, v in overrides.items():
+                setattr(pipeline.config, k, v)
+            for i in range(4):
+                pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016 * (i + 1))
+            data = np.frombuffer(pipeline.amrgi_pass.history_tex.read(), dtype=np.float16).reshape(240, 320, 4)
+            return data
+        finally:
+            pipeline.destroy()
+
+    def test_resolution_does_not_change_ray_budget(self, render_ctx: RenderContext):
+        # Resolution changes the trace domain size, not the ray/step uniforms.
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_ray_count = 1
+            pipeline.config.amrgi_resolution_scale = 0.25
+            pipeline.apply_config(pipeline.config)
+            assert pipeline.amrgi_pass.width == 80
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            assert pipeline.amrgi_pass._u_trace["u_RayCount"].value == 1
+            pipeline.config.amrgi_resolution_scale = 1.0
+            pipeline.apply_config(pipeline.config)
+            assert pipeline.amrgi_pass.width == 320
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.032)
+            assert pipeline.amrgi_pass._u_trace["u_RayCount"].value == 1
+        finally:
+            pipeline.destroy()
+
+    def test_ray_count_does_not_brighten(self, render_ctx: RenderContext):
+        d1 = self._render(render_ctx, amrgi_ray_count=1)
+        d4 = self._render(render_ctx, amrgi_ray_count=4)
+        m1 = float(d1[..., :3].mean())
+        m4 = float(d4[..., :3].mean())
+        # More rays must converge to ~same brightness, not become brighter.
+        assert m4 < m1 * 1.5 + 1e-4
+
+    def test_range_ordering_clamped(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "AMRGI"
+            # Deliberately invalid ordering: near > mid > far.
+            pipeline.config.amrgi_near_end = 20.0
+            pipeline.config.amrgi_mid_end = 5.0
+            pipeline.config.amrgi_far_end = 1.0
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            u = pipeline.amrgi_pass._u_trace
+            assert u["u_NearEnd"].value < u["u_MidEnd"].value < u["u_FarEnd"].value
+        finally:
+            pipeline.destroy()
+
+    def test_intensity_scales_brightness_only(self, render_ctx: RenderContext):
+        d1 = self._render(render_ctx, amrgi_intensity=1.0)
+        d2 = self._render(render_ctx, amrgi_intensity=2.0)
+        m1 = float(d1[..., :3].mean())
+        m2 = float(d2[..., :3].mean())
+        assert m2 > m1  # intensity raises brightness
+
+    def test_all_resolutions_finite(self, render_ctx: RenderContext):
+        for scale in (0.25, 0.5, 0.75, 1.0):
+            d = self._render(render_ctx, amrgi_resolution_scale=scale)
+            assert np.all(np.isfinite(d))
