@@ -34,6 +34,7 @@ class GBufferDebugMode(IntEnum):
     CASCADE_COVERAGE = 15  # Per-cascade coverage / border fade
     CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
     DIRECT_RADIANCE = 23  # Current-frame direct diffuse + emissive (GI source)
+    AMRGI = 24  # Adaptive Multi-Range Global Illumination indirect diffuse
 
 
 class EngineTweaks:

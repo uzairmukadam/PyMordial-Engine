@@ -1,0 +1,131 @@
+#version 430 core
+// ============================================================================
+//  Adaptive Multi-Range Global Illumination (AMRGI) — Reconstruct + Upscale
+//
+//  Runs at FULL resolution. Combines:
+//    1. Temporal reconstruction (jitter-aware reprojection, depth/normal/
+//       surface-ID validation, neighbourhood clamp, motion+confidence feedback).
+//    2. Edge-aware spatial upscale from the half-resolution trace domain
+//       (depth/normal/surface-ID weighted bilateral taps).
+//
+//  Output (RGBA16F): rgb = resolved incoming indirect diffuse radiance,
+//                    a   = positive linear view depth (history contract).
+// ============================================================================
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(rgba16f, binding = 0) writeonly uniform image2D u_OutputResolved;
+
+layout(binding = 1) uniform sampler2D u_RawRadiance;   // half-res trace (rgb, conf)
+layout(binding = 2) uniform sampler2D u_GBufferDepth;  // full-res
+layout(binding = 3) uniform sampler2D u_GBufferNormalMetallic;
+layout(binding = 4) uniform sampler2D u_GBufferSurfaceID;
+layout(binding = 5) uniform sampler2D u_HistoryRadiance;
+layout(binding = 6) uniform sampler2D u_MotionVectors;
+
+layout(std140, binding = 0) uniform FrameData {
+    mat4 u_View;
+    mat4 u_Projection;
+    mat4 u_ViewProjection;
+    mat4 u_InvProjection;
+    mat4 u_InvView;
+    vec4 u_CameraPos_Time;
+    vec4 u_ScreenSize_Jitter;
+    vec4 u_SunDirection_Intensity;
+    vec4 u_SunColor_Ambient;
+    mat4 u_LightViewProjection[4];
+    vec4 u_CascadeSplits;
+    vec4 u_FogColor_Density;
+    vec4 u_FogParams;
+};
+
+#include "shaders/common/depth.glsl"
+
+uniform vec2 u_FullResolution;
+uniform vec2 u_HalfResolution;
+uniform float u_TemporalBlend;
+uniform int u_HistoryValid;
+uniform mat4 u_PrevView;
+uniform vec2 u_PrevJitter;
+
+vec3 OctahedralDecode(vec2 f) {
+    f = f * 2.0 - 1.0;
+    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
+    float t = clamp(-n.z, 0.0, 1.0);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 outSize = imageSize(u_OutputResolved);
+    if (pixel.x >= outSize.x || pixel.y >= outSize.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / u_FullResolution;
+    float depth = texture(u_GBufferDepth, uv).r;
+    if (IsBackgroundDepth(depth)) {
+        imageStore(u_OutputResolved, pixel, vec4(0.0));
+        return;
+    }
+
+    vec3 centerPos = ReconstructViewPosition(uv, depth, u_InvProjection);
+    vec3 centerN = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg));
+    float centerID = texture(u_GBufferSurfaceID, uv).r;
+
+    // ---- Edge-aware spatial upscale from half-res trace ----
+    vec2 halfTexel = 1.0 / u_HalfResolution;
+    float depthSigma = max(0.08, abs(centerPos.z) * 0.012);
+    vec3 spatial = vec3(0.0);
+    float wsum = 0.0;
+    vec3 nmin = vec3(1e20);
+    vec3 nmax = vec3(0.0);
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            vec2 suv = uv + vec2(x, y) * halfTexel;
+            if (!IsUVInBounds(suv)) continue;
+            float sd = texture(u_GBufferDepth, suv).r;
+            if (IsBackgroundDepth(sd)) continue;
+            vec3 sp = ReconstructViewPosition(suv, sd, u_InvProjection);
+            vec3 sn = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, suv).rg));
+            float sid = texture(u_GBufferSurfaceID, suv).r;
+            float planeDist = abs(dot(centerN, sp - centerPos));
+            float nw = pow(max(dot(centerN, sn), 0.0), 16.0);
+            float idw = (abs(sid - centerID) < 0.25 || centerID <= 0.0) ? 1.0 : 0.0;
+            float w = exp(-planeDist / depthSigma) * nw * idw;
+            vec4 s = texture(u_RawRadiance, suv);
+            spatial += s.rgb * w;
+            wsum += w;
+            nmin = min(nmin, s.rgb);
+            nmax = max(nmax, s.rgb);
+        }
+    }
+    vec3 current = wsum > 1e-5 ? spatial / wsum : texture(u_RawRadiance, uv).rgb;
+
+    // ---- Temporal reconstruction ----
+    if (u_HistoryValid != 0) {
+        vec2 motion = texture(u_MotionVectors, uv).rg;
+        vec2 prevUV = (uv + u_ScreenSize_Jitter.zw) - motion - u_PrevJitter;
+        if (IsUVInBounds(prevUV)) {
+            vec4 history = texture(u_HistoryRadiance, prevUV);
+            vec4 worldPos = u_InvView * vec4(centerPos, 1.0);
+            vec4 prevViewPos = u_PrevView * worldPos;
+            float expectedPrevDepth = abs(prevViewPos.z);
+            float depthErr = abs(history.a - expectedPrevDepth);
+            float depthTol = max(0.10, expectedPrevDepth * 0.02);
+            float depthConf = 1.0 - smoothstep(depthTol, depthTol * 2.0, depthErr);
+
+            vec3 margin = max((nmax - nmin) * 0.5, vec3(0.02));
+            vec3 clamped = clamp(history.rgb, nmin - margin, nmax + margin);
+
+            float motionPixels = length(motion * u_FullResolution);
+            float motionConf = 1.0 - smoothstep(1.0, 8.0, motionPixels);
+
+            float w = clamp(u_TemporalBlend, 0.0, 0.95) * depthConf * motionConf;
+            current = mix(current, clamped, w);
+        }
+    }
+
+    if (any(isnan(current)) || any(isinf(current))) current = vec3(0.0);
+    imageStore(u_OutputResolved, pixel, vec4(clamp(current, vec3(0.0), vec3(40.0)), abs(centerPos.z)));
+}

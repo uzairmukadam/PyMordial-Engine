@@ -673,8 +673,8 @@ class DebugMenu:
             if imgui.collapsing_header(
                 "Lighting: Global Illumination & Occlusion", imgui.TreeNodeFlags_.default_open.value
             ):
-                # GI Mode (OFF, IBL, SSGI, RMGI)
-                gi_modes = ["OFF", "IBL", "SSGI", "RMGI"]
+                # GI Mode (OFF, IBL, SSGI, RMGI, AMRGI)
+                gi_modes = ["OFF", "IBL", "SSGI", "RMGI", "AMRGI"]
                 curr_gi_idx = gi_modes.index(et.gi_mode) if et.gi_mode in gi_modes else 3
                 gi_changed, new_gi_idx = imgui.combo("GI Mode", curr_gi_idx, gi_modes)
                 if gi_changed and new_gi_idx != curr_gi_idx:

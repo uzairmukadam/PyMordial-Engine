@@ -20,6 +20,7 @@ class GIMode(str, Enum):
     IBL = "IBL"
     SSGI = "SSGI"
     RMGI = "RMGI"
+    AMRGI = "AMRGI"
 
 
 FROXEL_RESOLUTIONS: dict[str, tuple[int, int, int]] = {
@@ -111,6 +112,24 @@ class RenderConfig:
     rmgi_intensity: float = 1.0
     rmgi_temporal_blend: float = 0.96
     rmgi_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+
+    # Adaptive Multi-Range Global Illumination (AMRGI) — experimental
+    # One continuous near->mid->far ray per half-res sample. Range boundaries
+    # and step budgets are derived from quality presets; only intensity and
+    # maximum reach are ordinary user-facing knobs.
+    amrgi_resolution_scale: float = 0.5  # half-res trace domain by default
+    amrgi_near_end: float = 3.0
+    amrgi_mid_end: float = 12.0
+    amrgi_far_end: float = 40.0
+    amrgi_near_steps: int = 7
+    amrgi_mid_steps: int = 5
+    amrgi_far_steps: int = 4
+    amrgi_refine_iters: int = 3
+    amrgi_thickness: float = 0.30
+    amrgi_intensity: float = 1.0
+    amrgi_temporal_blend: float = 0.90
+    amrgi_mid_rate: int = 2   # 1-in-N pixels trace mid when history does not request it
+    amrgi_far_rate: int = 4   # 1-in-N pixels trace far when history does not request it
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True
@@ -302,6 +321,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ao_mode="SSAO",
         gi_mode="OFF",
         rmgi_ray_count=8,
+        amrgi_resolution_scale=0.5,
+        amrgi_near_steps=6,
+        amrgi_mid_steps=4,
+        amrgi_far_steps=3,
+        amrgi_refine_iters=2,
+        amrgi_mid_rate=3,
+        amrgi_far_rate=6,
         ibl_enabled=True,
         ssr_enabled=False,
         aa_mode="FXAA",
@@ -348,6 +374,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         ssgi_resolution_scale=1.0,
         rmgi_ray_count=12,
         rmgi_resolution_scale=1.0,
+        amrgi_resolution_scale=0.5,
+        amrgi_near_steps=7,
+        amrgi_mid_steps=5,
+        amrgi_far_steps=4,
+        amrgi_refine_iters=3,
+        amrgi_mid_rate=2,
+        amrgi_far_rate=4,
         ibl_enabled=True,
         ssr_enabled=False,
         ssr_resolution_scale=1.0,
@@ -401,6 +434,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         gi_mode="RMGI",
         rmgi_ray_count=16,
         rmgi_resolution_scale=1.0,
+        amrgi_resolution_scale=0.5,
+        amrgi_near_steps=8,
+        amrgi_mid_steps=6,
+        amrgi_far_steps=5,
+        amrgi_refine_iters=3,
+        amrgi_mid_rate=2,
+        amrgi_far_rate=4,
         ssgi_steps=12,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,
@@ -463,6 +503,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         gi_mode="RMGI",
         rmgi_ray_count=24,
         rmgi_resolution_scale=1.0,
+        amrgi_resolution_scale=0.5,
+        amrgi_near_steps=9,
+        amrgi_mid_steps=7,
+        amrgi_far_steps=5,
+        amrgi_refine_iters=4,
+        amrgi_mid_rate=2,
+        amrgi_far_rate=3,
         ssgi_steps=16,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,
@@ -525,6 +572,13 @@ QUALITY_PRESETS: dict[GraphicsQuality, RenderConfig] = {
         gi_mode="RMGI",
         rmgi_ray_count=32,
         rmgi_resolution_scale=1.0,
+        amrgi_resolution_scale=0.5,
+        amrgi_near_steps=10,
+        amrgi_mid_steps=8,
+        amrgi_far_steps=6,
+        amrgi_refine_iters=4,
+        amrgi_mid_rate=1,
+        amrgi_far_rate=2,
         ssgi_steps=24,
         ssgi_resolution_scale=1.0,
         ibl_enabled=True,

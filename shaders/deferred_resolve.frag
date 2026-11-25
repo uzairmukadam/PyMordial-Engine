@@ -25,6 +25,8 @@ layout (binding = 12) uniform sampler2D u_SpotShadowAtlas;     // 2x2 Spot Light
 layout (binding = 16) uniform sampler2DShadow u_SpotShadowAtlasCmp;
 layout (binding = 13) uniform sampler2D u_IrradianceMap;       // Diffuse environment irradiance
 layout (binding = 15) uniform sampler2D u_RMGITexture;           // Ray-Marched Global Illumination (RMGI)
+// Adaptive Multi-Range Global Illumination (AMRGI). Bound to unit 19.
+layout (binding = 19) uniform sampler2D u_AMRGITexture;
 // Current-frame direct diffuse + emissive radiance (GI source). Bound to unit 18.
 layout (binding = 18) uniform sampler2D u_DirectRadianceTexture;
 
@@ -499,8 +501,20 @@ void main() {
     vec3 indirect_diffuse = vec3(0.0);
     vec4 ssgi_sample = vec4(0.0);
     vec4 rmgi_sample = vec4(0.0);
+    vec4 amrgi_sample = vec4(0.0);
 
-    if (u_GIEnabled == 4) {
+    if (u_GIEnabled == 5) {
+        // Adaptive Multi-Range Global Illumination (AMRGI)
+        amrgi_sample = texture(u_AMRGITexture, v_UV);
+        if (isnan(amrgi_sample.r) || isnan(amrgi_sample.g) || isnan(amrgi_sample.b) ||
+            isinf(amrgi_sample.r) || isinf(amrgi_sample.g) || isinf(amrgi_sample.b)) {
+            amrgi_sample = vec4(0.0);
+        }
+        // AMRGI publishes incoming indirect diffuse radiance; apply the
+        // receiver's Lambertian BRDF (albedo / PI) exactly once.
+        vec3 amrgi_diffuse = clamp(amrgi_sample.rgb, vec3(0.0), vec3(30.0)) * (albedo / PI) * (1.0 - metallic);
+        indirect_diffuse += amrgi_diffuse;
+    } else if (u_GIEnabled == 4) {
         // Ray-Marched Global Illumination (RMGI)
         rmgi_sample = texture(u_RMGITexture, v_UV);
         if (isnan(rmgi_sample.r) || isnan(rmgi_sample.g) || isnan(rmgi_sample.b) ||
@@ -531,6 +545,9 @@ void main() {
         return;
     } else if (u_GBufferDebug == 13) {
         out_HDRColor = vec4(rmgi_sample.rgb, 1.0);
+        return;
+    } else if (u_GBufferDebug == 24) {
+        out_HDRColor = vec4(amrgi_sample.rgb, 1.0);
         return;
     }
 

@@ -198,7 +198,7 @@ class TestRenderConfigShape:
         assert second.max_entities != 123
 
     def test_gi_mode_has_no_removed_modes(self):
-        assert {m.value for m in GIMode} == {"OFF", "IBL", "SSGI", "RMGI"}
+        assert {m.value for m in GIMode} == {"OFF", "IBL", "SSGI", "RMGI", "AMRGI"}
 
     def test_gbuffer_debug_has_no_lpv_slot(self):
         assert 9 not in {int(m) for m in GBufferDebugMode}

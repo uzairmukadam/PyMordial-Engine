@@ -35,6 +35,7 @@ from engine.gfx.passes.decal_pass import DecalPass
 from engine.gfx.passes.direct_radiance_pass import DirectRadiancePass
 from engine.gfx.passes.exposure_pass import ExposurePass
 from engine.gfx.passes.fxaa_pass import FXAAPass
+from engine.gfx.passes.amrgi_pass import AMRGIPass
 from engine.gfx.passes.ibl import IBLPass
 from engine.gfx.passes.motion_blur_pass import MotionBlurPass
 from engine.gfx.passes.particle_pass import ParticleSystemPass
@@ -99,6 +100,7 @@ class RenderPipeline:
         "ao_pass",
         "ssgi_pass",
         "rmgi_pass",
+        "amrgi_pass",
         "lights_pass",
         "ssr_pass",
         "taa_pass",
@@ -347,6 +349,12 @@ class RenderPipeline:
             w,
             h,
             resolution_scale=getattr(self.config, "rmgi_resolution_scale", 1.0),
+        )
+        self.amrgi_pass = AMRGIPass(
+            self.ctx,
+            w,
+            h,
+            resolution_scale=getattr(self.config, "amrgi_resolution_scale", 0.5),
         )
         self.lights_pass = ClusteredLightingPass(
             self.ctx,
@@ -926,6 +934,12 @@ class RenderPipeline:
                 self.ctx_wrapper.height,
                 getattr(new_config, "rmgi_resolution_scale", 1.0),
             )
+        if self.amrgi_pass is not None:
+            self.amrgi_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+                getattr(new_config, "amrgi_resolution_scale", 0.5),
+            )
         if self.camera_optics_pass is not None:
             self.camera_optics_pass.resize(
                 self.ctx_wrapper.width,
@@ -963,6 +977,11 @@ class RenderPipeline:
             width,
             height,
             getattr(self.config, "rmgi_resolution_scale", 1.0),
+        )
+        self.amrgi_pass.resize(
+            width,
+            height,
+            getattr(self.config, "amrgi_resolution_scale", 0.5),
         )
         self.ssr_pass.resize(
             width,
@@ -1121,6 +1140,9 @@ class RenderPipeline:
         rc_tex = ctx.resources.get("rmgi_texture", self.rmgi_pass.black_fallback)
         rc_tex.use(location=15)
 
+        amrgi_tex = ctx.resources.get("amrgi_texture", self.amrgi_pass.black_fallback)
+        amrgi_tex.use(location=19)
+
         # Current-frame direct radiance (debug visualization).
         direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
         if direct_radiance_tex is not None:
@@ -1180,6 +1202,8 @@ class RenderPipeline:
             gi_enum_val = 1
         elif self.config.gi_mode == "RMGI":
             gi_enum_val = 4
+        elif self.config.gi_mode == "AMRGI":
+            gi_enum_val = 5
         if self._u_gi_enabled is not None:
             self._u_gi_enabled.value = gi_enum_val
 
@@ -1670,17 +1694,27 @@ class RenderPipeline:
         if self.config.gi_mode == "RMGI":
             ctx.resources["prev_view"] = self._prev_view_mat
             self.ssgi_pass.invalidate_history()
+            self.amrgi_pass.invalidate_history()
             with profiler.region("RC total"):
                 self.rmgi_pass.execute(ctx)
         elif self.config.gi_mode == "SSGI":
             self.rmgi_pass.invalidate_history()
+            self.amrgi_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
             ctx.resources["prev_jitter"] = self._prev_jitter
             with profiler.region("SSGI total"):
                 self.ssgi_pass.execute(ctx)
+        elif self.config.gi_mode == "AMRGI":
+            self.rmgi_pass.invalidate_history()
+            self.ssgi_pass.invalidate_history()
+            ctx.resources["prev_view"] = self._prev_view_mat
+            ctx.resources["prev_jitter"] = self._prev_jitter
+            with profiler.region("AMRGI trace"):
+                self.amrgi_pass.execute(ctx)
         else:
             self.rmgi_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
+            self.amrgi_pass.invalidate_history()
 
         # ---- PASS 6: Image-Based Lighting (SSR now runs after the base resolve) ----
         self.ibl_pass.execute(ctx)
@@ -1911,6 +1945,8 @@ class RenderPipeline:
             gi_pass = self.rmgi_pass
         elif gi_mode == "SSGI":
             gi_pass = self.ssgi_pass
+        elif gi_mode == "AMRGI":
+            gi_pass = self.amrgi_pass
         else:
             gi_pass = None
 
@@ -1936,6 +1972,8 @@ class RenderPipeline:
                 "resolution_scale": float(
                     getattr(cfg, "ssgi_resolution_scale", 1.0)
                     if gi_mode == "SSGI"
+                    else getattr(cfg, "amrgi_resolution_scale", 0.5)
+                    if gi_mode == "AMRGI"
                     else getattr(cfg, "rmgi_resolution_scale", 1.0)
                 ),
             },
@@ -1988,6 +2026,7 @@ class RenderPipeline:
         self.ao_pass.destroy()
         self.ssgi_pass.destroy()
         self.rmgi_pass.destroy()
+        self.amrgi_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
         self.taa_pass.destroy()
