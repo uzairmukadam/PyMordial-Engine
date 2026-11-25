@@ -35,6 +35,11 @@ class GBufferDebugMode(IntEnum):
     CASCADE_BOUNDS = 16  # Cascade start/end bands with split-distance overlay
     DIRECT_RADIANCE = 23  # Current-frame direct diffuse + emissive (GI source)
     AMRGI = 24  # Adaptive Multi-Range Global Illumination indirect diffuse
+    AMRGI_RAW = 25  # AMRGI raw trace radiance (pre-reconstruction)
+    AMRGI_CONFIDENCE = 26  # AMRGI confidence (grayscale)
+    AMRGI_HIT_RANGE = 27  # AMRGI hit range class (R=near, G=mid, B=far)
+    AMRGI_HIT_DISTANCE = 28  # AMRGI normalized hit distance
+    AMRGI_VALIDITY = 29  # AMRGI validity (G=hit, B=miss, R=background)
 
 
 class EngineTweaks:

@@ -1142,6 +1142,10 @@ class RenderPipeline:
 
         amrgi_tex = ctx.resources.get("amrgi_texture", self.amrgi_pass.black_fallback)
         amrgi_tex.use(location=19)
+        amrgi_raw_tex = ctx.resources.get("amrgi_raw_texture", self.amrgi_pass.black_fallback)
+        amrgi_raw_tex.use(location=20)
+        amrgi_aux_tex = ctx.resources.get("amrgi_aux_texture", self.amrgi_pass.black_fallback)
+        amrgi_aux_tex.use(location=21)
 
         # Current-frame direct radiance (debug visualization).
         direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)

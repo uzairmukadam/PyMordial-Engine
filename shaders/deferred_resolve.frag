@@ -27,6 +27,9 @@ layout (binding = 13) uniform sampler2D u_IrradianceMap;       // Diffuse enviro
 layout (binding = 15) uniform sampler2D u_RMGITexture;           // Ray-Marched Global Illumination (RMGI)
 // Adaptive Multi-Range Global Illumination (AMRGI). Bound to unit 19.
 layout (binding = 19) uniform sampler2D u_AMRGITexture;
+// AMRGI diagnostics: raw trace radiance (half-res) and aux (hit dist/range/conf).
+layout (binding = 20) uniform sampler2D u_AMRGIRawTexture;
+layout (binding = 21) uniform sampler2D u_AMRGIAuxTexture;
 // Current-frame direct diffuse + emissive radiance (GI source). Bound to unit 18.
 layout (binding = 18) uniform sampler2D u_DirectRadianceTexture;
 
@@ -548,6 +551,39 @@ void main() {
         return;
     } else if (u_GBufferDebug == 24) {
         out_HDRColor = vec4(amrgi_sample.rgb, 1.0);
+        return;
+    } else if (u_GBufferDebug == 25) {
+        // AMRGI raw trace radiance (before temporal/spatial reconstruction).
+        out_HDRColor = vec4(texture(u_AMRGIRawTexture, v_UV).rgb, 1.0);
+        return;
+    } else if (u_GBufferDebug == 26) {
+        // AMRGI confidence (grayscale).
+        float c = texture(u_AMRGIRawTexture, v_UV).a;
+        out_HDRColor = vec4(vec3(c), 1.0);
+        return;
+    } else if (u_GBufferDebug == 27) {
+        // AMRGI hit range: black=miss, red=near, green=mid, blue=far.
+        float rc = texture(u_AMRGIAuxTexture, v_UV).g;
+        vec3 col = vec3(0.0);
+        if (rc > 0.5 && rc < 1.5) col = vec3(1.0, 0.0, 0.0);
+        else if (rc >= 1.5 && rc < 2.5) col = vec3(0.0, 1.0, 0.0);
+        else if (rc >= 2.5) col = vec3(0.0, 0.0, 1.0);
+        out_HDRColor = vec4(col, 1.0);
+        return;
+    } else if (u_GBufferDebug == 28) {
+        // AMRGI hit distance (normalized by 40 m).
+        float d = texture(u_AMRGIAuxTexture, v_UV).r;
+        out_HDRColor = vec4(vec3(clamp(d / 40.0, 0.0, 1.0)), 1.0);
+        return;
+    } else if (u_GBufferDebug == 29) {
+        // AMRGI validity: green=valid hit, blue=miss, red=background.
+        float rc = texture(u_AMRGIAuxTexture, v_UV).g;
+        float c = texture(u_AMRGIRawTexture, v_UV).a;
+        vec3 col = vec3(0.0);
+        if (rc > 0.5) col = vec3(0.0, 1.0, 0.0);
+        else if (c > 0.0) col = vec3(0.0, 0.0, 1.0);
+        else col = vec3(0.3, 0.0, 0.0);
+        out_HDRColor = vec4(col, 1.0);
         return;
     }
 

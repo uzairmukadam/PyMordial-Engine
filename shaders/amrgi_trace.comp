@@ -89,10 +89,12 @@ void BuildBasis(vec3 n, out vec3 tangent, out vec3 bitangent) {
     bitangent = cross(n, tangent);
 }
 
-// One cosine-weighted hemisphere direction, rotated per pixel and per frame.
-vec3 CosineHemisphereRay(vec3 n, float rotation) {
-    float phi = 2.0 * PI * fract(rotation);
-    float cosTheta = sqrt(fract(rotation * GOLDEN_RATIO + 0.5));
+// One cosine-weighted hemisphere direction. `u1` and `u2` must be independent
+// low-discrepancy values; deriving both from one scalar collapses the samples
+// onto a 1D spiral and leaves directional gaps that miss bounce paths.
+vec3 CosineHemisphereRay(vec3 n, float u1, float u2) {
+    float phi = 2.0 * PI * fract(u1);
+    float cosTheta = sqrt(fract(u2));
     float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
     vec3 tangent, bitangent;
     BuildBasis(n, tangent, bitangent);
@@ -118,6 +120,7 @@ Hit MarchRange(vec3 origin, vec3 dir, vec2 centerUV, float noise,
     h.rangeClass = 0;
 
     float span = max(tEnd - tStart, 1e-4);
+    float step_len = span / float(max(steps, 1));
     float prevT = tStart;
     for (int s = 0; s < steps; ++s) {
         float f = (float(s) + 0.5 + noise) / float(steps);
@@ -139,7 +142,10 @@ Hit MarchRange(vec3 origin, vec3 dir, vec2 centerUV, float noise,
 
         float sceneZ = ReconstructViewPosition(uv, sceneDepth, u_InvProjection).z;
         float depthDelta = sceneZ - p.z;
-        float thickness = max(u_Thickness, t * 0.004);
+        // Thickness must cover the gap between consecutive samples, otherwise a
+        // coarse mid/far step can pass straight over a surface and miss it. It is
+        // bounded so very coarse far steps cannot create huge leaky slabs.
+        float thickness = max(u_Thickness, min(step_len * 1.35, 1.5)) * (1.0 + abs(p.z) * 0.03);
         if (depthDelta >= 0.0 && depthDelta < thickness) {
             // Surface-ID self-hit rejection.
             float hitID = texture(u_GBufferSurfaceID, uv).r;
@@ -212,6 +218,8 @@ void main() {
     float frameIndex = floor(u_CameraPos_Time.w * 30.0);
     float noise = InterleavedNoise(vec2(pixel) + vec2(frameIndex * 17.0, frameIndex * 31.0));
     float rot = fract(noise + frameIndex * 0.61803398875);
+    // Independent second low-discrepancy value for the polar angle.
+    float rot2 = fract(noise * 1.32471795724 + frameIndex * 0.75487766625 + 0.5);
 
     // Sparse rotating schedule: hash(pixel, frame) selects mid/far refresh.
     float h = InterleavedNoise(vec2(pixel) * 1.7 + vec2(frameIndex * 13.0, frameIndex * 7.0));
@@ -223,7 +231,7 @@ void main() {
     bool wantMid = midScheduled || prevClass <= 1 || missStreak > 0.5;
     bool wantFar = farScheduled || prevClass == 3 || missStreak > 0.75;
 
-    vec3 dir = CosineHemisphereRay(normalView, rot);
+    vec3 dir = CosineHemisphereRay(normalView, rot, rot2);
 
     // ---- Multi-ray accumulation (distinct low-discrepancy directions) ----
     int rayCount = clamp(u_RayCount, 1, 4);
@@ -235,9 +243,10 @@ void main() {
     int hits = 0;
 
     for (int r = 0; r < rayCount; ++r) {
-        // Distinct direction per ray: offset the rotation by the golden ratio.
+        // Distinct direction per ray: offset both low-discrepancy values.
         float rayRot = fract(rot + float(r) * 0.61803398875);
-        vec3 rdir = (r == 0) ? dir : CosineHemisphereRay(normalView, rayRot);
+        float rayRot2 = fract(rot2 + float(r) * 0.38196601125);
+        vec3 rdir = (r == 0) ? dir : CosineHemisphereRay(normalView, rayRot, rayRot2);
 
         Hit hit = MarchRange(origin, rdir, uv, noise, 0.0, u_NearEnd, u_NearSteps, 1,
                              originSurfaceID, normalView, true);
@@ -257,15 +266,19 @@ void main() {
             vec2 edge = smoothstep(vec2(0.0), vec2(0.06), hit.uv) * (1.0 - smoothstep(vec2(0.94), vec2(1.0), hit.uv));
             float edgeConf = edge.x * edge.y;
             float distConf = clamp(1.0 - hit.distance / max(u_FarEnd, 1e-3), 0.0, 1.0);
-            float conf = edgeConf * mix(1.0, distConf, 0.5);
 
             // Documented HDR/firefly control (Karis-style soft compression).
             float lum = dot(L, vec3(0.2126, 0.7152, 0.0722));
             L *= 1.0 / (1.0 + lum * 0.75);
             L = clamp(L, vec3(0.0), vec3(u_RadianceClamp));
 
-            radiance += L * conf;
-            confidence += conf;
+            // Physical radiance: only edge validity gates it (a genuinely invalid
+            // screen-edge hit). Distance is NOT a physical attenuation of indirect
+            // diffuse, so it must not scale radiance.
+            radiance += L * edgeConf;
+            // Confidence: edge * distance reliability, used ONLY for temporal and
+            // spatial weighting downstream — never multiplied into radiance again.
+            confidence += edgeConf * mix(1.0, distConf, 0.5);
             hits += 1;
             if (hit.distance < nearestHit) {
                 nearestHit = hit.distance;

@@ -100,10 +100,16 @@ class TestDebugViews:
         assert cap.DEBUG_VIEWS["GI_TOTAL"] == 10
 
     def test_unsupported_diagnostics_recorded(self, cap):
-        # These must be declared unsupported, never fabricated.
-        assert "hit_distance" in cap.UNSUPPORTED_AMRGI_DIAGNOSTICS
-        assert "range_class" in cap.UNSUPPORTED_AMRGI_DIAGNOSTICS
-        assert "confidence" in cap.UNSUPPORTED_AMRGI_DIAGNOSTICS
+        # Views that remain unimplemented must be declared unsupported.
+        assert "temporal_radiance" in cap.UNSUPPORTED_AMRGI_DIAGNOSTICS
+        assert "scheduling_mask" in cap.UNSUPPORTED_AMRGI_DIAGNOSTICS
+
+    def test_implemented_diagnostics(self, cap):
+        # These diagnostic views are now implemented (AMRGI-3 Phase 2).
+        for view in ("AMRGI_RAW", "AMRGI_CONFIDENCE", "AMRGI_HIT_RANGE",
+                     "AMRGI_HIT_DISTANCE", "AMRGI_VALIDITY"):
+            assert view in cap.DEBUG_VIEWS
+            assert view in cap.AMRGI_DIAGNOSTIC_VIEWS
 
 
 class TestLightConfigs:

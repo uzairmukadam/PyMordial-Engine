@@ -57,15 +57,24 @@ CAMERA_KEYS = (
 DEBUG_VIEWS = {
     "SSGI": 8,       # GBufferDebugMode.SSGI
     "RMGI": 13,      # GBufferDebugMode.RMGI
-    "AMRGI": 24,     # GBufferDebugMode.AMRGI
+    "AMRGI": 24,     # GBufferDebugMode.AMRGI (resolved total)
     "GI_TOTAL": 10,  # GBufferDebugMode.GI_TOTAL (consolidated indirect diffuse)
+    "AMRGI_RAW": 25,        # raw trace radiance (pre-reconstruction)
+    "AMRGI_CONFIDENCE": 26,  # confidence (grayscale)
+    "AMRGI_HIT_RANGE": 27,   # hit range class (R=near, G=mid, B=far)
+    "AMRGI_HIT_DISTANCE": 28,  # normalized hit distance
+    "AMRGI_VALIDITY": 29,    # validity (G=hit, B=miss, R=background)
 }
 
-# AMRGI diagnostic views that would be desirable but are NOT implemented in the
-# engine. Recorded as unsupported rather than fabricated.
+# AMRGI diagnostic views that are now implemented (Phase 2 of AMRGI-3).
+AMRGI_DIAGNOSTIC_VIEWS = (
+    "AMRGI_RAW", "AMRGI_CONFIDENCE", "AMRGI_HIT_RANGE",
+    "AMRGI_HIT_DISTANCE", "AMRGI_VALIDITY",
+)
+
+# AMRGI diagnostic views that would be desirable but are NOT implemented.
 UNSUPPORTED_AMRGI_DIAGNOSTICS = (
-    "raw_radiance", "resolved_radiance", "confidence", "hit_distance",
-    "range_class", "scheduling_mask",
+    "temporal_radiance", "scheduling_mask",
 )
 
 LIGHT_CONFIGS = {"SUN": 0, "+POINT": 1, "+SPOT": 2, "+EMISSIVE": 3, "ALL": 4}
@@ -429,11 +438,13 @@ def run_static_matrix(session: CaptureSession, args) -> None:
                 session.set_debug_view("OFF")
 
             if want_diag and method == "AMRGI" and cam_key in diag_cameras:
-                # Only the AMRGI total debug view exists; record the rest as unsupported.
-                session.set_debug_view("AMRGI")
-                session._step(2)
-                session.capture(cam_key, cam_index, method, quality, "AMRGI",
-                                f"{cdir}/amrgi_diagnostics", f"{cdir.split('/')[-1]}__{ms}__amrgi_total.png")
+                # Capture every implemented AMRGI diagnostic view.
+                for view in ("AMRGI",) + AMRGI_DIAGNOSTIC_VIEWS:
+                    session.set_debug_view(view)
+                    session._step(2)
+                    session.capture(cam_key, cam_index, method, quality, view,
+                                    f"{cdir}/amrgi_diagnostics",
+                                    f"{cdir.split('/')[-1]}__{ms}__{view.lower()}.png")
                 session.set_debug_view("OFF")
 
     session.set_debug_view("OFF")

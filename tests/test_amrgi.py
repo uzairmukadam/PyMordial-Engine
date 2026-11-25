@@ -157,6 +157,30 @@ class TestAMRGIShaderContracts:
         # AMRGI applies albedo/PI exactly once (incoming radiance convention).
         assert "amrgi_diffuse" in src
 
+    def test_diagnostic_views_present(self):
+        src = load_shader("deferred_resolve.frag")
+        # AMRGI diagnostic debug views (25-29) must exist.
+        for mode in ("== 25", "== 26", "== 27", "== 28", "== 29"):
+            assert mode in src
+        assert "u_AMRGIRawTexture" in src
+        assert "u_AMRGIAuxTexture" in src
+
+    def test_ray_generator_uses_two_independent_values(self):
+        src = load_shader("amrgi_trace.comp")
+        # The cosine hemisphere must take two independent low-discrepancy inputs,
+        # not derive both phi and cosTheta from one scalar (1D spiral bug).
+        assert "CosineHemisphereRay(vec3 n, float u1, float u2)" in src
+
+    def test_thickness_scales_with_step(self):
+        src = load_shader("amrgi_trace.comp")
+        # Thickness must cover the inter-sample gap so coarse steps cannot skip surfaces.
+        assert "step_len * 1.35" in src
+
+    def test_spatial_excludes_misses(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # Miss samples (confidence <= 0) must not dilute the spatial denominator.
+        assert "s.a <= 1e-4" in src
+
 
 class TestAMRGIPresets:
     def test_presets_scale_amrgi(self):

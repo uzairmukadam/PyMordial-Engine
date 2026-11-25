@@ -186,6 +186,10 @@ class AMRGIPass(RenderPass):
 
         self.active_backend = "ADAPTIVE"
         self._trace(context, g_buffer)
+        # Publish raw + aux diagnostics BEFORE the ping-pong swap so the
+        # resources reference this frame's freshly written textures.
+        context.resources["amrgi_raw_texture"] = self.raw_radiance_tex
+        context.resources["amrgi_aux_texture"] = self.aux_tex
         self._reconstruct(context, g_buffer)
 
         context.resources["amrgi_texture"] = self.resolved_tex
