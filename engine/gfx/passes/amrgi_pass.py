@@ -48,6 +48,8 @@ class AMRGIPass(RenderPass):
         "prev_aux_tex",
         "resolved_tex",
         "history_tex",
+        "length_tex",
+        "prev_length_tex",
         "black_fallback",
         "trace_prog",
         "reconstruct_prog",
@@ -106,6 +108,7 @@ class AMRGIPass(RenderPass):
                 "u_FullResolution", "u_HalfResolution", "u_TemporalBlend",
                 "u_HistoryValid", "u_PrevView", "u_PrevJitter",
                 "u_SpatialStrength", "u_DepthEdge", "u_NormalEdge",
+                "u_MaxHistory", "u_MissDecay",
             )
         }
 
@@ -128,11 +131,14 @@ class AMRGIPass(RenderPass):
         self.prev_aux_tex = self._make_tex(self.width, self.height)
         self.resolved_tex = self._make_tex(self.full_width, self.full_height)
         self.history_tex = self._make_tex(self.full_width, self.full_height)
+        self.length_tex = self._make_tex(self.full_width, self.full_height)
+        self.prev_length_tex = self._make_tex(self.full_width, self.full_height)
 
     def _release_targets(self) -> None:
         for tex in (
             self.raw_radiance_tex, self.aux_tex, self.prev_aux_tex,
             self.resolved_tex, self.history_tex,
+            self.length_tex, self.prev_length_tex,
         ):
             tex.release()
 
@@ -185,18 +191,28 @@ class AMRGIPass(RenderPass):
             return
 
         self.active_backend = "ADAPTIVE"
-        self._trace(context, g_buffer)
+        profiler = getattr(context, "profiler", None)
+        if profiler is not None:
+            with profiler.region("AMRGI trace"):
+                self._trace(context, g_buffer)
+        else:
+            self._trace(context, g_buffer)
         # Publish raw + aux diagnostics BEFORE the ping-pong swap so the
         # resources reference this frame's freshly written textures.
         context.resources["amrgi_raw_texture"] = self.raw_radiance_tex
         context.resources["amrgi_aux_texture"] = self.aux_tex
-        self._reconstruct(context, g_buffer)
+        if profiler is not None:
+            with profiler.region("AMRGI reconstruct"):
+                self._reconstruct(context, g_buffer)
+        else:
+            self._reconstruct(context, g_buffer)
 
         context.resources["amrgi_texture"] = self.resolved_tex
 
         # Ping-pong: resolved becomes next frame's history; aux becomes prev-aux.
         self.resolved_tex, self.history_tex = self.history_tex, self.resolved_tex
         self.aux_tex, self.prev_aux_tex = self.prev_aux_tex, self.aux_tex
+        self.length_tex, self.prev_length_tex = self.prev_length_tex, self.length_tex
         self._first_frame = False
 
     def _trace(self, context: RenderGraphContext, g_buffer) -> None:
@@ -258,6 +274,7 @@ class AMRGIPass(RenderPass):
     def _reconstruct(self, context: RenderGraphContext, g_buffer) -> None:
         cfg = context.config
         self.resolved_tex.bind_to_image(0, read=False, write=True)
+        self.length_tex.bind_to_image(1, read=False, write=True)
 
         self.raw_radiance_tex.use(location=1)
         g_buffer.depth_texture.use(location=2)
@@ -265,6 +282,8 @@ class AMRGIPass(RenderPass):
         g_buffer.surface_id_texture.use(location=4)
         self.history_tex.use(location=5)
         g_buffer.velocity_texture.use(location=6)
+        self.aux_tex.use(location=7)
+        self.prev_length_tex.use(location=8)
 
         u = self._u_recon
         if u["u_FullResolution"] is not None:
@@ -288,6 +307,10 @@ class AMRGIPass(RenderPass):
             u["u_DepthEdge"].value = max(0.1, float(getattr(cfg, "amrgi_depth_edge", 1.0)))
         if u["u_NormalEdge"] is not None:
             u["u_NormalEdge"].value = max(1.0, float(getattr(cfg, "amrgi_normal_edge", 16.0)))
+        if u["u_MaxHistory"] is not None:
+            u["u_MaxHistory"].value = max(1.0, float(getattr(cfg, "amrgi_max_history", 32.0)))
+        if u["u_MissDecay"] is not None:
+            u["u_MissDecay"].value = min(max(float(getattr(cfg, "amrgi_miss_decay", 0.90)), 0.0), 1.0)
 
         gx = (self.full_width + 7) // 8
         gy = (self.full_height + 7) // 8

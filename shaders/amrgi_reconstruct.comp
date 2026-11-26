@@ -15,6 +15,7 @@
 layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(rgba16f, binding = 0) writeonly uniform image2D u_OutputResolved;
+layout(rgba16f, binding = 1) writeonly uniform image2D u_OutputLength;
 
 layout(binding = 1) uniform sampler2D u_RawRadiance;   // half-res trace (rgb, conf)
 layout(binding = 2) uniform sampler2D u_GBufferDepth;  // full-res
@@ -22,6 +23,8 @@ layout(binding = 3) uniform sampler2D u_GBufferNormalMetallic;
 layout(binding = 4) uniform sampler2D u_GBufferSurfaceID;
 layout(binding = 5) uniform sampler2D u_HistoryRadiance;
 layout(binding = 6) uniform sampler2D u_MotionVectors;
+layout(binding = 7) uniform sampler2D u_AuxState;      // half-res aux (a = state-encoded miss streak)
+layout(binding = 8) uniform sampler2D u_HistoryLength; // full-res effective sample count (r)
 
 layout(std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -50,6 +53,8 @@ uniform vec2 u_PrevJitter;
 uniform float u_SpatialStrength;   // 0 = nearest tap only, 1 = full bilateral
 uniform float u_DepthEdge;         // depth edge sensitivity (larger = softer)
 uniform float u_NormalEdge;        // normal edge sensitivity (larger = softer)
+uniform float u_MaxHistory;        // cap on effective temporal sample count
+uniform float u_MissDecay;         // per-frame history confidence decay on a miss
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -69,6 +74,7 @@ void main() {
     float depth = texture(u_GBufferDepth, uv).r;
     if (IsBackgroundDepth(depth)) {
         imageStore(u_OutputResolved, pixel, vec4(0.0));
+        imageStore(u_OutputLength, pixel, vec4(0.0));
         return;
     }
 
@@ -118,7 +124,25 @@ void main() {
     // If no valid neighbor exists, do not clamp history toward black.
     if (!anyValid) { nmin = vec3(0.0); nmax = vec3(1e3); }
 
+    // ---- Sample state for THIS pixel (from the half-res aux) ----
+    // aux.a < 0.5  -> VALID_CURRENT_HIT (a = miss streak, 0 on a hit)
+    // aux.a >= 0.5 -> EVALUATED_MISS    (a = 0.5 + 0.5 * missStreak)
+    // A miss is a real measurement, NOT "no information". Conflating the two is
+    // what made stable history decay toward black on isolated misses and then
+    // snap back on the next hit -- the visible pulsing.
+    float auxA = texture(u_AuxState, uv).a;
+    bool currentHit = auxA < 0.5;
+    float missStreak = currentHit ? 0.0 : (auxA - 0.5) * 2.0;
+
     // ---- Temporal reconstruction ----
+    // History length is stored in the resolved alpha channel (>= 1.0). It is the
+    // effective sample count driving the running-mean weight alpha = 1/length.
+    // A fixed EMA (the old behaviour) never converges: it keeps a constant
+    // fraction of fresh noise forever, which is exactly the residual pulsing.
+    float prevLen = 0.0;
+    bool historyAccepted = false;
+    vec3 historyRGB = vec3(0.0);
+
     if (u_HistoryValid != 0) {
         vec2 motion = texture(u_MotionVectors, uv).rg;
         vec2 prevUV = (uv + u_ScreenSize_Jitter.zw) - motion - u_PrevJitter;
@@ -131,17 +155,61 @@ void main() {
             float depthTol = max(0.10, expectedPrevDepth * 0.02);
             float depthConf = 1.0 - smoothstep(depthTol, depthTol * 2.0, depthErr);
 
-            vec3 margin = max((nmax - nmin) * 0.5, vec3(0.02));
-            vec3 clamped = clamp(history.rgb, nmin - margin, nmax + margin);
-
             float motionPixels = length(motion * u_FullResolution);
             float motionConf = 1.0 - smoothstep(1.0, 8.0, motionPixels);
 
-            float w = clamp(u_TemporalBlend, 0.0, 0.95) * depthConf * motionConf;
-            current = mix(current, clamped, w);
+            // Geometry identity must match: reject on depth/normal/surface-ID
+            // mismatch (disocclusion, camera cut, material change).
+            float idw = (abs(texture(u_GBufferSurfaceID, prevUV).r - centerID) < 0.25 || centerID <= 0.0) ? 1.0 : 0.0;
+            float geomConf = depthConf * motionConf * idw;
+
+            if (geomConf > 0.5) {
+                historyAccepted = true;
+                historyRGB = history.rgb;
+                prevLen = max(texture(u_HistoryLength, prevUV).r, 0.0);
+            }
+        }
+    }
+
+    float newLen;
+    if (currentHit) {
+        if (historyAccepted) {
+            // Running mean: alpha = 1 / (length + 1). Converges to a stable
+            // estimate instead of retaining a constant noise fraction.
+            newLen = min(prevLen + 1.0, u_MaxHistory);
+            // Neighbourhood clamp: only valid current samples form the bounds, so
+            // a sparse frame cannot clamp history toward black. This also makes
+            // the estimate responsive to lighting changes: when a source is
+            // removed, nmax collapses and history is pulled down with it.
+            vec3 margin = max((nmax - nmin) * 0.5, vec3(0.02));
+            vec3 clamped = clamp(historyRGB, nmin - margin, nmax + margin);
+            float alpha = 1.0 / max(newLen, 1.0);
+            current = mix(clamped, current, alpha);
+        } else {
+            // No usable history: start a fresh accumulation.
+            newLen = 1.0;
+        }
+    } else {
+        // EVALUATED_MISS: a miss is a real measurement of "no screen-space
+        // contribution", but it is NOT evidence that the surface went black.
+        // Preserve the accumulated estimate and its sample count so the running
+        // mean keeps converging. Only a long persistent miss streak (the source
+        // genuinely left the screen) is allowed to fade the estimate.
+        if (historyAccepted) {
+            if (missStreak > 0.75) {
+                float decay = clamp(u_MissDecay, 0.0, 1.0);
+                current = mix(historyRGB, current, 1.0 - decay);
+                newLen = prevLen * decay;
+            } else {
+                current = historyRGB;
+                newLen = prevLen;
+            }
+        } else {
+            newLen = 0.0;
         }
     }
 
     if (any(isnan(current)) || any(isinf(current))) current = vec3(0.0);
     imageStore(u_OutputResolved, pixel, vec4(clamp(current, vec3(0.0), vec3(40.0)), abs(centerPos.z)));
+    imageStore(u_OutputLength, pixel, vec4(newLen, 0.0, 0.0, 0.0));
 }

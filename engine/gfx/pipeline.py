@@ -1713,8 +1713,7 @@ class RenderPipeline:
             self.ssgi_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
             ctx.resources["prev_jitter"] = self._prev_jitter
-            with profiler.region("AMRGI trace"):
-                self.amrgi_pass.execute(ctx)
+            self.amrgi_pass.execute(ctx)
         else:
             self.rmgi_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()

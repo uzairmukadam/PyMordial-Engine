@@ -120,6 +120,8 @@ class EngineTweaks:
         "amrgi_mid_rate",
         "amrgi_far_rate",
         "amrgi_temporal_blend",
+        "amrgi_max_history",
+        "amrgi_miss_decay",
         "amrgi_spatial_strength",
         "amrgi_depth_edge",
         "amrgi_normal_edge",
@@ -380,6 +382,8 @@ class EngineTweaks:
         self.amrgi_mid_rate = 2
         self.amrgi_far_rate = 4
         self.amrgi_temporal_blend = 0.90
+        self.amrgi_max_history = 32.0
+        self.amrgi_miss_decay = 0.90
         self.amrgi_spatial_strength = 1.0
         self.amrgi_depth_edge = 1.0
         self.amrgi_normal_edge = 16.0
@@ -786,6 +790,8 @@ class EngineTweaks:
             p_cfg.amrgi_mid_rate = int(self.amrgi_mid_rate)
             p_cfg.amrgi_far_rate = int(self.amrgi_far_rate)
             p_cfg.amrgi_temporal_blend = float(self.amrgi_temporal_blend)
+            p_cfg.amrgi_max_history = float(self.amrgi_max_history)
+            p_cfg.amrgi_miss_decay = float(self.amrgi_miss_decay)
             p_cfg.amrgi_spatial_strength = float(self.amrgi_spatial_strength)
             p_cfg.amrgi_depth_edge = float(self.amrgi_depth_edge)
             p_cfg.amrgi_normal_edge = float(self.amrgi_normal_edge)
@@ -1075,6 +1081,8 @@ class EngineTweaks:
             "amrgi_mid_rate",
             "amrgi_far_rate",
             "amrgi_temporal_blend",
+            "amrgi_max_history",
+            "amrgi_miss_decay",
             "amrgi_spatial_strength",
             "amrgi_depth_edge",
             "amrgi_normal_edge",
@@ -1315,6 +1323,8 @@ class EngineTweaks:
             "amrgi_mid_rate": int(self.amrgi_mid_rate),
             "amrgi_far_rate": int(self.amrgi_far_rate),
             "amrgi_temporal_blend": float(self.amrgi_temporal_blend),
+            "amrgi_max_history": float(self.amrgi_max_history),
+            "amrgi_miss_decay": float(self.amrgi_miss_decay),
             "amrgi_spatial_strength": float(self.amrgi_spatial_strength),
             "amrgi_depth_edge": float(self.amrgi_depth_edge),
             "amrgi_normal_edge": float(self.amrgi_normal_edge),

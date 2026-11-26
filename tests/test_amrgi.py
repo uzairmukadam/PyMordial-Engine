@@ -197,6 +197,107 @@ class TestAMRGIShaderContracts:
         assert "s.a <= 1e-4" in src
 
 
+class TestAMRGITemporalStability:
+    """AMRGI-5: explicit sample state + history-length running mean."""
+
+    def test_trace_encodes_sample_state(self):
+        src = load_shader("amrgi_trace.comp")
+        # A miss must be distinguishable from "no information this frame".
+        assert "stateAlpha" in src
+        assert "0.5 + 0.5 * newStreak" in src
+
+    def test_reconstruct_reads_aux_state(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        assert "u_AuxState" in src
+        assert "currentHit" in src
+        assert "missStreak" in src
+
+    def test_miss_is_not_treated_as_black(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # On an evaluated miss with valid history the estimate is preserved, not
+        # blended toward zero.
+        assert "current = historyRGB;" in src
+        assert "newLen = prevLen;" in src
+
+    def test_history_length_running_mean(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # alpha = 1/length, not a fixed EMA.
+        assert "1.0 / max(newLen, 1.0)" in src
+        assert "u_MaxHistory" in src
+        assert "u_OutputLength" in src
+
+    def test_history_length_reset_on_reject(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # No usable history -> restart accumulation at length 1.
+        assert "newLen = 1.0;" in src
+
+    def test_geometry_rejection_present(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # Depth + motion + surface-ID must all gate history acceptance.
+        assert "depthConf" in src
+        assert "motionConf" in src
+        assert "geomConf > 0.5" in src
+
+    def test_length_texture_lifecycle(self, render_ctx: RenderContext):
+        p = AMRGIPass(render_ctx.ctx, width=320, height=240)
+        try:
+            assert p.length_tex.size == (320, 240)
+            assert p.prev_length_tex.size == (320, 240)
+            p.resize(640, 480)
+            assert p.length_tex.size == (640, 480)
+        finally:
+            p.destroy()
+
+    def test_static_convergence_reduces_variance(self, render_ctx: RenderContext):
+        """A static scene must converge: late-frame variance < early-frame."""
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_max_history = 32.0
+            pipeline.apply_config(pipeline.config)
+            means = []
+            for i in range(60):
+                pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016 * (i + 1))
+                d = np.frombuffer(pipeline.amrgi_pass.history_tex.read(), dtype=np.float16).reshape(240, 320, 4)
+                means.append(float(d[..., :3].mean()))
+            early = np.std(means[5:20])
+            late = np.std(means[40:60])
+            assert late <= early + 1e-6
+        finally:
+            pipeline.destroy()
+
+    def test_no_nan_inf_after_temporal(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.apply_config(pipeline.config)
+            for i in range(20):
+                pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016 * (i + 1))
+            d = np.frombuffer(pipeline.amrgi_pass.history_tex.read(), dtype=np.float16).reshape(240, 320, 4)
+            assert np.all(np.isfinite(d))
+        finally:
+            pipeline.destroy()
+
+    def test_history_length_capped(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_max_history = 8.0
+            pipeline.apply_config(pipeline.config)
+            for i in range(40):
+                pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016 * (i + 1))
+            ln = np.frombuffer(pipeline.amrgi_pass.prev_length_tex.read(), dtype=np.float16).reshape(240, 320, 4)
+            assert float(ln[..., 0].max()) <= 8.0 + 1e-3
+        finally:
+            pipeline.destroy()
+
+
 class TestAMRGIPresets:
     def test_presets_scale_amrgi(self):
         low = get_quality_preset(GraphicsQuality.LOW)

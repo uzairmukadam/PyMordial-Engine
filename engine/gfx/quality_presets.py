@@ -135,6 +135,8 @@ class RenderConfig:
     amrgi_normal_edge: float = 16.0      # normal edge sensitivity (larger = softer)
     amrgi_mid_rate: int = 2   # 1-in-N pixels trace mid when history does not request it
     amrgi_far_rate: int = 4   # 1-in-N pixels trace far when history does not request it
+    amrgi_max_history: float = 32.0  # cap on effective temporal sample count
+    amrgi_miss_decay: float = 0.90   # per-frame history confidence decay on an evaluated miss
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

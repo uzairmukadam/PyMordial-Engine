@@ -14,6 +14,14 @@
 //                                b = confidence,
 //                                a = consecutive-miss streak (0..1)
 //
+//  Sample state is encoded in the aux alpha channel so the reconstruct stage can
+//  distinguish a measured miss from "no information this frame":
+//    a < 0.5   -> VALID_CURRENT_HIT (a = miss streak, always 0 on a hit)
+//    a >= 0.5  -> EVALUATED_MISS    (a = 0.5 + 0.5 * missStreak)
+//  A miss is a real measurement (the ray was traced and found nothing), so it is
+//  NOT the same as a pixel that was never scheduled. The reconstruct stage uses
+//  this to avoid decaying stable history toward black on isolated misses.
+//
 //  Adaptation is per-pixel and reads only the previous frame's aux texture
 //  (no GPU->CPU readback). It never classifies the whole scene indoor/outdoor.
 // ============================================================================
@@ -213,7 +221,8 @@ void main() {
     vec4 prevAux = u_HistoryValid != 0 ? texture(u_PrevAux, uv) : vec4(0.0);
     int prevClass = int(prevAux.g + 0.5);
     float prevConf = prevAux.b;
-    float missStreak = prevAux.a;
+    // Decode miss streak from the state-encoded alpha (>=0.5 means last frame missed).
+    float missStreak = prevAux.a >= 0.5 ? (prevAux.a - 0.5) * 2.0 : 0.0;
 
     float frameIndex = floor(u_CameraPos_Time.w * 30.0);
     float noise = InterleavedNoise(vec2(pixel) + vec2(frameIndex * 17.0, frameIndex * 31.0));
@@ -299,6 +308,9 @@ void main() {
 
     float newStreak = hits > 0 ? 0.0 : min(missStreak + 0.25, 1.0);
 
+    // Encode sample state in aux alpha: <0.5 = valid hit, >=0.5 = evaluated miss.
+    float stateAlpha = hits > 0 ? 0.0 : (0.5 + 0.5 * newStreak);
+
     imageStore(u_OutputRadiance, pixel, vec4(radiance, confidence));
-    imageStore(u_OutputAux, pixel, vec4(hitDist, float(rangeClass), confidence, newStreak));
+    imageStore(u_OutputAux, pixel, vec4(hitDist, float(rangeClass), confidence, stateAlpha));
 }
