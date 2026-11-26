@@ -74,3 +74,23 @@ class TestGpuPassProfiler:
         profiler.end_frame()
         assert profiler._open_names == []
         profiler.destroy()
+
+    def test_nested_regions_report_independently(self, render_ctx: RenderContext):
+        """Stage 1: an enclosing region (e.g. "AMRGI total") may contain finer
+        regions ("AMRGI trace"/"AMRGI reconstruct") and both report timings."""
+        profiler = GpuPassProfiler(render_ctx.ctx, frame_lag=3)
+
+        for _ in range(6):
+            profiler.begin_frame()
+            with profiler.region("AMRGI total"):
+                with profiler.region("AMRGI trace"):
+                    render_ctx.ctx.clear(0.0, 0.0, 0.0, 1.0)
+                with profiler.region("AMRGI reconstruct"):
+                    render_ctx.ctx.clear(0.0, 0.0, 0.0, 1.0)
+            profiler.end_frame()
+
+        for name in ("AMRGI total", "AMRGI trace", "AMRGI reconstruct"):
+            value = profiler.get_ms(name)
+            assert value is not None
+            assert value >= 0.0
+        profiler.destroy()

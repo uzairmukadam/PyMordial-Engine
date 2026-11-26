@@ -717,7 +717,7 @@ class RenderPipeline:
             "g_buffer",
             "csm",
             "hdr_fbo",
-            "scene_color",
+            "base_hdr",
             "prev_view",
             "hdr_color",
             "ldr_color",
@@ -732,9 +732,9 @@ class RenderPipeline:
             _BuiltinPass("SSDM", inputs=("g_buffer",), outputs=("ssdm_output",)),
             _BuiltinPass("Decals", inputs=("g_buffer",), outputs=("decal_output",)),
             _BuiltinPass("AmbientOcclusion", inputs=("g_buffer",), outputs=("ao_texture",)),
-            _BuiltinPass("GlobalIllumination", inputs=("g_buffer", "scene_color"), outputs=("gi_texture",)),
+            _BuiltinPass("GlobalIllumination", inputs=("g_buffer", "base_hdr"), outputs=("gi_texture",)),
             _BuiltinPass("IBL", outputs=("ibl_lut", "ibl_env_map", "ibl_irradiance")),
-            _BuiltinPass("SSR", inputs=("g_buffer", "scene_color"), outputs=("ssr_texture",)),
+            _BuiltinPass("SSR", inputs=("g_buffer", "base_hdr"), outputs=("ssr_texture",)),
             _BuiltinPass("SkyAtmosphere", outputs=("sky_view_lut", "transmittance_lut", "multiscattering_lut")),
             _BuiltinPass(
                 "DeferredResolve",
@@ -1691,7 +1691,11 @@ class RenderPipeline:
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
         # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs RMGI) ----
-        ctx.resources["scene_color"] = (
+        # `base_hdr` is the previous frame's composed HDR (or albedo fallback).
+        # It is only a fallback source for GI passes that sample scene colour;
+        # AMRGI samples `direct_radiance_texture` instead. The key is renamed
+        # from the ambiguous `scene_color` to make its semantics explicit.
+        ctx.resources["base_hdr"] = (
             getattr(self.post_process, "hdr_texture", None) or self.g_buffer.albedo_roughness_texture
         )
         ctx.resources["sky_view_lut"] = env.sky_view_lut
@@ -1713,7 +1717,8 @@ class RenderPipeline:
             self.ssgi_pass.invalidate_history()
             ctx.resources["prev_view"] = self._prev_view_mat
             ctx.resources["prev_jitter"] = self._prev_jitter
-            self.amrgi_pass.execute(ctx)
+            with profiler.region("AMRGI total"):
+                self.amrgi_pass.execute(ctx)
         else:
             self.rmgi_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
@@ -1741,7 +1746,7 @@ class RenderPipeline:
                 target_fbo=self.post_process.base_hdr_fbo,
                 ssr_enabled=False,
             )
-            ctx.resources["scene_color"] = self.post_process.base_hdr_texture
+            ctx.resources["base_hdr"] = self.post_process.base_hdr_texture
             with profiler.region("SSR"):
                 self.ssr_pass.execute(ctx)
         else:
@@ -2032,6 +2037,7 @@ class RenderPipeline:
         self.amrgi_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
+        self.spot_shadow_map.destroy()
         self.taa_pass.destroy()
         self.fxaa_pass.destroy()
         self.smaa_pass.destroy()
@@ -2045,6 +2051,8 @@ class RenderPipeline:
             self.solar_flare_pass.destroy()
         if self.motion_blur_pass is not None:
             self.motion_blur_pass.destroy()
+        if self.water_pass is not None:
+            self.water_pass.destroy()
         self.bloom_pass.destroy()
         self.post_process.destroy()
         self.ssbo_transforms.release()

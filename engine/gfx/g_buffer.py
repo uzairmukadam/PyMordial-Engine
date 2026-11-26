@@ -9,10 +9,10 @@ class GBuffer:
     """Manages the Multi-Render-Target (MRT) G-Buffer Framebuffer.
 
     Attachments:
-    - RT0: Albedo (RGB) + Roughness (A) (RGBA8)
+    - RT0: Albedo (RGB) + Roughness (A) (RGBA16F; HDR emissive packed >1 in RGB)
     - RT1: Octahedral Normal (RG) + Metallic (B) + AO (A) (RGBA16F)
     - RT2: Velocity Vectors (RG) + Reactive Mask (B) (RGBA16F)
-    - RT3: Displacement Info (RG16F) -> R=TextureLayerIndex, G=DisplacementMode
+    - RT3: Displacement Info (RGBA16F) -> RG=Mesh UV, B=TextureLayerIndex, A=DisplacementMode
     - RT4: Entity Surface ID (R32F, exact integer IDs)
     - Depth: 32-bit Floating Point Depth (Reversed-Z)
     """

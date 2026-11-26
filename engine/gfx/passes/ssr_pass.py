@@ -126,8 +126,9 @@ class SSRPass(RenderPass):
             context.resources["ssr_texture"] = self.black_fallback
             return
 
-        # Scene color source: can use resolved lit frame or albedo fallback
-        scene_tex = context.resources.get("scene_color", g_buffer.albedo_roughness_texture)
+        # Scene colour source: the composed HDR before SSR (base_hdr), or the
+        # albedo fallback when no resolved frame is available.
+        scene_tex = context.resources.get("base_hdr", g_buffer.albedo_roughness_texture)
 
         # 1. Render Raw Ray-marched SSR
         self.raw_fbo.use()

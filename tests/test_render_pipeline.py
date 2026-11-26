@@ -292,3 +292,22 @@ class TestRenderPipelineHeadless:
         data = pipeline.post_process.final_texture.read()
         assert len(data) == render_ctx.width * render_ctx.height * 4
         pipeline.destroy()
+
+    def test_destroy_releases_water_spot_and_particle(self, render_ctx: RenderContext):
+        """Stage 1: pipeline.destroy() must release water, spot shadows, particles.
+
+        Regression: these pipeline-owned objects were previously omitted from
+        destroy(), leaking their GPU resources. Their destroy() methods are
+        idempotent, so a second destroy() must not raise.
+        """
+        pipeline = RenderPipeline(render_ctx)
+        assert pipeline.water_pass is not None
+        assert pipeline.spot_shadow_map is not None
+        assert pipeline.particle_pass is not None
+
+        pipeline.destroy()
+
+        # Idempotent: the objects null their handles, so a second call is safe.
+        pipeline.water_pass.destroy()
+        pipeline.spot_shadow_map.destroy()
+        pipeline.particle_pass.destroy()

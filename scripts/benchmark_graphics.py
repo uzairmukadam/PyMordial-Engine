@@ -24,6 +24,7 @@ import json
 import math
 import platform
 import statistics
+import subprocess
 import sys
 import time
 from dataclasses import asdict, replace
@@ -41,6 +42,20 @@ from engine.gfx.quality_presets import GraphicsQuality, RenderConfig, get_qualit
 
 SCHEMA_VERSION = 1
 TOOL_NAME = "pymordial-graphics-benchmark"
+
+
+def _git_commit() -> str | None:
+    """Returns the current git commit hash, or None when unavailable."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if out.returncode == 0:
+            return out.stdout.strip() or None
+    except Exception:  # noqa: BLE001 - git may be absent in packaged runs
+        pass
+    return None
 
 # ---------------------------------------------------------------------------
 # Configuration model
@@ -361,6 +376,7 @@ def run_benchmark(
     result: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "tool": TOOL_NAME,
+        "git_commit": _git_commit(),
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "resolution": {"width": width, "height": height},
         "scene": scene_meta,

@@ -141,8 +141,9 @@ class TestAMRGIShaderContracts:
 
     def test_continuous_ranges_no_restart(self):
         src = load_shader("amrgi_trace.comp")
-        # The same ray is continued: MarchRange is called with a shared origin/dir.
-        assert "MarchRange" in src
+        # The same ray is continued: the shared linear tracer is called with a
+        # shared origin/dir across near -> mid -> far.
+        assert "SSRT_TraceLinear" in src
         assert "u_NearEnd" in src and "u_MidEnd" in src and "u_FarEnd" in src
 
     def test_reconstruct_has_temporal_and_upscale(self):
@@ -190,11 +191,12 @@ class TestAMRGIShaderContracts:
         src = load_shader("amrgi_trace.comp")
         # AMRGI-5.1: the smooth gradient hash produced a visible checkerboard
         # (corr(rot,rot2) = -0.41, spatial autocorr lag1 = -0.5). Seeds must come
-        # from an independent integer hash per (pixel, frame, dimension).
-        assert "uint HashUint(uint x)" in src
-        assert "float Hash01(uvec3 v)" in src
-        assert "Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 0u))" in src
-        assert "Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 1u))" in src
+        # from an independent integer hash per (pixel, frame, dimension). The
+        # hash now lives in the shared SSRT common layer (SSRT_HashUint/Hash01).
+        assert "uint SSRT_HashUint(uint x)" in src
+        assert "float SSRT_Hash01(uvec3 v)" in src
+        assert "SSRT_Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 0u))" in src
+        assert "SSRT_Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 1u))" in src
         # The old correlated derivation must be gone.
         assert "fract(noise + frameIndex * 0.61803398875)" not in src
         assert "fract(noise * 1.32471795724" not in src
