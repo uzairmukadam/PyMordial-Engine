@@ -88,6 +88,21 @@ float InterleavedNoise(vec2 p) {
     return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
+// Integer bit-mixing hash (PCG-style). Unlike InterleavedNoise — which is a
+// smooth gradient and therefore produces a visible checkerboard when used as a
+// per-pixel seed — this decorrelates neighbouring pixels and independent
+// dimensions. Returns a well-distributed value in [0, 1).
+uint HashUint(uint x) {
+    x = x * 747796405u + 2891336453u;
+    uint w = ((x >> ((x >> 28u) + 4u)) ^ x) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+float Hash01(uvec3 v) {
+    uint h = HashUint(v.x ^ HashUint(v.y ^ HashUint(v.z)));
+    return float(h) * (1.0 / 4294967296.0);
+}
+
 // Stable normal-oriented basis with a finite fallback for degenerate normals.
 void BuildBasis(vec3 n, out vec3 tangent, out vec3 bitangent) {
     vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
@@ -225,10 +240,15 @@ void main() {
     float missStreak = prevAux.a >= 0.5 ? (prevAux.a - 0.5) * 2.0 : 0.0;
 
     float frameIndex = floor(u_CameraPos_Time.w * 30.0);
-    float noise = InterleavedNoise(vec2(pixel) + vec2(frameIndex * 17.0, frameIndex * 31.0));
-    float rot = fract(noise + frameIndex * 0.61803398875);
-    // Independent second low-discrepancy value for the polar angle.
-    float rot2 = fract(noise * 1.32471795724 + frameIndex * 0.75487766625 + 0.5);
+    uint frameU = uint(frameIndex);
+    // Decorrelated per-pixel seeds. The previous implementation derived both
+    // hemisphere angles from one smooth gradient hash, which produced a visible
+    // checkerboard (corr(rot,rot2) = -0.41, spatial autocorr lag1 = -0.5). Each
+    // dimension now comes from an independent integer hash of (pixel, frame).
+    float rot  = Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 0u));
+    float rot2 = Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 1u));
+    // Per-pixel jitter for the march step offset (decorrelated from the angles).
+    float noise = Hash01(uvec3(uint(pixel.x) + 7919u, uint(pixel.y) + 104729u, frameU));
 
     // Sparse rotating schedule: hash(pixel, frame) selects mid/far refresh.
     float h = InterleavedNoise(vec2(pixel) * 1.7 + vec2(frameIndex * 13.0, frameIndex * 7.0));

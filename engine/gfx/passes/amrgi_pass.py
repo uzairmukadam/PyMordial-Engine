@@ -208,6 +208,7 @@ class AMRGIPass(RenderPass):
             self._reconstruct(context, g_buffer)
 
         context.resources["amrgi_texture"] = self.resolved_tex
+        context.resources["amrgi_length_texture"] = self.length_tex
 
         # Ping-pong: resolved becomes next frame's history; aux becomes prev-aux.
         self.resolved_tex, self.history_tex = self.history_tex, self.resolved_tex

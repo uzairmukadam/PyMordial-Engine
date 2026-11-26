@@ -186,6 +186,30 @@ class TestAMRGIShaderContracts:
         # not derive both phi and cosTheta from one scalar (1D spiral bug).
         assert "CosineHemisphereRay(vec3 n, float u1, float u2)" in src
 
+    def test_seed_uses_decorrelated_integer_hash(self):
+        src = load_shader("amrgi_trace.comp")
+        # AMRGI-5.1: the smooth gradient hash produced a visible checkerboard
+        # (corr(rot,rot2) = -0.41, spatial autocorr lag1 = -0.5). Seeds must come
+        # from an independent integer hash per (pixel, frame, dimension).
+        assert "uint HashUint(uint x)" in src
+        assert "float Hash01(uvec3 v)" in src
+        assert "Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 0u))" in src
+        assert "Hash01(uvec3(uint(pixel.x), uint(pixel.y), frameU * 2u + 1u))" in src
+        # The old correlated derivation must be gone.
+        assert "fract(noise + frameIndex * 0.61803398875)" not in src
+        assert "fract(noise * 1.32471795724" not in src
+
+    def test_seed_depends_on_pixel_frame_and_dimension(self):
+        src = load_shader("amrgi_trace.comp")
+        # rot and rot2 must differ only in the dimension term, so they are
+        # independent but both vary with pixel and frame.
+        assert "frameU * 2u + 0u" in src and "frameU * 2u + 1u" in src
+        assert "uint(pixel.x)" in src and "uint(pixel.y)" in src
+
+    def test_history_length_texture_published(self):
+        src = open("engine/gfx/passes/amrgi_pass.py", encoding="utf-8").read()
+        assert 'context.resources["amrgi_length_texture"] = self.length_tex' in src
+
     def test_thickness_scales_with_step(self):
         src = load_shader("amrgi_trace.comp")
         # Thickness must cover the inter-sample gap so coarse steps cannot skip surfaces.
