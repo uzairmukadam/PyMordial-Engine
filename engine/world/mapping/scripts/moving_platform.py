@@ -73,19 +73,9 @@ class MovingPlatformScript(EntityScript):
         pos_tuple = (self._current_pos[0], self._current_pos[1], self._current_pos[2])
         dense_idx = self.app.ecs.pool.get_dense_index(self.node.ecs_id)
 
-        # 1. Update Rapier kinematic position or velocity
+        # 1. Update Rapier kinematic position
         if self.node.has_rigid_body:
-            if self._is_velocity_based:
-                if dt > 1e-6:
-                    prev_x = float(self.app.ecs.rigid_body_state[1, dense_idx, 0]) if dense_idx >= 0 else pos_tuple[0]
-                    prev_y = float(self.app.ecs.rigid_body_state[1, dense_idx, 1]) if dense_idx >= 0 else pos_tuple[1]
-                    prev_z = float(self.app.ecs.rigid_body_state[1, dense_idx, 2]) if dense_idx >= 0 else pos_tuple[2]
-                    vx = (pos_tuple[0] - prev_x) / dt
-                    vy = (pos_tuple[1] - prev_y) / dt
-                    vz = (pos_tuple[2] - prev_z) / dt
-                    self.app.physics.set_linvel(self.node.ecs_id, (vx, vy, vz))
-            else:
-                self.app.physics.set_transform(self.node.ecs_id, pos_tuple, self._rot)
+            self.app.physics.set_transform(self.node.ecs_id, pos_tuple, self._rot)
 
         # 2. Update ECS Contiguous memory & matrix
         if dense_idx >= 0:

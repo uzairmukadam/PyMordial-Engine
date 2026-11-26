@@ -38,3 +38,4 @@ class ProjectConfig:
     # "Save Settings" action that writes the live graphics configuration to this
     # INI file. Projects that do not want user-editable settings leave it None.
     settings_export_path: Path | str | None = None
+    script_paths: list[str | Path] = field(default_factory=list)

@@ -182,7 +182,7 @@ class MapEntityNode:
         from engine.world.mapping.script_runner import get_script_class
 
         for script_def in self.entity_def.scripts:
-            cls = get_script_class(script_def.script_type)
+            cls = get_script_class(script_def.script_type, app=app)
             if cls is not None:
                 instance = cls()
                 instance.on_spawn(self, app, script_def.params)

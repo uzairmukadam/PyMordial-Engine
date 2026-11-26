@@ -6,6 +6,8 @@ on_spawn, on_fixed_update, on_interact, on_signal, on_despawn.
 
 from __future__ import annotations
 
+import importlib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
@@ -52,6 +54,7 @@ class EntityScript:
 
 # Global registry for mapping script type names to classes
 _SCRIPT_REGISTRY: dict[str, type[EntityScript]] = {}
+_SCRIPT_SEARCH_PATHS: list[Path] = []
 
 
 def register_script_type(type_name: str) -> Callable[[type[EntityScript]], type[EntityScript]]:
@@ -64,8 +67,92 @@ def register_script_type(type_name: str) -> Callable[[type[EntityScript]], type[
     return decorator
 
 
-def get_script_class(type_name: str) -> type[EntityScript] | None:
-    """Resolves an EntityScript class by identifier name."""
+def add_script_search_path(path: str | Path) -> None:
+    """Adds a filesystem directory to search for game/engine entity scripts."""
+    p = Path(path).resolve()
+    if p not in _SCRIPT_SEARCH_PATHS:
+        _SCRIPT_SEARCH_PATHS.append(p)
+
+
+def set_script_search_paths(paths: list[str | Path]) -> None:
+    """Replaces the active script search paths."""
+    _SCRIPT_SEARCH_PATHS.clear()
+    for p in paths:
+        add_script_search_path(p)
+
+
+def get_script_class(type_name: str, app: ProjectApp | None = None) -> type[EntityScript] | None:
+    """Resolves an EntityScript class by identifier name, module path, or auto-discovery.
+
+    Lookup Order:
+    1. Direct registry lookup in `_SCRIPT_REGISTRY`.
+    2. Explicit module path (e.g. `projects.playground.scripts.my_script:MyScript` or `...my_script.MyScript`).
+    3. Project search paths (`projects/<active>/scripts/` and any paths configured in `ProjectConfig.script_paths`).
+    4. Engine reusable script library (`engine/world/mapping/scripts/`).
+    """
+    if type_name in _SCRIPT_REGISTRY:
+        return _SCRIPT_REGISTRY[type_name]
+
+    # 2. Check for explicit module path with ':' or '.'
+    if ":" in type_name or "." in type_name:
+        try:
+            if ":" in type_name:
+                mod_name, cls_name = type_name.split(":", 1)
+            else:
+                mod_name, cls_name = type_name.rsplit(".", 1)
+            mod = importlib.import_module(mod_name)
+            cls = getattr(mod, cls_name, None)
+            if cls is not None and isinstance(cls, type) and issubclass(cls, EntityScript):
+                _SCRIPT_REGISTRY[type_name] = cls
+                return cls
+        except Exception:
+            pass
+
+    # 3. Gather candidate directories
+    candidate_dirs: list[Path] = list(_SCRIPT_SEARCH_PATHS)
+
+    # Add project-configured script paths if available
+    if app is not None and hasattr(app, "config"):
+        for sp in getattr(app.config, "script_paths", []):
+            candidate_dirs.append(Path(sp).resolve())
+
+    # Add default convention paths
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    candidate_dirs.append(repo_root / "engine" / "world" / "mapping" / "scripts")
+    projects_dir = repo_root / "projects"
+    if projects_dir.is_dir():
+        for proj in projects_dir.iterdir():
+            if proj.is_dir():
+                candidate_dirs.append(proj / "scripts")
+                mod_dir = proj / "modules"
+                if mod_dir.is_dir():
+                    for m in mod_dir.iterdir():
+                        if m.is_dir():
+                            candidate_dirs.append(m / "scripts")
+
+    # 4. Search candidate directories for a matching script
+    for c_dir in candidate_dirs:
+        if not c_dir.is_dir():
+            continue
+        for py_file in c_dir.glob("*.py"):
+            if py_file.name.startswith("__"):
+                continue
+            # Try to import module by relative path to repo_root
+            try:
+                rel = py_file.relative_to(repo_root)
+                mod_name = ".".join(rel.with_suffix("").parts)
+                mod = importlib.import_module(mod_name)
+                # Check if decorator registered it
+                if type_name in _SCRIPT_REGISTRY:
+                    return _SCRIPT_REGISTRY[type_name]
+                # Check attribute on module
+                cls = getattr(mod, type_name, None)
+                if cls is not None and isinstance(cls, type) and issubclass(cls, EntityScript):
+                    _SCRIPT_REGISTRY[type_name] = cls
+                    return cls
+            except Exception:
+                continue
+
     return _SCRIPT_REGISTRY.get(type_name)
 
 
