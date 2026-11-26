@@ -214,8 +214,13 @@ class TestAMRGIShaderContracts:
 
     def test_thickness_scales_with_step(self):
         src = load_shader("amrgi_trace.comp")
-        # Thickness must cover the inter-sample gap so coarse steps cannot skip surfaces.
-        assert "step_len * 1.35" in src
+        # Thickness must cover the inter-sample gap so coarse steps cannot skip
+        # surfaces. The equation now lives in the shared tracer and is selected
+        # by the AMRGI trace config (step_len * 1.35, capped at 1.5).
+        assert "traceCfg.thicknessStepScale  = 1.35;" in src
+        assert "traceCfg.thicknessStepCap    = 1.5;" in src
+        tracer = load_shader("shaders/common/ssrt/ssrt_trace.glsl")
+        assert "step_len * cfg.thicknessStepScale" in tracer
 
     def test_spatial_excludes_misses(self):
         src = load_shader("amrgi_reconstruct.comp")

@@ -141,6 +141,8 @@ class SSRPass(RenderPass):
         g_buffer.normal_metallic_texture.use(location=1)
         g_buffer.depth_texture.use(location=2)
         scene_tex.use(location=3)
+        # Shared SSRT tracer binding contract (surface-ID G-buffer).
+        g_buffer.surface_id_texture.use(location=4)
 
         self.active_backend = "LEGACY"
         self._render_legacy(context, g_buffer)

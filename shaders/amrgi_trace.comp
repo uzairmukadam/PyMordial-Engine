@@ -140,6 +140,27 @@ void main() {
 
     vec3 dir = CosineHemisphereRay(normalView, rot, rot2);
 
+    // ---- Shared SSRT trace policy (diffuse GI) ----
+    // Reproduces the Stage 1 equations exactly: unbounded thickness
+    //   max(base, min(step_len*1.35, 1.5)) * (1 + |z|*0.03)
+    // with surface-ID + backface self-hit rejection and unbounded refinement.
+    SSRT_TraceConfig traceCfg;
+    traceCfg.baseThickness       = u_Thickness;
+    traceCfg.thicknessStepScale  = 1.35;
+    traceCfg.thicknessStepCap    = 1.5;
+    traceCfg.thicknessDepthScale = 0.03;
+    traceCfg.thicknessMin        = 0.0;
+    traceCfg.thicknessMax        = 1e30;
+    traceCfg.refineSteps         = u_RefineIters;
+    traceCfg.flags               = SSRT_TRACE_REJECT_SELF_ID | SSRT_TRACE_REJECT_BACKFACE;
+    traceCfg.planeThreshold      = 0.0;
+    traceCfg.convexNormalDot     = 0.0;
+    traceCfg.convexNearDist      = 0.0;
+    traceCfg.convexPlaneDist     = 0.0;
+    traceCfg.orientationThreshold = 0.0;
+    traceCfg.nearClipZ          = 1e30;    // diffuse GI never aborts on near plane
+    traceCfg.selfUVEpsilon      = 0.006;
+
     // ---- Multi-ray accumulation (distinct low-discrepancy directions) ----
     int rayCount = clamp(u_RayCount, 1, 32);
     vec3 radiance = vec3(0.0);
@@ -155,15 +176,27 @@ void main() {
         float rayRot2 = fract(rot2 + float(r) * 0.38196601125);
         vec3 rdir = (r == 0) ? dir : CosineHemisphereRay(normalView, rayRot, rayRot2);
 
-        SSRT_Hit hit = SSRT_TraceLinear(origin, rdir, uv, noise, 0.0, u_NearEnd, u_NearSteps, 1,
-                             originSurfaceID, normalView, true, u_RefineIters, u_Thickness);
+        // Range classification is AMRGI-specific and stays in the caller: the
+        // shared tracer returns only generic traversal information.
+        int hitRange = 0;
+        SSRT_TraceConfig nearCfg = traceCfg;
+        nearCfg.refineSteps = u_RefineIters;
+        SSRT_Hit hit = SSRT_TraceLinear(origin, rdir, uv, noise, 0.0, u_NearEnd, u_NearSteps,
+                             originSurfaceID, normalView, nearCfg);
+        if (hit.hit) hitRange = 1;
         if (!hit.hit && wantMid) {
-            hit = SSRT_TraceLinear(origin, rdir, uv, noise, u_NearEnd, u_MidEnd, u_MidSteps, 2,
-                             originSurfaceID, normalView, false, u_RefineIters, u_Thickness);
+            SSRT_TraceConfig midCfg = traceCfg;
+            midCfg.refineSteps = 0;
+            hit = SSRT_TraceLinear(origin, rdir, uv, noise, u_NearEnd, u_MidEnd, u_MidSteps,
+                             originSurfaceID, normalView, midCfg);
+            if (hit.hit) hitRange = 2;
         }
         if (!hit.hit && wantFar) {
-            hit = SSRT_TraceLinear(origin, rdir, uv, noise, u_MidEnd, u_FarEnd, u_FarSteps, 3,
-                             originSurfaceID, normalView, false, u_RefineIters, u_Thickness);
+            SSRT_TraceConfig farCfg = traceCfg;
+            farCfg.refineSteps = 0;
+            hit = SSRT_TraceLinear(origin, rdir, uv, noise, u_MidEnd, u_FarEnd, u_FarSteps,
+                             originSurfaceID, normalView, farCfg);
+            if (hit.hit) hitRange = 3;
         }
 
         if (hit.hit) {
@@ -191,7 +224,7 @@ void main() {
             if (hit.distance < nearestHit) {
                 nearestHit = hit.distance;
                 hitDist = hit.distance;
-                rangeClass = hit.rangeClass;
+                rangeClass = hitRange;
             }
         }
     }

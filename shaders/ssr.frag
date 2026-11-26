@@ -7,6 +7,10 @@ layout (binding = 0) uniform sampler2D u_GBufferAlbedoRoughness;
 layout (binding = 1) uniform sampler2D u_GBufferNormalMetallic;
 layout (binding = 2) uniform sampler2D u_GBufferDepth;
 layout (binding = 3) uniform sampler2D u_SceneColor;
+// Shared SSRT tracer binding contract: the common tracer reads the surface-ID
+// G-buffer for self-hit rejection. SSR keeps its own reflection-specific
+// rejection policy, so this is bound for contract consistency only.
+layout (binding = 4) uniform sampler2D u_GBufferSurfaceID;
 
 layout (std140, binding = 0) uniform FrameData {
     mat4 u_View;
@@ -37,20 +41,10 @@ uniform float u_SSR_MaxRoughness = 0.65;
 // ray lengths in pixels.
 uniform vec2 u_TargetResolution = vec2(1.0);
 
-vec3 OctahedralDecode(vec2 f) {
-    f = f * 2.0 - 1.0;
-    vec3 n = vec3(f.x, f.y, 1.0 - abs(f.x) - abs(f.y));
-    float t = clamp(-n.z, 0.0, 1.0);
-    n.x += (n.x >= 0.0) ? -t : t;
-    n.y += (n.y >= 0.0) ? -t : t;
-    return normalize(n);
-}
-
-vec3 GetViewPos(vec2 uv, float depth) {
-    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
-    vec4 view = u_InvProjection * clip;
-    return view.xyz / max(abs(view.w), 1e-6);
-}
+#include "shaders/common/depth.glsl"
+#include "shaders/common/pbr_brdf.glsl"
+#include "shaders/common/ssrt/ssrt_common.glsl"
+#include "shaders/common/ssrt/ssrt_trace.glsl"
 
 // Jorge Jimenez's Interleaved Gradient Noise for uniform blue-noise spatial dithering
 float InterleavedGradientNoise(vec2 screen_pos) {
@@ -73,7 +67,7 @@ void main() {
         return;
     }
 
-    vec3 view_pos = GetViewPos(v_UV, raw_depth);
+    vec3 view_pos = ReconstructViewPosition(v_UV, raw_depth, u_InvProjection);
     float v_len = length(view_pos);
     if (v_len <= 1e-5) {
         out_SSR = vec4(0.0);
@@ -97,119 +91,44 @@ void main() {
     // Normal offset to avoid self-reflection acne
     vec3 ray_origin = view_pos + view_normal * 0.02;
     int steps = clamp(u_SSR_Steps, 24, 128);
-    float step_len = u_SSR_MaxDistance / float(steps);
 
-    vec2 hit_uv = vec2(0.0);
-    float hit_found = 0.0;
-    float hit_dist = 0.0;
+    // ---- Shared SSRT trace policy (specular reflections) ----
+    // Preserves the previous SSR traversal exactly:
+    //   thickness = clamp(max(base, step_len*0.20) * (1 + ray_depth*0.004), 0.03, 0.35)
+    //   six-iteration bounded binary refinement
+    //   tangent-plane / convex-surface / surface-orientation self-hit rejection
+    //   abort once the ray passes behind the near plane (z >= -0.08)
+    SSRT_TraceConfig traceCfg;
+    traceCfg.baseThickness        = u_SSR_Thickness;
+    traceCfg.thicknessStepScale   = 0.20;
+    traceCfg.thicknessStepCap     = 1e30;
+    traceCfg.thicknessDepthScale  = 0.004;
+    traceCfg.thicknessMin         = 0.03;
+    traceCfg.thicknessMax         = 0.35;
+    traceCfg.refineSteps          = 6;
+    traceCfg.flags                = SSRT_TRACE_REJECT_PLANE | SSRT_TRACE_REJECT_CONVEX |
+                                    SSRT_TRACE_REJECT_ORIENTATION | SSRT_TRACE_REFINE_BOUNDED |
+                                    SSRT_TRACE_SELF_UV_POST_REFINE;
+    traceCfg.planeThreshold       = 0.02;
+    traceCfg.convexNormalDot      = 0.65;
+    traceCfg.convexNearDist       = 2.5;
+    traceCfg.convexPlaneDist      = 1.5;
+    traceCfg.orientationThreshold = -0.05;
+    traceCfg.nearClipZ            = -0.08;
+    traceCfg.selfUVEpsilon        = 0.008;
+
+    // SSR does not use surface-ID self-hit rejection (it relies on the
+    // reflection-specific plane/convex/orientation tests above), so the origin
+    // surface ID is passed as 0 to keep the shared policy disabled.
+    SSRT_Hit hit = SSRT_TraceLinear(ray_origin, R, v_UV, jitter, 0.0, u_SSR_MaxDistance, steps,
+                                    0.0, view_normal, traceCfg);
+
+    vec2 hit_uv = hit.uv;
+    float hit_found = hit.hit ? 1.0 : 0.0;
+    float hit_dist = hit.distance;
     vec3 final_hit_normal = vec3(0.0, 1.0, 0.0);
-
-    // ---- Linear march ----
-    for (int s = 1; s <= steps; ++s) {
-        // Dithered ray marching: eliminates uniform stepping bands
-        float t = (float(s) - 0.5 + jitter) * step_len;
-
-        vec3 curr_view = ray_origin + R * t;
-
-        // Abort if ray passes behind the near clipping plane
-        if (curr_view.z >= -0.08) break;
-
-        vec4 clip_sample = u_Projection * vec4(curr_view, 1.0);
-        if (clip_sample.w <= 1e-5) break;
-        vec3 ndc_sample = clip_sample.xyz / clip_sample.w;
-        vec2 sample_uv = ndc_sample.xy * 0.5 + 0.5;
-
-        if (sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0) {
-            break;
-        }
-
-        float scene_depth = texture(u_GBufferDepth, sample_uv).r;
-        if (scene_depth <= 0.000001) continue;
-
-        vec3 scene_view = GetViewPos(sample_uv, scene_depth);
-
-        // View-space depth comparison (-Z is metric distance from camera)
-        float ray_depth = -curr_view.z;
-        float geo_depth = -scene_view.z;
-        float depth_diff = ray_depth - geo_depth;
-
-        // Keep the depth slab tight to avoid snapping reflections onto nearby unrelated surfaces.
-        float adaptive_thickness = clamp(
-            max(u_SSR_Thickness, step_len * 0.20) * (1.0 + ray_depth * 0.004),
-            0.03,
-            0.35
-        );
-
-        if (depth_diff >= 0.0 && depth_diff < adaptive_thickness) {
-            // Sub-pixel binary search bisection (6 iterations)
-            float t_min = max(0.0, t - step_len);
-            float t_max = t;
-            vec2 best_uv = sample_uv;
-            float best_t = t;
-
-            for (int b = 0; b < 6; ++b) {
-                float t_mid = (t_min + t_max) * 0.5;
-                vec3 p_mid = ray_origin + R * t_mid;
-                vec4 c_mid = u_Projection * vec4(p_mid, 1.0);
-                if (c_mid.w <= 1e-5) break;
-                vec2 uv_mid = (c_mid.xy / c_mid.w) * 0.5 + 0.5;
-
-                float d_mid = texture(u_GBufferDepth, uv_mid).r;
-                if (d_mid <= 0.000001) {
-                    t_min = t_mid;
-                    continue;
-                }
-                vec3 s_mid = GetViewPos(uv_mid, d_mid);
-                float diff_mid = (-p_mid.z) - (-s_mid.z);
-
-                if (diff_mid >= 0.0 && diff_mid < adaptive_thickness) {
-                    t_max = t_mid;
-                    best_uv = uv_mid;
-                    best_t = t_mid;
-                } else if (diff_mid < 0.0) {
-                    t_min = t_mid;
-                } else {
-                    t_min = t_mid;
-                }
-            }
-
-            // Sub-pixel self-origin rejection
-            if (length(best_uv - v_UV) < 0.008 || best_t < 0.05) {
-                continue;
-            }
-
-            // Reconstruct hit position in view space
-            float hit_depth = texture(u_GBufferDepth, best_uv).r;
-            if (hit_depth <= 0.000001) continue;
-            vec3 hit_view_pos = GetViewPos(best_uv, hit_depth);
-
-            // 1. Tangent plane distance check:
-            float plane_dist = dot(hit_view_pos - view_pos, view_normal);
-            if (plane_dist <= 0.02) {
-                continue;
-            }
-
-            // 2. Originating convex surface self-hit rejection:
-            // A reflection ray traveling away from a convex object (dot(R, view_normal) > 0)
-            // cannot hit geometry with a matching normal (dot(view_normal, hit_normal_view) > 0.65)
-            // within the object's neighborhood (best_t < 2.5 or plane_dist < 1.5).
-            vec3 hit_normal_world = OctahedralDecode(texture(u_GBufferNormalMetallic, best_uv).rg);
-            vec3 hit_normal_view = normalize((u_View * vec4(hit_normal_world, 0.0)).xyz);
-            if (dot(view_normal, hit_normal_view) > 0.65 && (best_t < 2.5 || plane_dist < 1.5)) {
-                continue;
-            }
-
-            // 3. Surface orientation check: ray must hit a front-facing surface (dot(R, hit_normal_view) <= -0.05)
-            if (dot(R, hit_normal_view) > -0.05) {
-                continue;
-            }
-
-            hit_uv = best_uv;
-            hit_found = 1.0;
-            hit_dist = best_t;
-            final_hit_normal = hit_normal_world;
-            break;
-        }
+    if (hit.hit) {
+        final_hit_normal = OctahedralDecode(texture(u_GBufferNormalMetallic, hit_uv).rg);
     }
 
     if (hit_found > 0.0) {
