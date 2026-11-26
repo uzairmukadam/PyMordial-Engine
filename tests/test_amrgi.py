@@ -262,6 +262,17 @@ class TestAMRGITemporalStability:
         assert "motionConf" in src
         assert "geomConf > 0.5" in src
 
+    def test_depth_compared_against_nearest_gbuffer(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        # AMRGI-5.2: history.a is the bilinearly-filtered resolved depth, which is
+        # meaningless across a depth edge and caused spurious intermittent
+        # rejection. The comparison must use the NEAREST G-buffer depth at the
+        # reprojected location instead.
+        assert "prevRawDepth = texture(u_GBufferDepth, prevUV).r" in src
+        assert "prevLinearDepth" in src
+        assert "abs(prevLinearDepth - expectedPrevDepth)" in src
+        assert "abs(history.a - expectedPrevDepth)" not in src
+
     def test_length_texture_lifecycle(self, render_ctx: RenderContext):
         p = AMRGIPass(render_ctx.ctx, width=320, height=240)
         try:
@@ -415,3 +426,79 @@ class TestAMRGIParameterIndependence:
         for scale in (0.25, 0.5, 0.75, 1.0):
             d = self._render(render_ctx, amrgi_resolution_scale=scale)
             assert np.all(np.isfinite(d))
+
+class TestAMRGIRayCountRange:
+    """AMRGI-5.3: debug ray-count control extended to 1..32."""
+
+    SUPPORTED = (1, 2, 4, 8, 12, 16, 24, 32)
+
+    def _render_with(self, render_ctx, rays):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager(max_entities=10)
+            _scene(ecs)
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_ray_count = rays
+            pipeline.apply_config(pipeline.config)
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            return pipeline.amrgi_pass._u_trace["u_RayCount"].value
+        finally:
+            pipeline.destroy()
+
+    @pytest.mark.parametrize("rays", (1, 2, 4, 8, 12, 16, 24, 32))
+    def test_supported_ray_counts_reach_uniform(self, render_ctx: RenderContext, rays):
+        assert self._render_with(render_ctx, rays) == rays
+
+    @pytest.mark.parametrize("rays", (1, 2, 4, 8, 12, 16, 24, 32))
+    def test_supported_ray_counts_preserved_in_config(self, render_ctx: RenderContext, rays):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_ray_count = rays
+            pipeline.apply_config(pipeline.config)
+            assert pipeline.config.amrgi_ray_count == rays
+        finally:
+            pipeline.destroy()
+
+    @pytest.mark.parametrize("bad,expected", [(0, 1), (-5, 1), (33, 32), (100, 32)])
+    def test_out_of_range_clamped_safely(self, render_ctx: RenderContext, bad, expected):
+        assert self._render_with(render_ctx, bad) == expected
+
+    def test_shader_clamp_is_32(self):
+        src = load_shader("amrgi_trace.comp")
+        assert "int rayCount = clamp(u_RayCount, 1, 32);" in src
+        assert "clamp(u_RayCount, 1, 4)" not in src
+
+    def test_pass_clamp_is_32(self):
+        src = open("engine/gfx/passes/amrgi_pass.py", encoding="utf-8").read()
+        assert 'max(1, min(32, int(getattr(cfg, "amrgi_ray_count", 1))))' in src
+
+    def test_debug_slider_range_is_32(self):
+        src = open("engine/debug/debug_menu.py", encoding="utf-8").read()
+        assert 'imgui.slider_int("Rays / Sample"' in src
+        assert "1, 32)" in src
+
+    def test_debug_slider_invalidates_history(self):
+        src = open("engine/debug/debug_menu.py", encoding="utf-8").read()
+        # Changing the sample budget must drop incompatible temporal history.
+        assert "invalidate_history()" in src
+
+    def test_debug_shows_active_ray_count(self):
+        src = open("engine/debug/debug_menu.py", encoding="utf-8").read()
+        assert "AMRGI Rays:" in src
+
+    def test_presets_unchanged_by_debug_range(self):
+        # The debug range extension must not alter shipped preset values.
+        low = get_quality_preset(GraphicsQuality.LOW)
+        med = get_quality_preset(GraphicsQuality.MEDIUM)
+        high = get_quality_preset(GraphicsQuality.HIGH)
+        ultra = get_quality_preset(GraphicsQuality.ULTRA)
+        cine = get_quality_preset(GraphicsQuality.CINEMATIC)
+        assert (low.amrgi_ray_count, med.amrgi_ray_count, high.amrgi_ray_count,
+                ultra.amrgi_ray_count, cine.amrgi_ray_count) == (1, 1, 2, 2, 4)
+
+    def test_normalization_unchanged(self):
+        src = load_shader("amrgi_trace.comp")
+        # Estimator must still divide by the launched ray count.
+        assert "radiance = radiance / float(rayCount) * u_Intensity;" in src
+        assert "confidence = confidence / float(rayCount);" in src

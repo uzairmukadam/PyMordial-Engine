@@ -258,7 +258,7 @@ class AMRGIPass(RenderPass):
         if u["u_Intensity"] is not None:
             u["u_Intensity"].value = float(getattr(cfg, "amrgi_intensity", 1.0))
         if u["u_RayCount"] is not None:
-            u["u_RayCount"].value = max(1, min(4, int(getattr(cfg, "amrgi_ray_count", 1))))
+            u["u_RayCount"].value = max(1, min(32, int(getattr(cfg, "amrgi_ray_count", 1))))
         if u["u_RadianceClamp"] is not None:
             u["u_RadianceClamp"].value = max(0.1, float(getattr(cfg, "amrgi_radiance_clamp", 4.0)))
         if u["u_HistoryValid"] is not None:

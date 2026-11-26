@@ -66,7 +66,7 @@ uniform int u_FarSteps;            // coarse
 uniform int u_RefineIters;         // near-hit refinement iterations
 uniform float u_Thickness;         // base thickness (m)
 uniform float u_Intensity;
-uniform int u_RayCount;            // rays per active sample (1..4)
+uniform int u_RayCount;            // rays per active sample (1..32)
 uniform float u_RadianceClamp;     // stabilization clamp on hit radiance
 uniform int u_HistoryValid;        // 0 on first frame / after reset
 uniform int u_MidRate;             // 1 in N pixels trace mid when not requested
@@ -263,7 +263,7 @@ void main() {
     vec3 dir = CosineHemisphereRay(normalView, rot, rot2);
 
     // ---- Multi-ray accumulation (distinct low-discrepancy directions) ----
-    int rayCount = clamp(u_RayCount, 1, 4);
+    int rayCount = clamp(u_RayCount, 1, 32);
     vec3 radiance = vec3(0.0);
     float confidence = 0.0;
     float hitDist = 0.0;

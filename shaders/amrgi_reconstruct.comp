@@ -151,7 +151,13 @@ void main() {
             vec4 worldPos = u_InvView * vec4(centerPos, 1.0);
             vec4 prevViewPos = u_PrevView * worldPos;
             float expectedPrevDepth = abs(prevViewPos.z);
-            float depthErr = abs(history.a - expectedPrevDepth);
+            // Compare against the NEAREST G-buffer depth at the reprojected
+            // location, not history.a (which is bilinearly blended and therefore
+            // meaningless across a depth edge -> spurious intermittent rejection).
+            float prevRawDepth = texture(u_GBufferDepth, prevUV).r;
+            float prevLinearDepth = IsBackgroundDepth(prevRawDepth) ? 1e9
+                : abs(ReconstructViewPosition(prevUV, prevRawDepth, u_InvProjection).z);
+            float depthErr = abs(prevLinearDepth - expectedPrevDepth);
             float depthTol = max(0.10, expectedPrevDepth * 0.02);
             float depthConf = 1.0 - smoothstep(depthTol, depthTol * 2.0, depthErr);
 

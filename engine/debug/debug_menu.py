@@ -817,10 +817,18 @@ class DebugMenu:
                         if c:
                             et.amrgi_resolution_scale = v
                             et.mark_custom()
-                        c, v = imgui.slider_int("Rays / Sample", int(getattr(et, "amrgi_ray_count", 1)), 1, 4)
+                        c, v = imgui.slider_int("Rays / Sample", int(getattr(et, "amrgi_ray_count", 1)), 1, 32)
                         if c:
                             et.amrgi_ray_count = v
                             et.mark_custom()
+                            # Ray count changes the sample budget, so the temporal
+                            # history was accumulated under a different estimator
+                            # variance. Invalidate it to avoid mixing states.
+                            _pipe = getattr(self.app, "pipeline", None) if self.app is not None else None
+                            _ap = getattr(_pipe, "amrgi_pass", None) if _pipe is not None else None
+                            if _ap is not None:
+                                _ap.invalidate_history()
+                        imgui.text(f"AMRGI Rays: {int(getattr(et, 'amrgi_ray_count', 1))}")
                         imgui.tree_pop()
                     if imgui.tree_node("AMRGI Range"):
                         c, v = imgui.slider_float("Near End", float(getattr(et, "amrgi_near_end", 3.0)), 0.5, 10.0, "%.1fm")

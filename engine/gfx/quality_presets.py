@@ -118,7 +118,7 @@ class RenderConfig:
     # and step budgets are derived from quality presets; only intensity and
     # maximum reach are ordinary user-facing knobs.
     amrgi_resolution_scale: float = 0.5  # trace domain scale (0.25..1.0)
-    amrgi_ray_count: int = 1            # rays per active sample (1..4)
+    amrgi_ray_count: int = 1            # rays per active sample (1..32)
     amrgi_near_end: float = 3.0
     amrgi_mid_end: float = 12.0
     amrgi_far_end: float = 40.0
