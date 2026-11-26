@@ -54,9 +54,14 @@ class AmbientOcclusionPass(RenderPass):
 
         self.ssao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssao_frag)
         self.gtao_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=gtao_frag)
+        # SSRT AO: reconstructs the shared local-diffuse visibility (no traversal).
+        self.ssrt_prog = self.ctx.program(
+            vertex_shader=quad_vert, fragment_shader=load_shader("ssrt_visibility_reconstruct.frag")
+        )
 
         self.ssao_vao = self.ctx.vertex_array(self.ssao_prog, [])
         self.gtao_vao = self.ctx.vertex_array(self.gtao_prog, [])
+        self.ssrt_vao = self.ctx.vertex_array(self.ssrt_prog, [])
 
         # Pre-cache uniform handles
         self._u_ssao_radius = self.ssao_prog.get("u_Radius", None)
@@ -64,6 +69,9 @@ class AmbientOcclusionPass(RenderPass):
 
         self._u_gtao_radius = self.gtao_prog.get("u_Radius", None)
         self._u_gtao_intensity = self.gtao_prog.get("u_Intensity", None)
+
+        self._u_ssrt_trace_res = self.ssrt_prog.get("u_TraceResolution", None)
+        self._u_ssrt_depth_sigma = self.ssrt_prog.get("u_DepthSigma", None)
 
     @property
     def blur_ao_tex(self) -> moderngl.Texture:
@@ -137,17 +145,31 @@ class AmbientOcclusionPass(RenderPass):
         radius = float(getattr(context.config, "ao_radius", 0.35))
         intensity = float(getattr(context.config, "ao_intensity", 1.0))
 
+        # SSRT AO consumes the shared local-diffuse visibility produced by the
+        # AMRGI trace. If that data is unavailable (non-AMRGI GI mode, or the
+        # resource was not published this frame), fall back to GTAO so AO never
+        # goes black and no second ray traversal is launched.
+        ssrt_visibility = context.resources.get("ssrt_diffuse_visibility_raw", None)
+        use_ssrt = ao_mode == "SSRT" and ssrt_visibility is not None
+
         # 1. Select AO program and VAO
-        if ao_mode == "SSAO":
+        if use_ssrt:
+            vao = self.ssrt_vao
+            u_rad = None
+            u_int = None
+            self.active_backend = "SSRT"
+        elif ao_mode == "SSAO":
             vao = self.ssao_vao
             u_rad = self._u_ssao_radius
             u_int = self._u_ssao_intensity
             self.active_backend = "SSAO"
-        else:  # "GTAO"
+        else:  # "GTAO" (also the SSRT fallback)
             vao = self.gtao_vao
             u_rad = self._u_gtao_radius
             u_int = self._u_gtao_intensity
             self.active_backend = "LEGACY"
+            if ao_mode == "SSRT":
+                self.fallback_reason = "SSRT visibility unavailable; using GTAO"
 
         # 2. Render Raw AO
         self.raw_fbo.use()
@@ -159,6 +181,17 @@ class AmbientOcclusionPass(RenderPass):
 
         g_buffer.depth_texture.use(location=0)
         g_buffer.normal_metallic_texture.use(location=1)
+
+        if use_ssrt:
+            ssrt_visibility.use(location=0)
+            g_buffer.depth_texture.use(location=1)
+            g_buffer.normal_metallic_texture.use(location=2)
+            if self._u_ssrt_trace_res is not None:
+                self._u_ssrt_trace_res.value = (
+                    float(ssrt_visibility.width), float(ssrt_visibility.height)
+                )
+            if self._u_ssrt_depth_sigma is not None:
+                self._u_ssrt_depth_sigma.value = max(0.02, radius * 0.3)
 
         if u_rad is not None:
             u_rad.value = radius
@@ -179,5 +212,7 @@ class AmbientOcclusionPass(RenderPass):
         self.white_fallback.release()
         self.ssao_vao.release()
         self.gtao_vao.release()
+        self.ssrt_vao.release()
         self.ssao_prog.release()
         self.gtao_prog.release()
+        self.ssrt_prog.release()

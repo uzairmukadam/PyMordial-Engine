@@ -46,6 +46,7 @@ class AMRGIPass(RenderPass):
         "raw_radiance_tex",
         "aux_tex",
         "prev_aux_tex",
+        "visibility_tex",
         "resolved_tex",
         "history_tex",
         "length_tex",
@@ -99,7 +100,7 @@ class AMRGIPass(RenderPass):
                 "u_TargetResolution", "u_NearEnd", "u_MidEnd", "u_FarEnd",
                 "u_NearSteps", "u_MidSteps", "u_FarSteps", "u_RefineIters",
                 "u_Thickness", "u_Intensity", "u_RayCount", "u_RadianceClamp",
-                "u_HistoryValid", "u_MidRate", "u_FarRate",
+                "u_HistoryValid", "u_MidRate", "u_FarRate", "u_AORadius",
             )
         }
         self._u_recon = {
@@ -129,6 +130,13 @@ class AMRGIPass(RenderPass):
         self.raw_radiance_tex = self._make_tex(self.width, self.height)
         self.aux_tex = self._make_tex(self.width, self.height)
         self.prev_aux_tex = self._make_tex(self.width, self.height)
+        # Shared local-diffuse visibility (Stage 3). Single-channel R16F at trace
+        # resolution; consumed by SSRT AO. Owned here because Stage 3 evolves the
+        # AMRGI diffuse workload (no separate shared-resource owner yet).
+        self.visibility_tex = self.ctx.texture((self.width, self.height), 1, dtype="f2")
+        self.visibility_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        self.visibility_tex.repeat_x = False
+        self.visibility_tex.repeat_y = False
         self.resolved_tex = self._make_tex(self.full_width, self.full_height)
         self.history_tex = self._make_tex(self.full_width, self.full_height)
         self.length_tex = self._make_tex(self.full_width, self.full_height)
@@ -137,6 +145,7 @@ class AMRGIPass(RenderPass):
     def _release_targets(self) -> None:
         for tex in (
             self.raw_radiance_tex, self.aux_tex, self.prev_aux_tex,
+            self.visibility_tex,
             self.resolved_tex, self.history_tex,
             self.length_tex, self.prev_length_tex,
         ):
@@ -201,6 +210,8 @@ class AMRGIPass(RenderPass):
         # resources reference this frame's freshly written textures.
         context.resources["amrgi_raw_texture"] = self.raw_radiance_tex
         context.resources["amrgi_aux_texture"] = self.aux_tex
+        # Shared local-diffuse visibility for SSRT AO (Stage 3).
+        context.resources["ssrt_diffuse_visibility_raw"] = self.visibility_tex
         if profiler is not None:
             with profiler.region("AMRGI reconstruct"):
                 self._reconstruct(context, g_buffer)
@@ -220,6 +231,7 @@ class AMRGIPass(RenderPass):
         cfg = context.config
         self.raw_radiance_tex.bind_to_image(0, read=False, write=True)
         self.aux_tex.bind_to_image(1, read=False, write=True)
+        self.visibility_tex.bind_to_image(2, read=False, write=True)
 
         g_buffer.depth_texture.use(location=1)
         g_buffer.normal_metallic_texture.use(location=2)
@@ -267,6 +279,8 @@ class AMRGIPass(RenderPass):
             u["u_MidRate"].value = max(1, int(getattr(cfg, "amrgi_mid_rate", 2)))
         if u["u_FarRate"] is not None:
             u["u_FarRate"].value = max(1, int(getattr(cfg, "amrgi_far_rate", 4)))
+        if u["u_AORadius"] is not None:
+            u["u_AORadius"].value = max(0.05, float(getattr(cfg, "ssrt_ao_radius", 0.5)))
 
         gx = (self.width + 7) // 8
         gy = (self.height + 7) // 8

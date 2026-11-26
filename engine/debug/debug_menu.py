@@ -897,8 +897,8 @@ class DebugMenu:
                             et.mark_custom()
                         imgui.tree_pop()
 
-                # AO Mode (OFF, SSAO, GTAO)
-                ao_modes = ["OFF", "SSAO", "GTAO"]
+                # AO Mode (OFF, SSAO, GTAO, SSRT)
+                ao_modes = ["OFF", "SSAO", "GTAO", "SSRT"]
                 curr_ao_idx = ao_modes.index(et.ao_mode) if et.ao_mode in ao_modes else 3
                 ao_changed, new_ao_idx = imgui.combo("AO Mode", curr_ao_idx, ao_modes)
                 if ao_changed and new_ao_idx != curr_ao_idx:

@@ -40,6 +40,8 @@ class GBufferDebugMode(IntEnum):
     AMRGI_HIT_RANGE = 27  # AMRGI hit range class (R=near, G=mid, B=far)
     AMRGI_HIT_DISTANCE = 28  # AMRGI normalized hit distance
     AMRGI_VALIDITY = 29  # AMRGI validity (G=hit, B=miss, R=background)
+    SSRT_VISIBILITY_RAW = 30  # Shared local-diffuse visibility (raw, trace-res)
+    SSRT_AO = 31  # Final SSRT ambient occlusion (ao_texture)
 
 
 class EngineTweaks:
@@ -89,6 +91,7 @@ class EngineTweaks:
         "ao_intensity",
         "ao_radius",
         "ao_resolution_scale",
+        "ssrt_ao_radius",
         "gi_mode",
         "ssgi_steps",
         "ssgi_rays",
@@ -351,6 +354,7 @@ class EngineTweaks:
         self.ao_intensity = 1.2
         self.ao_radius = 0.35
         self.ao_resolution_scale = 1.0
+        self.ssrt_ao_radius = 0.5
         self.gi_mode = GIMode.SSGI.value
         self.ssgi_steps = 16
         self.ssgi_rays = 8
@@ -800,6 +804,7 @@ class EngineTweaks:
             p_cfg.ao_mode = self.ao_mode
             p_cfg.ao_intensity = float(self.ao_intensity)
             p_cfg.ao_radius = float(self.ao_radius)
+            p_cfg.ssrt_ao_radius = float(self.ssrt_ao_radius)
             p_cfg.energy_compensation_enabled = bool(self.energy_compensation_enabled)
             p_cfg.specular_aa_enabled = bool(self.specular_aa_enabled)
             p_cfg.object_motion_vectors_enabled = bool(self.object_motion_vectors_enabled)
@@ -1092,6 +1097,7 @@ class EngineTweaks:
             "ao_intensity",
             "ao_radius",
             "ao_resolution_scale",
+            "ssrt_ao_radius",
             "ibl_enabled",
             "ssr_enabled",
             "ssr_steps",
@@ -1334,6 +1340,7 @@ class EngineTweaks:
             "ao_intensity": float(self.ao_intensity),
             "ao_radius": float(self.ao_radius),
             "ao_resolution_scale": float(self.ao_resolution_scale),
+            "ssrt_ao_radius": float(self.ssrt_ao_radius),
             "energy_compensation_enabled": bool(self.energy_compensation_enabled),
             "specular_aa_enabled": bool(self.specular_aa_enabled),
             "object_motion_vectors_enabled": bool(self.object_motion_vectors_enabled),

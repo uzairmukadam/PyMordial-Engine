@@ -202,3 +202,49 @@ class TestSSRCompiles:
             assert prog is not None
         finally:
             prog.release()
+
+
+class TestStage3SharedVisibility:
+    """Stage 3: shared local-diffuse visibility feeds SSRT AO without a second trace."""
+
+    def test_amrgi_trace_accumulates_visibility(self):
+        src = load_shader("amrgi_trace.comp")
+        # Visibility is accumulated inside the diffuse trace from the same hit.
+        assert "u_OutputVisibility" in src
+        assert "visSum" in src and "visCount" in src
+        assert "u_AORadius" in src
+        # Only near-range hits contribute to AO.
+        assert "hitRange == 1" in src
+
+    def test_ssrt_ao_has_no_traversal(self):
+        src = load_shader("ssrt_visibility_reconstruct.frag")
+        # The reconstruct shader must NOT trace rays.
+        assert "SSRT_TraceLinear" not in src
+        assert "u_Visibility" in src
+
+    def test_ao_pass_has_no_second_trace(self):
+        import inspect
+        from engine.gfx.passes import ao_pass as ao_mod
+        src = inspect.getsource(ao_mod)
+        assert "SSRT_TraceLinear" not in src
+        assert "ssrt_diffuse_visibility_raw" in src
+        assert "SSRT" in src
+
+    def test_ssrt_ao_mode_accepted(self):
+        from engine.gfx.quality_presets import RenderConfig
+        cfg = RenderConfig()
+        cfg.ao_mode = "SSRT"
+        assert cfg.ao_mode == "SSRT"
+        assert hasattr(cfg, "ssrt_ao_radius")
+
+    def test_visibility_reconstruct_compiles(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        try:
+            vert = load_shader("fullscreen_quad.vert")
+            prog = ctx.ctx.program(
+                vertex_shader=vert, fragment_shader=load_shader("ssrt_visibility_reconstruct.frag")
+            )
+            assert prog is not None
+            prog.release()
+        finally:
+            ctx.destroy()

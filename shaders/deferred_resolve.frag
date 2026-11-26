@@ -30,6 +30,8 @@ layout (binding = 19) uniform sampler2D u_AMRGITexture;
 // AMRGI diagnostics: raw trace radiance (half-res) and aux (hit dist/range/conf).
 layout (binding = 20) uniform sampler2D u_AMRGIRawTexture;
 layout (binding = 21) uniform sampler2D u_AMRGIAuxTexture;
+// Shared local-diffuse visibility (Stage 3), trace-res R16F. Bound to unit 22.
+layout (binding = 22) uniform sampler2D u_SSRTVIsibilityTexture;
 // Current-frame direct diffuse + emissive radiance (GI source). Bound to unit 18.
 layout (binding = 18) uniform sampler2D u_DirectRadianceTexture;
 
@@ -588,9 +590,17 @@ void main() {
         else col = vec3(0.3, 0.0, 0.0);
         out_HDRColor = vec4(col, 1.0);
         return;
+    } else if (u_GBufferDebug == 30) {
+        // Shared local-diffuse visibility (raw, trace-res): white=open, black=occluded.
+        float v = texture(u_SSRTVIsibilityTexture, v_UV).r;
+        out_HDRColor = vec4(vec3(v), 1.0);
+        return;
+    } else if (u_GBufferDebug == 31) {
+        // Final SSRT ambient occlusion (ao_texture): white=open, black=occluded.
+        float v = texture(u_AOTexture, v_UV).r;
+        out_HDRColor = vec4(vec3(v), 1.0);
+        return;
     }
-
-    // Diffuse IBL uses the cosine-convolved environment; retain a stable fallback when disabled.
     float sky_intensity = max(u_SunColor_Ambient.w * 3.5, 0.12);
     vec3 sky_color = mix(vec3(0.25, 0.35, 0.50), u_SunColor_Ambient.rgb * 0.5 + vec3(0.15), 0.4);
     vec3 ground_color = vec3(0.18, 0.19, 0.18);

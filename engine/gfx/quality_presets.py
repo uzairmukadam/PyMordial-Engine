@@ -82,10 +82,14 @@ class RenderConfig:
     max_entities: int = 100_000  # GPU entity capacity for SSBOs and culling scratch
 
     # Ambient Occlusion (GTAO / SSAO)
-    ao_mode: str = "GTAO"  # "OFF", "SSAO", "GTAO"
+    ao_mode: str = "GTAO"  # "OFF", "SSAO", "GTAO", "SSRT"
     ao_intensity: float = 1.0
     ao_radius: float = 0.35
     ao_resolution_scale: float = 1.0  # 1.0 = full res; 0.5 = half res (cheaper, softer)
+    # SSRT AO: local visibility radius (m) for the shared diffuse-ray occlusion.
+    # Only used when ao_mode == "SSRT"; falls back to GTAO when AMRGI visibility
+    # is unavailable.
+    ssrt_ao_radius: float = 0.5
 
     # Global Illumination (SSGI vs Ray-Marched Global Illumination)
     gi_mode: str = "RMGI"  # "OFF", "IBL", "SSGI", "RMGI"

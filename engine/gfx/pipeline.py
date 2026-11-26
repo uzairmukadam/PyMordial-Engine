@@ -1146,6 +1146,9 @@ class RenderPipeline:
         amrgi_raw_tex.use(location=20)
         amrgi_aux_tex = ctx.resources.get("amrgi_aux_texture", self.amrgi_pass.black_fallback)
         amrgi_aux_tex.use(location=21)
+        # Shared local-diffuse visibility (Stage 3) for SSRT AO debug views.
+        ssrt_vis_tex = ctx.resources.get("ssrt_diffuse_visibility_raw", self.amrgi_pass.black_fallback)
+        ssrt_vis_tex.use(location=22)
 
         # Current-frame direct radiance (debug visualization).
         direct_radiance_tex = ctx.resources.get("direct_radiance_texture", None)
@@ -1684,10 +1687,6 @@ class RenderPipeline:
         with profiler.region("Direct radiance"):
             self.direct_radiance_pass.execute(ctx)
 
-        # ---- PASS 3: Ambient Occlusion Pass (GTAO / SSAO) ----
-        with profiler.region("AO"):
-            self.ao_pass.execute(ctx)
-
         # ---- PASS 4: Dynamic Local Lights (SSBO 3 already updated at pre-pass) ----
         # lights_pass.execute(ctx) executed prior to shadow passes to allocate spot shadow casters
         # ---- PASS 5: Global Illumination (Mutually Exclusive: SSGI vs RMGI) ----
@@ -1723,6 +1722,13 @@ class RenderPipeline:
             self.rmgi_pass.invalidate_history()
             self.ssgi_pass.invalidate_history()
             self.amrgi_pass.invalidate_history()
+
+        # ---- PASS 5.5: Ambient Occlusion (GTAO / SSAO / SSRT) ----
+        # Runs after GI so SSRT AO can consume the shared local-diffuse visibility
+        # published by the AMRGI trace. Nothing between here and the deferred
+        # resolve consumes `ao_texture`, so this ordering is safe for all modes.
+        with profiler.region("AO"):
+            self.ao_pass.execute(ctx)
 
         # ---- PASS 6: Image-Based Lighting (SSR now runs after the base resolve) ----
         self.ibl_pass.execute(ctx)

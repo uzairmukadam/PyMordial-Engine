@@ -30,6 +30,9 @@ layout(local_size_x = 8, local_size_y = 8) in;
 
 layout(rgba16f, binding = 0) writeonly uniform image2D u_OutputRadiance;
 layout(rgba16f, binding = 1) writeonly uniform image2D u_OutputAux;
+// Shared local-diffuse visibility (Stage 3). Accumulated from the SAME near-range
+// SSRT hit that produces GI radiance, so no second traversal is required.
+layout(r16f, binding = 2) writeonly uniform image2D u_OutputVisibility;
 
 layout(binding = 1) uniform sampler2D u_GBufferDepth;
 layout(binding = 2) uniform sampler2D u_GBufferNormalMetallic;
@@ -74,6 +77,7 @@ uniform float u_RadianceClamp;     // stabilization clamp on hit radiance
 uniform int u_HistoryValid;        // 0 on first frame / after reset
 uniform int u_MidRate;             // 1 in N pixels trace mid when not requested
 uniform int u_FarRate;             // 1 in N pixels trace far when not requested
+uniform float u_AORadius;          // local visibility radius (m) for shared SSRT AO
 
 // PI comes from common/pbr_brdf.glsl (macro). Its literal rounds to the same
 // float32 value as the previous local constant, so behaviour is unchanged.
@@ -102,6 +106,7 @@ void main() {
     if (IsBackgroundDepth(depth)) {
         imageStore(u_OutputRadiance, pixel, vec4(0.0));
         imageStore(u_OutputAux, pixel, vec4(0.0));
+        imageStore(u_OutputVisibility, pixel, vec4(1.0));  // open sky = fully visible
         return;
     }
 
@@ -169,6 +174,12 @@ void main() {
     int rangeClass = 0;
     float nearestHit = 1e20;
     int hits = 0;
+    // Shared local visibility (Stage 3): accumulated from the SAME near-range hit
+    // that produces GI radiance. Only near-range hits contribute; mid/far hits are
+    // GI-only. 1.0 = open, 0.0 = fully occluded.
+    float aoRadius = max(u_AORadius, 1e-3);
+    float visSum = 0.0;
+    int visCount = 0;
 
     for (int r = 0; r < rayCount; ++r) {
         // Distinct direction per ray: offset both low-discrepancy values.
@@ -227,6 +238,21 @@ void main() {
                 rangeClass = hitRange;
             }
         }
+
+        // ---- Shared local visibility (Stage 3) ----
+        // Consume the SAME hit for AO. Only near-range hits (hitRange == 1) are
+        // local enough to occlude; mid/far hits are GI-only. A near miss inside
+        // the AO radius is treated as open (no occluder found). The weight is a
+        // bounded, monotonic falloff: 1 at the surface, 0 at the AO radius.
+        if (hitRange == 1) {
+            float occ = 0.0;
+            if (hit.hit) {
+                float d = clamp(hit.distance / aoRadius, 0.0, 1.0);
+                occ = 1.0 - d * d;   // quadratic falloff, bounded [0,1]
+            }
+            visSum += (1.0 - occ);
+            visCount += 1;
+        }
     }
 
     // Normalize by the launched ray count so more rays converge to the same
@@ -244,4 +270,10 @@ void main() {
 
     imageStore(u_OutputRadiance, pixel, vec4(radiance, confidence));
     imageStore(u_OutputAux, pixel, vec4(hitDist, float(rangeClass), confidence, stateAlpha));
+
+    // Shared local visibility: average over the near-range samples only. When no
+    // near sample was traced this frame, fall back to fully open (1.0) so the
+    // reconstruction never darkens from missing data.
+    float visibility = visCount > 0 ? (visSum / float(visCount)) : 1.0;
+    imageStore(u_OutputVisibility, pixel, vec4(clamp(visibility, 0.0, 1.0)));
 }
