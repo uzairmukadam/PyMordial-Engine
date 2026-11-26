@@ -1723,6 +1723,14 @@ class RenderPipeline:
             self.ssgi_pass.invalidate_history()
             self.amrgi_pass.invalidate_history()
 
+        # Stage 3.1: SSRT AO needs the shared diffuse visibility trace even when
+        # AMRGI is not the active GI backend. The AMRGI pass runs a
+        # visibility-only trace in that case (no GI reconstruction, no history
+        # advance). When AMRGI is active it already ran above with both outputs.
+        if self.config.gi_mode != "AMRGI" and str(getattr(self.config, "ao_mode", "OFF")).upper() == "SSRT":
+            with profiler.region("AMRGI total"):
+                self.amrgi_pass.execute(ctx)
+
         # ---- PASS 5.5: Ambient Occlusion (GTAO / SSAO / SSRT) ----
         # Runs after GI so SSRT AO can consume the shared local-diffuse visibility
         # published by the AMRGI trace. Nothing between here and the deferred

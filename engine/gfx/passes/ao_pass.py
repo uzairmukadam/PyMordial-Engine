@@ -72,6 +72,7 @@ class AmbientOcclusionPass(RenderPass):
 
         self._u_ssrt_trace_res = self.ssrt_prog.get("u_TraceResolution", None)
         self._u_ssrt_depth_sigma = self.ssrt_prog.get("u_DepthSigma", None)
+        self._u_ssrt_intensity = self.ssrt_prog.get("u_Intensity", None)
 
     @property
     def blur_ao_tex(self) -> moderngl.Texture:
@@ -146,9 +147,10 @@ class AmbientOcclusionPass(RenderPass):
         intensity = float(getattr(context.config, "ao_intensity", 1.0))
 
         # SSRT AO consumes the shared local-diffuse visibility produced by the
-        # AMRGI trace. If that data is unavailable (non-AMRGI GI mode, or the
-        # resource was not published this frame), fall back to GTAO so AO never
-        # goes black and no second ray traversal is launched.
+        # AMRGI trace. Stage 3.1: the trace runs whenever SSRT AO is selected
+        # (visibility-only when AMRGI is not the GI backend), so this resource is
+        # normally present. GTAO is used only as a true safety fallback when the
+        # resource is genuinely missing (e.g. no G-buffer / pass failure).
         ssrt_visibility = context.resources.get("ssrt_diffuse_visibility_raw", None)
         use_ssrt = ao_mode == "SSRT" and ssrt_visibility is not None
 
@@ -156,7 +158,7 @@ class AmbientOcclusionPass(RenderPass):
         if use_ssrt:
             vao = self.ssrt_vao
             u_rad = None
-            u_int = None
+            u_int = self._u_ssrt_intensity
             self.active_backend = "SSRT"
         elif ao_mode == "SSAO":
             vao = self.ssao_vao

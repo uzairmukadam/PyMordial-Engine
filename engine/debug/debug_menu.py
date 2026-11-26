@@ -811,13 +811,18 @@ class DebugMenu:
                         et.rmgi_resolution_scale = rmgi_res_val
                         et.mark_custom()
 
-                if et.gi_mode == "AMRGI":
-                    if imgui.tree_node("AMRGI Quality"):
-                        c, v = imgui.slider_float("Resolution Scale", float(getattr(et, "amrgi_resolution_scale", 0.5)), 0.25, 1.0, "%.2f")
+                if et.gi_mode == "AMRGI" or et.ao_mode == "SSRT":
+                    # Shared diffuse SSRT workload controls. The internal config
+                    # fields keep their historical `amrgi_*` names, but they now
+                    # govern the single shared diffuse trace used by both AMRGI
+                    # radiance and SSRT AO visibility.
+                    _ssrt_tree = "AMRGI Quality" if et.gi_mode == "AMRGI" else "Diffuse SSRT Quality"
+                    if imgui.tree_node(_ssrt_tree):
+                        c, v = imgui.slider_float("Diffuse SSRT Resolution", float(getattr(et, "amrgi_resolution_scale", 0.5)), 0.25, 1.0, "%.2f")
                         if c:
                             et.amrgi_resolution_scale = v
                             et.mark_custom()
-                        c, v = imgui.slider_int("Rays / Sample", int(getattr(et, "amrgi_ray_count", 1)), 1, 32)
+                        c, v = imgui.slider_int("Diffuse SSRT Rays", int(getattr(et, "amrgi_ray_count", 1)), 1, 32)
                         if c:
                             et.amrgi_ray_count = v
                             et.mark_custom()
@@ -828,7 +833,7 @@ class DebugMenu:
                             _ap = getattr(_pipe, "amrgi_pass", None) if _pipe is not None else None
                             if _ap is not None:
                                 _ap.invalidate_history()
-                        imgui.text(f"AMRGI Rays: {int(getattr(et, 'amrgi_ray_count', 1))}")
+                        imgui.text(f"Diffuse SSRT Rays: {int(getattr(et, 'amrgi_ray_count', 1))}")
                         imgui.tree_pop()
                     if imgui.tree_node("AMRGI Range"):
                         c, v = imgui.slider_float("Near End", float(getattr(et, "amrgi_near_end", 3.0)), 0.5, 10.0, "%.1fm")
@@ -907,7 +912,7 @@ class DebugMenu:
                     self.toast.show(f"AO Mode: {et.ao_mode}", duration=2.0)
 
                 if et.ao_mode != "OFF":
-                    ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.1, 3.0, "%.2f")
+                    ao_in_changed, ao_in_val = imgui.slider_float("AO Intensity", et.ao_intensity, 0.0, 3.0, "%.2f")
                     if ao_in_changed:
                         et.ao_intensity = ao_in_val
                         et.mark_custom()
@@ -916,6 +921,14 @@ class DebugMenu:
                     if ao_rad_changed:
                         et.ao_radius = ao_rad_val
                         et.mark_custom()
+
+                    if et.ao_mode == "SSRT":
+                        ssrt_rad_changed, ssrt_rad_val = imgui.slider_float(
+                            "SSRT Radius", float(getattr(et, "ssrt_ao_radius", 0.5)), 0.05, 3.0, "%.2f"
+                        )
+                        if ssrt_rad_changed:
+                            et.ssrt_ao_radius = ssrt_rad_val
+                            et.mark_custom()
 
                     ao_res_changed, ao_res_val = imgui.slider_float(
                         "AO Resolution Scale", float(getattr(et, "ao_resolution_scale", 1.0)), 0.25, 1.0, "%.2f"

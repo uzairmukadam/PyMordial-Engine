@@ -101,6 +101,7 @@ class AMRGIPass(RenderPass):
                 "u_NearSteps", "u_MidSteps", "u_FarSteps", "u_RefineIters",
                 "u_Thickness", "u_Intensity", "u_RayCount", "u_RadianceClamp",
                 "u_HistoryValid", "u_MidRate", "u_FarRate", "u_AORadius",
+                "u_RadianceRequested", "u_VisibilityRequested",
             )
         }
         self._u_recon = {
@@ -183,9 +184,15 @@ class AMRGIPass(RenderPass):
 
     def execute(self, context: RenderGraphContext) -> None:
         gi_mode = str(getattr(context.config, "gi_mode", "AMRGI")).upper()
+        ao_mode = str(getattr(context.config, "ao_mode", "OFF")).upper()
+        # Stage 3.1: the diffuse SSRT trace is a shared workload. AMRGI requests
+        # radiance; SSRT AO requests local visibility. Either (or both) may be
+        # active, and when both are active the SAME rays feed both consumers.
+        radiance_requested = gi_mode == "AMRGI"
+        visibility_requested = ao_mode == "SSRT"
         self.requested_backend = "ADAPTIVE"
         self.fallback_reason = None
-        if gi_mode != "AMRGI":
+        if not radiance_requested and not visibility_requested:
             self.active_backend = "OFF"
             context.resources["amrgi_texture"] = self.black_fallback
             self.invalidate_history()
@@ -203,31 +210,39 @@ class AMRGIPass(RenderPass):
         profiler = getattr(context, "profiler", None)
         if profiler is not None:
             with profiler.region("AMRGI trace"):
-                self._trace(context, g_buffer)
+                self._trace(context, g_buffer, radiance_requested, visibility_requested)
         else:
-            self._trace(context, g_buffer)
+            self._trace(context, g_buffer, radiance_requested, visibility_requested)
         # Publish raw + aux diagnostics BEFORE the ping-pong swap so the
         # resources reference this frame's freshly written textures.
         context.resources["amrgi_raw_texture"] = self.raw_radiance_tex
         context.resources["amrgi_aux_texture"] = self.aux_tex
         # Shared local-diffuse visibility for SSRT AO (Stage 3).
         context.resources["ssrt_diffuse_visibility_raw"] = self.visibility_tex
-        if profiler is not None:
-            with profiler.region("AMRGI reconstruct"):
+
+        if radiance_requested:
+            if profiler is not None:
+                with profiler.region("AMRGI reconstruct"):
+                    self._reconstruct(context, g_buffer)
+            else:
                 self._reconstruct(context, g_buffer)
+
+            context.resources["amrgi_texture"] = self.resolved_tex
+            context.resources["amrgi_length_texture"] = self.length_tex
+
+            # Ping-pong: resolved becomes next frame's history; aux becomes prev-aux.
+            self.resolved_tex, self.history_tex = self.history_tex, self.resolved_tex
+            self.aux_tex, self.prev_aux_tex = self.prev_aux_tex, self.aux_tex
+            self.length_tex, self.prev_length_tex = self.prev_length_tex, self.length_tex
+            self._first_frame = False
         else:
-            self._reconstruct(context, g_buffer)
+            # Visibility-only: no GI reconstruction, no temporal history advance.
+            # Keep AMRGI's history invalid so a later AMRGI enable starts clean.
+            context.resources["amrgi_texture"] = self.black_fallback
+            self.invalidate_history()
 
-        context.resources["amrgi_texture"] = self.resolved_tex
-        context.resources["amrgi_length_texture"] = self.length_tex
-
-        # Ping-pong: resolved becomes next frame's history; aux becomes prev-aux.
-        self.resolved_tex, self.history_tex = self.history_tex, self.resolved_tex
-        self.aux_tex, self.prev_aux_tex = self.prev_aux_tex, self.aux_tex
-        self.length_tex, self.prev_length_tex = self.prev_length_tex, self.length_tex
-        self._first_frame = False
-
-    def _trace(self, context: RenderGraphContext, g_buffer) -> None:
+    def _trace(self, context: RenderGraphContext, g_buffer,
+               radiance_requested: bool = True, visibility_requested: bool = True) -> None:
         cfg = context.config
         self.raw_radiance_tex.bind_to_image(0, read=False, write=True)
         self.aux_tex.bind_to_image(1, read=False, write=True)
@@ -281,6 +296,10 @@ class AMRGIPass(RenderPass):
             u["u_FarRate"].value = max(1, int(getattr(cfg, "amrgi_far_rate", 4)))
         if u["u_AORadius"] is not None:
             u["u_AORadius"].value = max(0.05, float(getattr(cfg, "ssrt_ao_radius", 0.5)))
+        if u["u_RadianceRequested"] is not None:
+            u["u_RadianceRequested"].value = 1 if radiance_requested else 0
+        if u["u_VisibilityRequested"] is not None:
+            u["u_VisibilityRequested"].value = 1 if visibility_requested else 0
 
         gx = (self.width + 7) // 8
         gy = (self.height + 7) // 8

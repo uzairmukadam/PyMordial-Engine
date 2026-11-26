@@ -41,6 +41,7 @@ layout (std140, binding = 0) uniform FrameData {
 
 uniform vec2 u_TraceResolution = vec2(1.0);  // resolution of u_Visibility
 uniform float u_DepthSigma = 0.10;           // metric view-depth tolerance (m)
+uniform float u_Intensity = 1.0;             // shared AO intensity (0 = off)
 
 float LinearizeViewDepth(float raw_depth, vec2 uv) {
     vec4 clip = vec4(uv * 2.0 - 1.0, raw_depth, 1.0);
@@ -79,5 +80,9 @@ void main() {
         }
     }
 
-    out_Visibility = wsum > 1e-5 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
+    float visibility = wsum > 1e-5 ? clamp(sum / wsum, 0.0, 1.0) : 1.0;
+    // Apply the shared AO intensity exactly once, with the same semantics as the
+    // SSAO/GTAO paths: intensity 0 disables AO, 1 is the estimator's natural
+    // strength, >1 strengthens it (clamped). V is visibility (1 = open).
+    out_Visibility = clamp(1.0 - u_Intensity * (1.0 - visibility), 0.0, 1.0);
 }

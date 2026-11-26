@@ -17,6 +17,13 @@ from engine.gfx.context import RenderContext
 from engine.gfx.shader_utils import load_shader
 
 
+@pytest.fixture(scope="module")
+def render_ctx():
+    ctx = RenderContext.create_headless(width=320, height=240)
+    yield ctx
+    ctx.destroy()
+
+
 class TestSSRTFoundationExists:
     def test_ssrt_common_loads(self):
         src = load_shader("shaders/common/ssrt/ssrt_common.glsl")
@@ -248,3 +255,152 @@ class TestStage3SharedVisibility:
             prog.release()
         finally:
             ctx.destroy()
+
+
+class TestStage31IndependentSSRTAO:
+    """Stage 3.1: SSRT AO runs independently of AMRGI via a shared diffuse trace.
+
+    The diffuse SSRT workload is a single trace with two independent output
+    requests (radiance for AMRGI, visibility for SSRT AO). These tests verify the
+    request plumbing, the removal of the AMRGI-only GTAO fallback, and that AO
+    intensity reaches the SSRT path exactly once.
+    """
+
+    def test_trace_has_output_request_flags(self):
+        src = load_shader("amrgi_trace.comp")
+        assert "u_RadianceRequested" in src
+        assert "u_VisibilityRequested" in src
+        # Radiance accumulation is gated by the request flag.
+        assert "wantRadiance" in src
+        assert "wantVisibility" in src
+
+    def test_pass_sets_request_flags(self):
+        import inspect
+        from engine.gfx.passes import amrgi_pass as amrgi_mod
+        src = inspect.getsource(amrgi_mod)
+        assert "u_RadianceRequested" in src
+        assert "u_VisibilityRequested" in src
+        assert 'radiance_requested = gi_mode == "AMRGI"' in src
+        assert 'visibility_requested = ao_mode == "SSRT"' in src
+
+    def test_visibility_only_does_not_advance_history(self):
+        import inspect
+        from engine.gfx.passes import amrgi_pass as amrgi_mod
+        src = inspect.getsource(amrgi_mod)
+        # Reconstruction (and thus history ping-pong) is gated on radiance.
+        assert "if radiance_requested:" in src
+        # Visibility-only path keeps history invalid.
+        assert "Visibility-only" in src
+
+    def test_pipeline_runs_trace_for_ssrt_ao_without_amrgi(self):
+        import inspect
+        from engine.gfx import pipeline as pipeline_mod
+        src = inspect.getsource(pipeline_mod)
+        assert 'self.config.gi_mode != "AMRGI"' in src
+        assert '"SSRT"' in src
+
+    def test_ao_pass_uses_ssrt_intensity(self):
+        import inspect
+        from engine.gfx.passes import ao_pass as ao_mod
+        src = inspect.getsource(ao_mod)
+        assert "_u_ssrt_intensity" in src
+        # The AMRGI-disabled fallback must be gone; only a genuine
+        # missing-resource safety fallback may remain.
+        assert "AMRGI is not enabled" not in src
+        assert "SSRT visibility unavailable; using GTAO" in src
+
+    def test_reconstruct_applies_intensity_once(self):
+        src = load_shader("ssrt_visibility_reconstruct.frag")
+        assert "u_Intensity" in src
+        assert "1.0 - u_Intensity * (1.0 - visibility)" in src
+
+    def test_ssrt_ao_uses_visibility_not_gtao(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager()
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+            ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.2, 0.2))
+            pipeline.config.gi_mode = "OFF"
+            pipeline.config.ao_mode = "SSRT"
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            assert pipeline.ao_pass.active_backend == "SSRT"
+            assert pipeline.ao_pass.fallback_reason is None
+            # Visibility-only trace must not advance AMRGI temporal history.
+            assert pipeline.amrgi_pass._first_frame is True
+        finally:
+            pipeline.destroy()
+
+    def test_rmgi_and_ssgi_with_ssrt_ao(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager()
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+            ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.2, 0.2))
+            for gi in ("RMGI", "SSGI"):
+                pipeline.config.gi_mode = gi
+                pipeline.config.ao_mode = "SSRT"
+                pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+                assert pipeline.ao_pass.active_backend == "SSRT", gi
+                assert pipeline.ao_pass.fallback_reason is None, gi
+        finally:
+            pipeline.destroy()
+
+    def test_amrgi_plus_ssrt_shares_one_trace(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager()
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+            ecs.create_entity(position=(0.0, 0.0, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.2, 0.2))
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.ao_mode = "SSRT"
+            pipeline.config.amrgi_ray_count = 4
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            # One shared trace: the configured ray count is unchanged by AO.
+            assert pipeline.amrgi_pass._u_trace["u_RayCount"].value == 4
+            assert pipeline.amrgi_pass._u_trace["u_RadianceRequested"].value == 1
+            assert pipeline.amrgi_pass._u_trace["u_VisibilityRequested"].value == 1
+            assert pipeline.ao_pass.active_backend == "SSRT"
+            # AMRGI history advances normally in the fused mode.
+            assert pipeline.amrgi_pass._first_frame is False
+        finally:
+            pipeline.destroy()
+
+    def test_ssrt_ao_does_not_increase_ray_count(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            ecs = EntityManager()
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.7, 0.7, 0.7))
+            pipeline.config.gi_mode = "OFF"
+            pipeline.config.ao_mode = "SSRT"
+            pipeline.config.amrgi_ray_count = 2
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 2.0, 5.0), time_elapsed=0.016)
+            assert pipeline.amrgi_pass._u_trace["u_RayCount"].value == 2
+            assert pipeline.amrgi_pass._u_trace["u_RadianceRequested"].value == 0
+            assert pipeline.amrgi_pass._u_trace["u_VisibilityRequested"].value == 1
+        finally:
+            pipeline.destroy()
+
+    def test_resolution_scale_changes_raw_target_dims(self, render_ctx: RenderContext):
+        from engine.gfx.passes.amrgi_pass import AMRGIPass
+
+        p = AMRGIPass(render_ctx.ctx, width=320, height=240, resolution_scale=0.5)
+        try:
+            assert p.raw_radiance_tex.size == (160, 120)
+            assert p.visibility_tex.size == (160, 120)
+            p.resize(320, 240, resolution_scale=1.0)
+            assert p.raw_radiance_tex.size == (320, 240)
+            assert p.visibility_tex.size == (320, 240)
+        finally:
+            p.destroy()

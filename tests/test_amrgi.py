@@ -482,7 +482,7 @@ class TestAMRGIRayCountRange:
 
     def test_debug_slider_range_is_32(self):
         src = open("engine/debug/debug_menu.py", encoding="utf-8").read()
-        assert 'imgui.slider_int("Rays / Sample"' in src
+        assert 'imgui.slider_int("Diffuse SSRT Rays"' in src
         assert "1, 32)" in src
 
     def test_debug_slider_invalidates_history(self):
@@ -492,7 +492,7 @@ class TestAMRGIRayCountRange:
 
     def test_debug_shows_active_ray_count(self):
         src = open("engine/debug/debug_menu.py", encoding="utf-8").read()
-        assert "AMRGI Rays:" in src
+        assert "Diffuse SSRT Rays:" in src
 
     def test_presets_unchanged_by_debug_range(self):
         # The debug range extension must not alter shipped preset values.

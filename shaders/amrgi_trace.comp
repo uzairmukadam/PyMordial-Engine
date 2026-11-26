@@ -78,6 +78,11 @@ uniform int u_HistoryValid;        // 0 on first frame / after reset
 uniform int u_MidRate;             // 1 in N pixels trace mid when not requested
 uniform int u_FarRate;             // 1 in N pixels trace far when not requested
 uniform float u_AORadius;          // local visibility radius (m) for shared SSRT AO
+// Output requests for the shared diffuse SSRT workload (Stage 3.1).
+// radiance -> AMRGI indirect diffuse; visibility -> SSRT AO. Both may be set,
+// in which case the SAME local hit feeds both consumers (no extra rays).
+uniform int u_RadianceRequested;   // 1 = accumulate GI radiance
+uniform int u_VisibilityRequested; // 1 = accumulate local visibility
 
 // PI comes from common/pbr_brdf.glsl (macro). Its literal rounds to the same
 // float32 value as the previous local constant, so behaviour is unchanged.
@@ -110,6 +115,9 @@ void main() {
         return;
     }
 
+    bool wantRadiance = u_RadianceRequested != 0;
+    bool wantVisibility = u_VisibilityRequested != 0;
+
     vec3 origin = ReconstructViewPosition(uv, depth, u_InvProjection);
     vec3 normalView = normalize(mat3(u_View) * OctahedralDecode(texture(u_GBufferNormalMetallic, uv).rg));
     float originSurfaceID = texture(u_GBufferSurfaceID, uv).r;
@@ -140,8 +148,8 @@ void main() {
 
     // Hysteresis: stable near hit reduces mid/far frequency; repeated miss
     // temporarily increases mid/far opportunity; stable far keeps sparse refresh.
-    bool wantMid = midScheduled || prevClass <= 1 || missStreak > 0.5;
-    bool wantFar = farScheduled || prevClass == 3 || missStreak > 0.75;
+    bool wantMid = wantRadiance && (midScheduled || prevClass <= 1 || missStreak > 0.5);
+    bool wantFar = wantRadiance && (farScheduled || prevClass == 3 || missStreak > 0.75);
 
     vec3 dir = CosineHemisphereRay(normalView, rot, rot2);
 
@@ -210,7 +218,7 @@ void main() {
             if (hit.hit) hitRange = 3;
         }
 
-        if (hit.hit) {
+        if (hit.hit && wantRadiance) {
             vec3 L = texture(u_DirectRadiance, hit.uv).rgb;
             if (any(isnan(L)) || any(isinf(L))) L = vec3(0.0);
 
@@ -244,7 +252,7 @@ void main() {
         // local enough to occlude; mid/far hits are GI-only. A near miss inside
         // the AO radius is treated as open (no occluder found). The weight is a
         // bounded, monotonic falloff: 1 at the surface, 0 at the AO radius.
-        if (hitRange == 1) {
+        if (hitRange == 1 && wantVisibility) {
             float occ = 0.0;
             if (hit.hit) {
                 float d = clamp(hit.distance / aoRadius, 0.0, 1.0);
