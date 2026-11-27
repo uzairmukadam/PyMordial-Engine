@@ -145,7 +145,12 @@ class SSRPass(RenderPass):
         g_buffer.surface_id_texture.use(location=4)
 
         self.active_backend = "LEGACY"
-        self._render_legacy(context, g_buffer)
+        profiler = getattr(context, "profiler", None)
+        if profiler is not None:
+            with profiler.region("SSR trace"):
+                self._render_legacy(context, g_buffer)
+        else:
+            self._render_legacy(context, g_buffer)
         # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo
         self.blur_fbo.use()
         self.raw_ssr_tex.use(location=0)
@@ -154,7 +159,11 @@ class SSRPass(RenderPass):
         g_buffer.normal_metallic_texture.use(location=3)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_h
-        self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+        if profiler is not None:
+            with profiler.region("SSR blur H"):
+                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+        else:
+            self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         # 3. Vertical Bilateral Denoising Blur: blur -> raw_fbo
         self.raw_fbo.use()
@@ -164,7 +173,11 @@ class SSRPass(RenderPass):
         g_buffer.normal_metallic_texture.use(location=3)
         if self._u_blur_dir is not None:
             self._u_blur_dir.value = self._blur_dir_v
-        self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+        if profiler is not None:
+            with profiler.region("SSR blur V"):
+                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+        else:
+            self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
 
         context.resources["ssr_texture"] = self.raw_ssr_tex
 
