@@ -141,6 +141,15 @@ class RenderConfig:
     amrgi_far_rate: int = 4   # 1-in-N pixels trace far when history does not request it
     amrgi_max_history: float = 32.0  # cap on effective temporal sample count
     amrgi_miss_decay: float = 0.90   # per-frame history confidence decay on an evaluated miss
+    # Motion-vector history rejection window, in full-resolution pixels/frame.
+    # History confidence is 1.0 below `start` and 0.0 above `end`. The old
+    # window (1.0, 8.0) rejected ~27% of pixels at only ~3 px/frame of ordinary
+    # camera translation, collapsing the temporal sample count and exposing the
+    # half-resolution trace. Disocclusion is still handled by the depth and
+    # surface-ID tests, so this window only needs to catch extreme motion.
+    # Set to (1.0, 8.0) to reproduce the pre-Stage-7 baseline exactly.
+    amrgi_motion_reject_start: float = 2.0
+    amrgi_motion_reject_end: float = 24.0
 
     # Image-Based Lighting & Screen-Space Reflections (SSR)
     ibl_enabled: bool = True

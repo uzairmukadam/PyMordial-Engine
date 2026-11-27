@@ -55,6 +55,8 @@ uniform float u_DepthEdge;         // depth edge sensitivity (larger = softer)
 uniform float u_NormalEdge;        // normal edge sensitivity (larger = softer)
 uniform float u_MaxHistory;        // cap on effective temporal sample count
 uniform float u_MissDecay;         // per-frame history confidence decay on a miss
+uniform float u_MotionRejectStart; // px/frame below which history is fully trusted
+uniform float u_MotionRejectEnd;   // px/frame above which history is fully rejected
 
 vec3 OctahedralDecode(vec2 f) {
     f = f * 2.0 - 1.0;
@@ -162,7 +164,11 @@ void main() {
             float depthConf = 1.0 - smoothstep(depthTol, depthTol * 2.0, depthErr);
 
             float motionPixels = length(motion * u_FullResolution);
-            float motionConf = 1.0 - smoothstep(1.0, 8.0, motionPixels);
+            // Motion confidence only needs to catch extreme motion. Disocclusion
+            // is already handled by the depth and surface-ID tests below, so a
+            // tight window here needlessly discards valid history during ordinary
+            // camera translation and exposes the half-resolution trace.
+            float motionConf = 1.0 - smoothstep(u_MotionRejectStart, u_MotionRejectEnd, motionPixels);
 
             // Geometry identity must match: reject on depth/normal/surface-ID
             // mismatch (disocclusion, camera cut, material change).

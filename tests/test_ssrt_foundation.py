@@ -529,3 +529,89 @@ class TestSSRTemporalStabilization:
             assert pipeline.ssr_pass._history_valid is False
         finally:
             pipeline.destroy()
+
+
+class TestStage7GIMotionHistory:
+    """Stage 7: AMRGI motion-vector history rejection window."""
+
+    @pytest.fixture(scope="class")
+    def render_ctx(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        yield ctx
+        ctx.destroy()
+
+    def test_config_defaults(self):
+        from engine.gfx.quality_presets import RenderConfig
+        cfg = RenderConfig()
+        assert cfg.amrgi_motion_reject_start == 2.0
+        assert cfg.amrgi_motion_reject_end == 24.0
+        # Baseline window must remain expressible for A/B comparison.
+        assert cfg.amrgi_motion_reject_end > cfg.amrgi_motion_reject_start
+
+    def test_shader_uses_configurable_window(self):
+        src = load_shader("amrgi_reconstruct.comp")
+        assert "u_MotionRejectStart" in src
+        assert "u_MotionRejectEnd" in src
+        assert "smoothstep(u_MotionRejectStart, u_MotionRejectEnd, motionPixels)" in src
+        # The hardcoded pre-Stage-7 window must be gone.
+        assert "smoothstep(1.0, 8.0, motionPixels)" not in src
+
+    def test_pass_exposes_motion_uniforms(self, render_ctx: RenderContext):
+        from engine.gfx.passes.amrgi_pass import AMRGIPass
+        p = AMRGIPass(render_ctx.ctx, width=320, height=240)
+        try:
+            assert "u_MotionRejectStart" in p._u_recon
+            assert "u_MotionRejectEnd" in p._u_recon
+        finally:
+            p.destroy()
+
+    def test_baseline_window_still_available(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_motion_reject_start = 1.0
+            pipeline.config.amrgi_motion_reject_end = 8.0
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            assert pipeline.amrgi_pass._u_recon["u_MotionRejectStart"].value == pytest.approx(1.0)
+            assert pipeline.amrgi_pass._u_recon["u_MotionRejectEnd"].value == pytest.approx(8.0)
+        finally:
+            pipeline.destroy()
+
+    def test_end_clamped_above_start(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "AMRGI"
+            pipeline.config.amrgi_motion_reject_start = 10.0
+            pipeline.config.amrgi_motion_reject_end = 2.0
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            start = pipeline.amrgi_pass._u_recon["u_MotionRejectStart"].value
+            end = pipeline.amrgi_pass._u_recon["u_MotionRejectEnd"].value
+            assert end > start
+        finally:
+            pipeline.destroy()
+
+    def test_gi_disabled_does_not_run_reconstruct(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.gi_mode = "OFF"
+            pipeline.config.ao_mode = "OFF"
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            # No GI reconstruction => history never advances.
+            assert pipeline.amrgi_pass._first_frame is True
+        finally:
+            pipeline.destroy()

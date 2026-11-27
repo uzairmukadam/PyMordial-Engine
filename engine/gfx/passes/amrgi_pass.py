@@ -111,6 +111,7 @@ class AMRGIPass(RenderPass):
                 "u_HistoryValid", "u_PrevView", "u_PrevJitter",
                 "u_SpatialStrength", "u_DepthEdge", "u_NormalEdge",
                 "u_MaxHistory", "u_MissDecay",
+                "u_MotionRejectStart", "u_MotionRejectEnd",
             )
         }
 
@@ -345,6 +346,11 @@ class AMRGIPass(RenderPass):
             u["u_MaxHistory"].value = max(1.0, float(getattr(cfg, "amrgi_max_history", 32.0)))
         if u["u_MissDecay"] is not None:
             u["u_MissDecay"].value = min(max(float(getattr(cfg, "amrgi_miss_decay", 0.90)), 0.0), 1.0)
+        if u["u_MotionRejectStart"] is not None:
+            u["u_MotionRejectStart"].value = max(0.0, float(getattr(cfg, "amrgi_motion_reject_start", 2.0)))
+        if u["u_MotionRejectEnd"] is not None:
+            start = max(0.0, float(getattr(cfg, "amrgi_motion_reject_start", 2.0)))
+            u["u_MotionRejectEnd"].value = max(start + 1e-3, float(getattr(cfg, "amrgi_motion_reject_end", 24.0)))
 
         gx = (self.full_width + 7) // 8
         gy = (self.full_height + 7) // 8
