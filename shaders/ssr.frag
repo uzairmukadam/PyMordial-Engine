@@ -85,8 +85,12 @@ void main() {
         return;
     }
 
-    // Interleaved Gradient Noise for sub-texel ray jittering
-    float jitter = InterleavedGradientNoise(gl_FragCoord.xy);
+    // Interleaved Gradient Noise for sub-texel ray jittering. The golden-ratio
+    // time offset makes the jitter vary per frame so temporal accumulation can
+    // average different sub-texel samples and converge (a fixed per-pixel jitter
+    // would re-accumulate the same sample and never denoise).
+    float jitter = fract(InterleavedGradientNoise(gl_FragCoord.xy)
+                         + u_CameraPos_Time.w * 0.61803398875);
 
     // Normal offset to avoid self-reflection acne
     vec3 ray_origin = view_pos + view_normal * 0.02;

@@ -150,6 +150,15 @@ class RenderConfig:
     ssr_max_roughness: float = 0.65
     ssr_thickness: float = 0.12
     ssr_max_distance: float = 30.0
+    # Stage 6: temporal stabilization. ssr_filter_mode selects the spatial stage
+    # after temporal accumulation: 0 = spatial only (legacy), 1 = temporal + two
+    # bilateral blurs, 2 = temporal + one bilateral cleanup, 3 = temporal only.
+    ssr_temporal_enabled: bool = True
+    ssr_filter_mode: int = 1
+    ssr_temporal_history_weight: float = 0.90
+    ssr_temporal_history_weight_rough: float = 0.96
+    ssr_temporal_depth_threshold: float = 0.05
+    ssr_temporal_normal_threshold: float = 0.90
 
     # Anti-Aliasing (Mutually Exclusive: "OFF", "FXAA", "SMAA_1X", "SMAA_2X", "SMAA_4X", "TAA")
     aa_mode: str = "OFF"

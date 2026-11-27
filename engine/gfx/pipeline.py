@@ -1780,6 +1780,10 @@ class RenderPipeline:
                 profiler_label="Deferred base resolve",
             )
             ctx.resources["base_hdr"] = self.post_process.base_hdr_texture
+            # Camera cut: a large jump in camera position invalidates SSR history
+            # so the first frame after a cut does not reproject stale reflections.
+            if float(np.linalg.norm(self._cam_pos - self._prev_cam_pos)) > 5.0:
+                self.ssr_pass.invalidate_history()
             with profiler.region("SSR"):
                 self.ssr_pass.execute(ctx)
             # Lightweight specular compose: base_hdr + SSR delta -> hdr_texture.

@@ -404,3 +404,128 @@ class TestStage31IndependentSSRTAO:
             assert p.visibility_tex.size == (320, 240)
         finally:
             p.destroy()
+
+
+class TestSSRTemporalStabilization:
+    """Stage 6: SSR temporal reprojection, history validation, and mode selection."""
+
+    @pytest.fixture(scope="class")
+    def render_ctx(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        yield ctx
+        ctx.destroy()
+
+    def test_temporal_shader_compiles(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        try:
+            vert = load_shader("fullscreen_quad.vert")
+            prog = ctx.ctx.program(vertex_shader=vert, fragment_shader=load_shader("ssr_temporal.frag"))
+            assert prog is not None
+            prog.release()
+        finally:
+            ctx.destroy()
+
+    def test_temporal_shader_uses_velocity_and_validation(self):
+        src = load_shader("ssr_temporal.frag")
+        assert "u_VelocityTexture" in src
+        assert "hist_uv = v_UV - velocity" in src
+        assert "u_HistoryValid" in src
+        assert "u_GBufferSurfaceID" in src
+        # Output contract preserved: RGB radiance + A confidence.
+        assert "out_SSR = vec4" in src
+
+    def test_pass_has_history_pingpong(self, render_ctx: RenderContext):
+        from engine.gfx.passes.ssr_pass import SSRPass
+        p = SSRPass(render_ctx.ctx, width=320, height=240)
+        try:
+            assert p.hist_a is not p.hist_b
+            assert p._read_hist is not p._write_hist
+            assert p._history_valid is False
+        finally:
+            p.destroy()
+
+    def test_first_frame_does_not_use_history(self, render_ctx: RenderContext):
+        from engine.gfx.passes.ssr_pass import SSRPass
+        p = SSRPass(render_ctx.ctx, width=320, height=240)
+        try:
+            assert p._history_valid is False
+        finally:
+            p.destroy()
+
+    def test_invalidate_history(self, render_ctx: RenderContext):
+        from engine.gfx.passes.ssr_pass import SSRPass
+        p = SSRPass(render_ctx.ctx, width=320, height=240)
+        try:
+            p._history_valid = True
+            p.invalidate_history()
+            assert p._history_valid is False
+        finally:
+            p.destroy()
+
+    def test_resize_recreates_and_invalidates_history(self, render_ctx: RenderContext):
+        from engine.gfx.passes.ssr_pass import SSRPass
+        p = SSRPass(render_ctx.ctx, width=320, height=240)
+        try:
+            p._history_valid = True
+            old_a = p.hist_a
+            p.resize(400, 300)
+            assert p._history_valid is False
+            assert p.hist_a is not old_a
+            # History matches the SSR (scaled) resolution, not the window size.
+            assert p.hist_a.size == (p.width, p.height)
+        finally:
+            p.destroy()
+
+    def test_config_fields_exist(self):
+        from engine.gfx.quality_presets import RenderConfig
+        cfg = RenderConfig()
+        assert hasattr(cfg, "ssr_temporal_enabled")
+        assert hasattr(cfg, "ssr_filter_mode")
+        assert hasattr(cfg, "ssr_temporal_history_weight")
+
+    def test_ssr_disabled_skips_temporal(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = False
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            # SSR disabled: history must never become valid.
+            assert pipeline.ssr_pass._history_valid is False
+        finally:
+            pipeline.destroy()
+
+    def test_temporal_runs_when_enabled(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = True
+            pipeline.config.ssr_temporal_enabled = True
+            pipeline.config.ssr_filter_mode = 1
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            assert pipeline.ssr_pass._history_valid is True
+        finally:
+            pipeline.destroy()
+
+    def test_legacy_spatial_only_mode(self, render_ctx: RenderContext):
+        from engine.core.ecs import EntityManager
+        from engine.gfx.pipeline import RenderPipeline
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = True
+            pipeline.config.ssr_temporal_enabled = False
+            pipeline.apply_config(pipeline.config)
+            ecs = EntityManager(max_entities=5)
+            ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(10.0, 0.2, 10.0), color=(0.5, 0.5, 0.5))
+            pipeline.render_frame(ecs=ecs, camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            # Legacy path: no temporal accumulation.
+            assert pipeline.ssr_pass._history_valid is False
+        finally:
+            pipeline.destroy()

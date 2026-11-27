@@ -49,18 +49,38 @@ class SSRPass(RenderPass):
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssr_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssr_tex])
 
+        # Temporal history ping-pong (RGBA16F): RGB = accumulated radiance,
+        # A = accumulated confidence. Distinct from the trace/blur targets so
+        # there is never read/write feedback.
+        self.hist_a = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.hist_b = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        for t in (self.hist_a, self.hist_b):
+            t.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            t.repeat_x = False
+            t.repeat_y = False
+        self.hist_fbo_a = self.ctx.framebuffer(color_attachments=[self.hist_a])
+        self.hist_fbo_b = self.ctx.framebuffer(color_attachments=[self.hist_b])
+        self._read_hist = self.hist_a
+        self._write_hist = self.hist_b
+        self._write_hist_fbo = self.hist_fbo_b
+        self._history_valid = False
+
         self.black_fallback = self.ctx.texture((1, 1), 4, data=b"\x00" * 8, dtype="f2")
 
         # 2. Compile Shaders
         quad_vert = load_shader("fullscreen_quad.vert")
         ssr_frag = load_shader("ssr.frag")
         blur_frag = load_shader("ssr_blur.frag")
+        temporal_frag = load_shader("ssr_temporal.frag")
 
         self.prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=ssr_frag)
         self.vao = self.ctx.vertex_array(self.prog, [])
 
         self.blur_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=blur_frag)
         self.blur_vao = self.ctx.vertex_array(self.blur_prog, [])
+
+        self.temporal_prog = self.ctx.program(vertex_shader=quad_vert, fragment_shader=temporal_frag)
+        self.temporal_vao = self.ctx.vertex_array(self.temporal_prog, [])
 
         self._u_steps = self.prog.get("u_SSR_Steps", None)
         self._u_max_dist = self.prog.get("u_SSR_MaxDistance", None)
@@ -72,6 +92,13 @@ class SSRPass(RenderPass):
         self._u_blur_dir = self.blur_prog.get("u_BlurDirection", None)
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
+
+        self._u_t_hist_valid = self.temporal_prog.get("u_HistoryValid", None)
+        self._u_t_hist_weight = self.temporal_prog.get("u_HistoryWeight", None)
+        self._u_t_hist_weight_rough = self.temporal_prog.get("u_HistoryWeightRough", None)
+        self._u_t_depth_thresh = self.temporal_prog.get("u_DepthThreshold", None)
+        self._u_t_normal_thresh = self.temporal_prog.get("u_NormalThreshold", None)
+        self._u_t_ssr_res = self.temporal_prog.get("u_SSRResolution", None)
 
     @property
     def ssr_tex(self) -> moderngl.Texture:
@@ -94,6 +121,10 @@ class SSRPass(RenderPass):
         self.blur_fbo.release()
         self.raw_ssr_tex.release()
         self.blur_ssr_tex.release()
+        self.hist_fbo_a.release()
+        self.hist_fbo_b.release()
+        self.hist_a.release()
+        self.hist_b.release()
 
         self.raw_ssr_tex = self.ctx.texture((self.width, self.height), 4, dtype="f2")
         self.raw_ssr_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
@@ -107,6 +138,19 @@ class SSRPass(RenderPass):
 
         self.raw_fbo = self.ctx.framebuffer(color_attachments=[self.raw_ssr_tex])
         self.blur_fbo = self.ctx.framebuffer(color_attachments=[self.blur_ssr_tex])
+
+        self.hist_a = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        self.hist_b = self.ctx.texture((self.width, self.height), 4, dtype="f2")
+        for t in (self.hist_a, self.hist_b):
+            t.filter = (moderngl.LINEAR, moderngl.LINEAR)
+            t.repeat_x = False
+            t.repeat_y = False
+        self.hist_fbo_a = self.ctx.framebuffer(color_attachments=[self.hist_a])
+        self.hist_fbo_b = self.ctx.framebuffer(color_attachments=[self.hist_b])
+        self._read_hist = self.hist_a
+        self._write_hist = self.hist_b
+        self._write_hist_fbo = self.hist_fbo_b
+        self._history_valid = False
 
         self._blur_dir_h = (1.0 / self.width, 0.0)
         self._blur_dir_v = (0.0, 1.0 / self.height)
@@ -151,35 +195,121 @@ class SSRPass(RenderPass):
                 self._render_legacy(context, g_buffer)
         else:
             self._render_legacy(context, g_buffer)
-        # 2. Horizontal Bilateral Denoising Blur: raw -> blur_fbo
-        self.blur_fbo.use()
+
+        # Temporal stabilization (Stage 6). Modes:
+        #   0 = spatial only (legacy baseline)
+        #   1 = temporal + blur H + blur V
+        #   2 = temporal + one bilateral cleanup pass
+        #   3 = temporal only
+        temporal_enabled = bool(getattr(context.config, "ssr_temporal_enabled", True))
+        mode = int(getattr(context.config, "ssr_filter_mode", 1)) if temporal_enabled else 0
+        if mode not in (0, 1, 2, 3):
+            mode = 1
+
+        # Source texture that the spatial stage (if any) reads from.
+        source_tex = self.raw_ssr_tex
+
+        if mode != 0:
+            # Temporal reprojection: raw trace -> history ping-pong.
+            self._run_temporal(context, g_buffer, profiler)
+            source_tex = self._write_hist
+
+        if mode == 1 or mode == 0:
+            # Two-pass bilateral blur: source -> blur -> raw.
+            self.blur_fbo.use()
+            source_tex.use(location=0)
+            g_buffer.depth_texture.use(location=1)
+            g_buffer.albedo_roughness_texture.use(location=2)
+            g_buffer.normal_metallic_texture.use(location=3)
+            if self._u_blur_dir is not None:
+                self._u_blur_dir.value = self._blur_dir_h
+            if profiler is not None:
+                with profiler.region("SSR blur H"):
+                    self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            else:
+                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+
+            self.raw_fbo.use()
+            self.blur_ssr_tex.use(location=0)
+            g_buffer.depth_texture.use(location=1)
+            g_buffer.albedo_roughness_texture.use(location=2)
+            g_buffer.normal_metallic_texture.use(location=3)
+            if self._u_blur_dir is not None:
+                self._u_blur_dir.value = self._blur_dir_v
+            if profiler is not None:
+                with profiler.region("SSR blur V"):
+                    self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            else:
+                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            context.resources["ssr_texture"] = self.raw_ssr_tex
+        elif mode == 2:
+            # Single bilateral cleanup pass: source -> raw.
+            self.raw_fbo.use()
+            source_tex.use(location=0)
+            g_buffer.depth_texture.use(location=1)
+            g_buffer.albedo_roughness_texture.use(location=2)
+            g_buffer.normal_metallic_texture.use(location=3)
+            if self._u_blur_dir is not None:
+                self._u_blur_dir.value = self._blur_dir_h
+            if profiler is not None:
+                with profiler.region("SSR spatial cleanup"):
+                    self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            else:
+                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            context.resources["ssr_texture"] = self.raw_ssr_tex
+        else:
+            # mode 0 (spatial only) or mode 3 (temporal only): publish source.
+            context.resources["ssr_texture"] = source_tex
+
+    def _run_temporal(self, context: RenderGraphContext, g_buffer, profiler) -> None:
+        """Reprojects and accumulates SSR history into the write-history target."""
+        cfg = context.config
+        if self._u_t_hist_valid is not None:
+            self._u_t_hist_valid.value = 1 if self._history_valid else 0
+        if self._u_t_hist_weight is not None:
+            self._u_t_hist_weight.value = float(getattr(cfg, "ssr_temporal_history_weight", 0.90))
+        if self._u_t_hist_weight_rough is not None:
+            self._u_t_hist_weight_rough.value = float(
+                getattr(cfg, "ssr_temporal_history_weight_rough", 0.96)
+            )
+        if self._u_t_depth_thresh is not None:
+            self._u_t_depth_thresh.value = float(getattr(cfg, "ssr_temporal_depth_threshold", 0.05))
+        if self._u_t_normal_thresh is not None:
+            self._u_t_normal_thresh.value = float(getattr(cfg, "ssr_temporal_normal_threshold", 0.90))
+        if self._u_t_ssr_res is not None:
+            self._u_t_ssr_res.value = self._target_res_tuple
+
+        self._write_hist_fbo.use()
+        self.ctx.viewport = (0, 0, self.width, self.height)
+        self.ctx.disable(moderngl.DEPTH_TEST)
+        self.ctx.disable(moderngl.CULL_FACE)
+        self.ctx.disable(moderngl.BLEND)
+
         self.raw_ssr_tex.use(location=0)
-        g_buffer.depth_texture.use(location=1)
-        g_buffer.albedo_roughness_texture.use(location=2)
+        self._read_hist.use(location=1)
+        g_buffer.depth_texture.use(location=2)
         g_buffer.normal_metallic_texture.use(location=3)
-        if self._u_blur_dir is not None:
-            self._u_blur_dir.value = self._blur_dir_h
-        if profiler is not None:
-            with profiler.region("SSR blur H"):
-                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
-        else:
-            self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+        g_buffer.surface_id_texture.use(location=4)
+        g_buffer.velocity_texture.use(location=5)
+        g_buffer.albedo_roughness_texture.use(location=6)
 
-        # 3. Vertical Bilateral Denoising Blur: blur -> raw_fbo
-        self.raw_fbo.use()
-        self.blur_ssr_tex.use(location=0)
-        g_buffer.depth_texture.use(location=1)
-        g_buffer.albedo_roughness_texture.use(location=2)
-        g_buffer.normal_metallic_texture.use(location=3)
-        if self._u_blur_dir is not None:
-            self._u_blur_dir.value = self._blur_dir_v
         if profiler is not None:
-            with profiler.region("SSR blur V"):
-                self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            with profiler.region("SSR temporal"):
+                self.temporal_vao.render(moderngl.TRIANGLES, vertices=3)
         else:
-            self.blur_vao.render(moderngl.TRIANGLES, vertices=3)
+            self.temporal_vao.render(moderngl.TRIANGLES, vertices=3)
 
-        context.resources["ssr_texture"] = self.raw_ssr_tex
+        # Ping-pong: the just-written target becomes next frame's history.
+        self._read_hist, self._write_hist = self._write_hist, self._read_hist
+        if self._write_hist_fbo is self.hist_fbo_b:
+            self._write_hist_fbo = self.hist_fbo_a
+        else:
+            self._write_hist_fbo = self.hist_fbo_b
+        self._history_valid = True
+
+    def invalidate_history(self) -> None:
+        """Forces the next frame to discard temporal history."""
+        self._history_valid = False
 
     def _render_legacy(self, context: RenderGraphContext, g_buffer) -> None:
         """In-shader linear screen-space march."""
@@ -200,8 +330,14 @@ class SSRPass(RenderPass):
         self.blur_fbo.release()
         self.raw_ssr_tex.release()
         self.blur_ssr_tex.release()
+        self.hist_fbo_a.release()
+        self.hist_fbo_b.release()
+        self.hist_a.release()
+        self.hist_b.release()
         self.black_fallback.release()
         self.vao.release()
         self.blur_vao.release()
+        self.temporal_vao.release()
         self.prog.release()
         self.blur_prog.release()
+        self.temporal_prog.release()
