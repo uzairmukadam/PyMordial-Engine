@@ -45,6 +45,7 @@ from engine.gfx.passes.solar_flare_pass import SolarFlarePass
 from engine.gfx.passes.ssdm_pass import SSDMPass
 from engine.gfx.passes.ssgi_pass import SSGIPass
 from engine.gfx.passes.ssr_pass import SSRPass
+from engine.gfx.passes.ssr_specular_compose_pass import SSRSpecularComposePass
 from engine.gfx.passes.taa_pass import TAAPass
 from engine.gfx.passes.volumetric_fog_pass import VolumetricFogPass
 from engine.gfx.passes.water_pass import WaterPass
@@ -103,6 +104,7 @@ class RenderPipeline:
         "amrgi_pass",
         "lights_pass",
         "ssr_pass",
+        "ssr_compose_pass",
         "taa_pass",
         "fxaa_pass",
         "smaa_pass",
@@ -371,6 +373,7 @@ class RenderPipeline:
             h,
             resolution_scale=getattr(self.config, "ssr_resolution_scale", 1.0),
         )
+        self.ssr_compose_pass = SSRSpecularComposePass(self.ctx, w, h)
         self.taa_pass = TAAPass(self.ctx, w, h)
         self.fxaa_pass = FXAAPass(self.ctx, w, h)
         self.smaa_pass = SMAAPass(self.ctx, w, h)
@@ -922,6 +925,11 @@ class RenderPipeline:
                 self.ctx_wrapper.height,
                 getattr(new_config, "ssr_resolution_scale", 1.0),
             )
+        if self.ssr_compose_pass is not None:
+            self.ssr_compose_pass.resize(
+                self.ctx_wrapper.width,
+                self.ctx_wrapper.height,
+            )
         if self.ssgi_pass is not None:
             self.ssgi_pass.resize(
                 self.ctx_wrapper.width,
@@ -988,6 +996,7 @@ class RenderPipeline:
             height,
             getattr(self.config, "ssr_resolution_scale", 1.0),
         )
+        self.ssr_compose_pass.resize(width, height)
         self.taa_pass.resize(width, height)
         self.fxaa_pass.resize(width, height)
         self.smaa_pass.resize(width, height)
@@ -1090,6 +1099,7 @@ class RenderPipeline:
         true_sun_dir: Any,
         target_fbo: moderngl.Framebuffer,
         ssr_enabled: bool,
+        profiler_label: str = "Deferred resolve",
     ) -> None:
         """Runs the consolidated deferred resolve into ``target_fbo``.
 
@@ -1097,6 +1107,13 @@ class RenderPipeline:
         the specular term. The pipeline resolves twice when SSR is active:
         once with SSR off into ``base_hdr_texture`` so SSR can trace against
         current-frame radiance, then again with SSR on into ``hdr_texture``.
+
+        ``profiler_label`` distinguishes the two resolves in the GPU profiler.
+        The profiler keys one query pair per region name per ring slot, so two
+        resolves sharing a single label would re-issue the same query object
+        twice per frame and stall harvesting. Distinct labels keep the ring
+        valid; this is a measurement-only distinction and does not affect
+        rendering.
         """
         # Consolidated deferred resolve into `target_fbo`.
         target_fbo.use()
@@ -1238,7 +1255,7 @@ class RenderPipeline:
         env.apply_sun_direction(self.resolve_prog, true_sun_dir)
 
         profiler = self.gpu_profiler
-        profiler.begin("Deferred resolve")
+        profiler.begin(profiler_label)
         self.resolve_vao.render(mode=moderngl.TRIANGLES, vertices=3)
         profiler.end()
 
@@ -1751,28 +1768,36 @@ class RenderPipeline:
 
         # ---- PASS 7: Consolidated Deferred Resolve ----
         # SSR traces against this frame's depth, so it must sample this
-        # frame's radiance. Resolve once with SSR disabled into the base HDR
-        # target, run SSR against that, then resolve again with SSR enabled.
+        # frame's radiance. Resolve once into the base HDR target, run SSR
+        # against that, then compose only the specular delta into the final
+        # HDR target (no second full deferred resolve).
         ssr_active = bool(getattr(self.config, "ssr_enabled", False))
         if ssr_active:
             self._run_deferred_resolve(
                 ctx, w, h, env, true_sun_dir,
                 target_fbo=self.post_process.base_hdr_fbo,
                 ssr_enabled=False,
+                profiler_label="Deferred base resolve",
             )
             ctx.resources["base_hdr"] = self.post_process.base_hdr_texture
             with profiler.region("SSR"):
                 self.ssr_pass.execute(ctx)
+            # Lightweight specular compose: base_hdr + SSR delta -> hdr_texture.
+            ctx.resources["base_hdr_texture"] = self.post_process.base_hdr_texture
+            ctx.resources["ibl_pass"] = self.ibl_pass
+            ctx.resources["compose_target_fbo"] = self.post_process.hdr_fbo
+            self.ssr_compose_pass.execute(ctx)
         else:
             # Still run the pass so it publishes its black fallback and reports
             # active_backend == "OFF"; its output is not consumed below.
             self.ssr_pass.execute(ctx)
-
-        self._run_deferred_resolve(
-            ctx, w, h, env, true_sun_dir,
-            target_fbo=self.post_process.hdr_fbo,
-            ssr_enabled=ssr_active,
-        )
+            # No SSR: the base resolve is the final HDR result.
+            self._run_deferred_resolve(
+                ctx, w, h, env, true_sun_dir,
+                target_fbo=self.post_process.hdr_fbo,
+                ssr_enabled=False,
+                profiler_label="Deferred resolve",
+            )
 
         env.render_clouds(
             hdr_fbo=self.post_process.hdr_fbo,
@@ -2051,6 +2076,7 @@ class RenderPipeline:
         self.amrgi_pass.destroy()
         self.lights_pass.destroy()
         self.ssr_pass.destroy()
+        self.ssr_compose_pass.destroy()
         self.spot_shadow_map.destroy()
         self.taa_pass.destroy()
         self.fxaa_pass.destroy()

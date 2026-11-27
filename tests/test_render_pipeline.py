@@ -311,3 +311,133 @@ class TestRenderPipelineHeadless:
         pipeline.water_pass.destroy()
         pipeline.spot_shadow_map.destroy()
         pipeline.particle_pass.destroy()
+
+
+class TestSSRSpecularCompose:
+    """Stage 4b: the second full deferred resolve is replaced by a lightweight
+    SSR specular compose pass. These tests verify pass order, resource flow,
+    configuration behavior, and lifecycle without brittle source snapshots.
+    """
+
+    @pytest.fixture(scope="class")
+    def render_ctx(self):
+        ctx = RenderContext.create_headless(width=320, height=240)
+        yield ctx
+        ctx.destroy()
+
+    def _scene(self):
+        ecs = EntityManager(max_entities=20)
+        ecs.create_entity(position=(0.0, -1.0, 0.0), scale=(20.0, 0.5, 20.0), color=(0.3, 0.7, 0.3))
+        ecs.create_entity(position=(0.0, 0.5, 0.0), scale=(1.0, 1.0, 1.0), color=(0.9, 0.9, 0.9),
+                          roughness=0.05, metallic=1.0)
+        return ecs
+
+    def test_compose_pass_exists_and_owns_program(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            assert pipeline.ssr_compose_pass is not None
+            assert pipeline.ssr_compose_pass.prog is not None
+            assert pipeline.ssr_compose_pass.vao is not None
+        finally:
+            pipeline.destroy()
+
+    def test_ssr_enabled_runs_compose_and_single_base_resolve(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = True
+            pipeline.apply_config(pipeline.config)
+            calls = {"base": 0, "compose": 0}
+            orig_run = RenderPipeline._run_deferred_resolve
+            orig_compose = pipeline.ssr_compose_pass.execute
+
+            def spy_run(self, ctx, w, h, env, sun, target_fbo, ssr_enabled, profiler_label="Deferred resolve"):
+                if profiler_label == "Deferred base resolve":
+                    calls["base"] += 1
+                return orig_run(self, ctx, w, h, env, sun, target_fbo, ssr_enabled, profiler_label)
+
+            def spy_compose(context):
+                calls["compose"] += 1
+                return orig_compose(context)
+
+            RenderPipeline._run_deferred_resolve = spy_run
+            pipeline.ssr_compose_pass.execute = spy_compose
+            try:
+                pipeline.render_frame(ecs=self._scene(), camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            finally:
+                RenderPipeline._run_deferred_resolve = orig_run
+            # Exactly one full deferred resolve (the base), and one compose.
+            assert calls["base"] == 1
+            assert calls["compose"] == 1
+        finally:
+            pipeline.destroy()
+
+    def test_ssr_disabled_skips_compose(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = False
+            pipeline.apply_config(pipeline.config)
+            calls = {"compose": 0}
+            orig_compose = pipeline.ssr_compose_pass.execute
+
+            def spy_compose(context):
+                calls["compose"] += 1
+                return orig_compose(context)
+
+            pipeline.ssr_compose_pass.execute = spy_compose
+            pipeline.render_frame(ecs=self._scene(), camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            assert calls["compose"] == 0
+        finally:
+            pipeline.destroy()
+
+    def test_compose_reads_base_hdr_and_writes_distinct_target(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = True
+            pipeline.apply_config(pipeline.config)
+            seen = {}
+            orig_compose = pipeline.ssr_compose_pass.execute
+
+            def spy_compose(context):
+                seen["base_hdr_texture"] = context.resources.get("base_hdr_texture")
+                seen["compose_target_fbo"] = context.resources.get("compose_target_fbo")
+                seen["ssr_texture"] = context.resources.get("ssr_texture")
+                return orig_compose(context)
+
+            pipeline.ssr_compose_pass.execute = spy_compose
+            pipeline.render_frame(ecs=self._scene(), camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            # Compose reads the base HDR and SSR output, writes to a different FBO.
+            assert seen["base_hdr_texture"] is pipeline.post_process.base_hdr_texture
+            assert seen["compose_target_fbo"] is pipeline.post_process.hdr_fbo
+            assert seen["ssr_texture"] is not None
+            # Source and destination are distinct textures (no feedback).
+            assert pipeline.post_process.base_hdr_texture is not pipeline.post_process.hdr_texture
+        finally:
+            pipeline.destroy()
+
+    def test_ssr_samples_base_hdr_not_composed(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.config.ssr_enabled = True
+            pipeline.apply_config(pipeline.config)
+            seen = {}
+            orig_ssr = pipeline.ssr_pass.execute
+
+            def spy_ssr(context):
+                seen["base_hdr"] = context.resources.get("base_hdr")
+                return orig_ssr(context)
+
+            pipeline.ssr_pass.execute = spy_ssr
+            pipeline.render_frame(ecs=self._scene(), camera_pos=(0.0, 3.0, 6.0), time_elapsed=0.1)
+            # SSR must trace against the pre-SSR base HDR, never the composed HDR.
+            assert seen["base_hdr"] is pipeline.post_process.base_hdr_texture
+        finally:
+            pipeline.destroy()
+
+    def test_compose_resize_and_destroy(self, render_ctx: RenderContext):
+        pipeline = RenderPipeline(render_ctx)
+        try:
+            pipeline.ssr_compose_pass.resize(400, 300)
+            assert pipeline.ssr_compose_pass.width == 400
+            assert pipeline.ssr_compose_pass.height == 300
+        finally:
+            pipeline.destroy()
